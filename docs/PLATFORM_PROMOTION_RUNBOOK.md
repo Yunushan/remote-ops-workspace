@@ -577,6 +577,14 @@ python scripts/make_extended_linux_evidence_bundle.py --target linux-armhf --rel
 python scripts/finalize_platform_verified_evidence_record.py --candidate-record <platform-verified-evidence-linux-armhf.json> --bundle-manifest <target-release-artifact-dir>/extended-linux-evidence-bundle-linux-armhf-v<project.version>.json --bundle-archive <target-release-artifact-dir>/extended-linux-evidence-bundle-linux-armhf-v<project.version>.zip --bundle-sha256s <target-release-artifact-dir>/extended-linux-evidence-bundle-linux-armhf-v<project.version>-SHA256SUMS.txt --out <target-release-artifact-dir>/platform-verified-evidence-linux-armhf-final.json --append-registry
 ```
 
+## Windows XP smoke file collection
+
+For both XP architectures, give `scripts/xp_smoke_runner.cmd` a nonempty proof
+file and a separate evidence output path. The runner writes to a sibling
+temporary file and replaces the final evidence file only after capture
+succeeds. If the output is locked or unwritable, the runner exits with an error.
+Keep the proof file and retry once the destination is writable.
+
 ## Windows XP native x86
 
 Target id: `windows-xp-native-x86`

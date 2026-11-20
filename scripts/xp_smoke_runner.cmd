@@ -1,5 +1,5 @@
 @echo off
-setlocal EnableExtensions
+setlocal EnableExtensions DisableDelayedExpansion
 
 set "TARGET="
 set "RELEASE_TAG="
@@ -282,7 +282,13 @@ if "%OS_SERVICE_PACK%"=="" (
   exit /b 2
 )
 if not exist "%PROOF_FILE%" (
-  echo proof file is missing: %PROOF_FILE% 1>&2
+  echo proof file is missing: "%PROOF_FILE%" 1>&2
+  exit /b 1
+)
+if exist "%PROOF_FILE%\" goto invalid_proof_file
+for %%F in ("%PROOF_FILE%") do if "%%~zF"=="0" goto invalid_proof_file
+for %%P in ("%PROOF_FILE%") do for %%E in ("%EVIDENCE_FILE%") do if /I "%%~fP"=="%%~fE" (
+  echo evidence file must differ from the proof file. 1>&2
   exit /b 1
 )
 if /I "%SMOKE_ID%"=="loopback_profile_dry_run" (
@@ -321,6 +327,16 @@ if "%XP_SMOKE_WMIC_OS_CAPTION%"=="" set "XP_SMOKE_WMIC_OS_CAPTION=unavailable"
 if "%XP_SMOKE_WMIC_OS_CSDVERSION%"=="" set "XP_SMOKE_WMIC_OS_CSDVERSION=unavailable"
 
 for %%F in ("%EVIDENCE_FILE%") do if not exist "%%~dpF" mkdir "%%~dpF"
+if exist "%EVIDENCE_FILE%\" goto evidence_write_failed
+set "PENDING_EVIDENCE=%EVIDENCE_FILE%.%RANDOM%-%RANDOM%.pending"
+if exist "%PENDING_EVIDENCE%" goto evidence_write_failed
+call :write_evidence > "%PENDING_EVIDENCE%" || goto discard_pending_evidence
+move /Y "%PENDING_EVIDENCE%" "%EVIDENCE_FILE%" >nul || goto discard_pending_evidence
+
+echo XP smoke evidence written: "%EVIDENCE_FILE%"
+exit /b 0
+
+:write_evidence
 (
   echo xp smoke target: %TARGET%
   echo xp smoke release: %RELEASE_TAG%
@@ -341,11 +357,20 @@ for %%F in ("%EVIDENCE_FILE%") do if not exist "%%~dpF" mkdir "%%~dpF"
   echo xp smoke source workflow run: %SOURCE_WORKFLOW_RUN_URL%
   echo xp smoke source head sha: %SOURCE_HEAD_SHA%
   echo xp smoke source run attempt: %SOURCE_RUN_ATTEMPT%
-  type "%PROOF_FILE%"
-) > "%EVIDENCE_FILE%"
-
-echo XP smoke evidence written: %EVIDENCE_FILE%
+) || exit /b 1
+type "%PROOF_FILE%" || exit /b 1
 exit /b 0
+
+:discard_pending_evidence
+if exist "%PENDING_EVIDENCE%" del /Q "%PENDING_EVIDENCE%"
+
+:evidence_write_failed
+echo could not write XP smoke evidence: "%EVIDENCE_FILE%" 1>&2
+exit /b 1
+
+:invalid_proof_file
+echo proof file must be nonempty and cannot be a directory. 1>&2
+exit /b 1
 
 :missing_security_update_channel
 echo --security-update-channel is required for XP security smoke evidence. 1>&2

@@ -26,6 +26,7 @@ if [[ -e "$EVIDENCE_DIR" || -L "$EVIDENCE_DIR" || -e .venv-native || -L .venv-na
   exit 1
 fi
 
+python3 scripts/check_protected_linux_build_inputs.py --target "$TARGET"
 repository_path="${WORKFLOW_RUN_URL#https://github.com/}"
 export GITHUB_WORKFLOW_REF="${repository_path%/actions/runs/*}/.github/workflows/extended-platform-evidence.yml@refs/tags/$RELEASE_TAG"
 export GITHUB_WORKFLOW_SHA="$SOURCE_HEAD_SHA"
@@ -36,7 +37,6 @@ python3 scripts/check_extended_platform_builder.py --target "$TARGET" \
 
 export RELEASE_TAG SOURCE_DATE_EPOCH=1704067200 PYTHONHASHSEED=0
 export PIP_CONFIG_FILE=/dev/null PIP_REQUIRE_VIRTUALENV=1 PIP_DISABLE_PIP_VERSION_CHECK=1
-python3 scripts/check_protected_linux_build_inputs.py --target "$TARGET"
 python3 -m venv .venv-native
 # shellcheck disable=SC1091
 . .venv-native/bin/activate

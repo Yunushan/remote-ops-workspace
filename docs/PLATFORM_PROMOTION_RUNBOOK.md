@@ -238,7 +238,10 @@ the matching architecture.
 ### Linux i386 and armhf build prerequisites
 
 Both targets compile CFFI and need a native C toolchain and libffi headers.
-Install the `file` utility for AppImage packaging.
+Install `file` for AppImage packaging, `readelf` from GNU Binutils for DEB
+dependency inspection, and RPM's `elfdeps` generator for RPM dependency
+inspection. The capture command checks for these before recording builder
+identity or compiling dependencies.
 Armhf also compiles the PyInstaller bootloader, needs its native C and zlib
 development tools, and needs glibc 2.31 or newer for the pinned crypto wheels.
 i386 compiles bcrypt and cryptography and needs a native

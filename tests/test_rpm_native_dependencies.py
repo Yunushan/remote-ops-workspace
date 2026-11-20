@@ -44,13 +44,17 @@ def test_archive_checks_exact_capabilities_from_the_extraction_root(monkeypatch,
         ]
 
 
-def test_rpm_cli_uses_the_packager_generator_and_emits_spec_lines(monkeypatch, capsys):
+def test_rpm_cli_uses_the_packager_generator_and_emits_spec_lines(monkeypatch, capsys, tmp_path):
+    elfdeps = tmp_path / "elfdeps"
+    elfdeps.touch()
+    elfdeps.chmod(0o700)
+
     def rpm_config(args, **_options):
         assert args == ["rpm", "--eval", "%{_rpmconfigdir}"]
-        return "/usr/lib/rpm\n"
+        return f"{tmp_path}\n"
 
     def dependencies(launcher, tool):
-        assert launcher == Path("row with spaces") and tool == Path("/usr/lib/rpm/elfdeps")
+        assert launcher == Path("row with spaces") and tool == elfdeps
         return ["libm.so.6(GLIBC_2.38)(64bit)", "libz.so.1()(64bit)"]
 
     monkeypatch.setattr(rpm.subprocess, "check_output", rpm_config)
@@ -59,6 +63,18 @@ def test_rpm_cli_uses_the_packager_generator_and_emits_spec_lines(monkeypatch, c
     assert capsys.readouterr().out.splitlines() == [
         "Requires: libm.so.6(GLIBC_2.38)(64bit)", "Requires: libz.so.1()(64bit)",
     ]
+
+
+@pytest.mark.parametrize("kind", ["relative", "missing", "non-executable"])
+def test_rpm_generator_requires_an_absolute_executable(monkeypatch, tmp_path, kind):
+    configuration = "relative" if kind == "relative" else str(tmp_path)
+    monkeypatch.setattr(rpm.subprocess, "check_output", lambda *_args, **_kwargs: configuration)
+    if kind == "non-executable":
+        (tmp_path / "elfdeps").touch()
+        monkeypatch.setattr(rpm.os, "access", lambda *_args: False)
+
+    with pytest.raises(ValueError, match="RPM must provide an executable elfdeps"):
+        rpm.rpm_elfdeps()
 
 
 def test_generator_rejects_output_that_could_extend_the_rpm_spec(monkeypatch):

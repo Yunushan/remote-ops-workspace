@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import platform
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -17,6 +19,11 @@ from check_release_license_compliance import (
     normalize_component_name,
     read_hashed_lock_entries,
 )
+
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.rpm_native_dependencies import rpm_elfdeps  # noqa: E402
 
 TARGETS = ("linux-i386", "linux-armhf")
 
@@ -55,10 +62,14 @@ def main() -> int:
         errors = check_lock_inputs(ROOT, target, toolchain)
         if errors:
             raise ValueError("\n".join(errors))
-    except (OSError, KeyError, ValueError) as exc:
+        missing = [tool for tool in ("file", "readelf", "rpm") if shutil.which(tool) is None]
+        if missing:
+            raise ValueError(f"{target} native packaging tools missing: {', '.join(missing)}")
+        rpm_elfdeps()
+    except (OSError, KeyError, ValueError, subprocess.SubprocessError) as exc:
         print(f"protected Linux build inputs: {exc}", file=sys.stderr)
         return 1
-    print(f"{target} dependency locks and CPython {actual_python} passed")
+    print(f"{target} dependency locks, CPython {actual_python}, and native packaging tools passed")
     return 0
 
 

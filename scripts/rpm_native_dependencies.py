@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 from pathlib import Path, PurePosixPath
@@ -11,6 +12,14 @@ from tempfile import TemporaryDirectory
 from scripts.linux_frozen_elf import archive_elf_members
 
 CAPABILITY = re.compile(r"[A-Za-z0-9._+/-]+(?:\([A-Za-z0-9._+-]*\)){0,2}")
+
+
+def rpm_elfdeps() -> Path:
+    rpm_config = subprocess.check_output(["rpm", "--eval", "%{_rpmconfigdir}"], encoding="utf-8", timeout=30)
+    elfdeps = Path(rpm_config.strip()) / "elfdeps"
+    if not elfdeps.is_absolute() or not elfdeps.is_file() or not os.access(elfdeps, os.X_OK):
+        raise ValueError("RPM must provide an executable elfdeps in its absolute configuration directory")
+    return elfdeps
 
 
 def elf_capabilities(elfdeps: Path, elf: Path, *options: str) -> set[str]:
@@ -52,9 +61,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Print the RPM spec requirements for a frozen CLI archive.")
     parser.add_argument("launcher", type=Path)
     args = parser.parse_args(argv)
-    rpm_config = subprocess.check_output(["rpm", "--eval", "%{_rpmconfigdir}"], encoding="utf-8", timeout=30)
-    elfdeps = Path(rpm_config.strip()) / "elfdeps"
-    for capability in archive_rpm_requirements(args.launcher, elfdeps):
+    for capability in archive_rpm_requirements(args.launcher, rpm_elfdeps()):
         print(f"Requires: {capability}")
 
 

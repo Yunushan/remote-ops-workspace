@@ -470,11 +470,11 @@ def check_native_capture(shell: str, target: str) -> list[str]:
         ("strict shell safety", "#!/usr/bin/env bash\nset -euo pipefail\numask 077"),
         ("dispatch input preflight", 'python3 scripts/check_extended_platform_dispatch_inputs.py --target "$TARGET"'),
         ("exact tagged checkout", '$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")" != "$SOURCE_HEAD_SHA"'),
+        ("protected build inputs", 'python3 scripts/check_protected_linux_build_inputs.py --target "$TARGET"'),
         ("builder identity run context", 'python3 scripts/check_extended_platform_builder.py --target "$TARGET" '
          '--release-tag "$RELEASE_TAG" --workflow-run-url "$WORKFLOW_RUN_URL" '
          '--workflow-run-attempt "$SOURCE_RUN_ATTEMPT" --source-head-sha "$SOURCE_HEAD_SHA" '
          '--out "$EVIDENCE_DIR/builder-identity-$TARGET.json"'),
-        ("protected build inputs", 'python3 scripts/check_protected_linux_build_inputs.py --target "$TARGET"'),
         ("isolated release environment", "python3 -m venv .venv-native"),
         ("artifact architectures", f"readonly ARCH={arch} RPM_ARCH={rpm_arch} APPIMAGE_ARCH={appimage_arch}"),
         *cargo,

@@ -44,7 +44,8 @@ from scripts.managed_debian_qualification import (  # noqa: E402
 )
 from scripts.release_evidence_file import retry_evidence_operation  # noqa: E402
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
+MANAGED_RPM_SCHEMA_VERSION = 6
 RPM_SMOKE_SCHEMA_VERSION = 5
 RPM_SCHEMA_VERSION = 4
 MANAGED_SCHEMA_VERSION = 3
@@ -95,6 +96,9 @@ MAX_ARCHIVE_BYTES = 8 * 1024 * 1024 * 1024
 MAX_EXPANDED_BYTES = 24 * 1024 * 1024 * 1024
 MAX_MEMBERS = 20_000
 MAX_JSON_BYTES = 10 * 1024 * 1024
+MAX_GUI_SMOKE_ARCHIVE_BYTES = 64 * 1024 * 1024
+GUI_ARCHIVE_PROOF_FILE = "gui-archive-proof.json"
+GUI_BYTE_BINDING_FILE = "candidate-runtime-byte-binding.json"
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -332,7 +336,6 @@ def stage(
         )
         positive_int(artifact.get("size_in_bytes"), f"artifact {name} size")
 
-    # GUI smoke archives must belong to this build, but are not release assets.
     build_artifacts = {name: by_name[name] for name in EXPECTED_ARTIFACT_NAMES}
     runtime_reports = {
         target: seal_runtime_report(client, by_name[name], name, run_id, release_sha)
@@ -358,6 +361,16 @@ def stage(
     )
     rpm_smoke = {name: rpm_records[name] for name in RPM_SMOKE_FILES}
     validate_rpm_smoke_files(rpm_files, rpm["receipt"], rpm_smoke)
+    gui_smoke = {
+        name: {
+            "artifact_id": by_name[name]["id"],
+            "archive_digest": by_name[name]["digest"],
+            "size_in_bytes": by_name[name]["size_in_bytes"],
+        }
+        for name in GUI_SMOKE_ARTIFACT_NAMES
+    }
+    validate_gui_smoke_records(gui_smoke, set())
+    verify_sealed_gui_smoke(client, gui_smoke, run_id, release_sha)
     records = materialize_records(
         client, build_artifacts, assets_root,
         managed_deb=(release_tag, managed["receipt"]),
@@ -377,6 +390,7 @@ def stage(
         "managed_debian_update": managed,
         "rpm_recovery": rpm,
         "rpm_smoke": rpm_smoke,
+        "gui_smoke": gui_smoke,
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(canonical_json(inventory), encoding="utf-8")
@@ -623,6 +637,100 @@ def verify_sealed_rpm_smoke(
     validate_rpm_smoke_files(files, rpm["receipt"], inventory["rpm_smoke"])
 
 
+def validate_gui_smoke_records(value: Any, ids: set[int]) -> None:
+    if not isinstance(value, dict) or value.keys() != set(GUI_SMOKE_ARTIFACT_NAMES):
+        raise ValueError("approved candidate inventory must contain all desktop GUI smoke archives")
+    for name, record in value.items():
+        if not isinstance(record, dict) or record.keys() != {"artifact_id", "archive_digest", "size_in_bytes"}:
+            raise ValueError(f"{name} sealed archive identity is invalid")
+        artifact_id = positive_int(record["artifact_id"], f"{name} artifact id")
+        if artifact_id in ids:
+            raise ValueError(f"{name} artifact id is duplicated")
+        ids.add(artifact_id)
+        normalize_digest(record["archive_digest"], f"{name} archive digest")
+        size = positive_int(record["size_in_bytes"], f"{name} archive size")
+        if size > MAX_GUI_SMOKE_ARCHIVE_BYTES:
+            raise ValueError(f"{name} archive exceeds the GUI smoke size limit")
+
+
+def validate_gui_smoke_archive(path: Path, name: str) -> None:
+    reports = {}
+    with zipfile.ZipFile(path) as archive:
+        members = archive.infolist()
+        if len(members) > MAX_MEMBERS:
+            raise ValueError(f"{name} archive exceeds {MAX_MEMBERS} members")
+        for filename in (GUI_ARCHIVE_PROOF_FILE, GUI_BYTE_BINDING_FILE):
+            matches = [member for member in members if member.orig_filename.casefold() == filename.casefold()]
+            if len(matches) != 1 or matches[0].orig_filename != filename:
+                raise ValueError(f"{name} archive must contain one root {filename}")
+            member = matches[0]
+            mode = (member.external_attr >> 16) & 0xFFFF
+            if (
+                stat.S_IFMT(mode) not in (0, stat.S_IFREG) or member.external_attr & 0x10
+                or member.flag_bits & 1 or not 0 < member.file_size <= MAX_JSON_BYTES
+            ):
+                raise ValueError(f"{name} archive has an invalid {filename}")
+            reports[filename] = archive.read(member)
+
+    proof = json.loads(reports[GUI_ARCHIVE_PROOF_FILE])
+    binding_bytes = reports[GUI_BYTE_BINDING_FILE]
+    binding = json.loads(binding_bytes)
+    target = name.removeprefix("release-").replace("-gui-smoke-", "-", 1)
+    if (
+        not isinstance(proof, dict) or proof.get("target") != target or proof.get("status") != "passed"
+        or proof.get("smoke_binding_sha256") != hashlib.sha256(binding_bytes).hexdigest()
+        or DIGEST_RE.fullmatch(f'sha256:{proof.get("artifact_sha256")}') is None
+        or not isinstance(binding, dict) or binding.get("target") != target
+        or binding.get("status") != "bound" or binding.get("smoke_complete") is not True
+    ):
+        raise ValueError(f"{name} GUI archive proof does not bind the completed smoke receipt")
+    outputs = binding.get("expected_executables")
+    if not isinstance(outputs, list) or [
+        (output.get("path"), output.get("sha256"))
+        for output in outputs if isinstance(output, dict) and output.get("role") == "gui"
+    ] != [(proof.get("path"), proof["artifact_sha256"])] or not isinstance(proof.get("path"), str):
+        raise ValueError(f"{name} GUI archive proof refers to different executable bytes")
+
+    observations = binding.get("observations")
+    gui_observations = [
+        row for row in observations if isinstance(row, dict) and row.get("role") == "gui"
+    ] if isinstance(observations, list) else []
+    if not gui_observations or any(
+        row.get("matched") is not True or row.get("expected_sha256") != proof["artifact_sha256"]
+        or row.get("observed_sha256") != proof["artifact_sha256"]
+        for row in gui_observations
+    ):
+        raise ValueError(f"{name} installer smoke did not observe the verified GUI executable bytes")
+
+
+def verify_sealed_gui_smoke(
+    client: GitHubClient, records: dict[str, Any], run_id: int, release_sha: str,
+    *, archive_root: Path | None = None,
+) -> None:
+    with tempfile.TemporaryDirectory(prefix="row-release-gui-smoke-") as temporary:
+        for name, record in records.items():
+            artifact_id = record["artifact_id"]
+            metadata = client.json(f"actions/artifacts/{artifact_id}")
+            check_artifact_metadata(
+                metadata, artifact_id=artifact_id, name=name, digest=record["archive_digest"],
+                run_id=run_id, release_sha=release_sha,
+            )
+            archive = Path(temporary) / f"{name}.zip"
+            downloaded = client.download(
+                f"actions/artifacts/{artifact_id}/zip", archive, max_bytes=MAX_GUI_SMOKE_ARCHIVE_BYTES,
+            )
+            if (
+                downloaded != record["archive_digest"]
+                or archive.stat().st_size != record["size_in_bytes"]
+                or metadata.get("size_in_bytes") != record["size_in_bytes"]
+            ):
+                raise ValueError(f"{name} archive digest or size differs from the sealed inventory")
+            validate_gui_smoke_archive(archive, name)
+            if archive_root is not None:
+                with archive.open("rb") as source, (archive_root / archive.name).open("xb") as output:
+                    shutil.copyfileobj(source, output)
+
+
 def require_linux_installer(records: list[dict[str, Any]], name: str, sha256: str, label: str) -> None:
     matches = [
         file.get("sha256")
@@ -755,6 +863,8 @@ def promote(
     )
     if "rpm_smoke" in inventory:
         verify_sealed_rpm_smoke(client, inventory, run_id, release_sha)
+    if "gui_smoke" in inventory:
+        verify_sealed_gui_smoke(client, inventory["gui_smoke"], run_id, release_sha)
     materialize_sealed_records(client, records, assets_root, run_id=run_id, release_sha=release_sha)
 
 
@@ -1026,13 +1136,16 @@ def validate_inventory(
     if schema >= RPM_SCHEMA_VERSION or "rpm_recovery" in value or "rpm_smoke" in value:
         artifact_id, rpm_sha = validate_rpm_report(
             value.get("rpm_recovery"), repository, release_tag, release_sha, run_id, run_attempt,
-            require_managed=schema == SCHEMA_VERSION,
+            require_managed=schema >= MANAGED_RPM_SCHEMA_VERSION,
         )
         if artifact_id in ids:
             raise ValueError(f"RPM recovery report artifact id is duplicated: {artifact_id}")
+        ids.add(artifact_id)
         require_release_rpm(records, release_tag, rpm_sha)
         if schema >= RPM_SMOKE_SCHEMA_VERSION or "rpm_smoke" in value:
             validate_rpm_smoke_metadata(value.get("rpm_smoke"), value["rpm_recovery"]["receipt"])
+    if schema >= SCHEMA_VERSION or "gui_smoke" in value:
+        validate_gui_smoke_records(value.get("gui_smoke"), ids)
     return sorted(records, key=lambda item: item["name"])
 
 

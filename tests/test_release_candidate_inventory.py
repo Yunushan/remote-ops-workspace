@@ -229,6 +229,10 @@ def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
         ("complete", ""),
         ("missing-installer", "missing=.*release-source-python"),
         ("missing-smoke", "missing=.*release-macos-gui-smoke-x64"),
+        ("missing-gui-proof", "archive must contain one root gui-archive-proof.json"),
+        ("wrong-gui-binding", "GUI archive proof does not bind the completed smoke receipt"),
+        ("wrong-gui-launcher", "GUI archive proof refers to different executable bytes"),
+        ("wrong-gui-observation", "smoke did not observe the verified GUI executable bytes"),
         ("missing-runtime", "missing=.*release-runtime-windows-x86"),
         ("missing-managed", "missing=.*release-managed-debian-update"),
         ("missing-rpm", "missing=.*release-linux-rpm-recovery"),
@@ -471,6 +475,27 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                     report.create_system = 3
                     report.external_attr = (stat.S_IFIFO | 0o600) << 16
                 archive.writestr(report, body)
+            elif name in smoke:
+                target = name.removeprefix("release-").replace("-gui-smoke-", "-", 1)
+                gui_binding = candidate.qualification_receipt_bytes({
+                    "target": target, "status": "bound", "smoke_complete": True,
+                    "expected_executables": [{"role": "gui", "path": "native/row-gui", "sha256": "c" * 64}],
+                    "observations": [{
+                        "role": "gui", "matched": True, "expected_sha256": "c" * 64,
+                        "observed_sha256": (
+                            "d" * 64 if (condition, name) == ("wrong-gui-observation", smoke[0]) else "c" * 64
+                        ),
+                    }],
+                })
+                archive.writestr(candidate.GUI_BYTE_BINDING_FILE, gui_binding)
+                archive.writestr("gui-example/result.png", b"fixture screenshot bytes")
+                if (condition, name) != ("missing-gui-proof", smoke[0]):
+                    archive.writestr(candidate.GUI_ARCHIVE_PROOF_FILE, candidate.qualification_receipt_bytes({
+                        "target": target, "status": "passed", "path": "native/row-gui",
+                        "artifact_sha256": "d" * 64 if (condition, name) == ("wrong-gui-launcher", smoke[0]) else "c" * 64,
+                        "smoke_binding_sha256": "d" * 64 if (condition, name) == ("wrong-gui-binding", smoke[0])
+                        else hashlib.sha256(gui_binding).hexdigest(),
+                    }))
             elif name == candidate.MANAGED_DEBIAN_ARTIFACT:
                 archive.writestr(candidate.REPORT_NAME, managed_report)
             elif name == candidate.RPM_ARTIFACT:
@@ -495,7 +520,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                 "head_sha": "b" * 40 if condition == "wrong-installer-sha" and name == standard[0] else sha,
             },
         })
-        if name in standard or name in runtime or name in {candidate.MANAGED_DEBIAN_ARTIFACT, candidate.RPM_ARTIFACT}:
+        if name in standard or name in runtime or name in smoke or name in {candidate.MANAGED_DEBIAN_ARTIFACT, candidate.RPM_ARTIFACT}:
             archives[artifact_id] = data
     smoke_artifact = next((item for item in artifacts if item["name"] == "release-macos-gui-smoke-x64"), None)
     if condition == "wrong-smoke-run":
@@ -571,6 +596,8 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
             "managed-rpm-failed", "wrong-managed-rpm-launcher", "wrong-managed-rpm-requests",
         }:
             assert len(downloads) == len(runtime) + 2
+        elif condition in {"missing-gui-proof", "wrong-gui-binding", "wrong-gui-launcher", "wrong-gui-observation"}:
+            assert len(downloads) == len(runtime) + 3
         else:
             assert len(downloads) == (1 if condition in {"bad-runtime-report", "nonregular-runtime-report"} else 0)
         assert not root.exists()
@@ -590,6 +617,14 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     for report in inventory["runtime_reports"].values():
         assert report["sha256"] == hashlib.sha256(raw_report).hexdigest()
         assert report["size_bytes"] == len(raw_report)
+    gui_archives = inventory["gui_smoke"]
+    assert gui_archives.keys() == set(smoke)
+    for name, record in gui_archives.items():
+        metadata = next(artifact for artifact in artifacts if artifact["name"] == name)
+        assert record == {
+            "artifact_id": metadata["id"], "archive_digest": metadata["digest"],
+            "size_in_bytes": len(archives[metadata["id"]]),
+        }
     managed = inventory.pop("managed_debian_update")
     assert managed["sha256"] == hashlib.sha256(managed_report).hexdigest()
     assert managed["receipt"]["candidate_sha256"] == deb_sha
@@ -609,6 +644,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     # predated the managed Debian qualification.
     inventory.pop("rpm_recovery")
     inventory.pop("rpm_smoke")
+    inventory.pop("gui_smoke")
     inventory["schema_version"] = candidate.LEGACY_SCHEMA_VERSION
     candidate.validate_inventory(inventory, **coordinates)
     with pytest.raises(ValueError, match="requires the current sealed candidate inventory"):
@@ -640,13 +676,24 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     candidate.validate_inventory(inventory, **coordinates)
     inventory["schema_version"] = candidate.SCHEMA_VERSION
     inventory["rpm_recovery"] = rpm
+    with pytest.raises(ValueError, match="must contain all desktop GUI smoke archives"):
+        candidate.validate_inventory(inventory, **coordinates)
+    inventory["schema_version"] = candidate.MANAGED_RPM_SCHEMA_VERSION
+    candidate.validate_inventory(inventory, **coordinates)
+    inventory["schema_version"] = candidate.SCHEMA_VERSION
+    inventory["gui_smoke"] = gui_archives
     retained = tmp_path / "review" / "archives"
     retained.mkdir(parents=True)
     qualifications = prepare_release_redistribution_review.collect_qualification_archives(
         BuildRun(), retained, inventory, "example/project", tag, sha, 123,
     )
-    assert downloads[-2:] == [managed["artifact_id"], rpm["artifact_id"]]
-    for name, record in ((candidate.MANAGED_DEBIAN_ARTIFACT, managed), (candidate.RPM_ARTIFACT, rpm)):
+    expected_qualifications = {
+        candidate.MANAGED_DEBIAN_ARTIFACT: managed, candidate.RPM_ARTIFACT: rpm, **gui_archives,
+    }
+    assert downloads[-len(expected_qualifications):] == [
+        record["artifact_id"] for record in expected_qualifications.values()
+    ]
+    for name, record in expected_qualifications.items():
         path = retained / f"{name}.zip"
         assert path.read_bytes() == archives[record["artifact_id"]]
         assert qualifications[name]["sha256"] == record["archive_digest"].removeprefix("sha256:")
@@ -659,6 +706,20 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     with pytest.raises(ValueError, match="RPM recovery report artifact id is duplicated"):
         candidate.validate_inventory(inventory, **coordinates)
     rpm["artifact_id"] = rpm_id
+    gui_record = gui_archives[smoke[0]]
+    gui_id = gui_record["artifact_id"]
+    gui_record["artifact_id"] = rpm_id
+    with pytest.raises(ValueError, match="gui-smoke.*artifact id is duplicated"):
+        candidate.validate_inventory(inventory, **coordinates)
+    gui_record["artifact_id"] = gui_id
+    changed_archive = {**gui_record, "size_in_bytes": gui_record["size_in_bytes"] + 1}
+    with pytest.raises(ValueError, match="archive digest or size differs from the sealed inventory"):
+        candidate.verify_sealed_gui_smoke(BuildRun(), {smoke[0]: changed_archive}, 123, sha)
+    original_archive = archives[gui_id]
+    archives[gui_id] = original_archive[:-1] + bytes([original_archive[-1] ^ 1])
+    with pytest.raises(ValueError, match="archive digest or size differs from the sealed inventory"):
+        candidate.verify_sealed_gui_smoke(BuildRun(), {smoke[0]: gui_record}, 123, sha)
+    archives[gui_id] = original_archive
     inventory["runtime_reports"]["windows-x86"]["artifact_id"] = records[0]["id"]
     with pytest.raises(ValueError, match="runtime report windows-x86 artifact id is duplicated"):
         candidate.validate_inventory(

@@ -532,7 +532,9 @@ case "$ARCH" in
 esac
 BINDING_REPORT="$SMOKE_ROOT/candidate-runtime-byte-binding.json"
 if [[ -n "$BINDING_TARGET" ]]; then
-  python3 scripts/candidate_posix_byte_binding.py init --target "$BINDING_TARGET" --report "$BINDING_REPORT" --root "$ROOT" --appimage "$APPIMAGE"
+  installer_options=(--installer "$DEB" --installer "$RPM" --installer "$APPIMAGE")
+  python3 scripts/candidate_posix_byte_binding.py init --target "$BINDING_TARGET" --report "$BINDING_REPORT" \
+    --root "$ROOT" --appimage "$APPIMAGE" "${installer_options[@]}"
 fi
 
 prepare_appimage_probe() {
@@ -621,6 +623,6 @@ if [[ -e "$STAGED_APPIMAGE" ]]; then
 fi
 
 if [[ -n "$BINDING_TARGET" ]]; then
-  python3 scripts/candidate_posix_byte_binding.py complete --target "$BINDING_TARGET" --report "$BINDING_REPORT"
+  python3 scripts/candidate_posix_byte_binding.py complete --target "$BINDING_TARGET" --report "$BINDING_REPORT" "${installer_options[@]}"
 fi
 echo "native installer smoke passed for Linux $ARCH"

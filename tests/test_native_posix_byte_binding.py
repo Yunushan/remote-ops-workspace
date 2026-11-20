@@ -119,26 +119,30 @@ def fill_report(binding, target, root, report, package, *, installers=()):
 
 
 
+@pytest.mark.parametrize("target", ["macos-x64", "linux-x86_64", "linux-aarch64"])
 @pytest.mark.parametrize("changed", [False, True])
-def test_signed_macos_smoke_binds_dmg_and_pkg_bytes(helpers, tmp_path, changed):
+def test_native_smoke_binds_installer_bytes(helpers, tmp_path, target, changed):
     binding, _ = helpers
-    target = "macos-x64"
-    report, _, _ = setup_fixture(tmp_path, target, helpers)
-    installers = [tmp_path / f"remote-ops-workspace-v1.0.27-{target}.{suffix}" for suffix in ("dmg", "pkg")]
+    report, _, appimage = setup_fixture(tmp_path, target, helpers)
+    suffixes = ("deb", "rpm") if appimage else ("dmg", "pkg")
+    installers = [tmp_path / f"remote-ops-workspace-v1.0.27-{target}.{suffix}" for suffix in suffixes]
     for installer in installers:
         installer.write_bytes(installer.name.encode())
-    initial = binding.initialize(tmp_path, target, report, installers=installers)
+    if appimage:
+        installers.append(appimage)
+    initial = binding.initialize(tmp_path, target, report, appimage, installers=installers)
     if changed:
         installers[1].write_bytes(b"different installer")
         with pytest.raises(ValueError, match="installer bytes changed during native smoke"):
-            fill_report(binding, target, tmp_path, report, None, installers=installers)
+            fill_report(binding, target, tmp_path, report, appimage, installers=installers)
         assert json.loads(report.read_text())["smoke_complete"] is False
     else:
-        final = fill_report(binding, target, tmp_path, report, None, installers=installers)
+        final = fill_report(binding, target, tmp_path, report, appimage, installers=installers)
         assert final["smoke_complete"] is True
         assert final["installer_sha256"] == initial["installer_sha256"] == {
             installer.name: binding.digest(installer) for installer in installers
         }
+
 
 @pytest.mark.parametrize("target", TARGETS)
 def test_complete_receipt_matches_real_finish_contract(helpers, tmp_path, target):

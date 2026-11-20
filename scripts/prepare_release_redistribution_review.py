@@ -43,8 +43,8 @@ from scripts.release_candidate_inventory import (  # noqa: E402
     validate_managed_report,
     validate_rpm_report,
     validate_runtime_report,
-    verify_sealed_gui_smoke,
     verify_sealed_rpm_smoke,
+    verify_sealed_smoke,
 )
 from scripts.release_candidate_source import (  # noqa: E402
     INVENTORY_FILE,
@@ -128,16 +128,15 @@ def collect_qualification_archives(
         archive = archives / f"{name}.zip"
         reference = f"https://github.com/{repository}/actions/runs/{run_id}/artifacts/{artifact_id}"
         records[name] = evidence_record(archive, archives.parent, archive.read_bytes(), reference)
-    if "gui_smoke" in inventory:
-        gui_smoke = inventory["gui_smoke"]
-        verify_sealed_gui_smoke(client, gui_smoke, run_id, sha, archive_root=archives)
-        for name, record in gui_smoke.items():
-            records[name] = {
-                "file": f"archives/{name}.zip",
-                "sha256": record["archive_digest"].removeprefix("sha256:"),
-                "size_bytes": record["size_in_bytes"],
-                "reference": f"https://github.com/{repository}/actions/runs/{run_id}/artifacts/{record['artifact_id']}",
-            }
+    smoke = {**inventory.get("gui_smoke", {}), **inventory.get("linux_smoke", {})}
+    verify_sealed_smoke(client, smoke, run_id, sha, archive_root=archives)
+    for name, record in smoke.items():
+        records[name] = {
+            "file": f"archives/{name}.zip",
+            "sha256": record["archive_digest"].removeprefix("sha256:"),
+            "size_bytes": record["size_in_bytes"],
+            "reference": f"https://github.com/{repository}/actions/runs/{run_id}/artifacts/{record['artifact_id']}",
+        }
     return records
 
 

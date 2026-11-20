@@ -67,14 +67,14 @@ release_assets_dir="$approval_dir/assets"
 
 The command retains the original inventory ZIP and all seven runtime report
 ZIPs in `archives/`. For current candidates it also retains the original
-Debian update, RPM recovery, and four desktop GUI smoke ZIPs. Candidate
-sealing, review, and promotion verify each GUI ZIP and check that its archive
-proof refers to the completed smoke receipt and the executable observed during
-installer testing. Signed desktop smoke hashes the Windows ZIP, EXE, and MSI
-and the macOS DMG and PKG before and after installer testing. Sealing compares
-those digests with the candidate assets, and the final audit compares the
-approved candidate assets with the published bytes. The review command also
-checks the Linux qualification files
+Debian update, RPM recovery, four desktop GUI smoke ZIPs, and two Linux
+native smoke ZIPs. Sealing, review, and promotion verify the smoke archives
+and check that each native proof refers to its completed receipt. Desktop
+smoke hashes the Windows ZIP, EXE, and MSI and the macOS DMG and PKG before
+and after installer testing. Both Linux jobs do the same for the DEB, RPM,
+and AppImage. Sealing compares those digests with the candidate assets,
+and the final audit compares the approved candidate assets with the
+published bytes. The review command checks the Linux qualification files
 and controller digests against the sealed inventory and tagged checkout.
 `review-materials.json` lists the retained qualification archive paths, hashes,
 and source references. The command copies the sealed inventory, report

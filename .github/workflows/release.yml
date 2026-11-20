@@ -658,12 +658,11 @@ jobs:
           python scripts/stage_debian_server_bundle.py --artifact-id "$SERVER_BUNDLE_ARTIFACT_ID" \
             --sha256 "$SERVER_BUNDLE_SHA256" --target linux-x86_64 --out "$bundle"
           printf 'path=%s\n' "$bundle" >> "$GITHUB_OUTPUT"
-      - name: Bind the Linux x86-64 release checkout before packaging
-        if: ${{ matrix.arch == 'x86_64' }}
+      - name: Bind the Linux release checkout before packaging
         env:
           EXPECTED_RELEASE_SHA: ${{ needs.release-preflight.outputs.release_sha }}
         run: >-
-          python scripts/candidate_native_proof.py bind --target linux-x86_64
+          python scripts/candidate_native_proof.py bind --target "linux-${{ matrix.arch }}"
           --expected-sha "$EXPECTED_RELEASE_SHA" --asset-dir native-dist/linux
       - name: Build Linux DEB, RPM and AppImage packages
         env:
@@ -675,15 +674,30 @@ jobs:
         run: TARGET_ARCH="${{ matrix.arch }}" PYTHON_BIN=python bash scripts/make_linux_native.sh
       - name: Run Linux native installer smoke tests
         run: bash scripts/smoke_linux_native.sh --arch "${{ matrix.arch }}" --dist native-dist/linux
+      - name: Verify Linux installer smoke against the packaged build
+        env:
+          EXPECTED_RELEASE_SHA: ${{ needs.release-preflight.outputs.release_sha }}
+        run: |
+          python scripts/candidate_native_proof.py finish --target "linux-${{ matrix.arch }}" \
+            --expected-sha "$EXPECTED_RELEASE_SHA" --asset-dir native-dist/linux \
+            --native-build-outcome success --native-smoke-outcome success
+          cp -- build/candidate-proof/linux-${{ matrix.arch }}/finish.json \
+            build/native-smoke/linux-${{ matrix.arch }}/finish.json
+      - name: Retain Linux native smoke evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-linux-native-smoke-${{ matrix.arch }}
+          path: |
+            build/native-smoke/linux-${{ matrix.arch }}/finish.json
+            build/native-smoke/linux-${{ matrix.arch }}/candidate-runtime-byte-binding.json
+          if-no-files-found: error
+          retention-days: 90
       - name: Qualify the exact release RPM upgrade and rollback
         if: ${{ matrix.arch == 'x86_64' }}
         timeout-minutes: 25
         env:
           EXPECTED_RELEASE_SHA: ${{ needs.release-preflight.outputs.release_sha }}
         run: |
-          python scripts/candidate_native_proof.py finish --target linux-x86_64 \
-            --expected-sha "$EXPECTED_RELEASE_SHA" --asset-dir native-dist/linux \
-            --native-build-outcome success --native-smoke-outcome success
           output=build/release-rpm-evidence
           mkdir "$output"
           cp -- build/candidate-proof/linux-x86_64/finish.json \

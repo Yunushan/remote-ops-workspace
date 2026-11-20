@@ -212,12 +212,19 @@ def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
     source = (ROOT / candidate.BUILD_WORKFLOW).read_text(encoding="utf-8")
     job = source.split("  linux-native:\n", 1)[1].split("  seal-release-candidate:\n", 1)[0]
     step = job.split("- name: Qualify the exact release RPM upgrade and rollback", 1)[1].split("- name:", 1)[0]
-    bind = job.index("Bind the Linux x86-64 release checkout before packaging")
+    binding = job.split("- name: Bind the Linux release checkout before packaging", 1)[1].split("- name:", 1)[0]
+    bind = job.index(binding)
     build = job.index("Build Linux DEB, RPM and AppImage packages")
     smoke = job.index("Run Linux native installer smoke tests")
-    assert bind < build < smoke < job.index(step) < job.index(f"name: {candidate.RPM_ARTIFACT}")
+    verify = job.split("- name: Verify Linux installer smoke against the packaged build", 1)[1].split("- name:", 1)[0]
+    retained = job.split("- name: Retain Linux native smoke evidence", 1)[1].split("- name:", 1)[0]
+    assert bind < build < smoke < job.index(verify) < job.index(retained) < job.index(step)
     assert "matrix.arch == 'x86_64'" in step
-    assert "scripts/candidate_native_proof.py finish" in step
+    for marker in (binding, verify, retained):
+        assert "if:" not in marker and "continue-on-error:" not in marker
+        assert "matrix.arch" in marker
+    assert "scripts/candidate_native_proof.py finish" in verify
+    assert candidate.LINUX_SMOKE_PROOF_FILE in retained and candidate.NATIVE_BYTE_BINDING_FILE in retained
     assert "python -m scripts.qualify_rpm_candidate" in step
     assert "path: build/release-rpm-evidence/" in job
     assert all(name in step for name in (*candidate.RPM_SMOKE_FILES, candidate.RPM_REPORT_NAME))
@@ -229,6 +236,9 @@ def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
         ("complete", ""),
         ("missing-installer", "missing=.*release-source-python"),
         ("missing-smoke", "missing=.*release-macos-gui-smoke-x64"),
+        ("missing-linux-smoke", "missing=.*release-linux-native-smoke-aarch64"),
+        ("wrong-linux-proof", "native proof does not bind the completed exact-run installer smoke receipt"),
+        ("wrong-linux-package", "smoke receipt differs from the candidate installer"),
         ("missing-gui-proof", "archive must contain one root gui-archive-proof.json"),
         ("wrong-gui-binding", "GUI archive proof does not bind the completed smoke receipt"),
         ("wrong-gui-launcher", "GUI archive proof refers to different executable bytes"),
@@ -300,11 +310,14 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
         "release-macos-gui-smoke-arm64",
     )
     runtime = tuple(sorted(candidate.RUNTIME_REPORT_ARTIFACT_NAMES.values()))
-    names = [*standard, *smoke, *runtime, candidate.MANAGED_DEBIAN_ARTIFACT, candidate.RPM_ARTIFACT]
+    linux_smoke = candidate.LINUX_SMOKE_ARTIFACT_NAMES
+    names = [*standard, *smoke, *linux_smoke, *runtime, candidate.MANAGED_DEBIAN_ARTIFACT, candidate.RPM_ARTIFACT]
     if condition == "missing-installer":
         names.remove("release-source-python")
     if condition == "missing-smoke":
         names.remove("release-macos-gui-smoke-x64")
+    if condition == "missing-linux-smoke":
+        names.remove("release-linux-native-smoke-aarch64")
     if condition == "missing-runtime":
         names.remove("release-runtime-windows-x86")
     if condition == "missing-managed":
@@ -315,11 +328,11 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
         names.append("unexpected-build")
     artifacts = []
     archives: dict[int, bytes] = {}
-    desktop_installers = {}
+    installers = {}
     for name in smoke:
         target = name.removeprefix("release-").replace("-gui-smoke-", "-", 1)
         suffixes = ("-native.zip", "-setup.exe", ".msi") if target.startswith("windows-") else (".dmg", ".pkg")
-        desktop_installers[target] = {
+        installers[target] = {
             f"remote-ops-workspace-{tag}-{target}{suffix}": f"candidate bytes for {target}{suffix}".encode()
             for suffix in suffixes
         }
@@ -475,6 +488,14 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
         if condition == "missing-rpm-rollback-dependency-check":
             managed_rpm["checks"] = dict.fromkeys(managed_rpm_qualification.PREVIOUS_CHECKS, True)
     rpm_report = candidate.qualification_receipt_bytes(rpm_outer)
+    installers["linux-x86_64"] = {
+        deb_name: deb_bytes, rpm_name: rpm_bytes,
+        f"remote-ops-workspace-{tag}-linux-x86_64.AppImage": b"candidate x86_64 AppImage",
+    }
+    installers["linux-aarch64"] = {
+        f"remote-ops-workspace-{tag}-linux-{label}": f"candidate aarch64 {label}".encode()
+        for label in ("arm64.deb", "aarch64.rpm", "aarch64.AppImage")
+    }
     for artifact_id, name in enumerate(names, start=1):
         stream = io.BytesIO()
         with zipfile.ZipFile(stream, "w") as archive:
@@ -488,7 +509,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
             elif name in smoke:
                 target = name.removeprefix("release-").replace("-gui-smoke-", "-", 1)
                 installer_hashes = {key: hashlib.sha256(data).hexdigest()
-                                    for key, data in desktop_installers[target].items()}
+                                    for key, data in installers[target].items()}
                 if (condition, name) == ("missing-gui-installers", smoke[0]):
                     installer_hashes.clear()
                 if (condition, name) == ("wrong-gui-installer", smoke[0]):
@@ -504,7 +525,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                         ),
                     }],
                 })
-                archive.writestr(candidate.GUI_BYTE_BINDING_FILE, gui_binding)
+                archive.writestr(candidate.NATIVE_BYTE_BINDING_FILE, gui_binding)
                 archive.writestr("gui-example/result.png", b"fixture screenshot bytes")
                 if (condition, name) != ("missing-gui-proof", smoke[0]):
                     archive.writestr(candidate.GUI_ARCHIVE_PROOF_FILE, candidate.qualification_receipt_bytes({
@@ -513,6 +534,27 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                         "smoke_binding_sha256": "d" * 64 if (condition, name) == ("wrong-gui-binding", smoke[0])
                         else hashlib.sha256(gui_binding).hexdigest(),
                     }))
+            elif name in linux_smoke:
+                target = name.replace("release-linux-native-smoke-", "linux-", 1)
+                digests = {asset: hashlib.sha256(data).hexdigest() for asset, data in installers[target].items()}
+                changed = name == "release-linux-native-smoke-aarch64"
+                if changed and condition == "wrong-linux-package":
+                    digests[next(iter(digests))] = "b" * 64
+                raw_binding = candidate.qualification_receipt_bytes({
+                    "target": target, "status": "bound", "smoke_complete": True, "installer_sha256": digests,
+                })
+                proof_sha = "b" * 40 if changed and condition == "wrong-linux-proof" else sha
+                archive.writestr(candidate.NATIVE_BYTE_BINDING_FILE, raw_binding)
+                archive.writestr(candidate.LINUX_SMOKE_PROOF_FILE, candidate.qualification_receipt_bytes({
+                    "target": target, "source": {"head": proof_sha}, "event_sha": sha, "run_id": "123",
+                    "run_attempt": "1", "native_build_outcome": "success", "native_smoke_outcome": "success",
+                    "source_unchanged": True, "native_pyinstaller_inventory_complete": True,
+                    "native_executable_byte_binding": {
+                        "status": "bound",
+                        "report_path": f"build/native-smoke/{target}/{candidate.NATIVE_BYTE_BINDING_FILE}",
+                        "report_sha256": hashlib.sha256(raw_binding).hexdigest(),
+                    },
+                }))
             elif name == candidate.MANAGED_DEBIAN_ARTIFACT:
                 archive.writestr(candidate.REPORT_NAME, managed_report)
             elif name == candidate.RPM_ARTIFACT:
@@ -523,11 +565,8 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
             else:
                 archive.writestr(f"{name}.txt", f"bytes from {name}")
                 target = name.removeprefix("release-").replace("-native-", "-", 1)
-                for installer, data in desktop_installers.get(target, {}).items():
+                for installer, data in installers.get(target, {}).items():
                     archive.writestr(installer, data)
-                if name == "release-linux-native-x86_64":
-                    archive.writestr(deb_name, deb_bytes)
-                    archive.writestr(rpm_name, rpm_bytes)
         data = stream.getvalue()
         artifacts.append({
             "id": artifact_id,
@@ -540,7 +579,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                 "head_sha": "b" * 40 if condition == "wrong-installer-sha" and name == standard[0] else sha,
             },
         })
-        if name in standard or name in runtime or name in smoke or name in {candidate.MANAGED_DEBIAN_ARTIFACT, candidate.RPM_ARTIFACT}:
+        if name in {*standard, *runtime, *smoke, *linux_smoke, candidate.MANAGED_DEBIAN_ARTIFACT, candidate.RPM_ARTIFACT}:
             archives[artifact_id] = data
     smoke_artifact = next((item for item in artifacts if item["name"] == "release-macos-gui-smoke-x64"), None)
     if condition == "wrong-smoke-run":
@@ -606,7 +645,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
             seal()
         if condition in {
             "wrong-managed-deb", "wrong-rpm-digest", "wrong-managed-depends", "wrong-managed-bundle",
-            "missing-gui-installers", "wrong-gui-installer",
+            "missing-gui-installers", "wrong-gui-installer", "wrong-linux-package",
         }:
             assert len(downloads) == len(archives)
         elif condition in {"wrong-managed-run", "wrong-managed-controller", "missing-rollback", "old-managed-schema"}:
@@ -621,6 +660,8 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
             assert len(downloads) == len(runtime) + 2
         elif condition in {"missing-gui-proof", "wrong-gui-binding", "wrong-gui-launcher", "wrong-gui-observation"}:
             assert len(downloads) == len(runtime) + 3
+        elif condition == "wrong-linux-proof":
+            assert len(downloads) == len(runtime) + 2 + len(smoke) + len(linux_smoke)
         else:
             assert len(downloads) == (1 if condition in {"bad-runtime-report", "nonregular-runtime-report"} else 0)
         assert not root.exists()
@@ -635,8 +676,8 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     )
     assert {record["name"] for record in records} == set(standard)
     assert {path.name for path in root.iterdir()} == {
-        deb_name, rpm_name, *(f"{name}.txt" for name in standard),
-        *(name for group in desktop_installers.values() for name in group),
+        *(f"{name}.txt" for name in standard),
+        *(name for group in installers.values() for name in group),
     }
     assert len(downloads) == len(archives) and set(downloads) == set(archives)
     assert inventory["runtime_reports"].keys() == candidate.RUNTIME_REPORT_ARTIFACT_NAMES.keys()
@@ -644,15 +685,18 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
         assert report["sha256"] == hashlib.sha256(raw_report).hexdigest()
         assert report["size_bytes"] == len(raw_report)
     gui_archives = inventory["gui_smoke"]
+    linux_archives = inventory["linux_smoke"]
     assert gui_archives.keys() == set(smoke)
-    for name, record in gui_archives.items():
+    assert linux_archives.keys() == set(linux_smoke)
+    for name, record in {**gui_archives, **linux_archives}.items():
+        target = name.removeprefix("release-").replace("-gui-smoke-", "-", 1).replace("-native-smoke-", "-", 1)
         metadata = next(artifact for artifact in artifacts if artifact["name"] == name)
         assert record == {
             "artifact_id": metadata["id"], "archive_digest": metadata["digest"],
             "size_in_bytes": len(archives[metadata["id"]]),
             "installer_sha256": {
                 asset: hashlib.sha256(data).hexdigest()
-                for asset, data in desktop_installers[name.removeprefix("release-").replace("-gui-smoke-", "-", 1)].items()
+                for asset, data in installers[target].items()
             },
         }
     managed = inventory.pop("managed_debian_update")
@@ -675,6 +719,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     inventory.pop("rpm_recovery")
     inventory.pop("rpm_smoke")
     inventory.pop("gui_smoke")
+    inventory.pop("linux_smoke")
     inventory["schema_version"] = candidate.LEGACY_SCHEMA_VERSION
     candidate.validate_inventory(inventory, **coordinates)
     with pytest.raises(ValueError, match="requires the current sealed candidate inventory"):
@@ -720,13 +765,19 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     candidate.validate_inventory(inventory, **coordinates)
     inventory["schema_version"] = candidate.SCHEMA_VERSION
     gui_record["installer_sha256"] = installer_hashes
+    with pytest.raises(ValueError, match="must contain all Linux native smoke archives"):
+        candidate.validate_inventory(inventory, **coordinates)
+    inventory["schema_version"] = candidate.GUI_INSTALLER_SCHEMA_VERSION
+    candidate.validate_inventory(inventory, **coordinates)
+    inventory["schema_version"] = candidate.SCHEMA_VERSION
+    inventory["linux_smoke"] = linux_archives
     retained = tmp_path / "review" / "archives"
     retained.mkdir(parents=True)
     qualifications = prepare_release_redistribution_review.collect_qualification_archives(
         BuildRun(), retained, inventory, "example/project", tag, sha, 123,
     )
     expected_qualifications = {
-        candidate.MANAGED_DEBIAN_ARTIFACT: managed, candidate.RPM_ARTIFACT: rpm, **gui_archives,
+        candidate.MANAGED_DEBIAN_ARTIFACT: managed, candidate.RPM_ARTIFACT: rpm, **gui_archives, **linux_archives,
     }
     assert downloads[-len(expected_qualifications):] == [
         record["artifact_id"] for record in expected_qualifications.values()
@@ -752,11 +803,11 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     gui_record["artifact_id"] = gui_id
     changed_archive = {**gui_record, "size_in_bytes": gui_record["size_in_bytes"] + 1}
     with pytest.raises(ValueError, match="archive digest or size differs from the sealed inventory"):
-        candidate.verify_sealed_gui_smoke(BuildRun(), {smoke[0]: changed_archive}, 123, sha)
+        candidate.verify_sealed_smoke(BuildRun(), {smoke[0]: changed_archive}, 123, sha)
     original_archive = archives[gui_id]
     archives[gui_id] = original_archive[:-1] + bytes([original_archive[-1] ^ 1])
     with pytest.raises(ValueError, match="archive digest or size differs from the sealed inventory"):
-        candidate.verify_sealed_gui_smoke(BuildRun(), {smoke[0]: gui_record}, 123, sha)
+        candidate.verify_sealed_smoke(BuildRun(), {smoke[0]: gui_record}, 123, sha)
     archives[gui_id] = original_archive
     inventory["runtime_reports"]["windows-x86"]["artifact_id"] = records[0]["id"]
     with pytest.raises(ValueError, match="runtime report windows-x86 artifact id is duplicated"):

@@ -146,9 +146,10 @@ def regular_file(path):
         raise ValueError("candidate binding requires a regular non-symlink file")
 
 
-def macos_installer_hashes(target, installers):
-    if not target.startswith("macos-") or len(installers) != 2 or {path.suffix for path in installers} != {".dmg", ".pkg"}:
-        raise ValueError("installer binding requires the macOS DMG and PKG")
+def installer_hashes(target, installers):
+    suffixes = {".deb", ".rpm", ".AppImage"} if target.startswith("linux-") else {".dmg", ".pkg"}
+    if len(installers) != len(suffixes) or {path.suffix for path in installers} != suffixes:
+        raise ValueError(f"installer binding requires one package per format for {target}")
     for path in installers:
         regular_file(path)
     return {path.name: digest(path) for path in installers}
@@ -201,7 +202,7 @@ def initialize(root, target, report_path, appimage=None, *, installers=()):
         report["expected_app_bundle"] = {"path": MAC_APP_SOURCE, **app_bundle_inventory(root / MAC_APP_SOURCE)}
         report["app_bundle_observations"] = []
     if installers:
-        report["installer_sha256"] = macos_installer_hashes(target, installers)
+        report["installer_sha256"] = installer_hashes(target, installers)
     save(report_path, report)
     return report
 
@@ -311,7 +312,7 @@ def check_app_bundle(report_path, target, path, public_path, phase):
 def complete(report_path, target, *, installers=()):
     report = load(report_path, target)
     if installers or "installer_sha256" in report:
-        if macos_installer_hashes(target, installers) != report.get("installer_sha256"):
+        if installer_hashes(target, installers) != report.get("installer_sha256"):
             raise ValueError("installer bytes changed during native smoke")
     _, _, required = target_contract(target)
     observations = report["observations"]

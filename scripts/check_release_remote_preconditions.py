@@ -185,22 +185,48 @@ def check_local_pre_tag_refs(tag: str, sha: str) -> None:
     head = run_git("rev-parse", "--verify", "HEAD^{commit}")
     if head.returncode != 0 or head.stdout.strip() != sha:
         raise RuntimeError("the release checkout HEAD must match the selected SHA")
-    tag_ref = run_git("show-ref", "--exists", f"refs/tags/{tag}")
-    if tag_ref.returncode == 0:
+    tag_ref = f"refs/tags/{tag}"
+    lookup_error = f"could not establish whether local tag {tag} exists"
+    exact = run_git("show-ref", "--exists", tag_ref)
+    if exact.returncode == 129:
+        # Git before 2.43 lacks --exists. Read symbolic refs separately because
+        # for-each-ref omits symbolic refs whose targets are missing.
+        exact = run_git("symbolic-ref", "--quiet", "--no-recurse", tag_ref)
+        if exact.returncode not in (0, 1):
+            raise RuntimeError(lookup_error)
+    elif exact.returncode not in (0, 2):
+        raise RuntimeError(lookup_error)
+    if exact.returncode == 0:
         raise RuntimeError(f"the local tag {tag} already exists")
-    if tag_ref.returncode != 2:
-        raise RuntimeError(f"could not establish whether local tag {tag} exists")
+
+    inventory = run_git("for-each-ref", "--format=%(refname)", "--", tag_ref)
+    if inventory.returncode != 0 or inventory.stderr:
+        raise RuntimeError(lookup_error)
+    refs = inventory.stdout.splitlines()
+    if tag_ref in refs:
+        raise RuntimeError(f"the local tag {tag} already exists")
+    if refs:
+        if refs[0].startswith(tag_ref + "/"):
+            raise RuntimeError(f"the local tag namespace for {tag} is occupied by {refs[0]}")
+        raise RuntimeError(lookup_error)
 
 
 def check_remote_pre_tag_refs(repository: str, tag: str, sha: str) -> None:
     branch_ref = f"refs/heads/{PRODUCTION_BRANCH}"
     tag_ref = f"refs/tags/{tag}"
-    refs = run_git("ls-remote", "--exit-code", "--refs", "--", f"https://github.com/{repository}.git", branch_ref, tag_ref)
+    refs = run_git(
+        "ls-remote", "--exit-code", "--refs", "--", f"https://github.com/{repository}.git",
+        branch_ref, tag_ref, f"{tag_ref}/*",
+    )
     if refs.returncode != 0:
         raise RuntimeError("could not verify the remote branch and release tag refs")
     lines = refs.stdout.splitlines()
-    if any(line.endswith(f"\t{tag_ref}") for line in lines):
-        raise RuntimeError(f"the remote tag {tag} already exists")
+    for line in lines:
+        _, _, ref = line.partition("\t")
+        if ref == tag_ref:
+            raise RuntimeError(f"the remote tag {tag} already exists")
+        if ref.startswith(tag_ref + "/"):
+            raise RuntimeError(f"the remote tag namespace for {tag} is occupied by {ref}")
     head = re.fullmatch(rf"([0-9a-f]{{40}})\t{branch_ref}", lines[0]) if len(lines) == 1 else None
     if head is None:
         raise RuntimeError(f"could not identify the live {PRODUCTION_BRANCH} commit")

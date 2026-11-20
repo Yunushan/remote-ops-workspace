@@ -393,15 +393,45 @@ def test_pre_tag_namespace_requires_draft_visibility_before_listing(monkeypatch,
         preconditions.require_unused_namespace(API_ROOT, REPOSITORY, RELEASE_TAG, "fixture", require_push=True)
 
 
-@pytest.mark.parametrize(("tag_status", "error"), [(0, "already exists"), (128, "could not establish"), (2, None)])
-def test_local_pre_tag_requires_matching_head_and_definite_tag_absence(monkeypatch, tag_status, error) -> None:
-    responses = iter([CompletedProcess([], 0, RELEASE_SHA + "\n"), CompletedProcess([], tag_status, "")])
-    monkeypatch.setattr(preconditions, "run_git", lambda *args: next(responses))
-    if error is not None:
+@pytest.mark.parametrize(("exact_status", "symbolic_status", "inventory", "error"), [
+    (0, None, None, "already exists"),
+    (1, None, None, "could not establish"),
+    (2, None, (0, "", ""), None),
+    (2, None, (0, f"refs/tags/{RELEASE_TAG}/preview\n", ""), f"namespace for {RELEASE_TAG} is occupied"),
+    (2, None, (128, "", ""), "could not establish"),
+    (2, None, (0, "", "warning: ignoring broken ref"), "could not establish"),
+    (2, None, (0, "refs/tags/other\n", ""), "could not establish"),
+    (129, 1, (0, "", ""), None),
+    (129, 1, (0, f"refs/tags/{RELEASE_TAG}\n", ""), "already exists"),
+    (129, 0, None, "already exists"),
+    (129, 128, None, "could not establish"),
+])
+def test_local_pre_tag_requires_matching_head_and_definite_tag_absence(
+    monkeypatch, exact_status, symbolic_status, inventory, error,
+) -> None:
+    tag_ref = f"refs/tags/{RELEASE_TAG}"
+    responses = [
+        (("rev-parse", "--verify", "HEAD^{commit}"), CompletedProcess([], 0, RELEASE_SHA + "\n")),
+        (("show-ref", "--exists", tag_ref), CompletedProcess([], exact_status, "")),
+    ]
+    if symbolic_status is not None:
+        responses.append((("symbolic-ref", "--quiet", "--no-recurse", tag_ref),
+                          CompletedProcess([], symbolic_status, "")))
+    if inventory is not None:
+        responses.append((("for-each-ref", "--format=%(refname)", "--", tag_ref), CompletedProcess([], *inventory)))
+
+    def run_git(*args):
+        expected, response = responses.pop(0)
+        assert args == expected
+        return response
+
+    monkeypatch.setattr(preconditions, "run_git", run_git)
+    if error is None:
+        preconditions.check_local_pre_tag_refs(RELEASE_TAG, RELEASE_SHA)
+    else:
         with pytest.raises(RuntimeError, match=error):
             preconditions.check_local_pre_tag_refs(RELEASE_TAG, RELEASE_SHA)
-    else:
-        preconditions.check_local_pre_tag_refs(RELEASE_TAG, RELEASE_SHA)
+    assert not responses
 
 
 @pytest.mark.parametrize("head_status", [0, 128])
@@ -415,7 +445,7 @@ def test_local_pre_tag_rejects_other_head_or_unreadable_checkout(monkeypatch, he
         preconditions.check_local_pre_tag_refs(RELEASE_TAG, RELEASE_SHA)
 
 
-@pytest.mark.parametrize("outcome", ["tip", "ancestor", "unrelated", "unknown", "existing-tag", "unreachable", "bad-ref"])
+@pytest.mark.parametrize("outcome", ["tip", "ancestor", "unrelated", "unknown", "existing-tag", "nested-tag", "unreachable", "bad-ref"])
 def test_remote_pre_tag_binds_qualified_history_without_accepting_an_existing_tag(monkeypatch, outcome) -> None:
     branch = "refs/heads/main"
     tag_ref = f"refs/tags/{RELEASE_TAG}"
@@ -423,19 +453,25 @@ def test_remote_pre_tag_binds_qualified_history_without_accepting_an_existing_ta
     stdout = f"{live_tip}\t{branch}\n"
     if outcome == "existing-tag":
         stdout += f"{RELEASE_SHA}\t{tag_ref}\n"
+    if outcome == "nested-tag":
+        stdout += f"{RELEASE_SHA}\t{tag_ref}/preview\n"
     if outcome == "bad-ref":
         stdout = "wrong format\n"
     errors = {
         "unrelated": "must be on remote main",
         "unknown": "could not verify remote main ancestry",
         "existing-tag": "remote tag .* already exists",
+        "nested-tag": "remote tag namespace .* is occupied",
         "unreachable": "could not verify the remote branch",
         "bad-ref": "could not identify the live main commit",
     }
 
     def run_git(*args):
         if args[0] == "ls-remote":
-            assert args == ("ls-remote", "--exit-code", "--refs", "--", f"https://github.com/{REPOSITORY}.git", branch, tag_ref)
+            assert args == (
+                "ls-remote", "--exit-code", "--refs", "--", f"https://github.com/{REPOSITORY}.git",
+                branch, tag_ref, f"{tag_ref}/*",
+            )
             return CompletedProcess([], 128 if outcome == "unreachable" else 0, stdout)
         assert args == ("merge-base", "--is-ancestor", RELEASE_SHA, live_tip)
         assert outcome in {"ancestor", "unrelated", "unknown"}

@@ -258,6 +258,8 @@ from a clean checkout of the selected production commit. Set
 `release_repository` to `owner/repo`, `release_tag` to the unused production
 version, and `release_sha` to the full qualified commit SHA. Fetch `main`
 first if the selected commit is behind its live tip so Git can verify ancestry.
+The check rejects an existing tag or a tag under the selected name, such as
+`v1.2.3/preview` when creating `v1.2.3`, in both the checkout and the remote.
 Use the following credentials for their respective checks.
 
 - Export `GITHUB_TOKEN` for an account with push access so the release listing

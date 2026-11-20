@@ -43,6 +43,7 @@ CANDIDATE_PACKAGE = "candidate.deb"
 LAUNCHER = PurePosixPath("usr/bin/row")
 SERVER_ROOT = PurePosixPath("usr/lib/remote-ops-workspace/servers")
 SYSTEM_LOCK_ROOT = Path("/var/lib/remote-ops-workspace-managed-update")
+APT_GET = "/usr/bin/apt-get"
 DPKG = "/usr/bin/dpkg"
 DPKG_DEB = "/usr/bin/dpkg-deb"
 DPKG_QUERY = "/usr/bin/dpkg-query"
@@ -288,6 +289,28 @@ def verify_installation(architecture: str, version: str, digests: dict[PurePosix
     verify_installed_servers(digests)
 
 
+def verify_upgrade_plan(path: Path, architecture: str, previous: str, version: str) -> None:
+    result = native_command(
+        APT_GET, "--simulate", "--no-download", "--no-remove", "--no-install-recommends",
+        "-o", "APT::Install-Suggests=false", "-o", "Dir::Etc::sourcelist=/dev/null",
+        "-o", "Dir::Etc::sourceparts=-", "install", str(path),
+        check=False, frontend_locked=True,
+    )
+    require(result.returncode == 0, "debian-upgrade-plan-refused")
+    operations = [
+        line for line in result.stdout.splitlines()
+        if re.match(r"^(?:Inst|Conf|Remv|Purg)(?:\s|$)", line)
+    ]
+    name = rf"{PACKAGE}(?::{re.escape(architecture)})?"
+    release = rf"\({re.escape(version)}(?: [^)]*)?\)"
+    require(
+        len(operations) == 2
+        and re.fullmatch(rf"Inst {name} \[{re.escape(previous)}\] {release}", operations[0])
+        and re.fullmatch(rf"Conf {name} {release}", operations[1]),
+        "debian-upgrade-plan-refused",
+    )
+
+
 def install_deb(path: Path, architecture: str, version: str, digests: dict[PurePosixPath, str]) -> None:
     check_deb(path, architecture, version)
     native_command(DPKG, "--install", str(path), frontend_locked=True)
@@ -391,6 +414,7 @@ def apply(args, journal: Path, architecture: str, *, expected_previous: str | No
     previous_runtime = deb_runtime_digests(old)
     candidate_runtime = deb_runtime_digests(new)
     verify_installation(architecture, previous, previous_runtime)
+    verify_upgrade_plan(new, architecture, previous, args.version)
     state = journal_write(journal, {
         "schema": SCHEMA, "architecture": architecture, "previous_version": previous,
         "candidate_version": args.version, "previous_sha256": prior.sha256, "previous_size": prior.size,

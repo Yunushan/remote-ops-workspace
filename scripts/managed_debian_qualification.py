@@ -8,7 +8,8 @@ from signal import SIGTERM
 REPORT_NAME = "managed-debian-update.json"
 MANAGED_IMAGE = "python:3.14.7-slim-trixie@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d"
 HASH = re.compile(r"[0-9a-f]{64}")
-SCHEMA = "row.managed-debian-qualification.v3"
+SCHEMA = "row.managed-debian-qualification.v4"
+INTERRUPTION_SCHEMA = "row.managed-debian-qualification.v3"
 AUTOMATIC_SCHEMA = "row.managed-debian-qualification.v2"
 PREVIOUS_SCHEMA = "row.managed-debian-qualification.v1"
 
@@ -20,8 +21,8 @@ def validate_receipt(
     error = "managed-debian-receipt-binding-mismatch"
     if (
         not isinstance(receipt, dict)
-        or receipt.get("schema") not in (SCHEMA, AUTOMATIC_SCHEMA, PREVIOUS_SCHEMA)
-        or require_automatic and receipt.get("schema") not in (AUTOMATIC_SCHEMA, SCHEMA)
+        or receipt.get("schema") not in (SCHEMA, INTERRUPTION_SCHEMA, AUTOMATIC_SCHEMA, PREVIOUS_SCHEMA)
+        or require_automatic and receipt.get("schema") == PREVIOUS_SCHEMA
         or require_current and receipt.get("schema") != SCHEMA
         or receipt.get("status") != "passed"
         or receipt.get("target") != "linux-x86_64"
@@ -44,7 +45,7 @@ def validate_receipt(
         expected_steps["changed-server-manifest-rollback"] = ("refused", 1)
         refusals["changed-server-manifest-rollback"] = "installed-runtime-payload-refused"
     automatic_actions = {}
-    if receipt["schema"] in (SCHEMA, AUTOMATIC_SCHEMA):
+    if receipt["schema"] != PREVIOUS_SCHEMA:
         expected_steps.update({
             "automatic-candidate": ("applied", 0), "automatic-failing": ("rolled-back", 1),
             "automatic-explicit-rollback": ("rolled-back", 0),
@@ -53,11 +54,15 @@ def validate_receipt(
             "candidate-apply": "update", "interrupted-apply": "update", "automatic-candidate": "update",
             "automatic-failing": "update", "automatic-explicit-rollback": "rollback",
         }
-    if receipt["schema"] == SCHEMA:
+    if receipt["schema"] in (SCHEMA, INTERRUPTION_SCHEMA):
         expected_steps.update({"rollback-interruption": ("rolling-back", -SIGTERM), "repeated-rollback": ("rolled-back", 0)})
         automatic_actions.update({
             "rollback-interruption": "rollback", "explicit-rollback": "rollback", "repeated-rollback": "rollback",
         })
+    if receipt["schema"] == SCHEMA:
+        expected_steps.update({"dependency-blocked": ("authenticated-staged", 0),
+                               "dependency-blocked-apply": ("refused", 1)})
+        refusals["dependency-blocked-apply"] = "debian-upgrade-plan-refused"
     steps = receipt.get("receipts")
     if not isinstance(steps, dict) or steps.keys() != expected_steps.keys() or any(
         not isinstance(steps[name], dict)
@@ -78,7 +83,7 @@ def validate_receipt(
             fault_sha != steps["failing-apply"].get("candidate_sha256")
         ):
             raise ValueError(error)
-    if receipt["schema"] == SCHEMA:
+    if receipt["schema"] in (SCHEMA, INTERRUPTION_SCHEMA):
         applied = steps["candidate-apply"]
         launcher_sha = applied.get("previous_launcher_sha256")
         if not isinstance(launcher_sha, str) or HASH.fullmatch(launcher_sha) is None or any(
@@ -86,4 +91,14 @@ def validate_receipt(
             or steps[name].get("previous_launcher_sha256") != launcher_sha
             for name in ("rollback-interruption", "explicit-rollback", "repeated-rollback")
         ) or steps["explicit-rollback"] != steps["repeated-rollback"]:
+            raise ValueError(error)
+    if receipt["schema"] == SCHEMA:
+        blocked = steps["dependency-blocked-apply"]
+        blocked_sha = blocked.get("candidate_sha256")
+        if (blocked.get("action") != "apply"
+                or blocked.get("previous_sha256") != previous_sha
+                or not isinstance(blocked_sha, str) or HASH.fullmatch(blocked_sha) is None
+                or blocked_sha in (previous_sha, candidate_sha)
+                or blocked.get("previous_installation_unchanged") is not True
+                or blocked.get("journal_created") is not False):
             raise ValueError(error)

@@ -93,8 +93,12 @@ Use `update` to authenticate and install the exact target version in one
 invocation. It stages the prior installer first and reuses complete staged
 downloads after authenticating them again. It keeps the package manager
 available during downloads, then rechecks the installed package under the
-Debian package-manager lock before installing. Use separate staging and
-transaction directories that do not overlap each other or the workspace.
+Debian package-manager lock before installing. Under that lock, it simulates
+the candidate upgrade with APT and checks that the plan contains only the
+candidate unpack and configuration. It refuses before writing an installation
+journal if an installed dependency cannot satisfy the upgrade. APT uses the
+local installer and installed package database for the simulation. Use separate
+staging and transaction directories that do not overlap each other or the workspace.
 
 ```bash
 python3 -I scripts/managed_linux_update.py update --version 1.0.28 \
@@ -130,6 +134,9 @@ python3 -I scripts/managed_linux_update.py apply --version 1.0.28 \
 Keep the transaction directory. Before creating its journal, the controller
 reuses retained installer files only if their bytes match the signed manifests.
 If a file conflicts, use a separate private transaction directory.
+If the controller reports `debian-upgrade-plan-refused`, resolve any missing
+dependencies with the distribution's package manager and retry with the same
+verified stages and transaction directory.
 The controller records the installation attempt
 before invoking `dpkg` and uses the retained installer if installation or its
 verification fails. If `apply` is interrupted, repeat it with the same
@@ -167,6 +174,9 @@ The drill also stops the controller after `dpkg` reinstalls the exact
 predecessor and before the controller records rollback completion. It checks
 that the journal retains `rolling-back`, retrying `rollback` completes
 offline, and repeating the completed rollback leaves the journal unchanged.
+It also stages a candidate with an unavailable dependency and verifies the
+preflight refusal against the unchanged package database and launcher. The
+refusal leaves the transaction without an installation journal.
 The retained `managed-debian-update.json` records the package digests,
 candidate source SHA, run attempt, and observed outcomes. The drill uses an
 ephemeral test signer. Production approval uses the release-bound evidence in

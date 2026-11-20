@@ -117,6 +117,51 @@ def test_update_refuses_a_package_replacement_between_staging_and_installing(tmp
     assert not journal.exists()
 
 
+@pytest.mark.parametrize(("exit_code", "suffix", "detail", "accepted"), [
+    (0, "", "", True),
+    (0, ":amd64", "", True),
+    (100, "", "", False),
+    (0, ":arm64", "", False),
+    (0, "", "\nInst libc6 [2.36] (2.38 local [amd64])", False),
+    (0, "", "\nConf zlib1g (1.3 local [amd64])", False),
+    (0, "", "\nRemv unrelated [1.0]", False),
+    (0, "", "\nPurg unrelated [1.0]", False),
+    (0, "", "wrong-target-version", False),
+    (0, "", "wrong-previous-version", False),
+    (0, "", "no-configure-step", False),
+])
+def test_native_upgrade_plan_requires_only_the_exact_candidate(
+    tmp_path, monkeypatch, exit_code, suffix, detail, accepted,
+):
+    package = tmp_path / "candidate with spaces.deb"
+    name = f"{updater.PACKAGE}{suffix}"
+    plan = f"Inst {name} [1.0.24] (1.0.28 local-deb [amd64])\nConf {name} (1.0.28 local-deb [amd64])"
+    if detail == "wrong-target-version":
+        plan = plan.replace("1.0.28", "1.0.29")
+    elif detail == "wrong-previous-version":
+        plan = plan.replace("1.0.24", "1.0.25")
+    elif detail == "no-configure-step":
+        plan = plan.splitlines()[0]
+    else:
+        plan += detail
+
+    def command(*args, check, frontend_locked):
+        assert not check and frontend_locked
+        assert args == (
+            updater.APT_GET, "--simulate", "--no-download", "--no-remove", "--no-install-recommends",
+            "-o", "APT::Install-Suggests=false", "-o", "Dir::Etc::sourcelist=/dev/null",
+            "-o", "Dir::Etc::sourceparts=-", "install", str(package),
+        )
+        return SimpleNamespace(returncode=exit_code, stdout=f"Reading package lists...\n{plan}\n")
+
+    monkeypatch.setattr(updater, "native_command", command)
+    if accepted:
+        updater.verify_upgrade_plan(package, "amd64", "1.0.24", "1.0.28")
+    else:
+        with pytest.raises(updater.UpdateError, match="debian-upgrade-plan-refused"):
+            updater.verify_upgrade_plan(package, "amd64", "1.0.24", "1.0.28")
+
+
 def test_interrupted_apply_requires_recovery_instead_of_retrying_install(tmp_path, monkeypatch):
     journal = tmp_path / updater.JOURNAL
     journal.touch()

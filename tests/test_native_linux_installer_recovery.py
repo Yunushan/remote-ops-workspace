@@ -1102,6 +1102,8 @@ def test_workflow_recovery_needs_x64_and_actual_basic_finish(
     (False, "automatic-missing"), (False, "automatic-manual-action"), (False, "automatic-digest"),
     (False, "missing-rollback-interruption"), (False, "rollback-exit-code"), (False, "rollback-launcher"),
     (False, "rollback-repeat"), (False, "old-schema"), (False, "automatic-schema"),
+    (False, "interruption-schema"), (False, "dependency-step-missing"), (False, "dependency-reason"),
+    (False, "dependency-digest"), (False, "dependency-journal"), (False, "dependency-previous"),
 ])
 def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, monkeypatch, bundled, mismatch):
     previous = tmp_path / "previous.deb"
@@ -1178,11 +1180,23 @@ def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, mo
         if mismatch == "automatic-digest":
             steps["automatic-candidate"]["candidate_sha256"] = "f" * 64
         schemas = {"old-schema": "row.managed-debian-qualification.v1",
-                   "automatic-schema": "row.managed-debian-qualification.v2"}
-        if mismatch in schemas:
+                   "automatic-schema": "row.managed-debian-qualification.v2",
+                   "interruption-schema": "row.managed-debian-qualification.v3"}
+        if mismatch in {"old-schema", "automatic-schema"}:
             del steps["rollback-interruption"], steps["repeated-rollback"]
+        if mismatch not in schemas:
+            steps["dependency-blocked"] = {"phase": "authenticated-staged", "exit_code": 0}
+            if mismatch != "dependency-step-missing":
+                steps["dependency-blocked-apply"] = {
+                    "action": "apply", "phase": "refused", "exit_code": 1,
+                    "refusal": "unrelated" if mismatch == "dependency-reason" else "debian-upgrade-plan-refused",
+                    "previous_sha256": "a" * 64,
+                    "candidate_sha256": "b" * 64 if mismatch == "dependency-digest" else "0" * 64,
+                    "previous_installation_unchanged": mismatch != "dependency-previous",
+                    "journal_created": mismatch == "dependency-journal",
+                }
         return json.dumps({
-            "schema": schemas.get(mismatch, "row.managed-debian-qualification.v3"),
+            "schema": schemas.get(mismatch, "row.managed-debian-qualification.v4"),
             "status": "passed", "target": module.TARGET,
             "production_acceptance": False, "previous_sha256": "a" * 64,
             "candidate_sha256": "c" * 64 if mismatch == "digest" else "b" * 64,

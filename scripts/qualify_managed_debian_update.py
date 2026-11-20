@@ -159,15 +159,23 @@ def stage_policy(root: Path, name: str, package: Path, version: str, minimum: st
     return policy_file, stage
 
 
-def package_with_postinst(candidate: Path, root: Path, script: str) -> Path:
+def package_fixture(candidate: Path, root: Path, *, postinst: str | None = None,
+                    unsatisfied_dependency: bool = False) -> Path:
     root.mkdir(mode=0o700)
     fault = root / candidate.name
     tree = root / "tree"
     checked("/usr/bin/dpkg-deb", "--raw-extract", candidate, tree)
-    post_install = tree / "DEBIAN/postinst"
-    post_install.unlink(missing_ok=True)
-    post_install.write_text("#!/bin/sh\nset -eu\n" + script, encoding="ascii")
-    post_install.chmod(0o755)
+    if postinst is not None:
+        post_install = tree / "DEBIAN/postinst"
+        post_install.unlink(missing_ok=True)
+        post_install.write_text("#!/bin/sh\nset -eu\n" + postinst, encoding="ascii")
+        post_install.chmod(0o755)
+    if unsatisfied_dependency:
+        control = tree / "DEBIAN/control"
+        text = control.read_text(encoding="utf-8")
+        dependency = "libc6 (>= 99999.0)"
+        text, count = re.subn(r"(?m)^Depends: ([^\n]+)$", rf"Depends: \1, {dependency}", text, count=1)
+        control.write_text(text if count else f"Depends: {dependency}\n{text}", encoding="utf-8")
     checked("/usr/bin/dpkg-deb", "--root-owner-group", "--build", tree, fault)
     return fault
 
@@ -253,12 +261,13 @@ def qualify(args, root: Path) -> dict:
     candidate = validate_deb(args.candidate_deb, args.candidate_sha256)
     if tuple(map(int, candidate.split("."))) <= tuple(map(int, previous.split("."))):
         raise ValueError("The candidate installer must be newer than the previous installer")
-    broken = package_with_postinst(args.candidate_deb, root / "failure", "exit 42\n")
+    broken = package_fixture(args.candidate_deb, root / "failure", postinst="exit 42\n")
+    blocked = package_fixture(args.candidate_deb, root / "dependency-blocked", unsatisfied_dependency=True)
     entered = root / "postinst-entered"
     resume = root / "postinst-resume"
-    suspended = package_with_postinst(
+    suspended = package_fixture(
         args.candidate_deb, root / "interruption",
-        pause_script(entered, resume),
+        postinst=pause_script(entered, resume),
     )
     checked("/usr/bin/dpkg", "--install", args.previous_deb)
     launcher = Path("/usr/bin/row")
@@ -296,7 +305,8 @@ def qualify(args, root: Path) -> dict:
         env["SSL_CERT_FILE"] = str(certificate)
         for name, path, version in (("previous", args.previous_deb, previous),
                                     ("candidate", args.candidate_deb, candidate), ("failing", broken, candidate),
-                                    ("interrupted", suspended, candidate)):
+                                    ("interrupted", suspended, candidate),
+                                    ("dependency-blocked", blocked, candidate)):
             policy, stage = stage_policy(root, name, path, version, previous, origin=origin,
                                          now=now, signer=signer, payloads=payloads)
             stages[name] = (policy, stage)
@@ -329,6 +339,24 @@ def qualify(args, root: Path) -> dict:
                 raise RuntimeError("Automatic update rollback did not preserve the original launcher and workspace")
 
     env.pop("SSL_CERT_FILE")
+    blocked_policy, blocked_stage = stages["dependency-blocked"]
+    blocked_tx = root / "dependency-blocked-transaction"
+    blocked_tx.mkdir(mode=0o700)
+    db = Path("/var/lib/dpkg/status")
+    previous_db = sha256(db)
+    blocked_args = apply_arguments(blocked_policy, blocked_stage, previous_policy, previous_stage, blocked_tx)
+    refused = update("dependency-blocked-apply", "apply", *blocked_args, phase="refused", code=1)
+    blocked_sha = sha256(blocked)
+    if (refused.get("refusal") != "debian-upgrade-plan-refused"
+            or (blocked_tx / "managed-update.json").exists()
+            or sha256(blocked_tx / "candidate.deb") != blocked_sha
+            or sha256(blocked_tx / "rollback.deb") != args.previous_sha256
+            or sha256(db) != previous_db or sha256(launcher) != previous_launcher or sha256(sentinel) != original):
+        raise RuntimeError("Dependency refusal changed the previous installation or transaction")
+    receipts["dependency-blocked-apply"].update(
+        candidate_sha256=blocked_sha, previous_sha256=args.previous_sha256,
+        previous_installation_unchanged=True, journal_created=False,
+    )
     bundled_servers = False
     for name, expected_candidate in packages.items():
         policy, stage = stages[name]

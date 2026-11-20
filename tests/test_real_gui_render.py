@@ -4211,6 +4211,7 @@ def test_real_gui_render_prepares_mobaxterm_connected_reference() -> None:
 
 def test_gui_profile_tab_label_helper_is_product_specific() -> None:
     source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    product_workspace_source = Path("src/remote_ops_workspace/gui_product_workspace.py").read_text(encoding="utf-8")
     terminal_panel_source = Path("src/remote_ops_workspace/gui_connected_terminal.py").read_text(encoding="utf-8")
     session_tabs_source = Path("src/remote_ops_workspace/gui_session_tabs.py").read_text(encoding="utf-8")
     lifecycle_source = Path("src/remote_ops_workspace/gui_terminal_lifecycle.py").read_text(encoding="utf-8")
@@ -4232,7 +4233,7 @@ def test_gui_profile_tab_label_helper_is_product_specific() -> None:
     assert "mobaSshBannerFooter" in terminal_panel_source
     assert "mobaBannerWidth" in terminal_panel_source
     assert "def profile_tab_status" in lifecycle_source
-    assert "build_product_workspace_surface_evidence" in source
+    assert "build_product_workspace_surface_evidence" in product_workspace_source
     assert "mobaRailRole" in source
     assert "MobaRailLabel" in source
     assert "show_moba_sftp_rail" in source

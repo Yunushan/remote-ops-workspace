@@ -88,8 +88,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui.py",
-      "sha256": "91f75827ae28abe1833f5b7befe6fc5100bb5496313373944b666956f3811db1",
-      "size": 137676
+      "sha256": "6901bfb97cf762510cba71e0c494fed30bf1ec16a5aed787aa0156356752a089",
+      "size": 109000
     },
     {
       "path": "src/remote_ops_workspace/gui_connected.py",
@@ -190,6 +190,11 @@
       "path": "src/remote_ops_workspace/gui_processes.py",
       "sha256": "5204fbf6ef4c88863b69a149cd596c4df935fe4dc041c6c4200ec20266b50adc",
       "size": 3915
+    },
+    {
+      "path": "src/remote_ops_workspace/gui_product_workspace.py",
+      "sha256": "74e9d5ab37fe2c9e817a3f3df0dbbd17c563e7d5d60545d727a7a5ffcb7a60fd",
+      "size": 29855
     },
     {
       "path": "src/remote_ops_workspace/gui_profile_actions.py",

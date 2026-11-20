@@ -41,6 +41,7 @@ class TestRequiredGuiPyzModules(_gui_pyz_unittest.TestCase):
                 "remote_ops_workspace.gui_preset_remmina",
                 "remote_ops_workspace.gui_preset_securecrt",
                 "remote_ops_workspace.gui_preset_termius",
+                "remote_ops_workspace.gui_product_workspace",
                 "remote_ops_workspace.gui_reference_tabs",
                 "remote_ops_workspace.gui_values",
                 "remote_ops_workspace.terminal_output",

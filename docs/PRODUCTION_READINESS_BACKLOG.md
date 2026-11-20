@@ -175,6 +175,8 @@ Rules:
   `gui_reference_tabs.py` composes the live connected documents for the
   SecureCRT, Termius, Remmina, and mRemoteNG presets and records their tab,
   status, terminal, and session-action state for the render checks.
+  `gui_product_workspace.py` builds the shared workspace panels, workflow
+  cards, reference state, and terminal drawer controls for those presets.
   `assets/workspace-styles.json` supplies the colors, corner radii and
   padding for all six presets in the shared `workspace.qss` template.
   The five product presets each have a `gui_preset_*.py` module for

@@ -2046,15 +2046,15 @@ def test_gui_parity_tracks_product_specific_workspace_surfaces() -> None:
 
 
 def test_live_and_static_renderers_share_workspace_surface_copy() -> None:
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    product_workspace_source = Path("src/remote_ops_workspace/gui_product_workspace.py").read_text(encoding="utf-8")
     home_source = Path("src/remote_ops_workspace/gui_home.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
 
     assert "GUI_DESIGN_WORKSPACE_SURFACES" in design_source
     assert "gui_design_workspace_surface" in home_source
-    assert "productWorkspaceSurface" in gui_source
-    assert "build_product_workspace_surface_evidence" in gui_source
+    assert "productWorkspaceSurface" in product_workspace_source
+    assert "build_product_workspace_surface_evidence" in product_workspace_source
     assert "draw_securecrt_workspace" in renderer_source
     assert "draw_termius_workspace" in renderer_source
     assert "draw_remmina_workspace" in renderer_source
@@ -2066,6 +2066,7 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     criteria = checker.load_json(checker.CRITERIA_PATH)
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    product_workspace_source = Path("src/remote_ops_workspace/gui_product_workspace.py").read_text(encoding="utf-8")
     mremoteng_source = Path("src/remote_ops_workspace/gui_mremoteng.py").read_text(encoding="utf-8")
     remmina_source = Path("src/remote_ops_workspace/gui_remmina.py").read_text(encoding="utf-8")
     toolbar_source = Path("src/remote_ops_workspace/gui_toolbars.py").read_text(encoding="utf-8")
@@ -2220,7 +2221,7 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "gui_design_mremoteng_document_filter_route" in mremoteng_design_source
     assert "gui_design_mremoteng_inheritance_route" in mremoteng_design_source
     assert "mRemoteNgTopToolbarIconKey" in toolbar_source
-    assert "build_mremoteng_document_controls_evidence" in gui_source
+    assert "build_mremoteng_document_controls_evidence" in product_workspace_source
     assert "mRemoteNgDocumentControlKey" in mremoteng_source
     assert "mRemoteNgDocumentRenderSource" in mremoteng_source
     assert "mRemoteNgConnectionRouteKey" in mremoteng_source
@@ -2229,8 +2230,8 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "handle_mremoteng_document_reconnect" in mremoteng_source
     assert "route.live_triggered_property" in mremoteng_source
     assert "mRemoteNgDocumentFilterRouteKey" in mremoteng_source
-    assert "mRemoteNgInheritanceRouteKey" in gui_source
-    assert "mRemoteNgInheritanceRouteInheritedValue" in gui_source
+    assert "mRemoteNgInheritanceRouteKey" in product_workspace_source
+    assert "mRemoteNgInheritanceRouteInheritedValue" in product_workspace_source
     assert "MREMOTENG_FILTER_ROUTE_KEY_ROLE" in tree_source
     assert "mremoteng_document_control_icon" in mremoteng_source
     assert "build_mremoteng_property_grid_evidence" in gui_source
@@ -2257,7 +2258,7 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "live_button_height" in remmina_design_source
     assert "static_row_start_y" in remmina_design_source
     assert "gui_design_remmina_viewer_controls" in remmina_design_source
-    assert "build_remmina_viewer_controls_evidence" in gui_source
+    assert "build_remmina_viewer_controls_evidence" in product_workspace_source
     assert "remmina_profile_filter" in remmina_source
     assert "remminaViewerControlKey" in remmina_source
     assert "remminaViewerControlStaticWidth" in remmina_source
@@ -2402,6 +2403,7 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     criteria = checker.load_json(checker.CRITERIA_PATH)
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    product_workspace_source = Path("src/remote_ops_workspace/gui_product_workspace.py").read_text(encoding="utf-8")
     securecrt_source = Path("src/remote_ops_workspace/gui_securecrt.py").read_text(encoding="utf-8")
     termius_source = Path("src/remote_ops_workspace/gui_termius.py").read_text(encoding="utf-8")
     toolbar_source = Path("src/remote_ops_workspace/gui_toolbars.py").read_text(encoding="utf-8")
@@ -2609,7 +2611,7 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "gui_design_termius_port_forward_route" in termius_design_source
     assert "gui_design_termius_snippet_route" in termius_design_source
     assert "gui_design_termius_files_browser_route" in termius_design_source
-    assert "build_securecrt_command_window_evidence" in gui_source
+    assert "build_securecrt_command_window_evidence" in product_workspace_source
     assert "secureCrtCommandStaticControlY" in securecrt_source
     assert "secureCrtCommandLiveSendMinWidth" in securecrt_source
     assert "secureCrtCommandRouteKey" in securecrt_source
@@ -2623,9 +2625,9 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "secureCrtSessionRouteActiveTab" in securecrt_source
     assert "secureCrtSessionFilterRouteKey" in securecrt_source
     assert "SECURECRT_FILTER_ROUTE_MATCHED_ROLE" in tree_source
-    assert "secureCrtSftpTabRouteKey" in gui_source
+    assert "secureCrtSftpTabRouteKey" in product_workspace_source
     assert "SECURECRT_SFTP_ROUTE_TAB_ROLE" in tree_source
-    assert "secureCrtSftpTabRouteTransferState" in gui_source
+    assert "secureCrtSftpTabRouteTransferState" in product_workspace_source
     assert "secureCrtSftpBrowserRouteKey" in securecrt_source
     assert "secureCrtSftpBrowserPath" in securecrt_source
     assert "secureCrtSftpBrowserQueueState" in securecrt_source
@@ -2642,7 +2644,7 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "secureCrtTopToolbarIconKey" in toolbar_source
     assert "build_termius_hosts_chrome" in gui_source
     assert "termiusHostSearch" in gui_source
-    assert "build_termius_header_chips_evidence" in gui_source
+    assert "build_termius_header_chips_evidence" in product_workspace_source
     assert "termiusHeaderChipKey" in termius_source
     assert "termiusHostIdentityStaticCellStartX" in termius_source
     assert "termiusHostIdentityLiveCellHeight" in termius_source
@@ -2654,12 +2656,12 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "termiusPortForwardRouteKey" in termius_source
     assert "termiusPortForwardRouteIdentityValue" in termius_source
     assert "termiusPortForwardRouteState" in termius_source
-    assert "termiusSnippetRouteKey" in gui_source
-    assert "termiusSnippetRouteCommand" in gui_source
+    assert "termiusSnippetRouteKey" in product_workspace_source
+    assert "termiusSnippetRouteCommand" in product_workspace_source
     assert "termiusSnippetRouteIdentityValue" in termius_source
-    assert "handle_termius_snippet_run" in gui_source
+    assert "handle_termius_snippet_run" in product_workspace_source
     assert "route.live_triggered_property" in termius_source
-    assert "route.action_object" in gui_source
+    assert "route.action_object" in product_workspace_source
     assert "termiusFilesRouteKey" in termius_source
     assert "termiusFilesRoutePath" in termius_source
     assert "termiusFilesRouteQueueState" in termius_source
@@ -2821,7 +2823,7 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
 def test_gui_parity_tracks_live_product_workflow_cards() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    product_workspace_source = Path("src/remote_ops_workspace/gui_product_workspace.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
 
@@ -2836,15 +2838,15 @@ def test_gui_parity_tracks_live_product_workflow_cards() -> None:
         assert requirement_id in requirement_ids
     assert "GUI_DESIGN_WORKFLOW_CARDS" in design_source
     assert "gui_design_workflow_cards" in design_source
-    assert "build_product_workflow_evidence" in gui_source
-    assert "productWorkflowEvidence" in gui_source
+    assert "build_product_workflow_evidence" in product_workspace_source
+    assert "productWorkflowEvidence" in product_workspace_source
     assert "check_live_workflow_cards" in live_checker_source
 
 
 def test_gui_parity_tracks_non_moba_reference_state_contracts() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    product_workspace_source = Path("src/remote_ops_workspace/gui_product_workspace.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -2863,8 +2865,8 @@ def test_gui_parity_tracks_non_moba_reference_state_contracts() -> None:
 
     assert "GUI_DESIGN_REFERENCE_STATES" in design_source
     assert "GuiProductReferenceState" in design_source
-    assert "build_product_reference_state_evidence" in gui_source
-    assert "productReferenceStateItem" in gui_source
+    assert "build_product_reference_state_evidence" in product_workspace_source
+    assert "productReferenceStateItem" in product_workspace_source
     assert "draw_product_reference_state" in renderer_source
     assert "check_live_reference_state" in live_checker_source
 
@@ -2873,7 +2875,7 @@ def test_gui_parity_tracks_non_moba_product_identity_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    product_workspace_source = Path("src/remote_ops_workspace/gui_product_workspace.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -2897,9 +2899,9 @@ def test_gui_parity_tracks_non_moba_product_identity_routes() -> None:
     assert "GuiProductIdentityRoute" in design_source
     assert "gui_design_product_identity_route" in design_source
     assert "tree-tab-reference-status-workspace-identity" in design_source
-    assert "productIdentityRouteKey" in gui_source
-    assert "productIdentityActiveTab" in gui_source
-    assert "productIdentityStatusSegments" in gui_source
+    assert "productIdentityRouteKey" in product_workspace_source
+    assert "productIdentityActiveTab" in product_workspace_source
+    assert "productIdentityStatusSegments" in product_workspace_source
     assert "gui_design_product_identity_route" in renderer_source
     assert "product_identity_route.active_tab_label" in renderer_source
     assert "product_identity_route.status_segments" in renderer_source

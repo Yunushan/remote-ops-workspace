@@ -4063,7 +4063,7 @@
               "GUI_DESIGN_SECURECRT_SFTP_TAB_ROUTE",
               "gui_design_securecrt_sftp_tab_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "secureCrtSftpTabRouteKey",
               "secureCrtSftpTabRouteTransferState"
             ],
@@ -4498,7 +4498,7 @@
               "Session Manager",
               "SFTP tab"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "build_product_workflow_evidence",
               "productWorkflowEvidence",
               "productWorkflowTitle"
@@ -4521,7 +4521,7 @@
               "SSH2 + SFTP",
               "edge-prod (SSH2)"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "build_product_reference_state_evidence",
               "productReferenceStateItem",
               "referenceKey"
@@ -4546,7 +4546,7 @@
               "gui_design_product_identity_route",
               "tree-tab-reference-status-workspace-identity"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "productIdentityRouteKey",
               "productIdentityActiveTab",
               "productIdentityStatusSegments"
@@ -6415,7 +6415,7 @@
               "Port forward",
               "Snippet"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "build_product_workflow_evidence",
               "productWorkflowEvidence",
               "workflowKey"
@@ -6438,7 +6438,7 @@
             "src/remote_ops_workspace/gui_preset_termius.py": [
               "SSH + Vault"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "build_product_reference_state_evidence",
               "productReferenceStateItem",
               "referenceKey"
@@ -6463,7 +6463,7 @@
               "gui_design_product_identity_route",
               "tree-tab-reference-status-workspace-identity"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "productIdentityRouteKey",
               "productIdentityActiveTab",
               "productIdentityStatusSegments"
@@ -8298,7 +8298,7 @@
               "Scaling controls",
               "Clipboard sync"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "build_product_workflow_evidence",
               "productWorkflowEvidence",
               "productWorkflowPrimary"
@@ -8321,7 +8321,7 @@
             "src/remote_ops_workspace/gui_preset_remmina.py": [
               "RDP - win-admin"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "build_product_reference_state_evidence",
               "productReferenceStateItem",
               "referenceKey"
@@ -8346,7 +8346,7 @@
               "gui_design_product_identity_route",
               "tree-tab-reference-status-workspace-identity"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "productIdentityRouteKey",
               "productIdentityActiveTab",
               "productIdentityStatusSegments"
@@ -10088,7 +10088,7 @@
               "GUI_DESIGN_MREMOTENG_INHERITANCE_ROUTE",
               "gui_design_mremoteng_inheritance_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "mRemoteNgInheritanceRouteKey",
               "mRemoteNgInheritanceRouteInheritedValue",
               "mRemoteNgInheritanceRouteState"
@@ -10120,7 +10120,7 @@
             "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "Config inheritance"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "build_product_workflow_evidence",
               "productWorkflowEvidence",
               "productWorkflowSecondary"
@@ -10143,7 +10143,7 @@
             "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "edge-prod [SSH]"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "build_product_reference_state_evidence",
               "productReferenceStateItem",
               "referenceKey"
@@ -10168,7 +10168,7 @@
               "gui_design_product_identity_route",
               "tree-tab-reference-status-workspace-identity"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "productIdentityRouteKey",
               "productIdentityActiveTab",
               "productIdentityStatusSegments"

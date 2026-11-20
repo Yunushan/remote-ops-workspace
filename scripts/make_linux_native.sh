@@ -140,7 +140,6 @@ EOF
 DEB_ROOT="$BUILD_DIR/debroot"
 mkdir -p "$DEB_ROOT"
 cp -a "$PKGROOT/." "$DEB_ROOT/"
-deb_depends=""
 if [[ -n "${ROW_RELEASE_SERVER_BUNDLE:-}" ]]; then
   case "$DEB_ARCH" in
     amd64) server_target="linux-x86_64" ;;
@@ -149,6 +148,8 @@ if [[ -n "${ROW_RELEASE_SERVER_BUNDLE:-}" ]]; then
   esac
   deb_depends="$("$PYTHON_BIN" scripts/moba_debian_server_payload.py \
     --bundle "$ROW_RELEASE_SERVER_BUNDLE" --debian-root "$DEB_ROOT" --target "$server_target")"
+else
+  deb_depends="$("$PYTHON_BIN" scripts/debian_native_dependencies.py "$ROW_BIN")"
 fi
 mkdir -p "$DEB_ROOT/DEBIAN"
 INSTALLED_SIZE="$(du -ks "$DEB_ROOT/usr" | awk '{print $1}')"
@@ -160,10 +161,8 @@ Priority: optional
 Architecture: $DEB_ARCH
 Installed-Size: $INSTALLED_SIZE
 Maintainer: Remote Ops Workspace Contributors <maintainers@example.invalid>
+Depends: $deb_depends
 EOF
-if [[ -n "$deb_depends" ]]; then
-  printf 'Depends: %s\n' "$deb_depends" >> "$DEB_ROOT/DEBIAN/control"
-fi
 cat >> "$DEB_ROOT/DEBIAN/control" <<'EOF'
 Description: Operator-first remote terminal and connection workspace
  Remote Ops Workspace provides a CLI and adapter-first workflows for SSH, RDP,

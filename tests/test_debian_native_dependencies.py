@@ -63,6 +63,25 @@ def test_archive_only_satisfies_dependencies_from_root_level_elf_members(tmp_pat
     )
 
 
+def test_cli_derives_the_plain_deb_field_from_the_launcher_and_archive(monkeypatch, capsys):
+    launcher = Path("row with spaces")
+
+    def inspect_archive(path):
+        assert path == launcher
+        return {"libc.so.6"}, {(2, 38)}
+
+    def inspect_launcher(path):
+        assert path == launcher
+        return {"libz.so.1"}, {(2, 14)}
+
+    monkeypatch.setattr(dependencies, "launcher_archive_requirements", inspect_archive)
+    monkeypatch.setattr(dependencies, "elf_requirements", inspect_launcher)
+
+    dependencies.main([str(launcher)])
+
+    assert capsys.readouterr().out == "libc6 (>= 2.38), zlib1g\n"
+
+
 @pytest.mark.parametrize("value", [
     [], ["libpam0g", "libpam0g"], ["libssl3t64 | libc6"],
     ["libpam0g\nConflicts: libc6"], ["libc6", "libc6 (>= 2.38)"],

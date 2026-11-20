@@ -511,6 +511,11 @@ Before packaging, the builder checks the launcher's ELF class and machine
 against the target. For armhf it also checks the hard-float ABI flag.
 The protected i386 and armhf smoke tests repeat the check on the installed
 DEB and RPM launchers and the launcher extracted from the AppImage.
+The DEB declares the minimum glibc version and shared-library packages required
+by its frozen launcher, including libraries inside the PyInstaller archive.
+DEBs with a reviewed server bundle also declare the bundled daemons'
+dependencies. On a distribution that cannot satisfy those requirements, use
+the source installation with a supported Python interpreter.
 
 Recommended external clients:
 

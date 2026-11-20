@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import subprocess
@@ -118,3 +119,14 @@ def dependency_field(dependencies: object) -> str:
     ):
         raise ValueError("Debian runtime metadata requires a sorted list of unique library dependencies")
     return ", ".join(dependencies)
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Print the Debian Depends field for a frozen CLI.")
+    parser.add_argument("launcher", type=Path)
+    args = parser.parse_args(argv)
+    print(dependency_field(debian_dependencies(args.launcher, ())))
+
+
+if __name__ == "__main__":
+    main()

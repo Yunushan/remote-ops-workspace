@@ -90,6 +90,13 @@ class EvidenceWorkflow:
     prerequisite_jobs: tuple[tuple[str, frozenset[str]], ...] = ()
 
 
+@dataclass(frozen=True)
+class EvidenceAttempt:
+    completed_at: str
+    archive_window: tuple[str, str] | None
+    actor_ids: frozenset[int]
+
+
 EVIDENCE_WORKFLOWS = {
     "mobapt-unix-runtime": EvidenceWorkflow("MobApt", MOBAPT_WORKFLOW, MOBAPT_JOB, "mobapt-offline-evidence"),
     "embedded-x-server": EvidenceWorkflow("X11", X11_WORKFLOW, X11_JOB, "x11-forwarding-evidence"),
@@ -201,7 +208,7 @@ def successful_evidence_job(
 
 def verify_workflow_run(
     repository: str, source: dict[str, Any], *, evidence_workflow: EvidenceWorkflow | None = None,
-) -> tuple[str, tuple[str, str] | None]:
+) -> EvidenceAttempt:
     match = GITHUB_WORKFLOW_RUN_RE.fullmatch(source["workflow_run_url"])
     assert match is not None  # The registry validator checked the URL.
     run_id = int(match.group(2))
@@ -225,6 +232,13 @@ def verify_workflow_run(
         owner = run.get(key)
         if not isinstance(owner, dict) or owner.get("full_name") != repository:
             raise ValueError(f"GitHub workflow attempt {key} differs from the release repository")
+    actor_ids = set()
+    for key in ("actor", "triggering_actor"):
+        actor = run.get(key)
+        account_id = actor.get("id") if isinstance(actor, dict) else None
+        if type(account_id) is not int or account_id < 1:
+            raise ValueError(f"GitHub workflow attempt must identify its {key} account")
+        actor_ids.add(account_id)
     if evidence_workflow is not None and (
         run.get("event") != "workflow_dispatch" or run.get("head_branch") != source["release_tag"]
         or not workflow_path_matches(run.get("path"), evidence_workflow.path, source["release_tag"])
@@ -260,10 +274,10 @@ def verify_workflow_run(
         if not valid_utc_timestamp(started) or started > completed:
             raise ValueError("GitHub qualification job has an invalid start timestamp")
         archive_window = started, completed
-    return max(timestamps), archive_window
+    return EvidenceAttempt(max(timestamps), archive_window, frozenset(actor_ids))
 
 
-def verify_review(repository: str, review: dict[str, Any]) -> set[str]:
+def verify_review(repository: str, review: dict[str, Any]) -> tuple[int, set[str]]:
     url = review["review_url"]
     match = GITHUB_REVIEW_RE.fullmatch(url)
     assert match is not None  # The registry validator checked the URL.
@@ -279,6 +293,7 @@ def verify_review(repository: str, review: dict[str, Any]) -> set[str]:
         timestamp = result.get("created_at")
 
     author = result.get("user")
+    author_id = author.get("id") if isinstance(author, dict) else None
     if (
         type(result.get("id")) is not int
         or result["id"] != identifier
@@ -286,12 +301,14 @@ def verify_review(repository: str, review: dict[str, Any]) -> set[str]:
         or timestamp != review["reviewed_at"]
         or not isinstance(author, dict)
         or author.get("login") != review["reviewer"]
+        or type(author_id) is not int
+        or author_id < 1
     ):
         raise ValueError("GitHub review identity differs from the accepted evidence record")
     body = result.get("body")
     if not isinstance(body, str):
         raise ValueError("GitHub review has no explicit parity acceptance")
-    return set(body.splitlines())
+    return author_id, set(body.splitlines())
 
 
 def verify_article_evidence(record: dict[str, Any], evidence_root: Path) -> None:
@@ -499,8 +516,8 @@ def audit_reviewed_records(
         return errors
 
     digests: dict[str, str] = {}
-    checked_runs: dict[tuple[str, int, EvidenceWorkflow | None], tuple[str, tuple[str, str] | None]] = {}
-    checked_reviews: dict[tuple[str, str, str], set[str]] = {}
+    checked_runs: dict[tuple[str, int, EvidenceWorkflow | None], EvidenceAttempt] = {}
+    checked_reviews: dict[tuple[str, str, str], tuple[int, set[str]]] = {}
     asset_kind = "published wheel" if sealed_assets is None else "sealed candidate wheel"
     asset_scope = "downloaded release asset" if sealed_assets is None else "staged candidate asset"
     for record in records:
@@ -547,12 +564,15 @@ def audit_reviewed_records(
         try:
             if run_key not in checked_runs:
                 checked_runs[run_key] = verify_workflow_run(repository, source, evidence_workflow=evidence_workflow)
-            completed, archive_window = checked_runs[run_key]
-            if review["reviewed_at"] < completed:
+            attempt = checked_runs[run_key]
+            if review["reviewed_at"] < attempt.completed_at:
                 raise ValueError("GitHub review predates completion of the evidence workflow attempt")
             if review_key not in checked_reviews:
                 checked_reviews[review_key] = verify_review(repository, review)
-            if review_acceptance_line(record) not in checked_reviews[review_key]:
+            reviewer_id, acceptance_lines = checked_reviews[review_key]
+            if reviewer_id in attempt.actor_ids:
+                raise ValueError("GitHub reviewer must be independent of the workflow dispatcher and rerun initiator")
+            if review_acceptance_line(record) not in acceptance_lines:
                 raise ValueError("GitHub review does not explicitly accept this exact article evidence")
             verify_article_evidence(record, evidence_root)
             if article == "embedded-server-suite" and record["release_target"].startswith("linux-"):
@@ -561,8 +581,8 @@ def audit_reviewed_records(
                 if package is not None and digests.get(name) == record["artifact_sha256"][name]:
                     verify_packaged_debian_server_evidence(package, evidence_root / article, record["release_target"])
             if evidence_workflow is not None:
-                assert archive_window is not None
-                verify_hosted_evidence(repository, record, evidence_root, evidence_workflow, archive_window)
+                assert attempt.archive_window is not None
+                verify_hosted_evidence(repository, record, evidence_root, evidence_workflow, attempt.archive_window)
         except (OSError, RuntimeError, ValueError) as exc:
             errors.append(f"{article} {exc}")
     if not errors:

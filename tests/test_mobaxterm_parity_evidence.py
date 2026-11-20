@@ -862,6 +862,8 @@ def reviewed_release(tmp_path, monkeypatch):
             "conclusion": "success",
             "repository": {"full_name": repository},
             "head_repository": {"full_name": repository},
+            "actor": {"login": "release-operator", "id": 20},
+            "triggering_actor": {"login": "qualification-operator", "id": 21},
         },
         jobs: {
             "total_count": 2,
@@ -879,7 +881,7 @@ def reviewed_release(tmp_path, monkeypatch):
             "html_url": records[0]["acceptance_review"]["review_url"],
             "submitted_at": "2026-08-23T12:34:56Z",
             "body": "\n".join(release_parity.review_acceptance_line(record) for record in records),
-            "user": {"login": "release-reviewer"},
+            "user": {"login": "release-reviewer", "id": 22},
         },
     }
     responses[x11_run] = {**responses[run], "id": 1235, "path": release_parity.X11_WORKFLOW}
@@ -1517,6 +1519,39 @@ def test_certification_checks_live_attempt_and_review(
     errors = release_parity.audit_release(**reviewed_release.args)
 
     assert any(expected_error in error for error in errors)
+
+
+@pytest.mark.parametrize("actor_field", ["actor", "triggering_actor"])
+def test_certification_requires_a_reviewer_independent_of_each_evidence_attempt(
+    reviewed_release, actor_field,
+) -> None:
+    run = reviewed_release.responses[reviewed_release.run]
+    reviewer = reviewed_release.responses[reviewed_release.review]["user"]
+    run[actor_field] = {"login": "prior-reviewer-login", "id": reviewer["id"]}
+
+    errors = release_parity.audit_release(**reviewed_release.args)
+
+    assert errors == [
+        "mobapt-unix-runtime GitHub reviewer must be independent of the workflow dispatcher and rerun initiator"
+    ]
+    assert reviewed_release.delivery_calls == []
+
+
+@pytest.mark.parametrize(("response", "field", "value", "expected"), [
+    ("run", "actor", None, "must identify its actor account"),
+    ("run", "triggering_actor", {"id": True}, "must identify its triggering_actor account"),
+    ("review", "user", {"login": "release-reviewer"}, "review identity differs"),
+])
+def test_certification_requires_account_ids_to_establish_independent_review(
+    reviewed_release, response, field, value, expected,
+) -> None:
+    reviewed_release.responses[getattr(reviewed_release, response)][field] = value
+
+    errors = release_parity.audit_release(**reviewed_release.args)
+
+    assert len(errors) == (1 if response == "run" else len(reviewed_release.records))
+    assert all(expected in error for error in errors)
+    assert reviewed_release.delivery_calls == []
 
 
 @pytest.mark.parametrize(("field", "value", "expected"), [

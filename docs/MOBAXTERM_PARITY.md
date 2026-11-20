@@ -57,8 +57,10 @@ successful Actions run URL and attempt to
 Have the reviewer include the resulting `ROW parity acceptance` line verbatim
 on its own line in the GitHub review for those exact bytes. Certification
 compares the review's live URL, author, timestamp and acceptance line with the
-record and checks that the review follows completion of the evidence attempt's
-jobs. A pull-request review must have GitHub's `APPROVED` state.
+record. The reviewer must use a GitHub account distinct from both the original
+workflow dispatcher and the account that started the reviewed attempt. The
+review must follow completion of the attempt's jobs. A pull-request review
+must have GitHub's `APPROVED` state.
 
 ### Preflight reviewed evidence against the sealed inventory
 

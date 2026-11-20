@@ -5,6 +5,7 @@ from urllib.error import HTTPError
 
 import pytest
 
+from scripts import check_ci_workflow
 from scripts import check_python315_ci_evidence as evidence
 
 SHA = "a" * 40
@@ -164,6 +165,41 @@ def test_native_windows_readiness_job_is_required_and_must_succeed() -> None:
         "Native Windows readiness conclusion must be success" in error
         for error in evidence.validate_readiness_job(failed, run=run)
     )
+
+
+def test_release_evidence_requires_the_branch_coverage_job() -> None:
+    jobs = _jobs()
+    name = "Python branch-aware coverage"
+    jobs["jobs"] = [job for job in jobs["jobs"] if job["name"] != name]
+    jobs["total_count"] = len(jobs["jobs"])
+    assert evidence.validate_readiness_job(jobs, run=_runs()["workflow_runs"][0]) == [
+        f"expected exactly one {name!r} job in the accepted run, found 0",
+    ]
+
+
+def test_release_evidence_checks_coverage_identity_runner_and_validated_threshold() -> None:
+    jobs = _jobs()
+    name = "Python branch-aware coverage"
+    job = next(job for job in jobs["jobs"] if job["name"] == name)
+    job.update(run_attempt=2, labels=["windows-11-arm"], conclusion="skipped")
+    job["steps"] = [step for step in job["steps"] if step["name"] != "Enforce branch coverage floor"]
+    validation = next(step for step in job["steps"] if step["name"] == "Validate aggregate and branch coverage evidence")
+    validation["conclusion"] = "skipped"
+    assert evidence.validate_readiness_job(jobs, run=_runs()["workflow_runs"][0]) == [
+        f"{name} run_attempt must match the selected CI run",
+        f"{name} conclusion must be success, got 'skipped'",
+        f"{name} must report runner label 'windows-2025-vs2026'",
+        f"{name} must report exactly one 'Enforce branch coverage floor' step",
+        f"{name} step 'Validate aggregate and branch coverage evidence' must complete successfully",
+    ]
+
+
+def test_release_coverage_job_and_steps_match_the_workflow() -> None:
+    workflow = check_ci_workflow.CI_WORKFLOW.read_text(encoding="utf-8")
+    job = check_ci_workflow.workflow_job_block(workflow, "coverage")
+    assert f"    name: {evidence.COVERAGE_JOB_NAME}\n" in job
+    assert f"    runs-on: {evidence.COVERAGE_RUNNER}\n" in job
+    assert all(f"      - name: {step}\n" in job for step in evidence.COVERAGE_STEPS)
 
 
 @pytest.mark.parametrize(("field", "value"), [

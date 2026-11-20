@@ -384,10 +384,12 @@ Windows ConPTY/OpenSSH and GUI evidence job. Live branch protection must require
 both exact contexts. Release preflight separately runs
 `python scripts/check_python315_ci_evidence.py --repository <owner/repo> --branch main --sha <release-source-sha>`
 with read-only GitHub Actions access. The exact push attempt must contain both
-successful aggregate jobs, all six Python 3.15 runtime jobs, and the native
-Windows render and interaction job. The gate checks the runner labels and
-recorded step results for the frozen CLI, runtime evidence, tests, GUI,
-distribution installs, and Windows SSH, ConPTY and tab-switch paint checks.
+successful aggregate jobs, all six Python 3.15 runtime jobs, the native
+Windows render and interaction job, and the Windows branch coverage job.
+The gate checks the runner labels and recorded step results for the frozen
+CLI, runtime evidence, tests, GUI, distribution installs, and Windows SSH,
+ConPTY and tab-switch paint checks. It also verifies execution of the full
+coverage suite and validation of its 100% aggregate and 100% branch thresholds.
 The aggregate production gate additionally runs
 `python scripts/check_repository_governance.py --repository <owner/repo> --branch main --sha <release-source-sha>`;
 that command verifies both the configured branch-protection contexts and the

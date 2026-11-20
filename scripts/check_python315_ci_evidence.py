@@ -36,9 +36,18 @@ PYTHON315_STEPS = (
     "Install and smoke Python 3.15 wheel and source distributions",
 )
 PYTHON315_WINDOWS_STEPS = ("Run Python 3.15 native Windows SSH and ConPTY evidence",)
+COVERAGE_JOB_NAME = "Python branch-aware coverage"
+COVERAGE_RUNNER = "windows-2025-vs2026"
+COVERAGE_STEPS = (
+    "Verify shared terminal ownership across two actual Qt windows",
+    "Verify six actual Qt scroll lifetime cases without skips",
+    "Enforce branch coverage floor",
+    "Validate aggregate and branch coverage evidence",
+)
 REQUIRED_CI_JOBS: dict[str, tuple[str | None, tuple[str, ...]]] = {
     "Python 3.15 readiness": (None, ("Require Python 3.15 matrices to succeed",)),
     "Native Windows readiness": (None, ("Require native Windows verification to succeed",)),
+    COVERAGE_JOB_NAME: (COVERAGE_RUNNER, COVERAGE_STEPS),
     "Native Windows PyQt6 render and interactions": (
         "windows-2025-vs2026",
         (
@@ -71,7 +80,7 @@ WAITABLE_RUN_STATUSES = frozenset({"in_progress", "pending", "queued", "requeste
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Require successful Python 3.15 and native Windows CI evidence "
+            "Require successful Python 3.15, native Windows, and branch coverage CI evidence "
             "for an exact commit."
         )
     )
@@ -226,7 +235,7 @@ def wait_for_successful_exact_push_run(
             )
         delay = min(poll_interval_seconds, remaining)
         print(
-            "Python 3.15 and native Windows CI evidence pending; "
+            "Release CI evidence pending; "
             f"retrying in {delay:g} seconds ({'; '.join(errors)})",
             flush=True,
         )
@@ -496,10 +505,10 @@ def main(argv: list[str] | None = None) -> int:
         if job_errors:
             raise RuntimeError("; ".join(job_errors))
     except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
-        print(f"Python 3.15 and native Windows CI evidence: {exc}", file=sys.stderr)
+        print(f"Release CI evidence: {exc}", file=sys.stderr)
         return 1
     print(
-        f"Python 3.15 and native Windows CI evidence passed: {repository}@{branch} "
+        f"Release CI evidence passed: {repository}@{branch} "
         f"{sha} run {run['id']} attempt {run['run_attempt']}"
     )
     return 0

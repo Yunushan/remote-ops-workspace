@@ -242,8 +242,8 @@ def check_python_support(overrides: dict[str, str] | None = None) -> list[str]:
     release_workflow = read(RELEASE_WORKFLOW, overrides)
     release_patterns = {
         "Actions read permission": r"^  actions:\s*read\s*$",
-        "Python 3.15 and native Windows CI evidence step": (
-            r"^      - name: Require successful Python 3\.15 and native Windows "
+        "Python 3.15, native Windows, and branch coverage CI evidence step": (
+            r"^      - name: Require Python 3\.15, native Windows, and branch coverage "
             r"CI evidence for release source\s*$"
         ),
         "exact release-source CI evidence command": (

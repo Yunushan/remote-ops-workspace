@@ -51,6 +51,27 @@ def _good_result():
     }
 
 
+def test_diagnostic_record_retries_transient_windows_rename(candidate_diagnostic, monkeypatch, tmp_path):
+    path = tmp_path / "diagnostic.json"
+    path.write_text('{"stage": "build"}', encoding="utf-8")
+    replace = candidate_diagnostic.os.replace
+    attempts = []
+
+    def transient_replace(staged, destination):
+        attempts.append(Path(destination))
+        if len(attempts) == 1:
+            assert json.loads(path.read_text(encoding="utf-8")) == {"stage": "build"}
+            error = PermissionError("transient Windows rename denial")
+            error.winerror = 5
+            raise error
+        replace(staged, destination)
+
+    monkeypatch.setattr(candidate_diagnostic.os, "replace", transient_replace)
+    candidate_diagnostic.save_record(path, {"stage": "complete"})
+    assert attempts == [path, path]
+    assert json.loads(path.read_text(encoding="utf-8")) == {"stage": "complete"}
+
+
 def test_owned_api_rejects_invalid_timeout_before_native_api_loading(candidate_owned):
     for timeout in (0, -1, 3601, 2**100, True, False, 1.0, "1", None):
         with patch.object(candidate_owned.ctypes, "WinDLL", create=True) as api:

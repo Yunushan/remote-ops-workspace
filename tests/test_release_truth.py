@@ -480,19 +480,23 @@ def test_completed_certification_is_separate_from_in_progress_transaction() -> N
     assert any("exact immutable publication audit" in error for error in checker.check_certification_truth(changed))
 
 
-def test_promotion_attests_and_retains_the_exact_audited_candidate_inventory() -> None:
+@pytest.mark.parametrize(("filename", "label"), [
+    ("release-candidate-inventory.json", "candidate inventory"),
+    ("platform_verified_evidence.json", "protected-platform registry"),
+])
+def test_promotion_attests_and_retains_the_exact_audited_inputs(filename, label) -> None:
     workflow = (ROOT / ".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
     checker = load_script("check_release_truth")
     assert checker.check_promotion_truth(workflow) == []
     path = (
         "release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}"
-        "/bundle/release-candidate-inventory.json"
+        f"/bundle/{filename}"
     )
     for step in ("Attest the audited redistribution approval", "Retain the audited redistribution approval"):
         step_marker = f"      - name: {step}\n"
         before, after = workflow.split(step_marker, 1)
         changed = before + step_marker + after.replace(path, "unverified.json", 1)
-        assert f"{step} must include the audited candidate inventory" in checker.check_promotion_truth(changed)
+        assert f"{step} must include the audited {label}" in checker.check_promotion_truth(changed)
 
 
 @pytest.mark.parametrize(
@@ -501,6 +505,11 @@ def test_promotion_attests_and_retains_the_exact_audited_candidate_inventory() -
         (
             '--completed-promotion-run-attempt "$PROMOTION_RUN_ATTEMPT"',
             '--completed-promotion-run-attempt "$GITHUB_RUN_ATTEMPT"',
+            "must run the exact immutable publication audit unconditionally",
+        ),
+        (
+            '--protected-platform-registry "$RUNNER_TEMP/redistribution-approval/bundle/platform_verified_evidence.json"',
+            '--protected-platform-registry "$RUNNER_TEMP/unreviewed.json"',
             "must run the exact immutable publication audit unconditionally",
         ),
         (

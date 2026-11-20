@@ -341,6 +341,11 @@ with the sealed candidate inventory referenced by the signed redistribution
 approval. It requires the same set of standard files on both sides of that
 comparison.
 
+Promotion also attests and retains the signed approval's protected-platform
+registry. Certification downloads it from that same promotion attempt,
+rechecks its signed digest and exact source commit, and verifies the published
+installers, review bundles, and finalized records against it.
+
 You can check the protected `release` environment while other approvals are
 pending. This command verifies the presence of the Windows and macOS signing
 secret names.
@@ -516,7 +521,8 @@ gh run download "$promotion_run_id" --repo "$release_repository" \
 
 Use the downloaded governance JSON and signature for the aggregate audit.
 The redistribution artifact contains the approval, signature, and the
-audited candidate inventory under `bundle/`. The aggregate also needs
+audited candidate inventory and protected-platform registry under `bundle/`.
+The aggregate also needs
 the matching signed evidence bundle from the pinned evidence commit and
 the original protected-platform Actions ZIPs retained during
 [source evidence capture](../PRODUCTION_READINESS.md#external-prerequisites).

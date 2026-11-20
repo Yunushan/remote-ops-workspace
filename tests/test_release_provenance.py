@@ -990,7 +990,7 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
         approved = tmp_path / "release-evidence.json"
         approved_sig = tmp_path / "release-evidence.sig.json"
 
-        def write_approval(expires_at, candidate=None):
+        def write_approval(expires_at, candidate=None, registry=None):
             approval = {
                 "schema_version": 1,
                 "decision": "approved",
@@ -1007,6 +1007,13 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
                     "file": candidate.name,
                     "size_bytes": candidate.stat().st_size,
                     "sha256": checker.sha256_file(candidate),
+                }
+            if registry is not None:
+                approval["protected_platform_registry"] = {
+                    "reference": "reviewed registry fixture",
+                    "file": registry.name,
+                    "size_bytes": registry.stat().st_size,
+                    "sha256": checker.sha256_file(registry),
                 }
             approved.write_text(json.dumps(approval), encoding="utf-8")
             approved_sig.write_text(json.dumps({
@@ -1075,6 +1082,36 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
         assert checker.main(exact_completed) == 0
         assert checker.main([*current_args, *approval_args[:2]]) == 1
         assert checker.main([*args, *approval_args]) == 1
+        registry = tmp_path / "platform_verified_evidence.json"
+        registry.write_text('{"reviewed_registry_fixture": true}', encoding="utf-8")
+        write_approval("2026-11-01T12:02:30Z", registry=registry)
+        registry_args = ["--protected-platform-registry", str(registry)]
+        assert checker.main(exact_completed) == 1
+        assert "signed protected-platform registry is required" in capsys.readouterr().err
+        assert checker.main([*current_args, *registry_args]) == 1
+        assert "requires the signed redistribution approval" in capsys.readouterr().err
+        with monkeypatch.context() as platform:
+            def verify_registry(path, evidence, assets, **coordinates):
+                assert path == registry and assets == root
+                assert coordinates == {"repository": repository, "tag": tag, "sha": sha}
+                assert evidence["protected_platform_registry"]["sha256"] == checker.sha256_file(registry)
+                return checker.sha256_file(registry)
+
+            def other_registry_attempt(path, **kwargs):
+                if path == registry:
+                    return _attestation(
+                        checker, repository=repository, sha=sha, tag=tag,
+                        digest=checker.sha256_file(path), attempt=2,
+                    )
+                return attestation_api(path, **kwargs)
+
+            platform.setattr(checker, "check_approved_protected_platform_assets", verify_registry)
+            assert checker.main([*exact_completed, *registry_args]) == 0
+            assert checker.main([*current_args, *approval_args, *registry_args]) == 0
+            platform.setattr(checker, "verify_attestation", other_registry_attempt)
+            assert checker.main([*exact_completed, *registry_args]) == 1
+            assert "must share the successful promotion attempt" in capsys.readouterr().err
+        write_approval("2026-11-01T12:02:30Z")
         monkeypatch.setattr(checker, "verify_attestation", mismatched_input_attempt)
         assert checker.main([*current_args, *approval_args]) == 1
         assert "signed redistribution approval must share" in capsys.readouterr().err

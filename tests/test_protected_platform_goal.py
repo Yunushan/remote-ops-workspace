@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import sys
@@ -769,6 +770,46 @@ def test_protected_platform_goal_rejects_non_path_assets_dir_before_release_chec
     assert goal["release_asset_provenance_complete"] is False
     assert goal["release_asset_validation_errors"] == errors
     assert goal["release_assets_dir"] == ""
+
+
+@pytest.mark.parametrize(("change", "error"), [
+    (None, None),
+    ("registry bytes", "does not match the signed redistribution approval"),
+    ("release bytes", "review bundle SHA-256 does not match"),
+    ("source SHA", "exact published release source SHA"),
+])
+def test_certification_checks_the_signed_registry_and_asset_scope(tmp_path, monkeypatch, change, error) -> None:
+    goal_checker = _load_protected_goal_checker()
+    from check_release_provenance import check_approved_protected_platform_assets
+
+    registry = _complete_registry()
+    path = tmp_path / "platform_verified_evidence.json"
+    raw = json.dumps(registry).encode()
+    digest = hashlib.sha256(raw).hexdigest()
+    path.write_bytes(raw + b" " if change == "registry bytes" else raw)
+    approval = {
+        "protected_platform_registry": {
+            "reference": "reviewed fixture registry", "file": path.name, "sha256": digest, "size_bytes": len(raw),
+        }
+    }
+    assets = tmp_path / "release-assets"
+    assets.mkdir()
+    repository, tag = "example/remote-ops-workspace", "v1.0.2"
+    calls = []
+
+    def check_files(root, _matrix, *, tag, repository, evidence_registry, require_platform_goal_targets):
+        calls.append((root, tag, repository))
+        assert evidence_registry == registry and require_platform_goal_targets is True
+        return ["review bundle SHA-256 does not match"] if change == "release bytes" else []
+
+    monkeypatch.setattr(goal_checker, "check_release_assets", check_files)
+    coordinates = {"repository": repository, "tag": tag, "sha": ("b" if change == "source SHA" else "a") * 40}
+    if error:
+        with pytest.raises(ValueError, match=error):
+            check_approved_protected_platform_assets(path, approval, assets, **coordinates)
+    else:
+        assert check_approved_protected_platform_assets(path, approval, assets, **coordinates) == digest
+    assert calls == ([] if change == "registry bytes" else [(assets, tag, repository)])
 
 
 def test_protected_platform_goal_reports_release_scoped_completion() -> None:

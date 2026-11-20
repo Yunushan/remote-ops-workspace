@@ -622,6 +622,7 @@ def check_promotion_truth(workflow: str) -> list[str]:
                 '--redistribution-evidence "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.json"',
                 '--redistribution-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"',
                 '--candidate-inventory "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/release-candidate-inventory.json"',
+                '--protected-platform-registry "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/platform_verified_evidence.json"',
             ),
             ("--help",),
             frozenset({
@@ -629,6 +630,7 @@ def check_promotion_truth(workflow: str) -> list[str]:
                 "--current-transaction-run-id", "--current-transaction-run-attempt",
                 "--governance-attestation", "--governance-signature",
                 "--redistribution-evidence", "--redistribution-signature", "--candidate-inventory",
+                "--protected-platform-registry",
             }),
         ),
         "Verify attestation and download exact candidate artifact IDs": (
@@ -907,14 +909,14 @@ def check_promotion_truth(workflow: str) -> list[str]:
                 allowed_flags=allowed_flags,
             )
         )
-    candidate_proof = (
-        "release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}"
-        "/bundle/release-candidate-inventory.json"
-    )
+    bundle_path = "release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}/bundle"
     for step_name in ("Attest the audited redistribution approval", "Retain the audited redistribution approval"):
         step = workflow_step_block(block, f"name: {step_name}")
-        if candidate_proof not in {line.strip() for line in step.splitlines()}:
+        paths = {line.strip() for line in step.splitlines()}
+        if f"{bundle_path}/release-candidate-inventory.json" not in paths:
             errors.append(f"{step_name} must include the audited candidate inventory")
+        if f"{bundle_path}/platform_verified_evidence.json" not in paths:
+            errors.append(f"{step_name} must include the audited protected-platform registry")
     if "environment: release-compliance-review" not in block:
         errors.append("promotion must use the protected release-compliance-review environment")
     return errors
@@ -1009,7 +1011,8 @@ def check_certification_truth(workflow: str) -> list[str]:
         '--governance-signature "$RUNNER_TEMP/publication-governance/tag-governance-attestation.sig.json" '
         '--redistribution-evidence "$RUNNER_TEMP/redistribution-approval/release-evidence.json" '
         '--redistribution-signature "$RUNNER_TEMP/redistribution-approval/release-evidence.sig.json" '
-        '--candidate-inventory "$RUNNER_TEMP/redistribution-approval/bundle/release-candidate-inventory.json"',
+        '--candidate-inventory "$RUNNER_TEMP/redistribution-approval/bundle/release-candidate-inventory.json" '
+        '--protected-platform-registry "$RUNNER_TEMP/redistribution-approval/bundle/platform_verified_evidence.json"',
     ]
     if (
         executable_step_commands(audit) != expected_audit

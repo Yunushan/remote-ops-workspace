@@ -46,6 +46,7 @@ from check_release_license_compliance import (  # noqa: E402
 )
 from check_release_publish_assets import (  # noqa: E402
     MATRIX_PATH,
+    PLATFORM_GOAL_TARGETS,
     check_native_release_signing_metadata,
     expected_release_assets,
 )
@@ -164,6 +165,8 @@ def main(
             raise ValueError("audited input checks require verified governance")
         if args.candidate_inventory is not None and approval is None:
             raise ValueError("--candidate-inventory requires the signed redistribution approval")
+        if args.protected_platform_registry is not None and approval is None:
+            raise ValueError("--protected-platform-registry requires the signed redistribution approval")
         if audited_policy is not None and (check_published_at is None or not audited_inputs):
             raise ValueError("audited policy requires a delegated compliance audit")
         policy_snapshot = (
@@ -222,6 +225,11 @@ def main(
                 raise ValueError("; ".join(approval_errors))
             if args.candidate_inventory is None and "linux-x86_64" in policy.get("production_targets", ()):
                 raise ValueError("the audited candidate inventory is required for Debian release qualification")
+            if args.protected_platform_registry is None and (
+                "protected_platform_registry" in evidence
+                or any(target in policy.get("production_targets", ()) for target in PLATFORM_GOAL_TARGETS)
+            ):
+                raise ValueError("the signed protected-platform registry is required for publication verification")
         errors = check_release_asset_bytes(
             release,
             local_assets,
@@ -269,6 +277,12 @@ def main(
                 sha=sha, published_files=published_files,
             )
             audited_inputs[args.candidate_inventory] = digest
+        if args.protected_platform_registry is not None:
+            assert approval is not None and audited_inputs is not None and args.assets_dir is not None
+            digest = check_approved_protected_platform_assets(
+                args.protected_platform_registry, approval[1], args.assets_dir, repository=repository, tag=tag, sha=sha,
+            )
+            audited_inputs[args.protected_platform_registry] = digest
         invocations_by_asset: dict[str, set[RunInvocation]] = {}
         for name in sorted(local_assets):
             path = local_assets[name]
@@ -444,20 +458,7 @@ def check_approved_candidate_inventory(
     path: Path, approval: dict[str, Any], *, repository: str, tag: str, sha: str,
     published_files: Mapping[str, tuple[int, str]],
 ) -> str:
-    record = approval.get("candidate_inventory")
-    if not valid_evidence_record(record) or record["size_bytes"] > MAX_JSON_BYTES:
-        raise ValueError("signed redistribution approval has no valid candidate inventory record")
-    candidate, error = secure_regular_file(path.parent, path.name, "audited candidate inventory")
-    if candidate is None:
-        raise ValueError(error)
-    with candidate.open("rb") as stream:
-        raw = stream.read(MAX_JSON_BYTES + 1)
-    digest = hashlib.sha256(raw).hexdigest()
-    if len(raw) != record["size_bytes"] or digest != record["sha256"]:
-        raise ValueError("audited candidate inventory does not match the signed redistribution approval")
-    value = json.loads(raw)
-    if not isinstance(value, dict):
-        raise ValueError("audited candidate inventory must contain an object")
+    digest, value = read_approved_json(path, approval, "candidate_inventory", "candidate inventory")
     deb_name = f"remote-ops-workspace-{tag}-linux-amd64.deb"
     if deb_name not in published_files:
         raise ValueError("published release is missing the qualified Debian amd64 installer")
@@ -465,6 +466,40 @@ def check_approved_candidate_inventory(
         value, repository=repository, release_tag=tag, release_sha=sha, deb_sha256=published_files[deb_name][1],
     )
     check_published_candidate_files(records, published_files)
+    return digest
+
+
+def read_approved_json(path: Path, approval: dict[str, Any], key: str, label: str) -> tuple[str, dict[str, Any]]:
+    record = approval.get(key)
+    if not valid_evidence_record(record) or record["size_bytes"] > MAX_JSON_BYTES:
+        raise ValueError(f"signed redistribution approval has no valid {label} record")
+    approved_path, error = secure_regular_file(path.parent, path.name, f"audited {label}")
+    if approved_path is None:
+        raise ValueError(error)
+    with approved_path.open("rb") as stream:
+        raw = stream.read(MAX_JSON_BYTES + 1)
+    digest = hashlib.sha256(raw).hexdigest()
+    if len(raw) != record["size_bytes"] or digest != record["sha256"]:
+        raise ValueError(f"audited {label} does not match the signed redistribution approval")
+    value = json.loads(raw)
+    if not isinstance(value, dict):
+        raise ValueError(f"audited {label} must contain an object")
+    return digest, value
+
+
+def check_approved_protected_platform_assets(
+    path: Path, approval: dict[str, Any], assets: Path, *, repository: str, tag: str, sha: str,
+) -> str:
+    from check_protected_platform_goal import check_protected_platform_goal
+
+    digest, registry = read_approved_json(path, approval, "protected_platform_registry", "protected-platform registry")
+    errors, report = check_protected_platform_goal(
+        registry=registry, release_tag=tag, require_complete=True, assets_dir=assets, repository=repository,
+    )
+    if errors:
+        raise ValueError("; ".join(dict.fromkeys(errors)))
+    if report.get("release_source_head") != sha:
+        raise ValueError("protected-platform registry must bind the exact published release source SHA")
     return digest
 
 
@@ -527,6 +562,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--redistribution-evidence", type=Path)
     parser.add_argument("--redistribution-signature", type=Path)
     parser.add_argument("--candidate-inventory", type=Path)
+    parser.add_argument("--protected-platform-registry", type=Path)
     return parser.parse_args(argv)
 
 

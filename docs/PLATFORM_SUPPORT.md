@@ -514,8 +514,11 @@ DEB and RPM launchers and the launcher extracted from the AppImage.
 The DEB declares the minimum glibc version and shared-library packages required
 by its frozen launcher, including libraries inside the PyInstaller archive.
 DEBs with a reviewed server bundle also declare the bundled daemons'
-dependencies. On a distribution that cannot satisfy those requirements, use
-the source installation with a supported Python interpreter.
+dependencies. The RPM also declares versioned shared-library requirements from
+inside the archive so the package manager can check them before installation.
+On a distribution that cannot satisfy those requirements, use the source
+installation with a supported Python interpreter.
+[RPM ELF dependency generator](https://rpm.org/docs/6.1.x/man/elfdeps.1)
 
 Recommended external clients:
 

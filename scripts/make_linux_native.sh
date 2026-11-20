@@ -180,6 +180,7 @@ fi
 RPMBUILD="$BUILD_DIR/rpmbuild"
 mkdir -p "$RPMBUILD/BUILD" "$RPMBUILD/BUILDROOT" "$RPMBUILD/RPMS" "$RPMBUILD/SOURCES" "$RPMBUILD/SPECS" "$RPMBUILD/SRPMS"
 SPEC="$RPMBUILD/SPECS/remote-ops-workspace.spec"
+rpm_requires="$("$PYTHON_BIN" -m scripts.rpm_native_dependencies "$ROW_BIN")"
 cat > "$SPEC" <<EOF
 Name: remote-ops-workspace
 Version: $VERSION
@@ -187,6 +188,7 @@ Release: 1%{?dist}
 Summary: Operator-first remote terminal and connection workspace
 License: 0BSD
 BuildArch: $RPM_ARCH
+$rpm_requires
 
 # The onefile executable has already been finalized and inspected by PyInstaller.
 # Preserve its complete bytes, including ELF metadata and the embedded CArchive.

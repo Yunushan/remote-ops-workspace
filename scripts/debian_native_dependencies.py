@@ -6,9 +6,16 @@ import argparse
 import os
 import re
 import subprocess
+import sys
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.linux_frozen_elf import archive_elf_members  # noqa: E402
 
 # Package names shared by the supported Debian and Ubuntu builders.
 LIBRARY_PACKAGES = {
@@ -68,20 +75,12 @@ def elf_requirements(path: Path) -> tuple[set[str], set[tuple[int, ...]]]:
 
 
 def launcher_archive_requirements(launcher: Path) -> tuple[set[str], set[tuple[int, ...]]]:
-    from PyInstaller.archive.readers import CArchiveReader
-
-    archive = CArchiveReader(str(launcher))
     provided = set()
     needed: set[str] = set()
     versions: set[tuple[int, ...]] = set()
     with TemporaryDirectory() as directory:
         member = Path(directory) / "archive-elf"
-        for name, entry in archive.toc.items():
-            if entry[-1] != "b":
-                continue
-            data = archive.extract(name)
-            if not data.startswith(b"\x7fELF"):
-                continue
+        for name, data in archive_elf_members(launcher):
             # The one-file launcher adds the extraction root to its library search path.
             if len(PurePosixPath(name).parts) == 1:
                 provided.add(name)

@@ -25,21 +25,10 @@ from .gui_values import _required_gui_value, _widget_style
 from .gui_values import _safe_tooltip_html as _safe_tooltip_html
 from .launcher import ssh_identity_agent
 from .layouts import Layout, LayoutStore
-from .moba_connected import (
-    MobaConnectedSessionState,
-    build_moba_connected_session_state,
-    moba_connected_profile_label,
-    moba_connected_session_action_route,
-    moba_connected_session_identity_route,
-    moba_connected_session_route,
-    moba_connected_tab_chrome_items,
-    moba_connected_tab_label,
-    moba_connected_window_title,
-)
+from .moba_connected import moba_connected_profile_label
 from .moba_smartcards import (
     update_smartcard_profile_key,
 )
-from .moba_ssh_browser import load_moba_ssh_browser_preferences
 from .models import Profile
 from .process_status import ProcessStatusError
 from .smartcard_keys import PINNED_SMARTCARD_KEY
@@ -153,7 +142,6 @@ def create_main_window(
     from .gui_connected import (
         ConnectedGuiServices,
         ConnectedMainWindow,
-        ConnectedSessionPanel,
         ConnectedSftpDock,
         create_moba_connected_classes,
     )
@@ -177,6 +165,7 @@ def create_main_window(
     from .gui_interaction_states import WindowInteractionStates
     from .gui_layouts import SavedLayoutActions
     from .gui_menus import WindowMenus
+    from .gui_moba_sessions import MobaConnectedSessions
     from .gui_mremoteng import MRemoteNgWorkspace
     from .gui_operator_workflows import OperatorWorkflows
     from .gui_product_workspace import ProductWorkspaceContent
@@ -318,6 +307,7 @@ def create_main_window(
         ProfileActions,
         SavedLayoutActions,
         SessionTabActions,
+        MobaConnectedSessions,
         WorkspaceTabs,
         ReferenceTabs,
         TerminalLifecycle,
@@ -334,6 +324,7 @@ def create_main_window(
         TermiusWorkspace,
     ):
         _connected_session_panel_type = MobaConnectedSessionPanel
+        _connected_sftp_dock_type = MobaSftpDock
         CLOSE_STOP_POLICY = ProcessStopPolicy(terminate_timeout_ms=300, kill_timeout_ms=0)
         CLOSE_FORCE_CLOSE_DELAY_MS = 750
 
@@ -757,68 +748,6 @@ def create_main_window(
                 label.setProperty("productStatusKey", text.lower().replace(" ", "-"))
                 gui_preset_properties.apply_preset_selection_route_properties(label, selection_route)
 
-        def show_moba_connected_dock(self, state: MobaConnectedSessionState) -> None:
-            if not hasattr(self, "moba_left_stack"):
-                return
-            if (
-                self.moba_connected_dock is not None
-                and hasattr(self.moba_connected_dock, "can_reuse_for_state")
-                and self.moba_connected_dock.can_reuse_for_state(state)
-            ):
-                self.moba_left_stack.setCurrentWidget(self.moba_connected_dock)
-                self.set_moba_quick_connect_connected_idle()
-                self.set_moba_rail_active("sftp")
-                title = moba_connected_window_title(state)
-                self.setWindowTitle(title)
-                self.apply_moba_titlebar_chrome(title)
-                self.apply_moba_connected_identity_route_properties(state, self)
-                self.apply_moba_connected_identity_route_properties(state, self.tabs)
-                return
-            if self.moba_connected_dock is not None:
-                if hasattr(self.moba_connected_dock, "shutdown_runtime"):
-                    self.moba_connected_dock.shutdown_runtime()
-                self.moba_left_stack.removeWidget(self.moba_connected_dock)
-                self.moba_connected_dock.setMinimumSize(0, 0)
-                self.clear_deleted_tab_object_names(self.moba_connected_dock)
-                self.moba_connected_dock.deleteLater()
-            self.moba_connected_dock = MobaSftpDock(state)
-            self.moba_left_stack.addWidget(self.moba_connected_dock)
-            self.moba_left_stack.setCurrentWidget(self.moba_connected_dock)
-            self.moba_connected_dock.initialize_background_state()
-            self.set_moba_quick_connect_connected_idle()
-            self.set_moba_rail_active("sftp")
-            title = moba_connected_window_title(state)
-            self.setWindowTitle(title)
-            self.apply_moba_titlebar_chrome(title)
-            self.apply_moba_connected_identity_route_properties(state, self)
-            self.apply_moba_connected_identity_route_properties(state, self.tabs)
-
-        def apply_moba_connected_identity_route_properties(self, state: MobaConnectedSessionState, widget) -> None:
-            route = moba_connected_session_identity_route(state)
-            properties = {
-                "mobaConnectedIdentityRouteKey": route.key,
-                "mobaConnectedIdentityRouteRole": route.route_role,
-                "mobaConnectedIdentityWindowTitle": route.window_title,
-                "mobaConnectedIdentityActiveTabLabel": route.active_tab_label,
-                "mobaConnectedIdentityReferenceTabLabel": route.reference_tab_label,
-                "mobaConnectedIdentityBannerTarget": route.banner_target,
-                "mobaConnectedIdentityWebConsoleLine": route.web_console_line,
-                "mobaConnectedIdentityTerminalPrompt": route.terminal_prompt,
-                "mobaConnectedIdentityTelemetryTarget": route.telemetry_target,
-                "mobaConnectedIdentityTargetEndpoint": route.target_endpoint,
-                "mobaConnectedIdentityRemotePath": route.remote_path,
-                "mobaConnectedIdentityRenderSource": route.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
-
-        def current_moba_connected_dock_is_active(self) -> bool:
-            return (
-                hasattr(self, "moba_left_stack")
-                and self.moba_connected_dock is not None
-                and self.moba_left_stack.currentWidget() is self.moba_connected_dock
-            )
-
         def apply_moba_top_stack_geometry(self) -> None:
             stack = gui_design_moba_top_stack_geometry()
             properties = {
@@ -861,30 +790,6 @@ def create_main_window(
             self.setProperty("mobaTitlebarTitleLeft", chrome.title_left)
             self.setProperty("mobaTitlebarControlKeys", list(chrome.control_keys))
             self.setProperty("mobaTitlebarControlWidth", chrome.control_width)
-
-        def refresh_moba_left_dock_for_current_tab(self) -> None:
-            if not self.current_design_is_moba() or not hasattr(self, "moba_left_stack"):
-                self.show_moba_profile_tree()
-                return
-            widget = self.tabs.currentWidget()
-            state = self.moba_connected_state_in_widget(widget)
-            if isinstance(state, MobaConnectedSessionState):
-                self.show_moba_connected_dock(state)
-            else:
-                self.show_moba_profile_tree()
-
-        @staticmethod
-        def moba_connected_state_in_widget(widget: QWidget | None):
-            if widget is None:
-                return None
-            state = getattr(widget, "moba_connected_state", None)
-            if isinstance(state, MobaConnectedSessionState):
-                return state
-            for child in widget.findChildren(QWidget):
-                state = getattr(child, "moba_connected_state", None)
-                if isinstance(state, MobaConnectedSessionState):
-                    return state
-            return None
 
         def profile_tab_label(self, profile: Profile) -> str:
             design_id = self.current_design_id()
@@ -1257,124 +1162,6 @@ def create_main_window(
             query = text.strip()
             self.search_input.setText(query)
             self.find_log_text()
-
-        def apply_moba_connected_session_action_route_to_tab(
-            self,
-            panel: QWidget,
-            state: MobaConnectedSessionState,
-            tab_title: str,
-            tab_index: int,
-        ) -> None:
-            if not self.current_design_is_moba() or tab_index < 0:
-                return
-            route = moba_connected_session_action_route(state)
-            if tab_title not in {route.active_tab_label, route.reference_tab_label}:
-                return
-            specs = self.tab_context_session_action_specs(tab_index)
-            action_keys, action_labels, enabled_keys, disabled_keys = self.session_action_capture_from_specs(specs)
-            for widget in (panel, self.tabs, self.moba_tab_bar):
-                gui_preset_properties.apply_moba_connected_session_action_route_properties(widget, route)
-                widget.setProperty(route.captured_property, True)
-                widget.setProperty(route.captured_tab_property, tab_title)
-                widget.setProperty(route.captured_action_keys_property, action_keys)
-                widget.setProperty(route.captured_action_labels_property, action_labels)
-                widget.setProperty(route.captured_action_count_property, len(action_keys))
-                widget.setProperty(route.captured_enabled_keys_property, enabled_keys)
-                widget.setProperty(route.captured_disabled_keys_property, disabled_keys)
-
-        def moba_connected_profile_supported(self, profile: Profile) -> bool:
-            return self.current_design_is_moba() and profile.protocol.lower() in {"ssh", "sftp"}
-
-        @staticmethod
-        def moba_connected_remote_path_for_profile(profile: Profile) -> str:
-            for key in ("moba_remote_path", "remote_path"):
-                value = profile.options.get(key)
-                if isinstance(value, str) and value.strip():
-                    return value
-            return profile.path or "/"
-
-        @staticmethod
-        def moba_connected_monitoring_output_for_profile(profile: Profile) -> str:
-            value = profile.options.get("moba_monitoring_output")
-            return value if isinstance(value, str) else ""
-
-        def open_moba_connected_session_tab(
-            self,
-            profile: Profile,
-            plan: TerminalPanePlan,
-            *,
-            remote_path: str = "/",
-            tab_title: str | None = None,
-            tab_status: str | None = None,
-        ) -> ConnectedSessionPanel:
-            try:
-                ssh_browser_preferences = load_moba_ssh_browser_preferences()
-            except (OSError, ValueError):
-                ssh_browser_preferences = None
-            state = build_moba_connected_session_state(
-                profile,
-                remote_path=remote_path,
-                monitoring_output=self.moba_connected_monitoring_output_for_profile(profile),
-                ssh_browser_preferences=ssh_browser_preferences,
-            )
-            panel = MobaConnectedSessionPanel(
-                state,
-                self.new_terminal_pane(plan, profile=profile, autostart=False),
-            )
-            panel.moba_connected_state = state
-            self.remember_terminal_plan(plan, profile=profile)
-            title = tab_title or moba_connected_tab_label(state)
-            index = self.add_workspace_tab(panel, title, role="terminal")
-            active_tab = next(item for item in moba_connected_tab_chrome_items(state) if item.key == "active-session")
-            route = moba_connected_session_route(state)
-            self.tabs.setProperty("mobaConnectedRouteKey", route.key)
-            self.tabs.setProperty("mobaConnectedRouteRole", route.route_role)
-            self.tabs.setProperty("mobaConnectedRouteActiveTabKey", route.active_tab_key)
-            self.tabs.setProperty("mobaConnectedRouteActiveTabLabel", route.active_tab_label)
-            self.tabs.setProperty("mobaConnectedRouteReferenceTabLabel", route.reference_tab_label)
-            self.tabs.setProperty("mobaConnectedRouteActiveTabObject", route.active_tab_object)
-            self.tabs.setProperty("mobaConnectedRouteConnectedPanelObject", route.connected_panel_object)
-            self.tabs.setProperty("mobaConnectedRouteLeftDockObject", route.left_dock_object)
-            self.tabs.setProperty("mobaConnectedRouteSftpBrowserObject", route.sftp_browser_object)
-            self.tabs.setProperty("mobaConnectedRouteSftpPathObject", route.sftp_path_object)
-            self.tabs.setProperty("mobaConnectedRouteSftpTableObject", route.sftp_table_object)
-            self.tabs.setProperty("mobaConnectedRouteSshBannerObject", route.ssh_banner_object)
-            self.tabs.setProperty("mobaConnectedRouteTerminalAreaObject", route.terminal_area_object)
-            self.tabs.setProperty("mobaConnectedRouteTerminalOutputObject", route.terminal_output_object)
-            self.tabs.setProperty("mobaConnectedRouteTelemetryBarObject", route.telemetry_bar_object)
-            self.tabs.setProperty("mobaConnectedRouteTelemetryIdentityCellKey", route.telemetry_identity_cell_key)
-            self.tabs.setProperty(route.target_property, route.target)
-            self.tabs.setProperty(route.remote_path_property, route.remote_path)
-            self.tabs.setProperty("mobaConnectedRouteRenderSource", route.render_source)
-            self.apply_moba_tab_chrome(
-                index,
-                key=active_tab.key,
-                icon_key=active_tab.icon_key,
-                tooltip=active_tab.tooltip,
-                closeable=active_tab.closeable,
-            )
-            self.apply_moba_connected_session_action_route_to_tab(panel, state, title, index)
-            if tab_status:
-                self.set_literal_tab_tooltip(
-                    index,
-                    f"{title}: {tab_status}",
-                    update_base=False,
-                )
-            if self.current_design_is_moba():
-                self.show_moba_connected_dock(state)
-            else:
-                self.refresh_moba_left_dock_for_current_tab()
-            self.update_session_status()
-            self.start_terminal_pane_when_active(panel.terminal_pane, index)
-            QTimer.singleShot(
-                0,
-                lambda panel=panel, index=index: (
-                    panel.terminal_pane.focus_terminal_input()
-                    if self.tabs.currentIndex() == index
-                    else None
-                ),
-            )
-            return panel
 
         def confirm_stop_processes(self, title: str, count: int) -> bool:
             answer = _literal_message_box(

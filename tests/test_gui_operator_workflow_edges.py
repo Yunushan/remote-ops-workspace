@@ -1778,12 +1778,7 @@ def test_remaining_optional_design_surface_branches(
         def initialize_background_state(self) -> None:
             self.initialized = True
 
-    _set_closure_value(
-        monkeypatch,
-        type(window).show_moba_connected_dock,
-        "MobaSftpDock",
-        _Dock,
-    )
+    monkeypatch.setattr(window, "_connected_sftp_dock_type", _Dock)
     window.show_moba_connected_dock(state)
     assert isinstance(window.moba_connected_dock, _Dock)
     assert window.moba_connected_dock.initialized is True

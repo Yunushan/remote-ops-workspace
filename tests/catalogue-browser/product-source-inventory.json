@@ -98,8 +98,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui.py",
-      "sha256": "0ff5edb5c5c0a018cc373ce755697525a9ae7634e6e71f75ca92932ff6125e08",
-      "size": 69053
+      "sha256": "0228c3137c92b83e86de756caee8a5c29d99619ed29df1c757e621f3f60b8d6c",
+      "size": 57665
     },
     {
       "path": "src/remote_ops_workspace/gui_connected.py",
@@ -162,6 +162,11 @@
       "size": 17935
     },
     {
+      "path": "src/remote_ops_workspace/gui_moba_sessions.py",
+      "sha256": "6e8156ce0d56a92f1256baa897d922d7a3c61abbc2b643f076fffe26080ea37b",
+      "size": 13502
+    },
+    {
       "path": "src/remote_ops_workspace/gui_mremoteng.py",
       "sha256": "11ec50aee1cc19c9d647b1d2f8c3115672a1b9bf69dfc633432df9e0ca9fb48c",
       "size": 36450
@@ -213,8 +218,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_profile_actions.py",
-      "sha256": "2a51db7aad2ed9c0c1bdb4aa0a738c9e84ee54b81b72f60e618fb60efec29a90",
-      "size": 16496
+      "sha256": "adb442b6d59e06c1bdea7f6e970cf555812695bda9f1949e113a6e137179d3dd",
+      "size": 16530
     },
     {
       "path": "src/remote_ops_workspace/gui_profile_tree.py",

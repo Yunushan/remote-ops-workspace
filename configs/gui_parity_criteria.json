@@ -1451,7 +1451,7 @@
           "id": "moba.live-dock-switch",
           "description": "Live MobaXterm-style tabs switch the left dock between saved sessions and the active connected-session SFTP/monitoring view.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_moba_sessions.py": [
               "show_moba_connected_dock",
               "refresh_moba_left_dock_for_current_tab",
               "moba_connected_state"
@@ -1481,7 +1481,7 @@
               "draw_moba_connected_tab",
               "draw_moba_tab_icon"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_moba_sessions.py": [
               "moba_connected_tab_chrome_items",
               "apply_moba_tab_chrome"
             ],
@@ -2501,7 +2501,9 @@
               "window title must be connected target label"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "moba_connected_profile_label",
+              "moba_connected_profile_label"
+            ],
+            "src/remote_ops_workspace/gui_moba_sessions.py": [
               "moba_connected_window_title"
             ],
             "src/remote_ops_workspace/gui_connected.py": [
@@ -2527,7 +2529,7 @@
               "connected_route.reference_tab_label",
               "connected_route.telemetry_identity_cell_key"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_moba_sessions.py": [
               "mobaConnectedRouteKey",
               "mobaConnectedRouteActiveTabLabel",
               "mobaConnectedRouteTelemetryBarObject"
@@ -2556,7 +2558,7 @@
               "action_route.expected_action_keys",
               "moba_connected_action_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_moba_sessions.py": [
               "apply_moba_connected_session_action_route_to_tab",
               "route.captured_enabled_keys_property"
             ],
@@ -2616,7 +2618,7 @@
               "identity_route.terminal_prompt",
               "identity_route.telemetry_target"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_moba_sessions.py": [
               "mobaConnectedIdentityRouteKey",
               "mobaConnectedIdentityWindowTitle",
               "mobaConnectedIdentityTelemetryTarget"
@@ -3116,7 +3118,7 @@
               "SFTP rail checked",
               "explicit games support status available"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_moba_sessions.py": [
               "set_moba_rail_active(\"sftp\")"
             ],
             "src/remote_ops_workspace/gui_interaction_states.py": [

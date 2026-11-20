@@ -207,11 +207,11 @@ def test_connected_session_falls_back_when_browser_preferences_are_corrupt(
     connected_workspace,
     monkeypatch,
 ) -> None:
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_moba_sessions
 
     _app, window, _panel, _dock, profile = connected_workspace
     monkeypatch.setattr(
-        gui,
+        gui_moba_sessions,
         "load_moba_ssh_browser_preferences",
         lambda: (_ for _ in ()).throw(ValueError("corrupt browser preferences")),
     )

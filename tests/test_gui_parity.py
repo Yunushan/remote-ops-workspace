@@ -1518,7 +1518,7 @@ def test_mobaxterm_compact_monitoring_dock_uses_shared_metadata() -> None:
 def test_mobaxterm_static_renderer_uses_connected_tab_chrome_metadata() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     state_source = Path("src/remote_ops_workspace/moba_connected.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    sessions_source = Path("src/remote_ops_workspace/gui_moba_sessions.py").read_text(encoding="utf-8")
     tabs_path = "src/remote_ops_workspace/gui_workspace_tabs.py"
     tabs_source = Path(tabs_path).read_text(encoding="utf-8")
     preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
@@ -1579,7 +1579,7 @@ def test_mobaxterm_static_renderer_uses_connected_tab_chrome_metadata() -> None:
     assert "mobaTabCloseRightOffset" in tabs_source
     assert "mobaTabChromeGeometryKeys" in tabs_source
     assert "mobaConnectedSessionActionRouteKey" in preset_properties_source
-    assert "apply_moba_connected_session_action_route_to_tab" in gui_source
+    assert "apply_moba_connected_session_action_route_to_tab" in sessions_source
     assert "build_tab_context_menu" in tabs_source
     assert "apply_session_action_menu_capture" in tabs_source
     assert "session_action_menu_object_name" in tabs_source
@@ -1599,7 +1599,7 @@ def test_mobaxterm_static_renderer_uses_connected_tab_chrome_metadata() -> None:
     )
     assert (
         "route.captured_enabled_keys_property"
-        in action_route_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+        in action_route_requirement["source_tokens"]["src/remote_ops_workspace/gui_moba_sessions.py"]
     )
     assert (
         "apply_session_action_menu_capture"
@@ -1789,7 +1789,7 @@ def test_mobaxterm_bottom_edge_controls_use_shared_metadata() -> None:
 
 def test_mobaxterm_connected_chrome_uses_shared_target_and_telemetry_state() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    sessions_source = Path("src/remote_ops_workspace/gui_moba_sessions.py").read_text(encoding="utf-8")
     connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
     terminal_panel_source = Path("src/remote_ops_workspace/gui_connected_terminal.py").read_text(encoding="utf-8")
     state_source = Path("src/remote_ops_workspace/moba_connected.py").read_text(encoding="utf-8")
@@ -1814,14 +1814,14 @@ def test_mobaxterm_connected_chrome_uses_shared_target_and_telemetry_state() -> 
     assert "identity_route.terminal_prompt" in renderer_source
     assert "identity_route.telemetry_target" in renderer_source
     assert "geometry.label_x" in renderer_source
-    assert "moba_connected_window_title" in gui_source
-    assert "moba_connected_tab_label" in gui_source
-    assert "mobaConnectedRouteKey" in gui_source
-    assert "mobaConnectedRouteActiveTabLabel" in gui_source
-    assert "mobaConnectedRouteTelemetryBarObject" in gui_source
-    assert "mobaConnectedIdentityRouteKey" in gui_source
-    assert "mobaConnectedIdentityWindowTitle" in gui_source
-    assert "mobaConnectedIdentityTelemetryTarget" in gui_source
+    assert "moba_connected_window_title" in sessions_source
+    assert "moba_connected_tab_label" in sessions_source
+    assert "mobaConnectedRouteKey" in sessions_source
+    assert "mobaConnectedRouteActiveTabLabel" in sessions_source
+    assert "mobaConnectedRouteTelemetryBarObject" in sessions_source
+    assert "mobaConnectedIdentityRouteKey" in sessions_source
+    assert "mobaConnectedIdentityWindowTitle" in sessions_source
+    assert "mobaConnectedIdentityTelemetryTarget" in sessions_source
     assert "moba_telemetry_cells" in connected_source
     assert "mobaTelemetryGeometryKeys" in terminal_panel_source
     assert "mobaTelemetryCellStaticX" in terminal_panel_source
@@ -1849,7 +1849,7 @@ def test_mobaxterm_connected_chrome_uses_shared_target_and_telemetry_state() -> 
 
 
 def test_mobaxterm_live_connected_session_uses_left_dock_switch() -> None:
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    sessions_source = Path("src/remote_ops_workspace/gui_moba_sessions.py").read_text(encoding="utf-8")
     terminal_panel_source = Path("src/remote_ops_workspace/gui_connected_terminal.py").read_text(encoding="utf-8")
     connected_panel_init = terminal_panel_source.split("class MobaConnectedSessionPanel", 1)[1].split(
         "def build_terminal_area", 1
@@ -1857,10 +1857,10 @@ def test_mobaxterm_live_connected_session_uses_left_dock_switch() -> None:
 
     assert "QSplitter" not in connected_panel_init
     assert "build_sftp" not in connected_panel_init
-    assert "moba_left_stack" in gui_source
-    assert "show_moba_connected_dock" in gui_source
-    assert "refresh_moba_left_dock_for_current_tab" in gui_source
-    assert 'set_moba_rail_active("sftp")' in gui_source
+    assert "moba_left_stack" in sessions_source
+    assert "show_moba_connected_dock" in sessions_source
+    assert "refresh_moba_left_dock_for_current_tab" in sessions_source
+    assert 'set_moba_rail_active("sftp")' in sessions_source
 
 
 def test_gui_parity_tracks_product_specific_sidebar_identity() -> None:

@@ -4211,6 +4211,7 @@ def test_real_gui_render_prepares_mobaxterm_connected_reference() -> None:
 
 def test_gui_profile_tab_label_helper_is_product_specific() -> None:
     source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    sessions_source = Path("src/remote_ops_workspace/gui_moba_sessions.py").read_text(encoding="utf-8")
     sidebar_source = Path("src/remote_ops_workspace/gui_sidebar.py").read_text(encoding="utf-8")
     product_workspace_source = Path("src/remote_ops_workspace/gui_product_workspace.py").read_text(encoding="utf-8")
     terminal_panel_source = Path("src/remote_ops_workspace/gui_connected_terminal.py").read_text(encoding="utf-8")
@@ -4222,7 +4223,7 @@ def test_gui_profile_tab_label_helper_is_product_specific() -> None:
     assert '"SSH2" if protocol == "SSH" else protocol' in source
     assert 'return f"{protocol} - {profile.name}"' in source
     assert 'return f"{profile.name} [{protocol}]"' in source
-    assert "moba_connected_tab_chrome_items" in source
+    assert "moba_connected_tab_chrome_items" in sessions_source
     assert "mobaTabChromeKey" in workspace_tabs_source
     assert "mobaRightUtilityKey" in terminal_panel_source
     assert "mobaSessionEdgeKey" in terminal_panel_source

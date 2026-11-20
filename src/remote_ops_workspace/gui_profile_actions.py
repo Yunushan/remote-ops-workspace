@@ -54,8 +54,8 @@ class ProfileActions:
         def moba_connected_profile_supported(self, profile: Profile) -> bool: ...
         def moba_connected_remote_path_for_profile(self, profile: Profile) -> str: ...
         def open_moba_connected_session_tab(
-            self, profile: Profile, plan: TerminalPanePlan, *, remote_path: str,
-            tab_title: str, tab_status: str,
+            self, profile: Profile, plan: TerminalPanePlan, *, remote_path: str = "/",
+            tab_title: str | None = None, tab_status: str | None = None,
         ) -> ConnectedSessionPanel: ...
         def open_terminal_tab(
             self, plan: TerminalPanePlan, *, profile: Profile | None = None,

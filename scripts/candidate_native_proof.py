@@ -221,6 +221,7 @@ GUI_PYZ_REQUIRED_MODULES = (
     "remote_ops_workspace.gui_workspace",
     "remote_ops_workspace.gui_connected",
     "remote_ops_workspace.gui_connected_terminal",
+    "remote_ops_workspace.gui_moba_sessions",
     "remote_ops_workspace.gui_sftp_editor",
     "remote_ops_workspace.quick_connect",
 )

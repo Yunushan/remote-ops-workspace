@@ -75,10 +75,14 @@ def completed_receipt() -> dict:
         "previous_reinstalled": review.registration(old), "candidate_installed": review.registration(new),
         "previous_absent_after_retry": True, "stock_products_absent_after_uninstall": True,
         "managed_staging": staging,
-        "managed_preflight": {**observations, "phase": "msi-preflight-passed", "previous_launcher_sha256": "1" * 64},
+        "managed_preflight": {**observations, "phase": "msi-preflight-passed", "previous_launcher_sha256": "1" * 64,
+                              "previous_gui_launcher_sha256": old["gui_launcher_payload_sha256"]},
         "managed_apply": {**observations, "phase": "msi-applied", "installer_exit_code": 0,
-                          "previous_launcher_sha256": "1" * 64, "installed_launcher_sha256": "2" * 64},
-        "managed_retry": {**observations, "phase": "msi-already-applied", "installed_launcher_sha256": "2" * 64},
+                          "previous_launcher_sha256": "1" * 64, "installed_launcher_sha256": "2" * 64,
+                          "previous_gui_launcher_sha256": old["gui_launcher_payload_sha256"],
+                          "installed_gui_launcher_sha256": new["gui_launcher_payload_sha256"]},
+        "managed_retry": {**observations, "phase": "msi-already-applied", "installed_launcher_sha256": "2" * 64,
+                          "installed_gui_launcher_sha256": new["gui_launcher_payload_sha256"]},
         "workspace_recovery": {"encrypted_backup_sha256": "3" * 64, "pre_upgrade_inventory": {"sha256": "4" * 64},
                                "upgraded_inventory": {"sha256": "5" * 64}, "restored_matches_pre_upgrade": True,
                                "upgraded_workspace_unchanged": True, "predecessor_decrypted_restored_vault": True},
@@ -109,6 +113,9 @@ def coordinates(path: Path) -> list[str]:
     (("previous_reinstalled", "package_code"), "different package", "registration differs"),
     (("previous_reinstalled", "gui_launcher_sha256"), "0" * 64, "registration differs"),
     (("managed_retry", "candidate_msi", "gui_launcher_payload_sha256"), "0" * 64, "used different candidate inputs"),
+    (("managed_preflight", "previous_gui_launcher_sha256"), None, "did not observe the GUI launchers"),
+    (("managed_apply", "installed_gui_launcher_sha256"), "0" * 64, "did not observe the GUI launchers"),
+    (("managed_retry", "installed_gui_launcher_sha256"), "0" * 64, "did not observe the GUI launchers"),
     (("workspace_recovery", "predecessor_decrypted_restored_vault"), False, "workspace recovery"),
 ])
 def test_refuses_incomplete_or_mismatched_claims_before_network(
@@ -137,14 +144,19 @@ def test_old_receipt_cannot_claim_automatic_download(completed_receipt, tmp_path
     assert "requires an automatic update receipt" in capsys.readouterr().err
 
 
-def test_legacy_automatic_receipt_keeps_its_original_launcher_contract(completed_receipt):
-    completed_receipt["schema"] = review.AUTOMATIC_UPDATE_SCHEMA
-    for role in ("previous", "candidate"):
-        del completed_receipt[role]["gui_launcher_payload_sha256"]
-        for phase in ("managed_preflight", "managed_apply", "managed_retry"):
-            completed_receipt[phase][f"{role}_msi"].pop("gui_launcher_payload_sha256", None)
-    for field in ("previous_installed", "previous_restored", "previous_reinstalled", "candidate_installed"):
-        del completed_receipt[field]["gui_launcher_sha256"]
+@pytest.mark.parametrize("schema", [review.AUTOMATIC_UPDATE_SCHEMA, review.GUI_PAYLOAD_SCHEMA])
+def test_legacy_automatic_receipt_keeps_its_original_launcher_contract(completed_receipt, schema):
+    completed_receipt["schema"] = schema
+    for phase in ("managed_preflight", "managed_apply", "managed_retry"):
+        completed_receipt[phase].pop("previous_gui_launcher_sha256", None)
+        completed_receipt[phase].pop("installed_gui_launcher_sha256", None)
+    if schema == review.AUTOMATIC_UPDATE_SCHEMA:
+        for role in ("previous", "candidate"):
+            del completed_receipt[role]["gui_launcher_payload_sha256"]
+            for phase in ("managed_preflight", "managed_apply", "managed_retry"):
+                completed_receipt[phase][f"{role}_msi"].pop("gui_launcher_payload_sha256", None)
+        for field in ("previous_installed", "previous_restored", "previous_reinstalled", "candidate_installed"):
+            del completed_receipt[field]["gui_launcher_sha256"]
     assert review.check_receipt(completed_receipt, WORKFLOW_COMMIT, PREVIOUS, CANDIDATE,
                                 require_automatic_update=True) == RUN
 

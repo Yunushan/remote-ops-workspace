@@ -99,6 +99,7 @@ def test_package_identity_checks_the_exact_selected_asset(tmp_path, monkeypatch,
     ("publisher-mismatch", "rollback-trust-identity-refused"),
     ("floor", "rollback-version-below-policy-minimum"),
     ("same-package", "major-upgrade-identity-refused"),
+    ("missing-predecessor-guard", "msi-managed-predecessor-guard-refused"),
     ("extra-related-product", "msi-related-products-refused"),
     ("wrong-registration", "msi-registration-refused"),
     ("changed-launcher", "msi-launcher-bytes-refused"),
@@ -135,7 +136,12 @@ def test_preflight_holds_both_verified_stages_through_installed_registration(
         code = args.previous_version if scenario == "same-package" else version
         payload = b"different" if scenario == "changed-launcher" else b"installed"
         return {"product_code": code, "package_code": code, "version": version, "upgrade_code": "stock-family",
-                "launcher_payload_sha256": hashlib.sha256(payload).hexdigest(), "asset": "candidate.msi"}
+                "launcher_payload_sha256": hashlib.sha256(payload).hexdigest(), "asset": "candidate.msi",
+                "major_upgrade": {
+                    "launch_conditions": [] if scenario == "missing-predecessor-guard" else [EXPECTED_PREDECESSOR_CONDITION],
+                    "secure_properties": [EXPECTED_PREDECESSOR],
+                    "authored_expected_predecessor": False,
+                }}
 
     def related(upgrade_code):
         assert len(held) == 2 and upgrade_code == "stock-family"
@@ -163,6 +169,7 @@ def test_preflight_holds_both_verified_stages_through_installed_registration(
         result = msi.preflight(args, new_policy, tmp_path)
         assert result["phase"] == "msi-preflight-passed" and result["install_permitted"] is False
         assert result["previous_launcher_sha256"] == hashlib.sha256(b"installed").hexdigest()
+        assert result["previous_gui_launcher_sha256"] is None
         assert checks == [(args.previous_version, "installed"), (args.version, "absent")]
     assert held == []
 
@@ -274,7 +281,11 @@ def test_apply_keeps_both_stages_locked_and_rechecks_native_state(tmp_path, monk
         if scenario in {"busy", "reboot", "api-failure"}:
             assert related_calls == 2 and "installed_launcher_sha256" not in result
         if scenario in {"normal", "retry", "rollback"}:
-            assert result["installed_launcher_sha256"] == (old if scenario == "rollback" else new)["launcher_payload_sha256"]
+            expected = old if scenario == "rollback" else new
+            assert result["installed_launcher_sha256"] == expected["launcher_payload_sha256"]
+            assert result["installed_gui_launcher_sha256"] == expected["gui_launcher_payload_sha256"]
+        if "installer_exit_code" in result:
+            assert result["previous_gui_launcher_sha256"] == old["gui_launcher_payload_sha256"]
     assert not held
 
 

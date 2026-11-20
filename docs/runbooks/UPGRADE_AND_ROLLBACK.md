@@ -432,7 +432,8 @@ The verifier checks the package and launcher identities, NTFS stage receipts,
 the initial download and offline retry, rollback, and encrypted-workspace recovery. It
 binds the receipt bytes to the GitHub-hosted attestation and checks the outcome
 of the specific workflow attempt. Current receipts bind the installed console
-and GUI launchers to the verified MSI after installation and during rollback.
+and GUI launchers to the verified MSI during preflight, initial update,
+offline retry, and rollback.
 [GitHub CLI attestation verification](https://cli.github.com/manual/gh_attestation_verify) ·
 [Workflow attempt API](https://docs.github.com/en/rest/actions/workflow-runs#get-a-workflow-run-attempt)
 
@@ -452,7 +453,7 @@ python -I scripts/managed_windows_msi.py preflight --policy $candidatePolicy --s
 
 Preflight reauthenticates both complete staged sets under retained handles that
 deny write and delete access. It checks both stock MSI signatures and
-timestamps, the candidate's rollback sequence, the exact installed predecessor
+timestamps, the candidate's rollback sequence and exact-predecessor guard, the exact installed predecessor
 registration, and the absence of the candidate registration. Windows
 Installer's related-products query must return exactly the predecessor.
 Preflight reads the launcher payloads directly from each MSI's embedded

@@ -133,7 +133,7 @@ def verified_pair(
         yield previous, candidate, new_root / candidate["asset"], details
 
 
-def installed_launcher(native: Installer, installed: dict, absent: dict, expected: Path) -> str:
+def installed_launcher(native: Installer, installed: dict, absent: dict, expected: Path) -> tuple[str, str | None]:
     try:
         require(native.related_products(installed["upgrade_code"]) == (installed["product_code"],),
                 "msi-related-products-refused")
@@ -148,10 +148,10 @@ def installed_launcher(native: Installer, installed: dict, absent: dict, expecte
     except (OSError, ValueError) as exc:
         raise UpdateError("msi-registration-refused") from exc
     try:
-        installed_gui_launcher_sha256(launcher, installed.get("gui_launcher_payload_sha256"))
+        gui_digest = installed_gui_launcher_sha256(launcher, installed.get("gui_launcher_payload_sha256"))
     except (OSError, ValueError) as exc:
         raise UpdateError("msi-gui-launcher-bytes-refused") from exc
-    return digest
+    return digest, gui_digest
 
 
 def stock_launcher() -> Path:
@@ -163,44 +163,51 @@ def stock_launcher() -> Path:
         raise UpdateError("msi-registration-refused") from exc
 
 
-def preflight(args, policy, workspace: Path) -> dict:
-    native = Installer()
-    with verified_pair(args, policy, workspace, native) as (previous, candidate, _, details):
-        digest = installed_launcher(native, previous, candidate, stock_launcher())
-        return {**details, "phase": "msi-preflight-passed", "previous_launcher_sha256": digest}
-
-
-def apply_verified_pair(native: Installer, previous: dict, candidate: dict, path: Path, launcher: Path) -> dict:
-    """Apply already-authenticated MSI bytes while both staged files are held read-only."""
+def require_managed_predecessor_guard(candidate: dict) -> None:
     try:
         validate_managed_upgrade(candidate.get("major_upgrade"))
     except ValueError as exc:
         raise UpdateError("msi-managed-predecessor-guard-refused") from exc
 
-    if native.related_products(previous["upgrade_code"]) == (candidate["product_code"],):
-        digest = installed_launcher(native, candidate, previous, launcher)
-        return {"phase": "msi-already-applied", "installed_launcher_sha256": digest}
 
-    previous_digest = installed_launcher(native, previous, candidate, launcher)
+def preflight(args, policy, workspace: Path) -> dict:
+    native = Installer()
+    with verified_pair(args, policy, workspace, native) as (previous, candidate, _, details):
+        require_managed_predecessor_guard(candidate)
+        digest, gui_digest = installed_launcher(native, previous, candidate, stock_launcher())
+        return {**details, "phase": "msi-preflight-passed", "previous_launcher_sha256": digest,
+                "previous_gui_launcher_sha256": gui_digest}
+
+
+def apply_verified_pair(native: Installer, previous: dict, candidate: dict, path: Path, launcher: Path) -> dict:
+    """Apply already-authenticated MSI bytes while both staged files are held read-only."""
+    require_managed_predecessor_guard(candidate)
+    if native.related_products(previous["upgrade_code"]) == (candidate["product_code"],):
+        digest, gui_digest = installed_launcher(native, candidate, previous, launcher)
+        return {"phase": "msi-already-applied", "installed_launcher_sha256": digest,
+                "installed_gui_launcher_sha256": gui_digest}
+
+    previous_digest, previous_gui_digest = installed_launcher(native, previous, candidate, launcher)
     require(fingerprint(path) == candidate["sha256"], "msi-candidate-bytes-refused")
     try:
         result = native.install_upgrade(path, previous["product_code"])
     except (OSError, ValueError):
         return {"phase": "msi-state-unverified", "refusal": "msi-installer-call-failed"}
 
-    outcome = {"installer_exit_code": result, "previous_launcher_sha256": previous_digest}
+    outcome = {"installer_exit_code": result, "previous_launcher_sha256": previous_digest,
+               "previous_gui_launcher_sha256": previous_gui_digest}
     if result == INSTALL_ALREADY_RUNNING:
         return {**outcome, "phase": "msi-installer-busy"}
     if result in REBOOT_RESULTS:
         return {**outcome, "phase": "msi-reboot-required"}
+    applied = result == 0
+    installed, absent = (candidate, previous) if applied else (previous, candidate)
     try:
-        if result == 0:
-            digest = installed_launcher(native, candidate, previous, launcher)
-            return {**outcome, "phase": "msi-applied", "installed_launcher_sha256": digest}
-        digest = installed_launcher(native, previous, candidate, launcher)
-        return {**outcome, "phase": "msi-previous-preserved", "installed_launcher_sha256": digest}
+        digest, gui_digest = installed_launcher(native, installed, absent, launcher)
     except UpdateError as exc:
         return {**outcome, "phase": "msi-state-unverified", "refusal": str(exc)}
+    return {**outcome, "phase": "msi-applied" if applied else "msi-previous-preserved",
+            "installed_launcher_sha256": digest, "installed_gui_launcher_sha256": gui_digest}
 
 
 def is_elevated_administrator() -> bool:

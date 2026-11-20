@@ -57,7 +57,7 @@ from scripts.release_candidate_source import InventoryPointer, materialize_asset
 REPOSITORY = "Yunushan/remote-ops-workspace"
 WORKFLOW = ".github/workflows/windows-msi-upgrade-qualification.yml"
 SOURCE_REF = "refs/heads/main"
-SCHEMA = "row.signed-windows-msi-upgrade.v6"
+SCHEMA = "row.signed-windows-msi-upgrade.v7"
 RECEIPT = Path("build/native-smoke/windows-x64/signed-msi-upgrade.json")
 ACTION_START = 0x08000000
 FATAL_EXIT = 0x00000000
@@ -308,7 +308,9 @@ def exercise(native: UpgradeInstaller, previous: tuple[Path, dict], candidate: t
     save()
     require(applied["phase"] == "msi-applied"
             and applied["previous_launcher_sha256"] == before["launcher_sha256"]
-            and applied["installed_launcher_sha256"] == new["launcher_payload_sha256"],
+            and applied["previous_gui_launcher_sha256"] == before["gui_launcher_sha256"]
+            and applied["installed_launcher_sha256"] == new["launcher_payload_sha256"]
+            and applied["installed_gui_launcher_sha256"] == new["gui_launcher_payload_sha256"],
             "managed update did not verify the installed candidate")
     report["phase"] = "retry-update-offline"
     save()
@@ -316,7 +318,8 @@ def exercise(native: UpgradeInstaller, previous: tuple[Path, dict], candidate: t
     report["managed_retry"] = repeated
     save()
     require(repeated["phase"] == "msi-already-applied"
-            and repeated["installed_launcher_sha256"] == new["launcher_payload_sha256"],
+            and repeated["installed_launcher_sha256"] == new["launcher_payload_sha256"]
+            and repeated["installed_gui_launcher_sha256"] == new["gui_launcher_payload_sha256"],
             "managed update retry did not recognize the exact installed candidate")
     upgraded = launcher_snapshot(native, filesystem, new, launcher, home)
     inspect_registration(native, old, "absent")
@@ -342,7 +345,8 @@ def exercise(native: UpgradeInstaller, previous: tuple[Path, dict], candidate: t
     report["managed_preflight"] = preflight
     save()
     require(preflight["phase"] == "msi-preflight-passed"
-            and preflight["previous_launcher_sha256"] == before["launcher_sha256"],
+            and preflight["previous_launcher_sha256"] == before["launcher_sha256"]
+            and preflight["previous_gui_launcher_sha256"] == before["gui_launcher_sha256"],
             "managed preflight did not verify the reinstalled predecessor")
     report["phase"] = "verify-restored-workspace"
     save()

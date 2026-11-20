@@ -46,6 +46,8 @@ LAUNCHER = "Program Files/Remote Ops Workspace/bin/row.exe"
 TARGET = "windows-x64"
 MANUALLY_STAGED_SCHEMA = "row.signed-windows-msi-upgrade.v4"
 AUTOMATIC_UPDATE_SCHEMA = "row.signed-windows-msi-upgrade.v5"
+GUI_PAYLOAD_SCHEMA = "row.signed-windows-msi-upgrade.v6"
+AUTOMATIC_UPDATE_SCHEMAS = (AUTOMATIC_UPDATE_SCHEMA, GUI_PAYLOAD_SCHEMA, SCHEMA)
 
 
 @dataclass(frozen=True)
@@ -94,7 +96,7 @@ def package(parent: dict, role: str, ref: PackageReference) -> dict:
 def check_staging(report: dict, previous: dict, candidate: dict) -> dict:
     stage = object_field(report, "managed_staging")
     require(stage.get("feed") == "disposable-loopback-https", "receipt is missing managed HTTPS staging")
-    if report["schema"] in (SCHEMA, AUTOMATIC_UPDATE_SCHEMA):
+    if report["schema"] in AUTOMATIC_UPDATE_SCHEMAS:
         requests = [
             f"/{role}/{name}"
             for role, msi in (("previous", previous), ("candidate", candidate))
@@ -164,16 +166,16 @@ def check_receipt(report: dict, workflow_sha: str, previous_ref: PackageReferenc
     require(versions[0] < versions[1] and previous_ref.source_commit != candidate_ref.source_commit
             and previous_ref.msi_sha256 != candidate_ref.msi_sha256,
             "select two ordered versions from distinct commits with distinct MSI digests")
-    require(report.get("schema") in (SCHEMA, AUTOMATIC_UPDATE_SCHEMA, MANUALLY_STAGED_SCHEMA)
+    require(report.get("schema") in (*AUTOMATIC_UPDATE_SCHEMAS, MANUALLY_STAGED_SCHEMA)
             and (report.get("status"), report.get("phase"), report.get("target"), report.get("source_commit"))
             == ("passed", "complete", TARGET, workflow_sha)
             and report.get("input_read_only_sharing_held") is True,
             "expected a completed signed Windows x64 receipt from the selected workflow commit")
-    require(not require_automatic_update or report["schema"] in (SCHEMA, AUTOMATIC_UPDATE_SCHEMA),
+    require(not require_automatic_update or report["schema"] in AUTOMATIC_UPDATE_SCHEMAS,
             "one-command update verification requires an automatic update receipt")
     previous = package(report, "previous", previous_ref)
     candidate = package(report, "candidate", candidate_ref)
-    if report["schema"] == SCHEMA:
+    if report["schema"] in (GUI_PAYLOAD_SCHEMA, SCHEMA):
         require("gui_launcher_payload_sha256" in previous and has_digest(candidate.get("gui_launcher_payload_sha256")),
                 "receipt is missing the Windows x64 GUI launcher payload binding")
     require(all(previous[key] != candidate[key] for key in ("product_code", "package_code", "launcher_payload_sha256")),
@@ -194,6 +196,14 @@ def check_receipt(report: dict, workflow_sha: str, previous_ref: PackageReferenc
                  apply.get("installed_launcher_sha256")) == ("msi-applied", 0, previous_launcher, candidate_launcher)
             and (retry.get("phase"), retry.get("installed_launcher_sha256")) == ("msi-already-applied", candidate_launcher)
             and "installer_exit_code" not in retry, "managed preflight, apply, or no-op retry was not demonstrated")
+    if report["schema"] == SCHEMA:
+        previous_gui = previous["gui_launcher_payload_sha256"]
+        candidate_gui = candidate["gui_launcher_payload_sha256"]
+        require("previous_gui_launcher_sha256" in preflight and "previous_gui_launcher_sha256" in apply
+                and (preflight["previous_gui_launcher_sha256"], apply["previous_gui_launcher_sha256"],
+                     apply.get("installed_gui_launcher_sha256"), retry.get("installed_gui_launcher_sha256"))
+                == (previous_gui, previous_gui, candidate_gui, candidate_gui),
+                "managed commands did not observe the GUI launchers from the verified MSI payloads")
     check_recovery(report, previous, candidate)
     return RunInvocation(REPOSITORY, run_number(report.get("run_id")), run_number(report.get("run_attempt")))
 

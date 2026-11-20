@@ -242,6 +242,7 @@ def test_sealed_candidate_msi_binds_exact_bytes_and_signature_through_installer(
     ("candidate-still-registered", "candidate still registered"),
     ("modified-candidate", "MSI bytes changed"),
     ("wrong-preflight-launcher", "managed preflight did not verify the reinstalled predecessor"),
+    ("wrong-preflight-gui", "managed preflight did not verify the reinstalled predecessor"),
     ("wrong-restored-workspace", "workspace restore verification failed"),
 ])
 def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, monkeypatch, scenario, error):
@@ -361,7 +362,9 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
         if action == "preflight":
             assert registered == {"previous"}
             digest = "a" * 64 if scenario == "wrong-preflight-launcher" else upgrade.fingerprint(launcher)
-            return {"phase": "msi-preflight-passed", "previous_launcher_sha256": digest}
+            gui_digest = "b" * 64 if scenario == "wrong-preflight-gui" else upgrade.fingerprint(gui)
+            return {"phase": "msi-preflight-passed", "previous_launcher_sha256": digest,
+                    "previous_gui_launcher_sha256": gui_digest}
         assert action == "update"
         assert registered == ({"previous"} if len(update_actions) == 1 else {"candidate"})
         return managed.apply_verified_pair(native, previous[1], candidate[1], candidate[0], launcher)
@@ -392,9 +395,9 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
         with pytest.raises(ValueError, match=error):
             upgrade.exercise(native, previous, candidate, launcher, recovery, report, save,
                              filesystem=storage, update=update)
-        if scenario in ("wrong-preflight-launcher", "wrong-restored-workspace"):
+        if scenario in ("wrong-preflight-launcher", "wrong-preflight-gui", "wrong-restored-workspace"):
             assert operations == ["previous", "refuse", "cancel", "candidate", "uninstall-candidate", "previous"]
-            assert report["phase"] == ("preflight-retained-stages" if scenario == "wrong-preflight-launcher"
+            assert report["phase"] == ("preflight-retained-stages" if scenario.startswith("wrong-preflight-")
                                        else "verify-restored-workspace")
         else:
             assert "candidate" not in operations

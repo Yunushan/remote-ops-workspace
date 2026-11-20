@@ -8,10 +8,8 @@ from . import quick_connect as _quick_connect
 from .doctor import run_doctor
 from .file_transfer import SftpQueueItem
 from .gui_designs import (
-    PRODUCT_GUI_PRESET_IDS,
     GuiDesignPreset,
     get_gui_design_preset,
-    gui_design_interaction_state,
     gui_design_moba_bottom_edge_controls,
     gui_design_moba_connected_dock_frame,
     gui_design_moba_quick_connect_chrome,
@@ -20,11 +18,9 @@ from .gui_designs import (
     gui_design_moba_status_segments,
     gui_design_moba_titlebar_chrome,
     gui_design_moba_top_stack_geometry,
-    gui_design_preset_focus_interaction_route,
     gui_design_preset_reference_tab_route,
     gui_design_preset_selection_route,
     gui_design_status_segments,
-    gui_design_toolbar_actions,
 )
 from .gui_lifecycle import ProcessStopPolicy
 from .gui_values import _required_gui_value, _safe_tooltip_html, _widget_style
@@ -181,6 +177,7 @@ def create_main_window(
         draw_mremoteng_toolbar_icon,
         draw_securecrt_toolbar_icon,
     )
+    from .gui_interaction_states import WindowInteractionStates
     from .gui_layouts import SavedLayoutActions
     from .gui_menus import WindowMenus
     from .gui_mremoteng import MRemoteNgWorkspace
@@ -317,6 +314,7 @@ def create_main_window(
 
     class MainWindow(
         QMainWindow,
+        WindowInteractionStates,
         ProfileTree,
         ProfileActions,
         SavedLayoutActions,
@@ -748,133 +746,6 @@ def create_main_window(
         def standard_icon(self, icon_name: str):
             return getattr(QStyle.StandardPixmap, icon_name, QStyle.StandardPixmap.SP_FileIcon)
 
-        def configure_interaction_states_for_design(self, preset: GuiDesignPreset) -> None:
-            state = gui_design_interaction_state(preset.id)
-            actions = gui_design_toolbar_actions(preset.id)
-            for key, _label, _tooltip in actions:
-                button = self.product_toolbar_button_by_key[key]
-                self.set_interaction_state(button, self.toolbar_interaction_state(key, state))
-
-            for button in getattr(self, "moba_ribbon_buttons", []):
-                key = button.text().strip().lower().replace(" ", "-")
-                self.set_interaction_state(button, self.toolbar_interaction_state(key, state))
-            for button in getattr(self, "moba_rail_buttons", []):
-                key = str(button.property("mobaRailRole") or "")
-                self.set_interaction_state(button, self.toolbar_interaction_state(key, state))
-            for button in [self.moba_x_server_button, self.moba_exit_button]:
-                self.set_interaction_state(button, "normal")
-
-            focus_widgets = self.focus_interaction_widgets()
-            focus_widget_ids: set[int] = set()
-            for key, widget in focus_widgets.items():
-                widget_id = id(widget)
-                if widget_id in focus_widget_ids:
-                    continue
-                focus_widget_ids.add(widget_id)
-                base_tooltip = widget.property("interactionBaseTooltip")
-                if not isinstance(base_tooltip, str):
-                    base_tooltip = widget.toolTip()
-                    widget.setProperty("interactionBaseTooltip", base_tooltip)
-                widget.setToolTip(base_tooltip)
-                self.set_interaction_state(widget, "focused" if key == state.focused_control else "normal")
-                if key == state.focused_control:
-                    widget.setToolTip(_safe_tooltip_html(f"{preset.label}: {state.status_note}"))
-            self.set_interaction_state(
-                self.moba_quick_connect_chrome,
-                "focused" if preset.id == "mobaxterm" and state.focused_control == "quick-connect" else "normal",
-            )
-            self.select_profile_tree_label(state.selected_tree_label)
-            self.apply_interaction_state_tab_status(preset, state)
-            self.statusBar().showMessage(f"{preset.label}: {state.status_note}")
-            focus_interaction_route = (
-                gui_design_preset_focus_interaction_route(preset.id)
-                if preset.id in PRODUCT_GUI_PRESET_IDS
-                else None
-            )
-            self.apply_focus_interaction_route_for_design(focus_interaction_route, preset.id)
-
-        def apply_interaction_state_tab_status(self, preset: GuiDesignPreset, state) -> None:
-            if self.tabs.count() == 0:
-                return
-            index = max(0, self.tabs.currentIndex())
-            label = self.tabs.tabText(index)
-            base_tooltip = self.base_tab_tooltip(index) or label
-            tooltip = (
-                f"{base_tooltip}: {state.active_tab_status}"
-                if state.active_tab_status
-                else base_tooltip
-            )
-            self.set_literal_tab_tooltip(index, tooltip, update_base=False)
-            self.tabs.setProperty("interactionStatePresetId", preset.id)
-            self.tabs.setProperty("interactionStateActiveTabStatus", state.active_tab_status)
-
-        def focus_interaction_widgets(self) -> dict[str, QLineEdit]:
-            def live_line_edit(object_name: str) -> QLineEdit:
-                widget = self.findChild(QLineEdit, object_name)
-                return widget if widget is not None else self.search_input
-
-            return {
-                "quick-connect": self.quick_connect,
-                "search-log": self.search_input,
-                "session-filter": live_line_edit("secureCrtSessionFilter"),
-                "host-search": live_line_edit("termiusHostSearch"),
-                "profile-filter": live_line_edit("remminaProfileFilter"),
-                "tree-filter": live_line_edit("mRemoteNgDocumentFilter"),
-            }
-
-        def selected_profile_tree_label(self) -> str:
-            selected = self.profile_list.currentItem()
-            return selected.text(0) if selected is not None else ""
-
-        def captured_toolbar_interaction_states(self, preset_id: str) -> dict[str, str]:
-            captured: dict[str, str] = {}
-            expected_state = gui_design_interaction_state(preset_id)
-            for button, (key, _label, _tooltip) in zip(
-                self.product_toolbar_buttons,
-                gui_design_toolbar_actions(preset_id),
-                strict=False,
-            ):
-                button_state = str(button.property("interactionState") or "")
-                if button_state in {"active", "checked", "disabled"}:
-                    captured.setdefault(button_state, key)
-            for button in getattr(self, "moba_ribbon_buttons", []):
-                key = str(button.property("mobaIconKey") or "")
-                button_state = str(button.property("interactionState") or "")
-                if key and button_state in {"active", "checked", "disabled"}:
-                    captured[button_state] = key
-            captured.setdefault("active", expected_state.active_toolbar_key)
-            captured.setdefault("checked", expected_state.checked_toolbar_key)
-            captured.setdefault("disabled", expected_state.disabled_toolbar_key)
-            return captured
-
-        def toolbar_interaction_state(self, key: str, state) -> str:
-            if key == state.active_toolbar_key:
-                return "active"
-            if key == state.checked_toolbar_key:
-                return "checked"
-            if key == state.disabled_toolbar_key:
-                return "disabled"
-            return "normal"
-
-        def set_interaction_state(self, widget, state: str) -> None:
-            widget.setProperty("interactionState", state)
-            is_command_button = isinstance(widget, QToolButton) and (
-                bool(widget.property("productToolbarKey"))
-                or widget.objectName() == "mobaRibbonButton"
-                or widget in {self.moba_x_server_button, self.moba_exit_button}
-            )
-            if is_command_button:
-                widget.setEnabled(state != "disabled")
-                widget.setCheckable(state == "checked")
-                widget.setChecked(state == "checked")
-                action = self.toolbar_widget_actions.get(id(widget))
-                if action is not None:
-                    action.setEnabled(state != "disabled")
-            widget_style = _widget_style(widget)
-            widget_style.unpolish(widget)
-            widget_style.polish(widget)
-            widget.update()
-
         def configure_status_bar_for_design(self, preset: GuiDesignPreset) -> None:
             selection_route = gui_design_preset_selection_route(preset.id)
             if preset.id == "mobaxterm":
@@ -1176,40 +1047,6 @@ def create_main_window(
                 widget.setProperty(route.captured_tooltips_property, captured_tooltips)
                 widget.setProperty(route.captured_states_property, captured_states)
                 widget.setProperty(route.captured_count_property, len(captured_keys))
-
-        def apply_focus_interaction_route_for_design(self, route, preset_id: str) -> None:
-            focus_widgets = self.focus_interaction_widgets()
-            candidate_widgets = [self, self.statusBar(), self.profile_list, *focus_widgets.values()]
-            seen: set[int] = set()
-            route_widgets = []
-            for widget in candidate_widgets:
-                widget_id = id(widget)
-                if widget_id in seen:
-                    continue
-                seen.add(widget_id)
-                route_widgets.append(widget)
-                gui_preset_properties.clear_preset_focus_interaction_route_properties(widget)
-            if route is None:
-                return
-            focused_widget = focus_widgets.get(route.focused_control)
-            toolbar_states = self.captured_toolbar_interaction_states(preset_id)
-            captured_focus_state = (
-                str(focused_widget.property(route.focused_state_property) or "")
-                if focused_widget is not None
-                else ""
-            )
-            captured_status_message = self.statusBar().currentMessage()
-            if route.status_note not in captured_status_message:
-                captured_status_message = f"{route.preset_id}: {route.status_note}"
-            captured_selected_tree_label = self.selected_profile_tree_label()
-            for widget in route_widgets:
-                gui_preset_properties.apply_preset_focus_interaction_route_properties(widget, route)
-                widget.setProperty(route.captured_property, True)
-                widget.setProperty(route.captured_focus_property, route.focus_object)
-                widget.setProperty(route.captured_focus_state_property, captured_focus_state)
-                widget.setProperty(route.captured_status_message_property, captured_status_message)
-                widget.setProperty(route.captured_selected_tree_property, captured_selected_tree_label)
-                widget.setProperty(route.captured_toolbar_states_property, toolbar_states)
 
         def update_quick_connect_suggestions(self) -> None:
             chrome = gui_design_moba_quick_connect_suggestion_chrome()

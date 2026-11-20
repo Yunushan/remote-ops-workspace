@@ -168,6 +168,8 @@ Rules:
   and responsive sizing for the supported desktop presets.
   `gui_design_activation.py` applies presets and coordinates the paint guard,
   geometry updates, and terminal input policy during switches.
+  `gui_interaction_states.py` applies preset focus, toolbar state, tree
+  selection, and tab status to live widgets.
   The mRemoteNG, Remmina, SecureCRT, and Termius workspace surfaces and
   control handlers live in dedicated GUI modules. The main window still
   routes each preset to its implementation.

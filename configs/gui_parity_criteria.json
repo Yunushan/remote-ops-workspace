@@ -1040,7 +1040,9 @@
               "\"exit\""
             ],
             "src/remote_ops_workspace/gui.py": [
-              "moba_ribbon_icon",
+              "moba_ribbon_icon"
+            ],
+            "src/remote_ops_workspace/gui_interaction_states.py": [
               "mobaIconKey"
             ],
             "src/remote_ops_workspace/gui_icons.py": [
@@ -1293,7 +1295,7 @@
               "MobaXterm-style saved user sessions",
               "\"mobaxterm\": ("
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_interaction_states.py": [
               "profile_tree_label"
             ],
             "src/remote_ops_workspace/gui_sidebar.py": [
@@ -3021,7 +3023,7 @@
               "gui_design_preset_focus_interaction_route",
               "product-preset-focus-interaction-route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_interaction_states.py": [
               "apply_focus_interaction_route_for_design"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -3115,10 +3117,12 @@
               "explicit games support status available"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "set_moba_rail_active(\"sftp\")"
+            ],
+            "src/remote_ops_workspace/gui_interaction_states.py": [
               "configure_interaction_states_for_design",
               "set_interaction_state",
-              "interactionState",
-              "set_moba_rail_active(\"sftp\")"
+              "interactionState"
             ],
             "scripts/render_gui_design_previews.py": [
               "gui_design_interaction_state",
@@ -4220,7 +4224,7 @@
               "Properties",
               "Tile H"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_interaction_states.py": [
               "gui_design_toolbar_actions"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -5028,7 +5032,7 @@
               "gui_design_preset_focus_interaction_route",
               "product-preset-focus-interaction-route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_interaction_states.py": [
               "apply_focus_interaction_route_for_design"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -5120,7 +5124,7 @@
               "SFTP checked",
               "delete follows selection"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_interaction_states.py": [
               "configure_interaction_states_for_design",
               "toolbar_interaction_state",
               "focused_control"
@@ -6945,7 +6949,7 @@
               "gui_design_preset_focus_interaction_route",
               "product-preset-focus-interaction-route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_interaction_states.py": [
               "apply_focus_interaction_route_for_design"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -7037,7 +7041,7 @@
               "vault checked",
               "remove follows selection"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_interaction_states.py": [
               "configure_interaction_states_for_design",
               "set_interaction_state",
               "focused_control"
@@ -8828,7 +8832,7 @@
               "gui_design_preset_focus_interaction_route",
               "product-preset-focus-interaction-route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_interaction_states.py": [
               "apply_focus_interaction_route_for_design"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -8920,7 +8924,7 @@
               "transfer checked",
               "delete follows selection"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_interaction_states.py": [
               "configure_interaction_states_for_design",
               "interactionState"
             ],
@@ -9677,7 +9681,7 @@
             "src/remote_ops_workspace/gui_designs.py": [
               "nested group item"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_interaction_states.py": [
               "profile_tree_label"
             ],
             "src/remote_ops_workspace/gui_profile_tree.py": [
@@ -10650,7 +10654,7 @@
               "gui_design_preset_focus_interaction_route",
               "product-preset-focus-interaction-route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_interaction_states.py": [
               "apply_focus_interaction_route_for_design"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -10742,7 +10746,7 @@
               "external tool checked",
               "delete follows selection"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_interaction_states.py": [
               "configure_interaction_states_for_design",
               "toolbar_interaction_state"
             ],

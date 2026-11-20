@@ -103,6 +103,8 @@ main window stays a composition layer rather than a monolith:
 - `gui.py` composes the `MainWindow` shell, workspace, and activity log.
 - `gui_design_activation.py` applies desktop presets and coordinates paint,
   geometry, and terminal input policy during preset switches.
+- `gui_interaction_states.py` applies each preset's focus, toolbar, tree
+  selection, and tab status to the live widgets.
 - `gui_home.py` builds the welcome page, routes home actions and search,
   and keeps the page within the scroll area during window resizing.
 - `gui_mremoteng.py`, `gui_remmina.py`, `gui_securecrt.py`, and

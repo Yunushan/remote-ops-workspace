@@ -1028,6 +1028,7 @@ def test_mobaxterm_home_welcome_uses_shared_metadata() -> None:
 
 def test_mobaxterm_live_gui_uses_generated_ribbon_icons() -> None:
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    interaction_source = Path("src/remote_ops_workspace/gui_interaction_states.py").read_text(encoding="utf-8")
     toolbar_source = Path("src/remote_ops_workspace/gui_toolbars.py").read_text(encoding="utf-8")
     icon_source = Path("src/remote_ops_workspace/gui_icons.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
@@ -1039,7 +1040,7 @@ def test_mobaxterm_live_gui_uses_generated_ribbon_icons() -> None:
     assert "gui_design_moba_top_menu_items" in menu_source
     assert "mobaTopMenuKey" in menu_source
     assert "EXPECTED_MOBA_TOP_MENU_KEYS" in live_checker_source
-    assert "mobaIconKey" in gui_source
+    assert "mobaIconKey" in interaction_source
     assert "mobaRibbonStaticX" in toolbar_source
     assert "mobaRibbonIconX" in toolbar_source
     assert "mobaRibbonActiveOutlineWidth" in toolbar_source
@@ -2065,7 +2066,7 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    interaction_source = Path("src/remote_ops_workspace/gui_interaction_states.py").read_text(encoding="utf-8")
     sidebar_source = Path("src/remote_ops_workspace/gui_sidebar.py").read_text(encoding="utf-8")
     product_workspace_source = Path("src/remote_ops_workspace/gui_product_workspace.py").read_text(encoding="utf-8")
     mremoteng_source = Path("src/remote_ops_workspace/gui_mremoteng.py").read_text(encoding="utf-8")
@@ -2391,7 +2392,7 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "mRemoteNG-style document filter route" in docs_source
     assert "mRemoteNG-style inheritance route" in docs_source
     assert "draw_mremoteng_config_grid" in renderer_source
-    assert "mRemoteNgDocumentFilter" in gui_source
+    assert "mRemoteNgDocumentFilter" in interaction_source
     assert "mRemoteNgDocumentFilter" in live_checker_source
     assert "document-filter-focus" in visual_metrics_source
     assert "document-external-tool-checked" in visual_metrics_source
@@ -2403,7 +2404,7 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    interaction_source = Path("src/remote_ops_workspace/gui_interaction_states.py").read_text(encoding="utf-8")
     sidebar_source = Path("src/remote_ops_workspace/gui_sidebar.py").read_text(encoding="utf-8")
     product_workspace_source = Path("src/remote_ops_workspace/gui_product_workspace.py").read_text(encoding="utf-8")
     securecrt_source = Path("src/remote_ops_workspace/gui_securecrt.py").read_text(encoding="utf-8")
@@ -2645,7 +2646,7 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "self.configure_menu_bar_for_design(preset)" in activation_source
     assert "secureCrtTopToolbarIconKey" in toolbar_source
     assert "self.build_termius_hosts_chrome()" in sidebar_source
-    assert "termiusHostSearch" in gui_source
+    assert "termiusHostSearch" in interaction_source
     assert "build_termius_header_chips_evidence" in product_workspace_source
     assert "termiusHeaderChipKey" in termius_source
     assert "termiusHostIdentityStaticCellStartX" in termius_source
@@ -3185,7 +3186,7 @@ def test_gui_parity_tracks_product_focus_interaction_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    interaction_source = Path("src/remote_ops_workspace/gui_interaction_states.py").read_text(encoding="utf-8")
     preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
@@ -3210,7 +3211,7 @@ def test_gui_parity_tracks_product_focus_interaction_routes() -> None:
     assert "gui_design_preset_focus_interaction_route" in design_source
     assert "product-preset-focus-interaction-route" in design_source
     assert "presetFocusInteractionCapturedFocus" in preset_properties_source
-    assert "apply_focus_interaction_route_for_design" in gui_source
+    assert "apply_focus_interaction_route_for_design" in interaction_source
     assert "preset_focus_interaction_route" in renderer_source
     assert "focus_interaction_route.focused_control" in renderer_source
     assert "EXPECTED_PRESET_FOCUS_INTERACTION_ROUTES" in live_checker_source
@@ -3718,15 +3719,15 @@ def test_gui_parity_tracks_product_specific_interaction_states() -> None:
 
 
 def test_live_and_static_renderers_share_interaction_state_copy() -> None:
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    interaction_source = Path("src/remote_ops_workspace/gui_interaction_states.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     visual_checker_source = Path("scripts/check_gui_visual_metrics.py").read_text(encoding="utf-8")
     visual_metrics_source = Path("configs/gui_visual_metrics.json").read_text(encoding="utf-8")
 
     assert "GUI_DESIGN_INTERACTION_STATES" in design_source
-    assert "gui_design_interaction_state" in gui_source
-    assert "configure_interaction_states_for_design" in gui_source
+    assert "gui_design_interaction_state" in interaction_source
+    assert "configure_interaction_states_for_design" in interaction_source
     assert "interaction_button_colors" in renderer_source
     assert "selected_tree_label" in renderer_source
     assert "check_color_anchor" in visual_checker_source

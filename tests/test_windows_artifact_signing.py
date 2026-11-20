@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -18,16 +19,17 @@ def run_signer(tmp_path: Path):
     signer = tmp_path / "sign_windows_artifact.ps1"
     shutil.copyfile(Path("scripts") / signer.name, signer)
     (tmp_path / "find_windows_signtool.ps1").write_text(
-        'function Find-WindowsSignTool { Join-Path $PSScriptRoot "signtool-fixture.ps1" }\n',
+        'function Find-WindowsSignTool { $env:ROW_TEST_SIGNTOOL_EXE }\n',
         encoding="utf-8",
     )
-    (tmp_path / "signtool-fixture.ps1").write_text(
-        "ConvertTo-Json -InputObject @($args) -Compress | "
-        "Add-Content -LiteralPath $env:ROW_TEST_SIGNTOOL_CALLS -Encoding UTF8\n"
-        "if ($args[0] -eq 'sign') { exit ([int]$env:ROW_TEST_SIGN_EXIT) }\n"
-        "exit ([int]$env:ROW_TEST_VERIFY_EXIT)\n",
-        encoding="utf-8",
-    )
+    for operation in ("sign", "verify"):
+        (tmp_path / operation).write_text(
+            "import json, os, sys\n"
+            "with open(os.environ['ROW_TEST_SIGNTOOL_CALLS'], 'a', encoding='utf-8') as log:\n"
+            f"    log.write(json.dumps([{operation!r}, *sys.argv[1:]]) + '\\n')\n"
+            f"raise SystemExit(int(os.environ['ROW_TEST_{operation.upper()}_EXIT']))\n",
+            encoding="utf-8",
+        )
     xp_builder = tmp_path / "make_windows_xp_legacy.ps1"
     shutil.copyfile(Path("scripts") / xp_builder.name, xp_builder)
     xp_driver = tmp_path / "run-xp-signing.ps1"
@@ -52,17 +54,17 @@ def run_signer(tmp_path: Path):
     artifact.touch()
     calls = tmp_path / "signtool-calls.jsonl"
 
-    def run(inputs, *, xp=False, sign_exit=0, verify_exit=0):
+    def run(inputs, *, xp=False, sign_exit=0, verify_exit=0, shell=None):
         env = {key: value for key, value in os.environ.items() if not key.upper().startswith("ROW_WINDOWS_")}
         env.update({f"ROW_WINDOWS_{key}": value for key, value in inputs.items()})
         env.update(
-            ROW_TEST_SIGNTOOL_CALLS=str(calls), ROW_TEST_SIGN_EXIT=str(sign_exit),
+            ROW_TEST_SIGNTOOL_EXE=sys.executable, ROW_TEST_SIGNTOOL_CALLS=str(calls), ROW_TEST_SIGN_EXIT=str(sign_exit),
             ROW_TEST_VERIFY_EXIT=str(verify_exit), RUNNER_TEMP=str(tmp_path),
         )
         result = subprocess.run(
-            [powershell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+            [shell or powershell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
              "-File", str(xp_driver if xp else signer), "-ArtifactPath", str(artifact)],
-            env=env, capture_output=True, text=True, timeout=30, check=False,
+            cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30, check=False,
         )
         commands = [json.loads(line) for line in calls.read_text(encoding="utf-8-sig").splitlines()] if calls.exists() else []
         return result, commands, str(artifact)
@@ -108,6 +110,28 @@ def test_pfx_signing_keeps_the_same_verification(run_signer, tmp_path: Path, xp:
         assert not temporary_certificate.exists()
     else:
         assert sign[8] == inputs["CERTIFICATE_PATH"]
+
+
+@pytest.mark.parametrize("xp", [False, True])
+@pytest.mark.parametrize("shell_name", ["powershell.exe", "pwsh.exe"])
+def test_signing_preserves_exact_pfx_password(run_signer, tmp_path: Path, xp: bool, shell_name: str) -> None:
+    shell = shutil.which(shell_name)
+    if shell is None:
+        pytest.skip(f"{shell_name} is required for this Windows argument passing test")
+    password = r'prefix \\" quoted " tail' + "\\"
+    inputs = {"CERTIFICATE_PASSWORD": password, "TIMESTAMP_URL": TIMESTAMP}
+    if xp:
+        inputs["CERTIFICATE_BASE64"] = "U1lOVEhFVElD"
+    else:
+        inputs["CERTIFICATE_PATH"] = str(tmp_path / "fixture certificate.pfx")
+
+    result, commands, artifact = run_signer(inputs, xp=xp, shell=shell)
+
+    assert result.returncode == 0, result.stderr
+    sign, verify = commands
+    assert sign[9:] == ["/p", password, artifact]
+    assert verify == ["verify", "/pa", "/all", "/tw", artifact]
+    assert password not in result.stdout + result.stderr
 
 
 @pytest.mark.parametrize(("overrides", "error"), [

@@ -7,6 +7,28 @@ param(
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "find_windows_signtool.ps1")
 
+function Invoke-SignTool([string]$Executable, [string[]]$Arguments) {
+  $StartInfo = New-Object System.Diagnostics.ProcessStartInfo
+  $StartInfo.FileName = $Executable
+  $StartInfo.UseShellExecute = $false
+  $StartInfo.CreateNoWindow = $true
+  $StartInfo.WorkingDirectory = $ExecutionContext.SessionState.Path.CurrentFileSystemLocation.ProviderPath
+  # Windows PowerShell 5.1 does not preserve native arguments with embedded quotes.
+  # Double backslashes before each quote or the closing delimiter for Windows argv.
+  $EncodedArguments = foreach ($Argument in $Arguments) {
+    $Escaped = $Argument -replace '(\\*)"', '${1}${1}\"' -replace '(\\+)\z', '${1}${1}'
+    '"' + $Escaped + '"'
+  }
+  $StartInfo.Arguments = $EncodedArguments -join " "
+  $Process = [System.Diagnostics.Process]::Start($StartInfo)
+  try {
+    $Process.WaitForExit()
+    return $Process.ExitCode
+  } finally {
+    $Process.Dispose()
+  }
+}
+
 $Timestamp = $null
 if (![uri]::TryCreate($env:ROW_WINDOWS_TIMESTAMP_URL, [UriKind]::Absolute, [ref]$Timestamp) -or
     $Timestamp.Scheme -notin @("http", "https") -or !$Timestamp.Host -or $Timestamp.UserInfo) {
@@ -41,11 +63,10 @@ if (![string]::IsNullOrWhiteSpace($Thumbprint)) {
 }
 
 $SignTool = Find-WindowsSignTool
-& $SignTool sign /fd SHA256 /tr $Timestamp.AbsoluteUri /td SHA256 @CertificateArgs $ArtifactPath
-if ($LASTEXITCODE -ne 0) {
+$SignArgs = @("sign", "/fd", "SHA256", "/tr", $Timestamp.AbsoluteUri, "/td", "SHA256") + $CertificateArgs + @($ArtifactPath)
+if ((Invoke-SignTool $SignTool $SignArgs) -ne 0) {
   throw "Authenticode signing failed for $ArtifactPath"
 }
-& $SignTool verify /pa /all /tw $ArtifactPath
-if ($LASTEXITCODE -ne 0) {
+if ((Invoke-SignTool $SignTool @("verify", "/pa", "/all", "/tw", $ArtifactPath)) -ne 0) {
   throw "Authenticode signature or timestamp verification failed for $ArtifactPath"
 }

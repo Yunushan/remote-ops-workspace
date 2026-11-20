@@ -247,8 +247,9 @@ Use the following credentials for their respective checks.
   [GitHub release listing permissions](https://docs.github.com/en/rest/releases/releases#list-releases)
 - Give `GITHUB_TOKEN` Environments read access for the signing inventory check,
   or export a separate `ROW_RELEASE_SIGNING_INVENTORY_TOKEN` with that access.
-  The same permission covers the selected Debian bundle variable and the
-  required promotion and platform runner secret names in their own environments.
+  The same permission covers the selected Debian bundle, the Professional
+  variables, and the required promotion and platform runner secret names in
+  their own environments.
   [GitHub environment secret listing permissions](https://docs.github.com/en/rest/actions/secrets#list-environment-secrets)
   [GitHub environment variable read permissions](https://docs.github.com/en/rest/actions/variables#get-an-environment-variable)
 
@@ -260,6 +261,23 @@ require `GITHUB_TOKEN` with Actions read access.
 
 ```bash
 python scripts/check_release_remote_preconditions.py environments \
+  --repository "$release_repository" --tag "$release_tag"
+```
+
+Check the strict parity environments before the signing and review credentials
+are ready. The read-only check uses the Environments read token for variables.
+For private repositories, give `GITHUB_TOKEN` Actions read access for deployment
+metadata.
+It verifies required deployment reviewers for `smartcard-evidence`,
+`transport-evidence`, and `professional-update-review`. For the two native
+capture environments, it checks that only tags are allowed and that the
+selected release is covered by `v*` or an exact tag policy. It checks that the
+documented Professional branding and update variables are set in their
+respective environments. The qualification jobs verify the actual inputs and
+hosted installer bytes after the tag is created.
+
+```bash
+python scripts/check_release_remote_preconditions.py parity \
   --repository "$release_repository" --tag "$release_tag"
 ```
 
@@ -362,8 +380,9 @@ python scripts/check_release_remote_preconditions.py pre-tag \
 
 The command checks production metadata, policy, exact-commit CI and governance,
 immutable release settings, deployment tag rules, required environment secret
-names, runner availability, and the unused tag and release namespace. After it
-passes, cut the tag at the same explicit `release_sha`.
+names, strict parity environment settings, runner availability, and the unused
+tag and release namespace. After it passes, cut the tag at the same explicit
+`release_sha`.
 The artifact-specific approval uses
 the resulting tag, commit, and signed installer bytes. The production
 candidate job repeats the policy check against the tagged source before

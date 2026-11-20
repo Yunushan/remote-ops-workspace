@@ -30,6 +30,93 @@ def test_signing_inventory_matches_the_production_workflow() -> None:
     assert configured == checked == preconditions.RELEASE_SIGNING_SECRETS
 
 
+def test_parity_configuration_matches_the_qualification_workflows() -> None:
+    workflows = preconditions.ROOT / ".github/workflows"
+    for environment, name in zip(preconditions.NATIVE_PARITY_ENVIRONMENTS, (
+        "smartcard-browser-evidence.yml", "transport-terminal-evidence.yml",
+    ), strict=True):
+        workflow = (workflows / name).read_text(encoding="utf-8")
+        assert f"    environment: {environment}\n" in workflow
+    professional = (workflows / "professional-deployment-evidence.yml").read_text(encoding="utf-8")
+    build, review = professional.split("  qualify-review:\n", 1)
+    for environment, job in zip(preconditions.PROFESSIONAL_ENVIRONMENT_VARIABLES, (build, review), strict=True):
+        assert f"    environment: {environment}\n" in job
+        assert set(re.findall(r"\$\{\{ vars\.([A-Z0-9_]+) \}\}", job)) == set(
+            preconditions.PROFESSIONAL_ENVIRONMENT_VARIABLES[environment]
+        )
+
+
+@pytest.mark.parametrize(("change", "error"), [
+    (None, None),
+    ("exact-tag", None),
+    ("no-reviewer-rule", "professional-update-review environment must require deployment reviewers"),
+    ("empty-reviewers", "smartcard-evidence environment must require deployment reviewers"),
+    ("bad-reviewer", "malformed required reviewer metadata for transport-evidence"),
+    ("unrestricted", "transport-evidence environment must use selected deployment branches and tags"),
+    ("branch-policy", "smartcard-evidence environment must allow v1.2.3 through a tag-only deployment policy"),
+    ("different-tag", "smartcard-evidence environment must allow v1.2.3 through a tag-only deployment policy"),
+    ("wrong-variable", "ROW_PROFESSIONAL_BRAND in the release environment must have a nonempty value"),
+    ("blank-variable", "RELEASE_PROFESSIONAL_UPDATE_PUBLIC_KEY in the professional-update-review environment must have a nonempty value"),
+])
+def test_parity_preflight_checks_review_holds_tag_rules_and_professional_variables(monkeypatch, capsys, change, error):
+    monkeypatch.setenv("GITHUB_API_URL", API_ROOT)
+    monkeypatch.setenv("ROW_RELEASE_SIGNING_INVENTORY_TOKEN", "environment-reader")
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    calls = []
+    prefix = f"{REPOSITORY_URL}/environments/"
+
+    def get_json(url, token, *, api_version):
+        assert url.startswith(prefix) and api_version == "2026-03-10"
+        environment, _, resource = url.removeprefix(prefix).partition("/")
+        calls.append((environment, resource))
+        assert token == ("environment-reader" if resource.startswith("variables/") else None)
+        if resource == "deployment-branch-policies?per_page=100&page=1":
+            ref = "v1.2.2" if change == "different-tag" else RELEASE_TAG if change == "exact-tag" else "v*"
+            policies = [{"name": ref, "type": "tag"}]
+            if change == "branch-policy":
+                policies.append({"name": "main", "type": "branch"})
+            return {"total_count": len(policies), "branch_policies": policies}, {}
+        if resource.startswith("variables/"):
+            name = resource.removeprefix("variables/")
+            assert name in preconditions.PROFESSIONAL_ENVIRONMENT_VARIABLES[environment]
+            if change == "wrong-variable" and name == "ROW_PROFESSIONAL_BRAND":
+                name = "OTHER_VAR"
+            value = "fixture-value-not-for-output"
+            if change == "blank-variable" and name == "RELEASE_PROFESSIONAL_UPDATE_PUBLIC_KEY":
+                value = " \t"
+            return {"name": name, "value": value}, {}
+
+        assert resource == ""
+        reviewers = [{"type": "Team", "reviewer": {"id": 11}}, {"type": "User", "reviewer": {"id": 12}}]
+        if change == "empty-reviewers" and environment == "smartcard-evidence":
+            reviewers = []
+        if change == "bad-reviewer" and environment == "transport-evidence":
+            reviewers[0]["reviewer"]["id"] = True
+        rules = [{"type": "required_reviewers", "reviewers": reviewers}]
+        if change == "no-reviewer-rule" and environment == "professional-update-review":
+            rules = [{"type": "wait_timer", "wait_timer": 5}]
+        policy = {"custom_branch_policies": True, "protected_branches": False}
+        if change == "unrestricted" and environment == "transport-evidence":
+            policy = None
+        return {"name": environment, "deployment_branch_policy": policy, "protection_rules": rules}, {}
+
+    monkeypatch.setattr(preconditions, "get_json", get_json)
+    result = preconditions.main(["parity", "--repository", REPOSITORY, "--tag", RELEASE_TAG])
+    output = capsys.readouterr()
+    assert "fixture-value-not-for-output" not in output.out + output.err
+    if error:
+        assert result == 1 and error in output.err and output.out == ""
+    else:
+        assert result == 0 and f"parity passed for {REPOSITORY} and {RELEASE_TAG}" in output.out
+        assert calls == [
+            *((environment, endpoint) for environment in preconditions.NATIVE_PARITY_ENVIRONMENTS
+              for endpoint in ("", "deployment-branch-policies?per_page=100&page=1")),
+            (preconditions.PROFESSIONAL_REVIEW_ENVIRONMENT, ""),
+            *((environment, f"variables/{name}")
+              for environment, names in preconditions.PROFESSIONAL_ENVIRONMENT_VARIABLES.items() for name in names),
+        ]
+
+
 @pytest.mark.parametrize("missing", [set(), {"ROW_WINDOWS_TIMESTAMP_URL", "ROW_MACOS_NOTARY_KEY_ID"}])
 def test_signing_uses_the_protected_environment_and_reports_missing_names(monkeypatch, missing) -> None:
     names = (preconditions.RELEASE_SIGNING_SECRETS - missing) | {"UNRELATED_ENTRY"}
@@ -377,6 +464,8 @@ def test_pre_tag_cli_keeps_checks_source_bound_and_rechecks_refs(
     monkeypatch.setattr(preconditions, "require_immutable_enabled", lambda *args: calls.append(("immutable", *args)))
     monkeypatch.setattr(preconditions, "require_deployment_environment_policies", lambda *args: calls.append(("environments", *args)))
     monkeypatch.setattr(preconditions, "require_signing_secret_inventory", check_signing)
+    monkeypatch.setattr(preconditions, "require_parity_environment_readiness",
+                        lambda *args, variable_token: calls.append(("parity", *args, variable_token)))
     monkeypatch.setattr(preconditions, "read_debian_server_bundle_selection", read_bundle)
     monkeypatch.setattr(preconditions, "require_environment_secret_inventory", lambda *args: calls.append(("environment-secrets", *args)))
     monkeypatch.setattr(preconditions, "require_unused_namespace", lambda *args, require_push: calls.append(("namespace", *args, require_push)))
@@ -405,6 +494,7 @@ def test_pre_tag_cli_keeps_checks_source_bound_and_rechecks_refs(
     expected += [
         ("environment-secrets", API_ROOT, REPOSITORY, "release-compliance-review", {"ROW_RELEASE_IMMUTABILITY_TOKEN"}, "signing-token"),
         ("environment-secrets", API_ROOT, REPOSITORY, "platform-evidence", {"ROW_PLATFORM_RUNNER_INVENTORY_TOKEN"}, "signing-token"),
+        ("parity", API_ROOT, REPOSITORY, RELEASE_TAG, "namespace-token", "signing-token"),
         ("read-bundle", API_ROOT, REPOSITORY, RELEASE_TAG, "signing-token"),
         ("stage_debian_server_bundle.py", "--repository", REPOSITORY, "--artifact-id", "42",
          "--sha256", BUNDLE_SHA, "--target", "linux-x86_64", "--out"),

@@ -24,6 +24,17 @@ MAX_JSON_BYTES = 20 * 1024 * 1024
 MAX_RELEASE_PAGES = 1000
 MAX_ENVIRONMENT_SECRETS = 100
 DEPLOYMENT_ENVIRONMENTS = ("release", "release-compliance-review", "platform-evidence")
+NATIVE_PARITY_ENVIRONMENTS = ("smartcard-evidence", "transport-evidence")
+PROFESSIONAL_REVIEW_ENVIRONMENT = "professional-update-review"
+PROFESSIONAL_ENVIRONMENT_VARIABLES = {
+    "release": (
+        "ROW_PROFESSIONAL_BRAND", "ROW_PROFESSIONAL_ORGANIZATION", "ROW_PROFESSIONAL_LOGO_BASE64",
+        "ROW_PROFESSIONAL_DEPLOYMENT_ID",
+    ),
+    PROFESSIONAL_REVIEW_ENVIRONMENT: (
+        "RELEASE_PROFESSIONAL_UPDATE_URL", "RELEASE_PROFESSIONAL_UPDATE_ORIGINS", "RELEASE_PROFESSIONAL_UPDATE_PUBLIC_KEY",
+    ),
+}
 DEBIAN_SERVER_BUNDLE_VARIABLE = "ROW_DEBIAN_AMD64_SERVER_BUNDLE"
 RELEASE_SIGNING_SECRETS = frozenset({
     "ROW_WINDOWS_CERTIFICATE_BASE64",
@@ -61,6 +72,9 @@ def main(argv: list[str] | None = None) -> int:
         child.add_argument("--tag", required=True)
     signing = subparsers.add_parser("signing", help="check required secret names in the release environment")
     signing.add_argument("--repository", required=True)
+    parity = subparsers.add_parser("parity", help="check strict parity review environments and Professional settings")
+    parity.add_argument("--repository", required=True)
+    parity.add_argument("--tag", required=True)
     pre_tag = subparsers.add_parser("pre-tag", help="check the exact production source before creating a tag")
     pre_tag.add_argument("--repository", required=True)
     pre_tag.add_argument("--tag", required=True)
@@ -81,6 +95,9 @@ def main(argv: list[str] | None = None) -> int:
             require_deployment_environment_policies(api_root, repository, token)
         elif args.command == "signing":
             require_signing_secret_inventory(api_root, repository, signing_inventory_token())
+        elif args.command == "parity":
+            token = require_token("GITHUB_TOKEN") if os.environ.get("GITHUB_TOKEN") else None
+            require_parity_environment_readiness(api_root, repository, tag, token, variable_token=signing_inventory_token())
         else:
             if re.fullmatch(r"[0-9a-fA-F]{40}", args.sha) is None:
                 raise ValueError("--sha must be a full 40-character commit SHA")
@@ -89,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"release remote precondition: {exc}", file=sys.stderr)
         return 1
     scope = f" for {repository}@{args.sha.lower()} and {tag}" if args.command == "pre-tag" else ""
-    if args.command == "environments":
+    if args.command in ("environments", "parity"):
         scope = f" for {repository} and {tag}"
     print(f"release remote precondition {args.command} passed{scope}")
     return 0
@@ -116,6 +133,7 @@ def require_pre_tag(api_root: str, repository: str, tag: str, sha: str) -> None:
     require_environment_secret_inventory(
         api_root, repository, "platform-evidence", {"ROW_PLATFORM_RUNNER_INVENTORY_TOKEN"}, inventory_token,
     )
+    require_parity_environment_readiness(api_root, repository, tag, namespace_token, variable_token=inventory_token)
     server_bundle = read_debian_server_bundle_selection(api_root, repository, tag, inventory_token)
     artifact_id, sha256 = server_bundle
     with tempfile.TemporaryDirectory(prefix="row-pre-tag-server-") as scratch:
@@ -270,16 +288,21 @@ def require_signing_secret_inventory(api_root: str, repository: str, token: str)
 
 def read_debian_server_bundle_selection(api_root: str, repository: str, tag: str, token: str) -> tuple[str, str]:
     name = DEBIAN_SERVER_BUNDLE_VARIABLE
-    url = f"{api_root}/repos/{repository}/environments/release/variables/{name}"
-    try:
-        payload, _ = get_json(url, token, api_version="2026-03-10")
-    except (RuntimeError, ValueError) as exc:
-        raise RuntimeError(f"could not read {name} in the release environment with Environments read access") from exc
-    value = payload.get("value") if isinstance(payload, dict) and payload.get("name") == name else None
-    match = re.fullmatch(rf"{re.escape(tag)} ([1-9][0-9]*) ([0-9a-f]{{64}})", value) if isinstance(value, str) else None
+    value = read_environment_variable(api_root, repository, "release", name, token)
+    match = re.fullmatch(rf"{re.escape(tag)} ([1-9][0-9]*) ([0-9a-f]{{64}})", value) if value is not None else None
     if match is None:
         raise RuntimeError(f"{name} must contain {tag}, a positive artifact ID and the reviewed SHA-256")
     return match[1], match[2]
+
+
+def read_environment_variable(api_root: str, repository: str, environment: str, name: str, token: str) -> str | None:
+    url = f"{api_root}/repos/{repository}/environments/{environment}/variables/{name}"
+    try:
+        payload, _ = get_json(url, token, api_version="2026-03-10")
+    except (RuntimeError, ValueError) as exc:
+        raise RuntimeError(f"could not read {name} in the {environment} environment with Environments read access") from exc
+    value = payload.get("value") if isinstance(payload, dict) and payload.get("name") == name else None
+    return value if isinstance(value, str) and value.strip() else None
 
 
 def require_environment_secret_inventory(
@@ -340,18 +363,58 @@ def require_deployment_environment_policies(api_root: str, repository: str, toke
     required = ("tag", "v*")
     for environment in DEPLOYMENT_ENVIRONMENTS:
         base_url = f"{api_root}/repos/{repository}/environments/{environment}"
-        metadata, _ = get_json(base_url, token, api_version="2026-03-10")
-        if not isinstance(metadata, dict) or metadata.get("name") != environment:
-            raise RuntimeError(f"GitHub did not identify the {environment} deployment environment")
-        policy = metadata.get("deployment_branch_policy")
-        if (not isinstance(policy, dict) or policy.get("custom_branch_policies") is not True
-                or policy.get("protected_branches") is not False):
-            raise RuntimeError(f"the {environment} environment must use selected deployment branches and tags")
+        metadata = read_deployment_environment(base_url, environment, token)
+        require_selected_deployment_refs(metadata, environment)
         policies = read_deployment_policies(base_url, token)
         if required not in policies:
             raise RuntimeError(f"the {environment} environment is missing the v* deployment tag policy")
         if environment == "platform-evidence" and policies != {required}:
             raise RuntimeError("the platform-evidence environment must allow only the v* deployment tag policy")
+
+
+def read_deployment_environment(base_url: str, environment: str, token: str | None) -> dict[str, Any]:
+    metadata, _ = get_json(base_url, token, api_version="2026-03-10")
+    if not isinstance(metadata, dict) or metadata.get("name") != environment:
+        raise RuntimeError(f"GitHub did not identify the {environment} deployment environment")
+    return metadata
+
+
+def require_selected_deployment_refs(metadata: dict[str, Any], environment: str) -> None:
+    policy = metadata.get("deployment_branch_policy")
+    if (not isinstance(policy, dict) or policy.get("custom_branch_policies") is not True
+            or policy.get("protected_branches") is not False):
+        raise RuntimeError(f"the {environment} environment must use selected deployment branches and tags")
+
+
+def require_parity_environment_readiness(
+    api_root: str, repository: str, tag: str, token: str | None, *, variable_token: str,
+) -> None:
+    for environment in (*NATIVE_PARITY_ENVIRONMENTS, PROFESSIONAL_REVIEW_ENVIRONMENT):
+        base_url = f"{api_root}/repos/{repository}/environments/{environment}"
+        metadata = read_deployment_environment(base_url, environment, token)
+        rules = metadata.get("protection_rules")
+        review_rules = [
+            rule for rule in (rules if isinstance(rules, list) else [])
+            if isinstance(rule, dict) and rule.get("type") == "required_reviewers"
+        ]
+        reviewers = review_rules[0].get("reviewers") if len(review_rules) == 1 else None
+        if not isinstance(reviewers, list) or not reviewers:
+            raise RuntimeError(f"the {environment} environment must require deployment reviewers")
+        for row in reviewers:
+            identity = row.get("reviewer") if isinstance(row, dict) and row.get("type") in ("User", "Team") else None
+            identifier = identity.get("id") if isinstance(identity, dict) else None
+            if type(identifier) is not int or identifier < 1:
+                raise RuntimeError(f"GitHub returned malformed required reviewer metadata for {environment}")
+        if environment in NATIVE_PARITY_ENVIRONMENTS:
+            require_selected_deployment_refs(metadata, environment)
+            policies = read_deployment_policies(base_url, token)
+            if not ({("tag", "v*"), ("tag", tag)} & policies) or any(kind != "tag" for kind, _ in policies):
+                raise RuntimeError(f"the {environment} environment must allow {tag} through a tag-only deployment policy")
+
+    for environment, names in PROFESSIONAL_ENVIRONMENT_VARIABLES.items():
+        for name in names:
+            if read_environment_variable(api_root, repository, environment, name, variable_token) is None:
+                raise RuntimeError(f"{name} in the {environment} environment must have a nonempty value")
 
 
 def require_unused_namespace(

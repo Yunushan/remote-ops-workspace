@@ -105,7 +105,7 @@ def test_review_captures_exact_candidate_and_all_runtime_inputs(tmp_path, monkey
     deb_digest = digest(files[deb_name])
     fault_digest = "f" * 64
     receipts = {name: {"phase": "authenticated-staged", "exit_code": 0}
-                for name in ("previous", "candidate", "failing", "interrupted")}
+                for name in ("previous", "candidate", "failing", "interrupted", "dependency-blocked")}
     receipts.update({
         "candidate-apply": {"phase": "applied", "exit_code": 0, "architecture": "amd64",
                             "candidate_sha256": deb_digest, "previous_sha256": previous,
@@ -122,6 +122,12 @@ def test_review_captures_exact_candidate_and_all_runtime_inputs(tmp_path, monkey
                               "previous_sha256": previous, "candidate_sha256": fault_digest},
         "automatic-explicit-rollback": {"phase": "rolled-back", "exit_code": 0, "action": "rollback",
                                         "previous_sha256": previous, "candidate_sha256": deb_digest},
+        "dependency-blocked-apply": {
+            "action": "apply", "phase": "refused", "exit_code": 1,
+            "refusal": "debian-upgrade-plan-refused", "previous_sha256": previous,
+            "candidate_sha256": digest(b"fixture candidate with unavailable dependency"),
+            "previous_installation_unchanged": True, "journal_created": False,
+        },
     })
     rollback = {"action": "rollback", "phase": "rolled-back", "exit_code": 0,
                 "previous_sha256": previous, "candidate_sha256": deb_digest,

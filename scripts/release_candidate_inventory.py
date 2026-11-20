@@ -642,7 +642,7 @@ def require_release_rpm(records: list[dict[str, Any]], release_tag: str, sha256:
 
 def validate_managed_release_qualification(
     inventory: dict[str, Any], *, repository: str, release_tag: str, release_sha: str, deb_sha256: str,
-) -> None:
+) -> list[dict[str, Any]]:
     if (type(inventory.get("schema_version")) is not int
             or not MANAGED_SCHEMA_VERSION <= inventory["schema_version"] <= SCHEMA_VERSION):
         raise ValueError("production Debian qualification requires the current sealed candidate inventory")
@@ -654,6 +654,7 @@ def validate_managed_release_qualification(
         run_id=run_id, run_attempt=1,
     )
     require_managed_deb(records, release_tag, deb_sha256)
+    return records
 
 
 def validate_runtime_report(report: bytes, label: str) -> None:

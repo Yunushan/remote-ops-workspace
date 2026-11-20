@@ -333,8 +333,13 @@ notarization receipt for each DMG and PKG. The builder requires Apple's
 accepted submission log to match the local filename and SHA-256 before
 stapling. It records the submission ID, the uploaded SHA-256, and the
 SHA-256 of the stapled file after ticket and Gatekeeper verification.
-Candidate staging and promotion compare the recorded stapled SHA-256 with
-the exact release file. [Apple notarization logs](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)
+Candidate staging, promotion, and certification compare the recorded stapled
+SHA-256 with the exact release file. [Apple notarization logs](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)
+
+The published release audit compares every standard asset's size and SHA-256
+with the sealed candidate inventory referenced by the signed redistribution
+approval. It requires the same set of standard files on both sides of that
+comparison.
 
 You can check the protected `release` environment while other approvals are
 pending. This command verifies the presence of the Windows and macOS signing

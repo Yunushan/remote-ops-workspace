@@ -22,7 +22,7 @@ import re
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -46,6 +46,7 @@ from check_release_license_compliance import (  # noqa: E402
 )
 from check_release_publish_assets import (  # noqa: E402
     MATRIX_PATH,
+    check_native_release_signing_metadata,
     expected_release_assets,
 )
 from check_release_tag_governance import check_redistribution_approval  # noqa: E402
@@ -259,12 +260,13 @@ def main(
                 raise ValueError(f"published asset {name} does not match the independently reviewed SHA-256")
         if args.candidate_inventory is not None:
             assert approval is not None and audited_inputs is not None
-            deb_name = f"remote-ops-workspace-{tag}-linux-amd64.deb"
-            if deb_name not in release_digests:
-                raise ValueError("published release is missing the qualified Debian amd64 installer")
+            published_files = {
+                item["name"]: (item["size"], release_digests[item["name"]])
+                for item in release["assets"] if item["name"] in standard_assets
+            }
             digest = check_approved_candidate_inventory(
                 args.candidate_inventory, approval[1], repository=repository, tag=tag,
-                sha=sha, deb_sha256=release_digests[deb_name],
+                sha=sha, published_files=published_files,
             )
             audited_inputs[args.candidate_inventory] = digest
         invocations_by_asset: dict[str, set[RunInvocation]] = {}
@@ -399,6 +401,12 @@ def main(
             )
         if errors:
             raise RuntimeError("; ".join(dict.fromkeys(errors)))
+        if completed_promotion:
+            errors = check_native_release_signing_metadata(
+                args.assets_dir, standard_assets, native_release_channel="production-signed",
+            )
+            if errors:
+                raise RuntimeError("; ".join(dict.fromkeys(errors)))
         if check_published_at is not None:
             published_at = parse_timestamp(release.get("published_at"), "GitHub release published_at")
             errors = check_published_at(published_at)
@@ -433,7 +441,8 @@ def main(
 
 
 def check_approved_candidate_inventory(
-    path: Path, approval: dict[str, Any], *, repository: str, tag: str, sha: str, deb_sha256: str,
+    path: Path, approval: dict[str, Any], *, repository: str, tag: str, sha: str,
+    published_files: Mapping[str, tuple[int, str]],
 ) -> str:
     record = approval.get("candidate_inventory")
     if not valid_evidence_record(record) or record["size_bytes"] > MAX_JSON_BYTES:
@@ -449,10 +458,40 @@ def check_approved_candidate_inventory(
     value = json.loads(raw)
     if not isinstance(value, dict):
         raise ValueError("audited candidate inventory must contain an object")
-    validate_managed_release_qualification(
-        value, repository=repository, release_tag=tag, release_sha=sha, deb_sha256=deb_sha256,
+    deb_name = f"remote-ops-workspace-{tag}-linux-amd64.deb"
+    if deb_name not in published_files:
+        raise ValueError("published release is missing the qualified Debian amd64 installer")
+    records = validate_managed_release_qualification(
+        value, repository=repository, release_tag=tag, release_sha=sha, deb_sha256=published_files[deb_name][1],
     )
+    check_published_candidate_files(records, published_files)
     return digest
+
+
+def check_published_candidate_files(
+    records: list[dict[str, Any]], published_files: Mapping[str, tuple[int, str]],
+) -> None:
+    reviewed: dict[str, tuple[int, str]] = {}
+    for record in records:
+        for item in record["files"]:
+            if not isinstance(item, dict) or item.keys() != {"path", "size", "sha256"}:
+                raise ValueError("approved candidate inventory contains an invalid file record")
+            name, size, digest = item["path"], item["size"], item["sha256"]
+            if (
+                not safe_asset_name(name) or name in reviewed or type(size) is not int or size < 1
+                or not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            ):
+                raise ValueError("approved candidate inventory contains an invalid or duplicated file record")
+            reviewed[name] = (size, digest)
+    if reviewed.keys() != published_files.keys():
+        raise ValueError(
+            "approved candidate and published standard file sets differ: "
+            f"missing from reviewed candidate={sorted(published_files.keys() - reviewed.keys())}, "
+            f"outside the standard release={sorted(reviewed.keys() - published_files.keys())}"
+        )
+    for name, expected in reviewed.items():
+        if published_files[name] != expected:
+            raise ValueError(f"published standard asset {name} does not match the independently approved candidate bytes")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

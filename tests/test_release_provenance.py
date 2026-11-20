@@ -108,6 +108,43 @@ def test_release_asset_bytes_match_every_local_and_remote_file(tmp_path: Path) -
     )
 
 
+@pytest.mark.parametrize(("change", "error"), [
+    (None, None),
+    ("digest", "does not match the independently approved candidate bytes"),
+    ("size", "does not match the independently approved candidate bytes"),
+    ("missing", "file sets differ"),
+    ("extra", "file sets differ"),
+    ("duplicate", "duplicated file record"),
+    ("unsafe", "invalid or duplicated file record"),
+])
+def test_certification_requires_every_standard_file_from_the_reviewed_inventory(change, error) -> None:
+    checker = _load_checker()
+    deb = "remote-ops-workspace-v1.0.28-linux-amd64.deb"
+    manifest = "remote-ops-workspace-v1.0.28-macos-arm64-native-manifest.json"
+    reviewed = [
+        {"files": [{"path": deb, "size": 10, "sha256": "a" * 64}]},
+        {"files": [{"path": manifest, "size": 20, "sha256": "b" * 64}]},
+    ]
+    published = {deb: (10, "a" * 64), manifest: (20, "b" * 64)}
+    if change == "digest":
+        published[manifest] = (20, "c" * 64)
+    elif change == "size":
+        published[manifest] = (21, "b" * 64)
+    elif change == "missing":
+        reviewed.pop()
+    elif change == "extra":
+        reviewed.append({"files": [{"path": "unreviewed.bin", "size": 30, "sha256": "d" * 64}]})
+    elif change == "duplicate":
+        reviewed.append(reviewed[0])
+    elif change == "unsafe":
+        reviewed[1]["files"][0]["path"] = "../" + manifest
+    if error is None:
+        checker.check_published_candidate_files(reviewed, published)
+    else:
+        with pytest.raises(ValueError, match=error):
+            checker.check_published_candidate_files(reviewed, published)
+
+
 def test_release_asset_bytes_reject_remote_digest_drift_and_inventory_gap(
     tmp_path: Path,
 ) -> None:
@@ -942,6 +979,14 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
         assert checker.main([*completed_args, "--completed-promotion-run-attempt", "1"]) == 0
         assert checker.main([*completed_args, "--completed-promotion-run-attempt", "2"]) == 1
         assert "do not share the triggering promotion" in capsys.readouterr().err
+        with monkeypatch.context() as native:
+            def rejected_native_manifest(assets, names, *, native_release_channel):
+                assert (assets, names, native_release_channel) == (root, {asset.name}, "production-signed")
+                return ["stapled package not bound to its Apple notarization receipt"]
+
+            native.setattr(checker, "check_native_release_signing_metadata", rejected_native_manifest)
+            assert checker.main([*completed_args, "--completed-promotion-run-attempt", "1"]) == 1
+            assert "not bound to its Apple notarization receipt" in capsys.readouterr().err
         approved = tmp_path / "release-evidence.json"
         approved_sig = tmp_path / "release-evidence.sig.json"
 
@@ -1046,6 +1091,7 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
         def verify_exact_deb(value, **kwargs):
             assert value == {"sealed_candidate_fixture": True}
             qualified.append(kwargs)
+            return [{"files": [{"path": asset.name, "size": asset.stat().st_size, "sha256": checker.sha256_file(asset)}]}]
 
         monkeypatch.setattr(checker, "validate_managed_release_qualification", verify_exact_deb)
         assert checker.main(exact_completed) == 1
@@ -1056,6 +1102,24 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
             "repository": repository, "release_tag": tag, "release_sha": sha,
             "deb_sha256": checker.sha256_file(asset),
         }]
+
+        package = root / f"remote-ops-workspace-{tag}-macos-arm64.pkg"
+        package.write_bytes(b"alternate package with valid GitHub provenance")
+        original_assets = release["assets"]
+        release["assets"] = _release(checker, root, repository, tag)["assets"]
+        with monkeypatch.context() as alternate:
+            alternate.setattr(checker, "expected_release_assets", lambda *_args, **_kwargs: {asset.name, package.name})
+
+            def previously_reviewed_candidate(value, **kwargs):
+                records = verify_exact_deb(value, **kwargs)
+                records.append({"files": [{"path": package.name, "size": package.stat().st_size, "sha256": "f" * 64}]})
+                return records
+
+            alternate.setattr(checker, "validate_managed_release_qualification", previously_reviewed_candidate)
+            assert checker.main(candidate_args) == 1
+            assert f"published standard asset {package.name} does not match" in capsys.readouterr().err
+        package.unlink()
+        release["assets"] = original_assets
 
         def candidate_attested_by_other_attempt(path: Path, **kwargs):
             if path == candidate:

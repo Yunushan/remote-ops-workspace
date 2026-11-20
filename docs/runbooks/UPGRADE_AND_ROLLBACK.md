@@ -256,7 +256,9 @@ native smoke proof digest, both package digests, and the Fedora image digest.
 The job also runs the managed controller from the same checkout against the
 same RPM pair in a separate offline container. Its receipt records the HTTPS
 downloads, tamper refusals, interruption recovery, and concurrent update
-result. The drill also installs a metadata-only RPM that requires the
+result. It counts native installer invocations through the interrupted
+rollback and both offline retries to verify that the restored predecessor
+is installed once. The drill also installs a metadata-only RPM that requires the
 predecessor version. The exact candidate must be refused while that dependency
 is present, with the predecessor and workspace intact and no update journal.
 After removing the fixture, the drill retries the same update with the feed

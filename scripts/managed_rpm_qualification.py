@@ -7,7 +7,8 @@ from pathlib import Path
 
 from scripts.qualify_rpm_recovery import PACKAGE, SHA256
 
-SCHEMA = "row.managed-rpm-qualification.v3"
+SCHEMA = "row.managed-rpm-qualification.v4"
+ROLLBACK_PLAN_SCHEMA = "row.managed-rpm-qualification.v3"
 PREVIOUS_SCHEMA = "row.managed-rpm-qualification.v2"
 LEGACY_SCHEMA = "row.managed-rpm-qualification.v1"
 CONTROLLER = Path("scripts/managed_rpm_update.py")
@@ -28,7 +29,9 @@ LEGACY_CHECKS = (
 )
 PREVIOUS_CHECKS = (*LEGACY_CHECKS, "dependency_conflict_refused_and_same_transaction_retried_offline")
 CHECKS = (*PREVIOUS_CHECKS, "rollback_conflict_preserved_applied_state_and_retried_offline")
-CHECKS_BY_SCHEMA = {SCHEMA: CHECKS, PREVIOUS_SCHEMA: PREVIOUS_CHECKS, LEGACY_SCHEMA: LEGACY_CHECKS}
+CHECKS_BY_SCHEMA = {
+    SCHEMA: CHECKS, ROLLBACK_PLAN_SCHEMA: CHECKS, PREVIOUS_SCHEMA: PREVIOUS_CHECKS, LEGACY_SCHEMA: LEGACY_CHECKS,
+}
 
 
 def locked_crypto_requirements(root: Path) -> bytes:
@@ -47,7 +50,7 @@ def verify_receipt(receipt: object, native: dict, *, controller_sha256: str | No
                    requirements_sha256: str | None = None, require_current: bool = False) -> None:
     if (
         not isinstance(receipt, dict)
-        or receipt.get("schema") not in (SCHEMA, PREVIOUS_SCHEMA, LEGACY_SCHEMA)
+        or not isinstance(receipt.get("schema"), str) or receipt["schema"] not in CHECKS_BY_SCHEMA
         or receipt.get("feed") != FEED
         or any(not isinstance(receipt.get(key), str) or not SHA256.fullmatch(receipt[key])
                for key in ("controller_sha256", "crypto_requirements_sha256"))
@@ -56,7 +59,7 @@ def verify_receipt(receipt: object, native: dict, *, controller_sha256: str | No
     ):
         raise ValueError("Managed RPM receipt is missing its controller, feed, or dependency binding")
     if require_current and receipt["schema"] != SCHEMA:
-        raise ValueError("Managed RPM receipt must verify upgrade and rollback dependency-conflict recovery")
+        raise ValueError("Managed RPM receipt must verify upgrade and rollback dependency-conflict recovery and installer retries")
     requests = []
     for role in ("previous", "candidate"):
         package = native[role]
@@ -70,3 +73,7 @@ def verify_receipt(receipt: object, native: dict, *, controller_sha256: str | No
     expected = CHECKS_BY_SCHEMA[receipt["schema"]]
     if not isinstance(checks, dict) or set(checks) != set(expected) or any(checks[key] is not True for key in expected):
         raise ValueError("Managed RPM receipt is missing passing upgrade and rollback checks")
+    if receipt["schema"] == SCHEMA:
+        count = receipt.get("interrupted_rollback_native_invocations")
+        if type(count) is not int or count != 1:
+            raise ValueError("Interrupted RPM rollback must record exactly one native installer invocation including retries")

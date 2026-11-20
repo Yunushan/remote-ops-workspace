@@ -271,6 +271,7 @@ def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
         ("managed-rpm-failed", "missing passing upgrade and rollback checks"),
         ("wrong-managed-rpm-launcher", "refers to a different package or launcher"),
         ("wrong-managed-rpm-requests", "missing the ordered HTTPS downloads"),
+        ("wrong-managed-rpm-rollback-count", "must record exactly one native installer invocation"),
         ("complete-bundled", ""),
         ("wrong-runtime-run", "is not bound to the approved build run and SHA"),
         ("wrong-installer-sha", "artifact release-source-python is not bound to the approved build run and SHA"),
@@ -479,11 +480,12 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                  "/candidate/manifest.json", f"/candidate/{rpm_name}"]
             ),
             "checks": dict.fromkeys(managed_rpm_qualification.CHECKS, condition != "managed-rpm-failed"),
+            "interrupted_rollback_native_invocations": 2 if condition == "wrong-managed-rpm-rollback-count" else 1,
         }
         managed_rpm = rpm_outer["managed_update"]
         if condition == "old-managed-rpm":
-            managed_rpm["schema"] = managed_rpm_qualification.PREVIOUS_SCHEMA
-            managed_rpm["checks"] = dict.fromkeys(managed_rpm_qualification.PREVIOUS_CHECKS, True)
+            managed_rpm["schema"] = managed_rpm_qualification.ROLLBACK_PLAN_SCHEMA
+            del managed_rpm["interrupted_rollback_native_invocations"]
             managed_rpm_qualification.verify_receipt(managed_rpm, rpm_native)
         if condition == "missing-rpm-dependency-check":
             del managed_rpm["checks"]["dependency_conflict_refused_and_same_transaction_retried_offline"]
@@ -660,6 +662,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
             "missing-managed-rpm", "wrong-managed-rpm-controller", "wrong-managed-rpm-lock",
             "old-managed-rpm", "missing-rpm-dependency-check", "missing-rpm-rollback-dependency-check",
             "managed-rpm-failed", "wrong-managed-rpm-launcher", "wrong-managed-rpm-requests",
+            "wrong-managed-rpm-rollback-count",
         }:
             assert len(downloads) == len(runtime) + 2
         elif condition in {"missing-gui-proof", "wrong-gui-binding", "wrong-gui-launcher", "wrong-gui-observation"}:

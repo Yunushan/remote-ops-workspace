@@ -43,13 +43,24 @@ from scripts.qualify_rpm_recovery import (  # noqa: E402
     verify_workspace,
 )
 
-INTERRUPT = """
+OBSERVE_CONTROLLER = """
 import os
 import sys
+from pathlib import Path
 sys.path[:0] = [sys.argv[1], sys.argv[1] + '/src']
 from scripts import managed_rpm_update as controller
 real_write = controller.journal_write
 boundary = sys.argv[2]
+invocations = sys.argv[3]
+real_native_command = controller.native_command
+
+def native_command(*argv, **kwargs):
+    if (invocations and argv[0] == controller.RPM and argv[1] not in ('--eval', '--query', '--verify')
+            and '--test' not in argv):
+        with Path(invocations).open('ab') as log:
+            log.write(b'install\\n')
+    return real_native_command(*argv, **kwargs)
+
 def write(path, state, phase):
     if phase == boundary:
         os._exit(88)
@@ -58,7 +69,8 @@ def write(path, state, phase):
         os._exit(88)
     return next_state
 controller.journal_write = write
-raise SystemExit(controller.main(sys.argv[3:]))
+controller.native_command = native_command
+raise SystemExit(controller.main(sys.argv[4:]))
 """
 
 
@@ -68,15 +80,15 @@ def require(condition, message: str) -> None:
 
 
 def controller(args: list[str], *, ca: Path | None = None, exits: tuple[int, ...] = (0,),
-               interrupt: str | None = None) -> dict:
+               interrupt: str | None = None, invocations: Path | None = None) -> dict:
     environment = {**ENV, "HOME": "/root"}
     if ca is not None:
         environment["SSL_CERT_FILE"] = str(ca)
     command = [sys.executable, "-I", "-B"]
-    if interrupt is None:
+    if interrupt is None and invocations is None:
         command += [str(ROOT / contract.CONTROLLER)]
     else:
-        command += ["-c", INTERRUPT, str(ROOT), interrupt]
+        command += ["-c", OBSERVE_CONTROLLER, str(ROOT), interrupt or "", str(invocations) if invocations else ""]
     result = subprocess.run([*command, *args], env=environment, capture_output=True, text=True, timeout=240, check=False)
     if interrupt is not None:
         require(result.returncode == 88, f"Managed RPM controller did not reach interruption boundary {interrupt}")
@@ -163,13 +175,16 @@ def exercise(args: argparse.Namespace, root: Path) -> dict:
         checked("Restore candidate package metadata", RPM, "--restore", PACKAGE)
     verify_installed(new)
 
-    controller(restore, interrupt="rolled-back")
+    invocation_log = transaction / "rollback-installer-invocations"
+    controller(restore, interrupt="rolled-back", invocations=invocation_log)
     verify_installed(old)
     require(json.loads(journal.read_bytes())["phase"] == "rolling-back", "Rollback journal did not retain pending state")
-    restored = controller(restore)
+    restored = controller(restore, invocations=invocation_log)
     completed_journal = journal.read_bytes()
-    require(restored["phase"] == "rolled-back" and controller(restore) == restored
+    require(restored["phase"] == "rolled-back" and controller(restore, invocations=invocation_log) == restored
             and journal.read_bytes() == completed_journal, "Interrupted rollback did not finish offline and stay complete")
+    native_invocations = invocation_log.read_bytes().splitlines()
+    require(native_invocations == [b"install"], "Retrying an already restored RPM rollback invoked the installer again")
 
     interrupted, interrupted_flags = private_transaction(root, "interrupted-update", workspace)
     interrupted_update = ["update", *update_flags, *interrupted_flags]
@@ -254,6 +269,7 @@ def exercise(args: argparse.Namespace, root: Path) -> dict:
         "previous": asdict(old),
         "candidate": asdict(new),
         "requests": requested,
+        "interrupted_rollback_native_invocations": len(native_invocations),
         "checks": dict.fromkeys(contract.CHECKS, True),
     }
 

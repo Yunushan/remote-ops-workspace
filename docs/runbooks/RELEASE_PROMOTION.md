@@ -287,17 +287,21 @@ python scripts/check_release_remote_preconditions.py environments \
   --repository "$release_repository" --tag "$release_tag"
 ```
 
-Check the strict parity environments before the signing and review credentials
-are ready. The read-only check uses the Environments read token for variables.
-For private repositories, give `GITHUB_TOKEN` Actions read access for deployment
-metadata.
-It verifies required deployment reviewers for `smartcard-evidence`,
-`transport-evidence`, and `professional-update-review`. For the two native
-capture environments, it checks that only tags are allowed and that the
-selected release is covered by `v*` or an exact tag policy. It checks that the
-documented Professional branding and update variables are set in their
-respective environments. The qualification jobs verify the actual inputs and
-hosted installer bytes after the tag is created.
+Check parity deployment policies before provisioning the Professional update
+variables. The deployment-only check reports all three environments together.
+It verifies required reviewers for `smartcard-evidence`, `transport-evidence`,
+and `professional-update-review`. The two native capture environments must
+allow only tags and cover the selected tag with `v*` or an exact rule.
+For private repositories, give `GITHUB_TOKEN` Actions read access.
+
+```bash
+python scripts/check_release_remote_preconditions.py parity --deployment-only \
+  --repository "$release_repository" --tag "$release_tag"
+```
+
+Run the full parity check with an Environments read token after setting the
+Professional branding and update variables. The qualification jobs verify the
+actual variable inputs and hosted installer bytes after the tag is created.
 
 ```bash
 python scripts/check_release_remote_preconditions.py parity \

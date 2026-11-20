@@ -117,6 +117,43 @@ def test_parity_preflight_checks_review_holds_tag_rules_and_professional_variabl
         ]
 
 
+@pytest.mark.parametrize("available", [True, False])
+def test_parity_deployment_check_reports_all_environments_without_a_variable_token(
+    monkeypatch, capsys, available,
+) -> None:
+    monkeypatch.setenv("GITHUB_API_URL", API_ROOT)
+    monkeypatch.delenv("ROW_RELEASE_SIGNING_INVENTORY_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    environments = (*preconditions.NATIVE_PARITY_ENVIRONMENTS, preconditions.PROFESSIONAL_REVIEW_ENVIRONMENT)
+    checked = []
+
+    def get_json(url, token, *, api_version):
+        assert token is None and api_version == "2026-03-10"
+        environment, _, resource = url.removeprefix(f"{REPOSITORY_URL}/environments/").partition("/")
+        assert environment in environments
+        if resource:
+            assert available and resource == "deployment-branch-policies?per_page=100&page=1"
+            return {"total_count": 1, "branch_policies": [{"name": RELEASE_TAG, "type": "tag"}]}, {}
+        checked.append(environment)
+        if not available:
+            raise RuntimeError("GitHub API returned HTTP 404")
+        return {
+            "name": environment,
+            "protection_rules": [{"type": "required_reviewers", "reviewers": [{"type": "User", "reviewer": {"id": 1}}]}],
+            "deployment_branch_policy": {"custom_branch_policies": True, "protected_branches": False},
+        }, {}
+
+    monkeypatch.setattr(preconditions, "get_json", get_json)
+    result = preconditions.main(["parity", "--repository", REPOSITORY, "--tag", RELEASE_TAG, "--deployment-only"])
+    output = capsys.readouterr()
+    assert checked == list(environments)
+    if available:
+        assert result == 0 and "parity deployment policies passed" in output.out and not output.err
+    else:
+        assert result == 1 and not output.out
+        assert all(f"{environment}: GitHub API returned HTTP 404" in output.err for environment in environments)
+
+
 @pytest.mark.parametrize("missing", [set(), {"ROW_WINDOWS_TIMESTAMP_URL", "ROW_MACOS_NOTARY_KEY_ID"}])
 def test_signing_uses_the_protected_environment_and_reports_missing_names(monkeypatch, missing) -> None:
     names = (preconditions.RELEASE_SIGNING_SECRETS - missing) | {"UNRELATED_ENTRY"}

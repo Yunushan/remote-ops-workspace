@@ -75,6 +75,10 @@ def main(argv: list[str] | None = None) -> int:
     parity = subparsers.add_parser("parity", help="check strict parity review environments and Professional settings")
     parity.add_argument("--repository", required=True)
     parity.add_argument("--tag", required=True)
+    parity.add_argument(
+        "--deployment-only", action="store_true",
+        help="check reviewer and tag policies without reading Professional variables",
+    )
     pre_tag = subparsers.add_parser("pre-tag", help="check the exact production source before creating a tag")
     pre_tag.add_argument("--repository", required=True)
     pre_tag.add_argument("--tag", required=True)
@@ -97,7 +101,10 @@ def main(argv: list[str] | None = None) -> int:
             require_signing_secret_inventory(api_root, repository, signing_inventory_token())
         elif args.command == "parity":
             token = require_token("GITHUB_TOKEN") if os.environ.get("GITHUB_TOKEN") else None
-            require_parity_environment_readiness(api_root, repository, tag, token, variable_token=signing_inventory_token())
+            if args.deployment_only:
+                require_parity_deployments(api_root, repository, tag, token)
+            else:
+                require_parity_environment_readiness(api_root, repository, tag, token, variable_token=signing_inventory_token())
         else:
             if re.fullmatch(r"[0-9a-fA-F]{40}", args.sha) is None:
                 raise ValueError("--sha must be a full 40-character commit SHA")
@@ -108,7 +115,8 @@ def main(argv: list[str] | None = None) -> int:
     scope = f" for {repository}@{args.sha.lower()} and {tag}" if args.command == "pre-tag" else ""
     if args.command in ("environments", "parity"):
         scope = f" for {repository} and {tag}"
-    print(f"release remote precondition {args.command} passed{scope}")
+    check = "parity deployment policies" if args.command == "parity" and args.deployment_only else args.command
+    print(f"release remote precondition {check} passed{scope}")
     return 0
 
 
@@ -389,32 +397,45 @@ def require_selected_deployment_refs(metadata: dict[str, Any], environment: str)
 def require_parity_environment_readiness(
     api_root: str, repository: str, tag: str, token: str | None, *, variable_token: str,
 ) -> None:
-    for environment in (*NATIVE_PARITY_ENVIRONMENTS, PROFESSIONAL_REVIEW_ENVIRONMENT):
-        base_url = f"{api_root}/repos/{repository}/environments/{environment}"
-        metadata = read_deployment_environment(base_url, environment, token)
-        rules = metadata.get("protection_rules")
-        review_rules = [
-            rule for rule in (rules if isinstance(rules, list) else [])
-            if isinstance(rule, dict) and rule.get("type") == "required_reviewers"
-        ]
-        reviewers = review_rules[0].get("reviewers") if len(review_rules) == 1 else None
-        if not isinstance(reviewers, list) or not reviewers:
-            raise RuntimeError(f"the {environment} environment must require deployment reviewers")
-        for row in reviewers:
-            identity = row.get("reviewer") if isinstance(row, dict) and row.get("type") in ("User", "Team") else None
-            identifier = identity.get("id") if isinstance(identity, dict) else None
-            if type(identifier) is not int or identifier < 1:
-                raise RuntimeError(f"GitHub returned malformed required reviewer metadata for {environment}")
-        if environment in NATIVE_PARITY_ENVIRONMENTS:
-            require_selected_deployment_refs(metadata, environment)
-            policies = read_deployment_policies(base_url, token)
-            if not ({("tag", "v*"), ("tag", tag)} & policies) or any(kind != "tag" for kind, _ in policies):
-                raise RuntimeError(f"the {environment} environment must allow {tag} through a tag-only deployment policy")
-
+    require_parity_deployments(api_root, repository, tag, token)
     for environment, names in PROFESSIONAL_ENVIRONMENT_VARIABLES.items():
         for name in names:
             if read_environment_variable(api_root, repository, environment, name, variable_token) is None:
                 raise RuntimeError(f"{name} in the {environment} environment must have a nonempty value")
+
+
+def require_parity_deployments(api_root: str, repository: str, tag: str, token: str | None) -> None:
+    errors = []
+    for environment in (*NATIVE_PARITY_ENVIRONMENTS, PROFESSIONAL_REVIEW_ENVIRONMENT):
+        base_url = f"{api_root}/repos/{repository}/environments/{environment}"
+        try:
+            check_parity_deployment(base_url, environment, tag, token)
+        except (RuntimeError, ValueError) as exc:
+            errors.append(f"{environment}: {exc}")
+    if errors:
+        raise RuntimeError("\n".join(errors))
+
+
+def check_parity_deployment(base_url: str, environment: str, tag: str, token: str | None) -> None:
+    metadata = read_deployment_environment(base_url, environment, token)
+    rules = metadata.get("protection_rules")
+    review_rules = [
+        rule for rule in (rules if isinstance(rules, list) else [])
+        if isinstance(rule, dict) and rule.get("type") == "required_reviewers"
+    ]
+    reviewers = review_rules[0].get("reviewers") if len(review_rules) == 1 else None
+    if not isinstance(reviewers, list) or not reviewers:
+        raise RuntimeError(f"the {environment} environment must require deployment reviewers")
+    for row in reviewers:
+        identity = row.get("reviewer") if isinstance(row, dict) and row.get("type") in ("User", "Team") else None
+        identifier = identity.get("id") if isinstance(identity, dict) else None
+        if type(identifier) is not int or identifier < 1:
+            raise RuntimeError(f"GitHub returned malformed required reviewer metadata for {environment}")
+    if environment in NATIVE_PARITY_ENVIRONMENTS:
+        require_selected_deployment_refs(metadata, environment)
+        policies = read_deployment_policies(base_url, token)
+        if not ({("tag", "v*"), ("tag", tag)} & policies) or any(kind != "tag" for kind, _ in policies):
+            raise RuntimeError(f"the {environment} environment must allow {tag} through a tag-only deployment policy")
 
 
 def require_unused_namespace(

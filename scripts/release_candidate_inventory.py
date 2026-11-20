@@ -35,6 +35,7 @@ if str(ROOT) not in sys.path:
 from scripts import managed_rpm_qualification  # noqa: E402
 from scripts import qualify_rpm_candidate as rpm_qualification  # noqa: E402
 from scripts.candidate_posix_byte_binding import binding_schema, target_contract  # noqa: E402
+from scripts.debian_server_notices import read_verified_debian_notices  # noqa: E402
 from scripts.managed_debian_qualification import (  # noqa: E402
     HASH,
     MANAGED_IMAGE,
@@ -340,7 +341,7 @@ def stage(
         client, by_name[MANAGED_DEBIAN_ARTIFACT], MANAGED_DEBIAN_ARTIFACT, run_id, release_sha, REPORT_NAME,
     )
     managed["receipt"] = json.loads(report)
-    validate_managed_report(managed, release_tag, release_sha, run_id, run_attempt)
+    validate_managed_report(managed, release_tag, release_sha, run_id, run_attempt, require_current=True)
     if qualification_receipt_bytes(managed["receipt"]) != report:
         raise ValueError("managed Debian receipt must use the canonical JSON format")
     repository = normalize_repository_from_api(run)
@@ -355,7 +356,7 @@ def stage(
     validate_rpm_smoke_files(rpm_files, rpm["receipt"], rpm_smoke)
     records = materialize_records(
         client, build_artifacts, assets_root,
-        managed_deb=(release_tag, managed["receipt"]["candidate_sha256"]),
+        managed_deb=(release_tag, managed["receipt"]),
         release_rpm=(release_tag, rpm_sha),
     )
     inventory = {
@@ -449,7 +450,9 @@ def validate_qualification_archive(record: Any, label: str) -> int:
     return artifact_id
 
 
-def validate_managed_report(record: Any, release_tag: str, release_sha: str, run_id: int, run_attempt: int) -> int:
+def validate_managed_report(
+    record: Any, release_tag: str, release_sha: str, run_id: int, run_attempt: int, *, require_current: bool = False,
+) -> int:
     artifact_id = validate_qualification_archive(record, "managed Debian")
     receipt = record["receipt"]
     if (
@@ -470,7 +473,9 @@ def validate_managed_report(record: Any, release_tag: str, release_sha: str, run
     pins = json.loads((ROOT / "configs/native_linux_previous_release_pins.json").read_bytes())
     previous_name = f'remote-ops-workspace-{pins["tag"]}-linux-amd64.deb'
     previous = next(row["digest"].removeprefix("sha256:") for row in pins["assets"] if row["name"] == previous_name)
-    validate_receipt(receipt, previous_sha=previous, candidate_sha=receipt["candidate_sha256"])
+    validate_receipt(
+        receipt, previous_sha=previous, candidate_sha=receipt["candidate_sha256"], require_current=require_current,
+    )
     applied = receipt["receipts"]["candidate-apply"]
     if (
         applied.get("candidate_sha256") != receipt["candidate_sha256"]
@@ -618,6 +623,16 @@ def require_linux_installer(records: list[dict[str, Any]], name: str, sha256: st
 
 def require_managed_deb(records: list[dict[str, Any]], release_tag: str, sha256: str) -> None:
     require_linux_installer(records, f"remote-ops-workspace-{release_tag}-linux-amd64.deb", sha256, "managed Debian")
+
+
+def read_candidate_deb_metadata(package: Path) -> tuple[str, bool]:
+    try:
+        depends = subprocess.check_output(
+            ["dpkg-deb", "--field", str(package), "Depends"], encoding="utf-8", timeout=30,
+        ).strip()
+    except (OSError, subprocess.SubprocessError) as error:
+        raise ValueError("could not read the candidate Debian Depends field") from error
+    return depends, bool(read_verified_debian_notices(package, target="linux-x86_64"))
 
 
 def require_release_rpm(records: list[dict[str, Any]], release_tag: str, sha256: str) -> None:
@@ -813,7 +828,7 @@ def materialize_records(
     assets_root: Path,
     *,
     expected_records: list[dict[str, Any]] | None = None,
-    managed_deb: tuple[str, str] | None = None,
+    managed_deb: tuple[str, dict[str, Any]] | None = None,
     release_rpm: tuple[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     if assets_root.is_symlink() or (
@@ -834,7 +849,14 @@ def materialize_records(
         staged_root.mkdir()
         records = materialize_candidate_files(client, artifacts, staged_root, expected_by_name)
         if managed_deb is not None:
-            require_managed_deb(records, *managed_deb)
+            release_tag, receipt = managed_deb
+            require_managed_deb(records, release_tag, receipt["candidate_sha256"])
+            package = staged_root / f"remote-ops-workspace-{release_tag}-linux-amd64.deb"
+            depends, bundled = read_candidate_deb_metadata(package)
+            if depends != receipt["debian_depends"]:
+                raise ValueError("managed Debian receipt Depends field differs from the candidate DEB")
+            if bundled != receipt["candidate_has_server_bundle"]:
+                raise ValueError("managed Debian receipt server bundle claim differs from the candidate DEB")
         if release_rpm is not None:
             require_release_rpm(records, *release_rpm)
         if assets_root.is_symlink():

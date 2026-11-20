@@ -141,9 +141,11 @@ runs with networking disabled and serves the test feed on loopback.
 The release job retains `managed-debian-update.json` in
 `release-managed-debian-update`. The sealed candidate inventory embeds the
 receipt and binds its archive and file digests to the release source, the
-Actions attempt, and the candidate DEB. Review the offline upgrade and
-rollback outcomes there, including the manifest-change refusal when the
-optional server bundle is present. The drill uses a test signer.
+Actions attempt, and the candidate DEB. For new seals, it requires the
+current receipt with the dependency-refusal drill and checks its `Depends`
+field and server bundle claim against the extracted candidate DEB. Review
+the offline upgrade and rollback outcomes, including the manifest-change
+refusal when the server bundle is present. The drill uses a test signer.
 
 ### Review the Linux x86-64 RPM recovery result
 

@@ -233,6 +233,9 @@ def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
         ("missing-rpm-smoke", "archive must contain the exact evidence files"),
         ("wrong-managed-run", "managed Debian receipt does not match the release source and Actions attempt"),
         ("wrong-managed-deb", "managed Debian receipt must bind the exact candidate DEB"),
+        ("wrong-managed-depends", "receipt Depends field differs from the candidate DEB"),
+        ("wrong-managed-bundle", "receipt server bundle claim differs from the candidate DEB"),
+        ("old-managed-schema", "managed-debian-receipt-binding-mismatch"),
         ("missing-rollback", "managed-debian-receipt-binding-mismatch"),
         ("wrong-rpm-ref", "RPM recovery receipt does not match the release source and Actions attempt"),
         ("wrong-rpm-attempt", "RPM recovery receipt does not match the release source and Actions attempt"),
@@ -261,6 +264,7 @@ def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
 @pytest.mark.parametrize("event", ["push", "workflow_dispatch"])
 def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     condition: str,
     error: str,
     event: str,
@@ -304,14 +308,37 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     deb_bytes = b"exact release Debian installer"
     deb_sha = "b" * 64 if condition == "wrong-managed-deb" else hashlib.sha256(deb_bytes).hexdigest()
     previous = "d64ef85359085440798b86515c4751e73ef2633a3cd761f93b6d168d4a8456af"
+    previous_launcher = "7" * 64
+    failing_sha = "f" * 64
+    blocked_sha = "0" * 64
     steps = {name: {"phase": "authenticated-staged", "exit_code": 0}
              for name in ("previous", "candidate", "failing", "interrupted")}
     steps["candidate-apply"] = {"phase": "applied", "exit_code": 0, "architecture": "amd64",
                                 "candidate_sha256": deb_sha, "previous_sha256": previous,
-                                "candidate_version": "1.2.3", "previous_version": "1.0.24"}
-    steps["explicit-rollback"] = {"phase": "rolled-back", "exit_code": 0}
-    for name in ("failing-apply", "interrupted-apply"):
-        steps[name] = {"phase": "rolled-back", "exit_code": 1}
+                                "candidate_version": "1.2.3", "previous_version": "1.0.24",
+                                "action": "update", "previous_launcher_sha256": previous_launcher}
+    rollback = {"action": "rollback", "phase": "rolled-back", "exit_code": 0,
+                "previous_sha256": previous, "candidate_sha256": deb_sha,
+                "previous_launcher_sha256": previous_launcher}
+    steps.update({
+        "explicit-rollback": rollback,
+        "repeated-rollback": dict(rollback),
+        "rollback-interruption": {**rollback, "phase": "rolling-back", "exit_code": -15},
+        "interrupted-apply": {"phase": "rolled-back", "exit_code": 1, "action": "update", "previous_sha256": previous},
+        "failing-apply": {"phase": "rolled-back", "exit_code": 1, "candidate_sha256": failing_sha},
+        "automatic-candidate": {"phase": "applied", "exit_code": 0, "action": "update",
+                                "previous_sha256": previous, "candidate_sha256": deb_sha},
+        "automatic-failing": {"phase": "rolled-back", "exit_code": 1, "action": "update",
+                              "previous_sha256": previous, "candidate_sha256": failing_sha},
+        "automatic-explicit-rollback": dict(rollback),
+    })
+    if condition != "old-managed-schema":
+        steps["dependency-blocked"] = {"phase": "authenticated-staged", "exit_code": 0}
+        steps["dependency-blocked-apply"] = {
+            "phase": "refused", "exit_code": 1, "action": "apply", "refusal": "debian-upgrade-plan-refused",
+            "previous_sha256": previous, "candidate_sha256": blocked_sha,
+            "previous_installation_unchanged": True, "journal_created": False,
+        }
     steps["changed-launcher-rollback"] = {"phase": "refused", "exit_code": 1,
                                           "refusal": "installed-launcher-digest-refused"}
     if condition == "missing-rollback":
@@ -320,17 +347,26 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     if bundled:
         steps["changed-server-manifest-rollback"] = {"phase": "refused", "exit_code": 1,
                                                     "refusal": "installed-runtime-payload-refused"}
+    depends = "libc6 (>= 2.38), libvncserver1" if bundled else "libc6 (>= 2.38), zlib1g"
     managed_report = candidate.qualification_receipt_bytes({
-        "schema": "row.managed-debian-qualification.v1", "status": "passed", "target": "linux-x86_64",
+        "schema": "row.managed-debian-qualification.v3" if condition == "old-managed-schema" else
+                  "row.managed-debian-qualification.v4", "status": "passed", "target": "linux-x86_64",
         "production_acceptance": False, "candidate_has_server_bundle": bundled,
         "previous_sha256": previous, "candidate_sha256": deb_sha,
         "controller_sha256": "c" * 64, "source_archive_sha256": "d" * 64,
         "download_server_closed_before_apply": True, "workspace_unchanged": True,
         "source_sha": sha, "run_id": "224" if condition == "wrong-managed-run" else "123", "run_attempt": "1",
         "container_image": candidate.MANAGED_IMAGE,
-        "drill_image": "sha256:" + "e" * 64 if bundled else candidate.MANAGED_IMAGE,
-        "debian_depends": "libc6 (>= 2.38), libvncserver1" if bundled else "", "receipts": steps,
+        "drill_image": "sha256:" + "e" * 64,
+        "debian_depends": depends, "receipts": steps,
     })
+    if condition == "old-managed-schema":
+        historical = {
+            "artifact_id": 99, "archive_digest": "sha256:" + "a" * 64,
+            "sha256": hashlib.sha256(managed_report).hexdigest(), "size_bytes": len(managed_report),
+            "receipt": json.loads(managed_report),
+        }
+        assert candidate.validate_managed_report(historical, tag, sha, 123, 1) == 99
     rpm_name = rpm_qualification.rpm_name(tag[1:])
     rpm_bytes = b"exact release RPM installer"
     rpm_sha = hashlib.sha256(rpm_bytes).hexdigest()
@@ -474,6 +510,16 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     root = tmp_path / "assets"
     output = tmp_path / "inventory.json"
 
+    def deb_metadata(package: Path) -> tuple[str, bool]:
+        assert not output.exists() and not root.exists()
+        assert package.name == deb_name and package.read_bytes() == deb_bytes
+        return (
+            "libc6" if condition == "wrong-managed-depends" else depends,
+            not bundled if condition == "wrong-managed-bundle" else bundled,
+        )
+
+    monkeypatch.setattr(candidate, "read_candidate_deb_metadata", deb_metadata)
+
     def seal() -> None:
         candidate.stage(
             BuildRun(),
@@ -488,9 +534,9 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     if error:
         with pytest.raises(ValueError, match=error):
             seal()
-        if condition in {"wrong-managed-deb", "wrong-rpm-digest"}:
+        if condition in {"wrong-managed-deb", "wrong-rpm-digest", "wrong-managed-depends", "wrong-managed-bundle"}:
             assert len(downloads) == len(archives)
-        elif condition in {"wrong-managed-run", "missing-rollback"}:
+        elif condition in {"wrong-managed-run", "missing-rollback", "old-managed-schema"}:
             assert len(downloads) == len(runtime) + 1
         elif condition in {
             "wrong-rpm-ref", "wrong-rpm-attempt", "rpm-failed",

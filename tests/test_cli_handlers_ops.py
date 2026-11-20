@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from remote_ops_workspace import cli, cli_transfers
+from remote_ops_workspace import cli, cli_managed_runtime, cli_transfers
 from remote_ops_workspace.models import Profile
 
 
@@ -386,7 +386,8 @@ def test_operational_evidence_verifiers_cover_output_and_failures(
     monkeypatch, handler_name: str, dependency_name: str
 ) -> None:
     result = _validation(passed=True, summary=True)
-    monkeypatch.setattr(cli, dependency_name, lambda *_args, **_kwargs: result)
+    owner = cli_managed_runtime if handler_name.startswith(("cmd_servers_", "cmd_x11_")) else cli
+    monkeypatch.setattr(owner, dependency_name, lambda *_args, **_kwargs: result)
     handler = getattr(cli, handler_name)
     args = _ns(evidence=Path("evidence.json"), assets_dir=Path("assets"), json=True)
     assert handler(args) == 0
@@ -722,7 +723,7 @@ def test_server_handlers_cover_status_bundle_and_lifecycle(monkeypatch) -> None:
         ],
         notes=["server note"],
     )
-    monkeypatch.setattr(cli, "build_moba_server_suite_status", lambda: status)
+    monkeypatch.setattr(cli_managed_runtime, "build_moba_server_suite_status", lambda: status)
     assert cli.cmd_servers_status(_ns(json=True)) == 0
     assert cli.cmd_servers_status(_ns(json=False)) == 0
     lifecycle.pid = None
@@ -734,7 +735,7 @@ def test_server_handlers_cover_status_bundle_and_lifecycle(monkeypatch) -> None:
         service_coverage={"ssh": True, "ftp": False},
         notes=["runtime note"],
     )
-    monkeypatch.setattr(cli, "build_moba_server_runtime_status", lambda **_kwargs: runtime)
+    monkeypatch.setattr(cli_managed_runtime, "build_moba_server_runtime_status", lambda **_kwargs: runtime)
     runtime_args = _ns(root=[Path("servers")], json=True)
     assert cli.cmd_servers_runtime_status(runtime_args) == 0
     runtime_args.json = False
@@ -759,8 +760,8 @@ def test_server_handlers_cover_status_bundle_and_lifecycle(monkeypatch) -> None:
         placeholder=True,
         notes=["bundle note"],
     )
-    monkeypatch.setattr(cli, "build_moba_server_runtime_bundle_plan", lambda *_args, **_kwargs: plan)
-    monkeypatch.setattr(cli, "write_moba_server_runtime_bundle", lambda _plan: bundle)
+    monkeypatch.setattr(cli_managed_runtime, "build_moba_server_runtime_bundle_plan", lambda *_args, **_kwargs: plan)
+    monkeypatch.setattr(cli_managed_runtime, "write_moba_server_runtime_bundle", lambda _plan: bundle)
     bundle_args = _ns(
         out=Path("bundle"),
         service="ssh",
@@ -779,7 +780,7 @@ def test_server_handlers_cover_status_bundle_and_lifecycle(monkeypatch) -> None:
     bundle.runtime_status.service_coverage["ssh"] = False
     assert cli.cmd_servers_bundle_runtime(bundle_args) == 1
 
-    monkeypatch.setattr(cli, "build_moba_server_config_plan", lambda *_args, **_kwargs: plan)
+    monkeypatch.setattr(cli_managed_runtime, "build_moba_server_config_plan", lambda *_args, **_kwargs: plan)
     config_args = _ns(
         service="ssh",
         host="127.0.0.1",
@@ -798,8 +799,8 @@ def test_server_handlers_cover_status_bundle_and_lifecycle(monkeypatch) -> None:
     assert cli.cmd_servers_config_plan(config_args) == 0
 
     record = _Record(state="running", pid=42, state_path=Path("server.json"))
-    monkeypatch.setattr(cli, "build_moba_server_plan", lambda *_args, **_kwargs: plan)
-    monkeypatch.setattr(cli, "start_moba_server", lambda *_args, **_kwargs: record)
+    monkeypatch.setattr(cli_managed_runtime, "build_moba_server_plan", lambda *_args, **_kwargs: plan)
+    monkeypatch.setattr(cli_managed_runtime, "start_moba_server", lambda *_args, **_kwargs: record)
     start_args = _ns(
         service="ssh",
         host="127.0.0.1",
@@ -814,7 +815,7 @@ def test_server_handlers_cover_status_bundle_and_lifecycle(monkeypatch) -> None:
     assert cli.cmd_servers_start(start_args) == 0
     record.pid = None
     assert cli.cmd_servers_start(start_args) == 0
-    monkeypatch.setattr(cli, "stop_moba_server", lambda _service: record)
+    monkeypatch.setattr(cli_managed_runtime, "stop_moba_server", lambda _service: record)
     assert cli.cmd_servers_stop(_ns(service="ssh", json=True)) == 0
     assert cli.cmd_servers_stop(_ns(service="ssh", json=False)) == 0
 
@@ -822,8 +823,8 @@ def test_server_handlers_cover_status_bundle_and_lifecycle(monkeypatch) -> None:
 def test_x11_handlers_cover_runtime_lifecycle_and_smoke(monkeypatch) -> None:
     plan = _Record(command=["xvfb", ":9"], notes=["start note"])
     lifecycle = _Record(state="running", pid=42, state_path=Path("x11.json"), running=True)
-    monkeypatch.setattr(cli, "build_moba_x_server_plan", lambda **_kwargs: plan)
-    monkeypatch.setattr(cli, "start_moba_x_server", lambda *_args, **_kwargs: lifecycle)
+    monkeypatch.setattr(cli_managed_runtime, "build_moba_x_server_plan", lambda **_kwargs: plan)
+    monkeypatch.setattr(cli_managed_runtime, "start_moba_x_server", lambda *_args, **_kwargs: lifecycle)
     start_args = _ns(display=":9", dry_run=True, json=True)
     assert cli.cmd_x11_start(start_args) == 0
     start_args.json = False
@@ -844,7 +845,7 @@ def test_x11_handlers_cover_runtime_lifecycle_and_smoke(monkeypatch) -> None:
         extensions=[_Record(key="render", status="available", label="Render")],
         notes=["status note"],
     )
-    monkeypatch.setattr(cli, "build_moba_x_server_status", lambda **_kwargs: status)
+    monkeypatch.setattr(cli_managed_runtime, "build_moba_x_server_status", lambda **_kwargs: status)
     status_args = _ns(display=":9", json=True)
     assert cli.cmd_x11_status(status_args) == 0
     status_args.json = False
@@ -861,7 +862,7 @@ def test_x11_handlers_cover_runtime_lifecycle_and_smoke(monkeypatch) -> None:
         candidates=[_Record(key="xvfb", executable="Xvfb")],
         notes=["package note"],
     )
-    monkeypatch.setattr(cli, "build_moba_x_server_package_status", lambda **_kwargs: package_status)
+    monkeypatch.setattr(cli_managed_runtime, "build_moba_x_server_package_status", lambda **_kwargs: package_status)
     package_args = _ns(root=[Path("x11")], json=True)
     assert cli.cmd_x11_package_status(package_args) == 0
     package_args.json = False
@@ -879,8 +880,8 @@ def test_x11_handlers_cover_runtime_lifecycle_and_smoke(monkeypatch) -> None:
         placeholder=True,
         notes=["bundle note"],
     )
-    monkeypatch.setattr(cli, "build_moba_x_server_runtime_bundle_plan", lambda *_args, **_kwargs: plan)
-    monkeypatch.setattr(cli, "write_moba_x_server_runtime_bundle", lambda _plan: bundle)
+    monkeypatch.setattr(cli_managed_runtime, "build_moba_x_server_runtime_bundle_plan", lambda *_args, **_kwargs: plan)
+    monkeypatch.setattr(cli_managed_runtime, "write_moba_x_server_runtime_bundle", lambda _plan: bundle)
     bundle_args = _ns(
         out=Path("bundle"),
         runtime="xvfb",
@@ -898,7 +899,7 @@ def test_x11_handlers_cover_runtime_lifecycle_and_smoke(monkeypatch) -> None:
     bundle.package_status.packaged_available = False
     assert cli.cmd_x11_bundle_runtime(bundle_args) == 1
 
-    monkeypatch.setattr(cli, "stop_moba_x_server", lambda: lifecycle)
+    monkeypatch.setattr(cli_managed_runtime, "stop_moba_x_server", lambda: lifecycle)
     assert cli.cmd_x11_stop(_ns(json=True)) == 0
     assert cli.cmd_x11_stop(_ns(json=False)) == 0
 
@@ -910,8 +911,8 @@ def test_x11_handlers_cover_runtime_lifecycle_and_smoke(monkeypatch) -> None:
         evidence_sha256="b" * 64,
         notes=["smoke note"],
     )
-    monkeypatch.setattr(cli, "run_moba_x_server_smoke", lambda **_kwargs: evidence)
-    monkeypatch.setattr(cli, "write_moba_x_server_smoke_evidence", lambda item, _path: item)
+    monkeypatch.setattr(cli_managed_runtime, "run_moba_x_server_smoke", lambda **_kwargs: evidence)
+    monkeypatch.setattr(cli_managed_runtime, "write_moba_x_server_smoke_evidence", lambda item, _path: item)
     smoke_args = _ns(
         display=":9",
         probe_command="xclock",

@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from remote_ops_workspace import cli, moba_servers, x11
+from remote_ops_workspace import cli, cli_managed_runtime, moba_servers, x11
 
 
 @pytest.mark.parametrize("system", ["windows", "linux", "darwin"])
@@ -56,14 +56,14 @@ def test_windows_x_server_cli_requires_explicit_tcp_opt_in(runtime, tmp_path, mo
     state = tmp_path / "state.json"
     starts = []
     monkeypatch.setattr(
-        cli, "build_moba_x_server_plan",
+        cli_managed_runtime, "build_moba_x_server_plan",
         lambda **options: x11.build_moba_x_server_plan(
             system="windows", which=lambda name: runtime if name == runtime else None,
             display_probe=lambda _display: False, packaged_roots=[], **options,
         ),
     )
     monkeypatch.setattr(
-        cli, "start_moba_x_server",
+        cli_managed_runtime, "start_moba_x_server",
         lambda plan, **options: x11.start_moba_x_server(
             plan, state_path=state,
             popen_factory=lambda command, **_kwargs: starts.append(command) or SimpleNamespace(

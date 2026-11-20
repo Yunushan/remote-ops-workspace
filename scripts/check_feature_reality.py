@@ -355,7 +355,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
             "remote_ops_workspace.moba_servers:SERVER_GUI_CONFIG_SCHEMA",
         ],
         "source_tokens": {
-            "src/remote_ops_workspace/cli.py": [
+            "src/remote_ops_workspace/cli_managed_runtime.py": [
                 "cmd_servers_status",
                 "cmd_servers_start",
                 "cmd_servers_stop",
@@ -396,7 +396,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
             "remote_ops_workspace.moba_servers:build_moba_server_gui_config_surface",
         ],
         "source_tokens": {
-            "src/remote_ops_workspace/cli.py": [
+            "src/remote_ops_workspace/cli_managed_runtime.py": [
                 "cmd_servers_runtime_status",
                 "cmd_servers_bundle_runtime",
                 "cmd_servers_config_plan",
@@ -615,7 +615,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "XDMCP",
                 "ROW_XSERVER_RUNTIME_DIR",
             ],
-            "src/remote_ops_workspace/cli.py": ["x11_status", "cmd_x11_status", "cmd_x11_package_status"],
+            "src/remote_ops_workspace/cli_managed_runtime.py": ["x11_status", "cmd_x11_status", "cmd_x11_package_status"],
         },
     },
     "moba.xserver-lifecycle-supervision": {
@@ -651,7 +651,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "WaitForSingleObject",
                 "process identity changed; refusing to use a reused PID",
             ],
-            "src/remote_ops_workspace/cli.py": ["x11_stop", "cmd_x11_stop", "managed lifecycle"],
+            "src/remote_ops_workspace/cli_managed_runtime.py": ["x11_stop", "cmd_x11_stop", "managed lifecycle"],
         },
     },
     "moba.xserver-smoke-evidence": {
@@ -669,7 +669,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "evidence_sha256",
                 "missing-probe-command",
             ],
-            "src/remote_ops_workspace/cli.py": ["x11_smoke", "cmd_x11_smoke", "--probe-command"],
+            "src/remote_ops_workspace/cli_managed_runtime.py": ["x11_smoke", "cmd_x11_smoke", "--probe-command"],
         },
     },
     "moba.xserver-packaged-runtime-evidence": {
@@ -696,7 +696,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "ROW_XSERVER_RUNTIME_DIR",
                 "Placeholder runtime requires replacement",
             ],
-            "src/remote_ops_workspace/cli.py": [
+            "src/remote_ops_workspace/cli_managed_runtime.py": [
                 "cmd_x11_package_status",
                 "cmd_x11_bundle_runtime",
                 "cmd_x11_evidence_verify",

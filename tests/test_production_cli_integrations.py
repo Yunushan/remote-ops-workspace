@@ -5,17 +5,17 @@ import socket
 from pathlib import Path
 from types import SimpleNamespace
 
-from remote_ops_workspace import cli, gui, gui_smoke
+from remote_ops_workspace import cli, cli_managed_runtime, gui, gui_smoke
 
 
 def test_managed_server_and_x11_start_forward_security_options(monkeypatch, tmp_path) -> None:
     calls = []
     record = SimpleNamespace(to_dict=lambda: {"state": "planned"})
     plan = SimpleNamespace(to_dict=lambda: {"command": ["safe-helper"]})
-    monkeypatch.setattr(cli, "build_moba_server_plan", lambda service, **kwargs: calls.append((service, kwargs)) or plan)
-    monkeypatch.setattr(cli, "start_moba_server", lambda _plan, **_kwargs: record)
-    monkeypatch.setattr(cli, "build_moba_x_server_plan", lambda **kwargs: calls.append(("x11", kwargs)) or plan)
-    monkeypatch.setattr(cli, "start_moba_x_server", lambda _plan, **_kwargs: record)
+    monkeypatch.setattr(cli_managed_runtime, "build_moba_server_plan", lambda service, **kwargs: calls.append((service, kwargs)) or plan)
+    monkeypatch.setattr(cli_managed_runtime, "start_moba_server", lambda _plan, **_kwargs: record)
+    monkeypatch.setattr(cli_managed_runtime, "build_moba_x_server_plan", lambda **kwargs: calls.append(("x11", kwargs)) or plan)
+    monkeypatch.setattr(cli_managed_runtime, "start_moba_x_server", lambda _plan, **_kwargs: record)
     authority = tmp_path / "private authority"
     assert cli.main(["servers", "start", "ftp", "--require-tls", "--hardening-profile", "tls-authenticated", "--dry-run", "--json"]) == 0
     assert calls[0] == ("ftp", {"host": "127.0.0.1", "port": None, "root": None, "allow_public_bind": False, "require_tls": True, "hardening_profile": "tls-authenticated"})

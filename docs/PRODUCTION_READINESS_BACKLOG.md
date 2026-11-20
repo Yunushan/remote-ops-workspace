@@ -192,6 +192,8 @@ Rules:
   and output. `cli_reports.py` formats diagnostic and readiness reports.
   `cli_customizer.py` registers the enterprise bundle, deployment evidence,
   and authenticated update staging commands.
+  `cli_managed_runtime.py` registers the embedded server and X11 commands,
+  including the hidden HTTP and FTP runtime entry points used by packaged builds.
 
 ## Phase 6 - Internal certification gates (about +3)
 

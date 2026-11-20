@@ -97,6 +97,9 @@ their results. The underlying transfer plans and browser preferences live in
 `cli_customizer.py` registers the `customizer` commands for enterprise bundles,
 deployment evidence, and authenticated update staging. It delegates manifest
 verification and staging to `moba_customizer.py` and `update_channel.py`.
+`cli_managed_runtime.py` registers the `servers` and `x11` commands and
+renders their results. Runtime planning, lifecycle, and evidence validation
+live in `moba_servers.py` and `x11.py`.
 
 ## Desktop GUI subsystem
 

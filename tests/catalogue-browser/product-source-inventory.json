@@ -33,13 +33,18 @@
     },
     {
       "path": "src/remote_ops_workspace/cli.py",
-      "sha256": "37c14ff6c657bf88d8193c8a271d6b9144ca674b1d725aa54ddc4fbafca9e2b7",
-      "size": 112021
+      "sha256": "01bc16b8e0bb8064782ec9c004aac7c294ce1f18dba4315caa4984e771550601",
+      "size": 93749
     },
     {
       "path": "src/remote_ops_workspace/cli_customizer.py",
       "sha256": "86c87d4edee8eebaa4474b6c11663401c6afcdd5cab5a839bc94b1f28151df24",
       "size": 17557
+    },
+    {
+      "path": "src/remote_ops_workspace/cli_managed_runtime.py",
+      "sha256": "897a3cce9da7a6cc9b18b221f9dafe305e0f9d803d7d9195abfe6b6d8baa2fc4",
+      "size": 19883
     },
     {
       "path": "src/remote_ops_workspace/cli_reports.py",

@@ -182,8 +182,11 @@ def package_fixture(candidate: Path, root: Path, *, postinst: str | None = None,
 
 
 def build_rollback_blocker(root: Path, version: str) -> Path:
-    control = root / "package" / "DEBIAN" / "control"
+    tree = root / "package"
+    control = tree / "DEBIAN" / "control"
     control.parent.mkdir(parents=True)
+    tree.chmod(0o755)
+    control.parent.chmod(0o755)
     control.write_text(
         f"Package: {ROLLBACK_BLOCKER}\n"
         "Version: 1\nArchitecture: all\nMaintainer: Qualification <noreply@example.invalid>\n"
@@ -191,8 +194,9 @@ def build_rollback_blocker(root: Path, version: str) -> Path:
         "Description: Disposable rollback dependency qualification fixture\n",
         encoding="ascii",
     )
+    control.chmod(0o644)
     package = root / "rollback-blocker.deb"
-    checked("/usr/bin/dpkg-deb", "--root-owner-group", "--build", control.parent.parent, package)
+    checked("/usr/bin/dpkg-deb", "--root-owner-group", "--build", tree, package)
     return package
 
 

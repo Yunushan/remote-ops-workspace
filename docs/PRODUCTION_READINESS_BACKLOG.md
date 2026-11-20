@@ -170,6 +170,8 @@ Rules:
   geometry updates, and terminal input policy during switches.
   `gui_interaction_states.py` applies preset focus, toolbar state, tree
   selection, and tab status to live widgets.
+  `gui_quick_connect.py` builds the desktop Quick Connect controls, displays
+  suggestions and connected idle state, and dispatches the selected target.
   The mRemoteNG, Remmina, SecureCRT, and Termius workspace surfaces and
   control handlers live in dedicated GUI modules. The main window still
   routes each preset to its implementation.

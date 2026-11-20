@@ -36,6 +36,7 @@ class TestRequiredGuiPyzModules(_gui_pyz_unittest.TestCase):
                 "remote_ops_workspace.gui_home",
                 "remote_ops_workspace.gui_design_activation",
                 "remote_ops_workspace.gui_interaction_states",
+                "remote_ops_workspace.gui_quick_connect",
                 "remote_ops_workspace.gui_designs",
                 "remote_ops_workspace.gui_preset_mobaxterm",
                 "remote_ops_workspace.gui_preset_mremoteng",

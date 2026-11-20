@@ -31,6 +31,7 @@ SOURCE_FILES = (
     "src/remote_ops_workspace/gui_designs.py",
     "src/remote_ops_workspace/gui_interaction_states.py",
     "src/remote_ops_workspace/gui_preset_mobaxterm.py",
+    "src/remote_ops_workspace/gui_quick_connect.py",
     "src/remote_ops_workspace/gui_terminal.py",
     "src/remote_ops_workspace/gui_processes.py",
     "src/remote_ops_workspace/gui_values.py",

@@ -1109,7 +1109,7 @@
               "draw_moba_rail_icon",
               "item.rail_icon_key"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_quick_connect.py": [
               "quickConnect"
             ],
             "src/remote_ops_workspace/gui_sidebar.py": [
@@ -1140,7 +1140,7 @@
               "gui_design_moba_quick_connect_chrome",
               "dropdown_marker"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_quick_connect.py": [
               "mobaQuickConnectChrome",
               "mobaQuickConnectDropdown",
               "mobaQuickConnectHeight"
@@ -1172,7 +1172,7 @@
               "quick_connect_candidates",
               "preview_query"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_quick_connect.py": [
               "quick_connect_suggestions",
               "mobaQuickConnectSuggestionKinds",
               "mobaQuickConnectSuggestionLabels",
@@ -1206,7 +1206,7 @@
               "connected_suggestions_visible",
               "draw_moba_quick_connect_chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_quick_connect.py": [
               "set_moba_quick_connect_connected_idle",
               "mobaQuickConnectConnectedMode",
               "mobaQuickConnectConnectedSuggestionVisible"

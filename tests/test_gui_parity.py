@@ -902,7 +902,7 @@ def test_mobaxterm_titlebar_chrome_uses_shared_metadata() -> None:
 
 def test_mobaxterm_quick_connect_chrome_uses_shared_metadata() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    gui_source = Path("src/remote_ops_workspace/gui_quick_connect.py").read_text(encoding="utf-8")
     mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
@@ -934,7 +934,7 @@ def test_mobaxterm_quick_connect_suggestions_use_shared_metadata() -> None:
         if item["id"] == "moba.quick-connect-suggestions"
     )
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    gui_source = Path("src/remote_ops_workspace/gui_quick_connect.py").read_text(encoding="utf-8")
     mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
@@ -951,7 +951,7 @@ def test_mobaxterm_quick_connect_suggestions_use_shared_metadata() -> None:
     assert "quick-connect-suggestions" in checker_source
     assert "expected_moba_quick_connect_suggestion_chrome" in checker_source
     assert "MobaXterm-style Quick Connect suggestion dropdown" in docs_source
-    assert "mobaQuickConnectSuggestionKinds" in requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+    assert "mobaQuickConnectSuggestionKinds" in requirement["source_tokens"]["src/remote_ops_workspace/gui_quick_connect.py"]
 
 
 def test_mobaxterm_connected_quick_connect_idle_is_tracked() -> None:
@@ -962,7 +962,7 @@ def test_mobaxterm_connected_quick_connect_idle_is_tracked() -> None:
         if item["id"] == "moba.connected-quick-connect-idle"
     )
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    gui_source = Path("src/remote_ops_workspace/gui_quick_connect.py").read_text(encoding="utf-8")
     mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")

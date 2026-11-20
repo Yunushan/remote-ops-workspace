@@ -128,6 +128,39 @@ def test_every_recursive_native_smoke_removal_uses_the_verified_helper():
     assert source.index("\nAssert-DisposableCandidateHost\n") < source.index("\nif (!$Version) {")
 
 
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows smoke hashing uses PowerShell")
+@pytest.mark.parametrize("changed", [False, True])
+def test_signed_windows_smoke_binds_zip_exe_and_msi_bytes(tmp_path, changed):
+    source = (ROOT / "scripts/smoke_windows_native.ps1").read_text(encoding="utf-8")
+    initial = source.split("\nInitialize-CandidateByteBinding\n", 1)[1].split("\n# extract /", 1)[0]
+    final = source.rsplit('\nif ($RequireReleaseSigning -and $Arch -ne "x86") {', 1)[1]
+    final = '\nif ($RequireReleaseSigning -and $Arch -ne "x86") {' + final.split("\nComplete-CandidateByteBinding", 1)[0]
+    packages = {"NativeZip": "portable.zip", "SetupExe": "setup.exe", "Msi": "setup.msi"}
+    setup = ["$ErrorActionPreference = 'Stop'", "$RequireReleaseSigning = $true", '$Arch = "x64"',
+             "$script:CandidateByteBinding = [ordered]@{}", "function Save-CandidateByteBinding {}"]
+    for variable, filename in packages.items():
+        package = tmp_path / filename
+        package.write_bytes(filename.encode())
+        setup.append(f"${variable} = {_ps_quote(package)}")
+    if changed:
+        initial += '\n[IO.File]::WriteAllBytes($SetupExe, [byte[]](1, 2, 3))\n'
+    result = subprocess.run(
+        [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-Command",
+         "\n".join([*setup, initial, final, "$script:CandidateByteBinding.installer_sha256 | ConvertTo-Json"])],
+        env={**os.environ, "PSMODULEPATH": str(POWERSHELL.parent / "Modules")},
+        timeout=30, capture_output=True, text=True, check=False,
+    )
+    if changed:
+        assert result.returncode != 0
+        assert "Installer bytes changed during native smoke: setup.exe" in result.stderr
+    else:
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout) == {
+            filename: hashlib.sha256(filename.encode()).hexdigest() for filename in packages.values()
+        }
+
+
 def _semantic_receipt():
     hashes = {"cli": "a" * 64, "gui": "b" * 64}
     paths = ["portable/bin/row.exe", "exe-install/bin/row.exe", "msi-install/bin/row.exe", "portable/bin/row-gui.exe", "portable/Remote Ops Workspace GUI.exe", "exe-install/bin/row-gui.exe", "msi-install/bin/row-gui.exe"]

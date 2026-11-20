@@ -90,7 +90,12 @@ mkdir -p "$MOUNT_DIR" "$DMG_APP_DIR"
 
 BINDING_TARGET="macos-${ARCH}"
 BINDING_REPORT="$SMOKE_ROOT/candidate-runtime-byte-binding.json"
-python3 scripts/candidate_posix_byte_binding.py init --target "$BINDING_TARGET" --report "$BINDING_REPORT" --root "$ROOT"
+installer_options=()
+if [[ "$REQUIRE_RELEASE_SIGNING" == true ]]; then
+  installer_options=(--installer "$DMG" --installer "$PKG")
+fi
+python3 scripts/candidate_posix_byte_binding.py init --target "$BINDING_TARGET" --report "$BINDING_REPORT" \
+  --root "$ROOT" "${installer_options[@]}"
 
 candidate_check_app() {
   local executable="$1" public_path="$2" phase="$3" probe="$4"
@@ -284,5 +289,5 @@ sudo rm -rf "$PKG_APP"
 sudo pkgutil --forget "$APP_ID"
 require_pkg_absent "PKG uninstall"
 
-python3 scripts/candidate_posix_byte_binding.py complete --target "$BINDING_TARGET" --report "$BINDING_REPORT"
+python3 scripts/candidate_posix_byte_binding.py complete --target "$BINDING_TARGET" --report "$BINDING_REPORT" "${installer_options[@]}"
 echo "native installer smoke passed for macOS $ARCH"

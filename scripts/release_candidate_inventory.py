@@ -44,7 +44,8 @@ from scripts.managed_debian_qualification import (  # noqa: E402
 )
 from scripts.release_evidence_file import retry_evidence_operation  # noqa: E402
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
+GUI_SMOKE_SCHEMA_VERSION = 7
 MANAGED_RPM_SCHEMA_VERSION = 6
 RPM_SMOKE_SCHEMA_VERSION = 5
 RPM_SCHEMA_VERSION = 4
@@ -370,11 +371,14 @@ def stage(
         for name in GUI_SMOKE_ARTIFACT_NAMES
     }
     validate_gui_smoke_records(gui_smoke, set())
-    verify_sealed_gui_smoke(client, gui_smoke, run_id, release_sha)
+    observed_installers = verify_sealed_gui_smoke(client, gui_smoke, run_id, release_sha)
+    for name, record in gui_smoke.items():
+        record["installer_sha256"] = observed_installers[name]
     records = materialize_records(
         client, build_artifacts, assets_root,
         managed_deb=(release_tag, managed["receipt"]),
         release_rpm=(release_tag, rpm_sha),
+        gui_installers=(release_tag, gui_smoke),
     )
     inventory = {
         "schema_version": SCHEMA_VERSION,
@@ -641,7 +645,8 @@ def validate_gui_smoke_records(value: Any, ids: set[int]) -> None:
     if not isinstance(value, dict) or value.keys() != set(GUI_SMOKE_ARTIFACT_NAMES):
         raise ValueError("approved candidate inventory must contain all desktop GUI smoke archives")
     for name, record in value.items():
-        if not isinstance(record, dict) or record.keys() != {"artifact_id", "archive_digest", "size_in_bytes"}:
+        fields = {"artifact_id", "archive_digest", "size_in_bytes"}
+        if not isinstance(record, dict) or record.keys() not in (fields, fields | {"installer_sha256"}):
             raise ValueError(f"{name} sealed archive identity is invalid")
         artifact_id = positive_int(record["artifact_id"], f"{name} artifact id")
         if artifact_id in ids:
@@ -653,7 +658,7 @@ def validate_gui_smoke_records(value: Any, ids: set[int]) -> None:
             raise ValueError(f"{name} archive exceeds the GUI smoke size limit")
 
 
-def validate_gui_smoke_archive(path: Path, name: str) -> None:
+def validate_gui_smoke_archive(path: Path, name: str) -> Any:
     reports = {}
     with zipfile.ZipFile(path) as archive:
         members = archive.infolist()
@@ -701,12 +706,14 @@ def validate_gui_smoke_archive(path: Path, name: str) -> None:
         for row in gui_observations
     ):
         raise ValueError(f"{name} installer smoke did not observe the verified GUI executable bytes")
+    return binding.get("installer_sha256")
 
 
 def verify_sealed_gui_smoke(
     client: GitHubClient, records: dict[str, Any], run_id: int, release_sha: str,
     *, archive_root: Path | None = None,
-) -> None:
+) -> dict[str, Any]:
+    installers = {}
     with tempfile.TemporaryDirectory(prefix="row-release-gui-smoke-") as temporary:
         for name, record in records.items():
             artifact_id = record["artifact_id"]
@@ -725,10 +732,37 @@ def verify_sealed_gui_smoke(
                 or metadata.get("size_in_bytes") != record["size_in_bytes"]
             ):
                 raise ValueError(f"{name} archive digest or size differs from the sealed inventory")
-            validate_gui_smoke_archive(archive, name)
+            observed = validate_gui_smoke_archive(archive, name)
+            if "installer_sha256" in record and observed != record["installer_sha256"]:
+                raise ValueError(f"{name} installer smoke hashes differ from the sealed inventory")
+            installers[name] = observed
             if archive_root is not None:
                 with archive.open("rb") as source, (archive_root / archive.name).open("xb") as output:
                     shutil.copyfileobj(source, output)
+    return installers
+
+
+def require_gui_installer_assets(
+    records: list[dict[str, Any]], release_tag: str, smoke: dict[str, Any],
+) -> None:
+    by_name = {record["name"]: record["files"] for record in records}
+    for name, receipt in smoke.items():
+        target = name.removeprefix("release-").replace("-gui-smoke-", "-", 1)
+        platform, arch = target.split("-", 1)
+        base = f"remote-ops-workspace-{release_tag}-{target}"
+        suffixes = ("-native.zip", "-setup.exe", ".msi") if platform == "windows" else (".dmg", ".pkg")
+        expected_names = {base + suffix for suffix in suffixes}
+        hashes = receipt.get("installer_sha256")
+        if (
+            not isinstance(hashes, dict) or hashes.keys() != expected_names
+            or any(not isinstance(digest, str) or DIGEST_RE.fullmatch(f"sha256:{digest}") is None
+                   for digest in hashes.values())
+        ):
+            raise ValueError(f"{name} receipt must bind the complete installer digest set")
+        files = by_name.get(f"release-{platform}-native-{arch}", [])
+        for asset, sha256 in hashes.items():
+            if [row.get("sha256") for row in files if isinstance(row, dict) and row.get("path") == asset] != [sha256]:
+                raise ValueError(f"{name} smoke receipt differs from the candidate installer {asset}")
 
 
 def require_linux_installer(records: list[dict[str, Any]], name: str, sha256: str, label: str) -> None:
@@ -953,6 +987,7 @@ def materialize_records(
     expected_records: list[dict[str, Any]] | None = None,
     managed_deb: tuple[str, dict[str, Any]] | None = None,
     release_rpm: tuple[str, str] | None = None,
+    gui_installers: tuple[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     if assets_root.is_symlink() or (
         assets_root.exists() and (not assets_root.is_dir() or any(assets_root.iterdir()))
@@ -982,6 +1017,8 @@ def materialize_records(
                 raise ValueError("managed Debian receipt server bundle claim differs from the candidate DEB")
         if release_rpm is not None:
             require_release_rpm(records, *release_rpm)
+        if gui_installers is not None:
+            require_gui_installer_assets(records, *gui_installers)
         if assets_root.is_symlink():
             raise ValueError("assets root became a symlink during staging")
         if assets_root.exists():
@@ -1144,8 +1181,10 @@ def validate_inventory(
         require_release_rpm(records, release_tag, rpm_sha)
         if schema >= RPM_SMOKE_SCHEMA_VERSION or "rpm_smoke" in value:
             validate_rpm_smoke_metadata(value.get("rpm_smoke"), value["rpm_recovery"]["receipt"])
-    if schema >= SCHEMA_VERSION or "gui_smoke" in value:
+    if schema >= GUI_SMOKE_SCHEMA_VERSION or "gui_smoke" in value:
         validate_gui_smoke_records(value.get("gui_smoke"), ids)
+    if schema >= SCHEMA_VERSION:
+        require_gui_installer_assets(records, release_tag, value["gui_smoke"])
     return sorted(records, key=lambda item: item["name"])
 
 

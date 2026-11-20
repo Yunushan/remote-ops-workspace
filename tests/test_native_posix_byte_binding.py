@@ -92,7 +92,7 @@ def setup_fixture(tmp_path, target, helpers):
     return report, value, image
 
 
-def fill_report(binding, target, root, report, package):
+def fill_report(binding, target, root, report, package, *, installers=()):
     outputs, paths, probes = binding.target_contract(target)
     for public_path, phase, probe in sorted(probes):
         binding.check(report, target, root / outputs[paths[public_path]], public_path, phase, probe)
@@ -114,9 +114,31 @@ def fill_report(binding, target, root, report, package):
     if target.startswith("macos-"):
         for public_path, phase in sorted(binding.MAC_BUNDLE_STAGES):
             binding.check_app_bundle(report, target, root / binding.MAC_APP_SOURCE, public_path, phase)
-    binding.complete(report, target)
+    binding.complete(report, target, installers=installers)
     return json.loads(report.read_text())
 
+
+
+@pytest.mark.parametrize("changed", [False, True])
+def test_signed_macos_smoke_binds_dmg_and_pkg_bytes(helpers, tmp_path, changed):
+    binding, _ = helpers
+    target = "macos-x64"
+    report, _, _ = setup_fixture(tmp_path, target, helpers)
+    installers = [tmp_path / f"remote-ops-workspace-v1.0.27-{target}.{suffix}" for suffix in ("dmg", "pkg")]
+    for installer in installers:
+        installer.write_bytes(installer.name.encode())
+    initial = binding.initialize(tmp_path, target, report, installers=installers)
+    if changed:
+        installers[1].write_bytes(b"different installer")
+        with pytest.raises(ValueError, match="installer bytes changed during native smoke"):
+            fill_report(binding, target, tmp_path, report, None, installers=installers)
+        assert json.loads(report.read_text())["smoke_complete"] is False
+    else:
+        final = fill_report(binding, target, tmp_path, report, None, installers=installers)
+        assert final["smoke_complete"] is True
+        assert final["installer_sha256"] == initial["installer_sha256"] == {
+            installer.name: binding.digest(installer) for installer in installers
+        }
 
 @pytest.mark.parametrize("target", TARGETS)
 def test_complete_receipt_matches_real_finish_contract(helpers, tmp_path, target):

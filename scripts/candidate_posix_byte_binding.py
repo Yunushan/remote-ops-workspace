@@ -146,7 +146,15 @@ def regular_file(path):
         raise ValueError("candidate binding requires a regular non-symlink file")
 
 
-def initialize(root, target, report_path, appimage=None):
+def macos_installer_hashes(target, installers):
+    if not target.startswith("macos-") or len(installers) != 2 or {path.suffix for path in installers} != {".dmg", ".pkg"}:
+        raise ValueError("installer binding requires the macOS DMG and PKG")
+    for path in installers:
+        regular_file(path)
+    return {path.name: digest(path) for path in installers}
+
+
+def initialize(root, target, report_path, appimage=None, *, installers=()):
     from candidate_native_proof import archive_inventory
 
     outputs, paths, probes = target_contract(target)
@@ -192,6 +200,8 @@ def initialize(root, target, report_path, appimage=None):
     if target.startswith("macos-"):
         report["expected_app_bundle"] = {"path": MAC_APP_SOURCE, **app_bundle_inventory(root / MAC_APP_SOURCE)}
         report["app_bundle_observations"] = []
+    if installers:
+        report["installer_sha256"] = macos_installer_hashes(target, installers)
     save(report_path, report)
     return report
 
@@ -298,8 +308,11 @@ def check_app_bundle(report_path, target, path, public_path, phase):
         raise ValueError("candidate application bundle byte mismatch")
 
 
-def complete(report_path, target):
+def complete(report_path, target, *, installers=()):
     report = load(report_path, target)
+    if installers or "installer_sha256" in report:
+        if macos_installer_hashes(target, installers) != report.get("installer_sha256"):
+            raise ValueError("installer bytes changed during native smoke")
     _, _, required = target_contract(target)
     observations = report["observations"]
     if report["status"] != "pending" or any(row.get("matched") is not True for row in observations):
@@ -336,6 +349,7 @@ def main():
     parser.add_argument("--report", required=True, type=Path)
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--appimage", type=Path)
+    parser.add_argument("--installer", type=Path, action="append", default=[])
     parser.add_argument("--path", type=Path)
     parser.add_argument("--public-path")
     parser.add_argument("--stage", choices=("install", "reinstall"))
@@ -344,7 +358,7 @@ def main():
     args = parser.parse_args()
     try:
         if args.phase == "init":
-            initialize(args.root.resolve(), args.target, args.report, args.appimage)
+            initialize(args.root.resolve(), args.target, args.report, args.appimage, installers=args.installer)
         elif args.phase == "check":
             if (
                 args.path is None
@@ -367,11 +381,12 @@ def main():
                 raise ValueError("candidate bundle check needs a path and stage")
             check_app_bundle(args.report, args.target, args.path, args.public_path, args.stage)
         else:
-            complete(args.report, args.target)
+            complete(args.report, args.target, installers=args.installer)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         # Never print an actual installed/private path, file contents or traceback.
         known_failures = {
             "candidate executable byte mismatch before probe": "byte mismatch before probe",
+            "installer bytes changed during native smoke": "installer bytes changed during native smoke",
             "candidate application bundle byte mismatch": "application bundle byte mismatch",
         }
         reason = known_failures.get(str(exc), type(exc).__name__)

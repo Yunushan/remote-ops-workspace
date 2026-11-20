@@ -70,7 +70,11 @@ ZIPs in `archives/`. For current candidates it also retains the original
 Debian update, RPM recovery, and four desktop GUI smoke ZIPs. Candidate
 sealing, review, and promotion verify each GUI ZIP and check that its archive
 proof refers to the completed smoke receipt and the executable observed during
-installer testing. The review command also checks the Linux qualification files
+installer testing. Signed desktop smoke hashes the Windows ZIP, EXE, and MSI
+and the macOS DMG and PKG before and after installer testing. Sealing compares
+those digests with the candidate assets, and the final audit compares the
+approved candidate assets with the published bytes. The review command also
+checks the Linux qualification files
 and controller digests against the sealed inventory and tagged checkout.
 `review-materials.json` lists the retained qualification archive paths, hashes,
 and source references. The command copies the sealed inventory, report

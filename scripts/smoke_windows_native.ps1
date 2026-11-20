@@ -515,6 +515,14 @@ $SmokeRoot = Join-Path $Root "build\native-smoke\windows-$Arch"
 Remove-CandidateSmokeTree $SmokeRoot
 New-Item -ItemType Directory -Force $SmokeRoot | Out-Null
 Initialize-CandidateByteBinding
+if ($RequireReleaseSigning -and $Arch -ne "x86") {
+  $script:CandidateByteBinding["installer_sha256"] = @{}
+  foreach ($Artifact in @($NativeZip, $SetupExe, $Msi)) {
+    $script:CandidateByteBinding.installer_sha256[(Split-Path -Leaf $Artifact)] =
+      (Get-FileHash -LiteralPath $Artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+  }
+  Save-CandidateByteBinding
+}
 
 # extract / verify / remove smoke for the native portable zip.
 $PortableInstallDir = Join-Path $SmokeRoot "portable"
@@ -588,5 +596,13 @@ if (Test-Path $MsiGui) {
   throw "MSI uninstall left row-gui.exe behind"
 }
 
+if ($RequireReleaseSigning -and $Arch -ne "x86") {
+  foreach ($Artifact in @($NativeZip, $SetupExe, $Msi)) {
+    $InitialHash = $script:CandidateByteBinding.installer_sha256[(Split-Path -Leaf $Artifact)]
+    if ((Get-FileHash -LiteralPath $Artifact -Algorithm SHA256).Hash.ToLowerInvariant() -cne $InitialHash) {
+      throw "Installer bytes changed during native smoke: $(Split-Path -Leaf $Artifact)"
+    }
+  }
+}
 Complete-CandidateByteBinding
 Write-Host "native installer smoke passed for Windows $Arch"

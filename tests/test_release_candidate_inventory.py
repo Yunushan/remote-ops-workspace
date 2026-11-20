@@ -233,6 +233,8 @@ def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
         ("wrong-gui-binding", "GUI archive proof does not bind the completed smoke receipt"),
         ("wrong-gui-launcher", "GUI archive proof refers to different executable bytes"),
         ("wrong-gui-observation", "smoke did not observe the verified GUI executable bytes"),
+        ("missing-gui-installers", "must bind the complete installer digest set"),
+        ("wrong-gui-installer", "smoke receipt differs from the candidate installer"),
         ("missing-runtime", "missing=.*release-runtime-windows-x86"),
         ("missing-managed", "missing=.*release-managed-debian-update"),
         ("missing-rpm", "missing=.*release-linux-rpm-recovery"),
@@ -313,6 +315,14 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
         names.append("unexpected-build")
     artifacts = []
     archives: dict[int, bytes] = {}
+    desktop_installers = {}
+    for name in smoke:
+        target = name.removeprefix("release-").replace("-gui-smoke-", "-", 1)
+        suffixes = ("-native.zip", "-setup.exe", ".msi") if target.startswith("windows-") else (".dmg", ".pkg")
+        desktop_installers[target] = {
+            f"remote-ops-workspace-{tag}-{target}{suffix}": f"candidate bytes for {target}{suffix}".encode()
+            for suffix in suffixes
+        }
     raw_report = b'{"version":"1","installed":[{"metadata":{"name":"pip","version":"26.3"}}]}'
     deb_name = f"remote-ops-workspace-{tag}-linux-amd64.deb"
     deb_bytes = b"exact release Debian installer"
@@ -477,7 +487,14 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                 archive.writestr(report, body)
             elif name in smoke:
                 target = name.removeprefix("release-").replace("-gui-smoke-", "-", 1)
+                installer_hashes = {key: hashlib.sha256(data).hexdigest()
+                                    for key, data in desktop_installers[target].items()}
+                if (condition, name) == ("missing-gui-installers", smoke[0]):
+                    installer_hashes.clear()
+                if (condition, name) == ("wrong-gui-installer", smoke[0]):
+                    installer_hashes[next(iter(installer_hashes))] = "d" * 64
                 gui_binding = candidate.qualification_receipt_bytes({
+                    "installer_sha256": installer_hashes,
                     "target": target, "status": "bound", "smoke_complete": True,
                     "expected_executables": [{"role": "gui", "path": "native/row-gui", "sha256": "c" * 64}],
                     "observations": [{
@@ -505,6 +522,9 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                     archive.writestr(candidate.RPM_SMOKE_FILES[1], binding)
             else:
                 archive.writestr(f"{name}.txt", f"bytes from {name}")
+                target = name.removeprefix("release-").replace("-native-", "-", 1)
+                for installer, data in desktop_installers.get(target, {}).items():
+                    archive.writestr(installer, data)
                 if name == "release-linux-native-x86_64":
                     archive.writestr(deb_name, deb_bytes)
                     archive.writestr(rpm_name, rpm_bytes)
@@ -584,7 +604,10 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     if error:
         with pytest.raises(ValueError, match=error):
             seal()
-        if condition in {"wrong-managed-deb", "wrong-rpm-digest", "wrong-managed-depends", "wrong-managed-bundle"}:
+        if condition in {
+            "wrong-managed-deb", "wrong-rpm-digest", "wrong-managed-depends", "wrong-managed-bundle",
+            "missing-gui-installers", "wrong-gui-installer",
+        }:
             assert len(downloads) == len(archives)
         elif condition in {"wrong-managed-run", "wrong-managed-controller", "missing-rollback", "old-managed-schema"}:
             assert len(downloads) == len(runtime) + 1
@@ -611,7 +634,10 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
         run_id=123, run_attempt=1,
     )
     assert {record["name"] for record in records} == set(standard)
-    assert {path.name for path in root.iterdir()} == {deb_name, rpm_name, *(f"{name}.txt" for name in standard)}
+    assert {path.name for path in root.iterdir()} == {
+        deb_name, rpm_name, *(f"{name}.txt" for name in standard),
+        *(name for group in desktop_installers.values() for name in group),
+    }
     assert len(downloads) == len(archives) and set(downloads) == set(archives)
     assert inventory["runtime_reports"].keys() == candidate.RUNTIME_REPORT_ARTIFACT_NAMES.keys()
     for report in inventory["runtime_reports"].values():
@@ -624,6 +650,10 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
         assert record == {
             "artifact_id": metadata["id"], "archive_digest": metadata["digest"],
             "size_in_bytes": len(archives[metadata["id"]]),
+            "installer_sha256": {
+                asset: hashlib.sha256(data).hexdigest()
+                for asset, data in desktop_installers[name.removeprefix("release-").replace("-gui-smoke-", "-", 1)].items()
+            },
         }
     managed = inventory.pop("managed_debian_update")
     assert managed["sha256"] == hashlib.sha256(managed_report).hexdigest()
@@ -682,6 +712,14 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     candidate.validate_inventory(inventory, **coordinates)
     inventory["schema_version"] = candidate.SCHEMA_VERSION
     inventory["gui_smoke"] = gui_archives
+    gui_record = gui_archives[smoke[0]]
+    installer_hashes = gui_record.pop("installer_sha256")
+    with pytest.raises(ValueError, match="must bind the complete installer digest set"):
+        candidate.validate_inventory(inventory, **coordinates)
+    inventory["schema_version"] = candidate.GUI_SMOKE_SCHEMA_VERSION
+    candidate.validate_inventory(inventory, **coordinates)
+    inventory["schema_version"] = candidate.SCHEMA_VERSION
+    gui_record["installer_sha256"] = installer_hashes
     retained = tmp_path / "review" / "archives"
     retained.mkdir(parents=True)
     qualifications = prepare_release_redistribution_review.collect_qualification_archives(

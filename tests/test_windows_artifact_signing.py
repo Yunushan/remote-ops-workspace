@@ -25,8 +25,13 @@ def run_signer(tmp_path: Path):
     for operation in ("sign", "verify"):
         (tmp_path / operation).write_text(
             "import json, os, sys\n"
+            "from pathlib import Path\n"
+            "if os.environ.get('ROW_TEST_SIGNTOOL_REHEARSE') == '1':\n"
+            "    assert Path(sys.argv[-1]).read_bytes().startswith(b'MZ')\n"
             "with open(os.environ['ROW_TEST_SIGNTOOL_CALLS'], 'a', encoding='utf-8') as log:\n"
             f"    log.write(json.dumps([{operation!r}, *sys.argv[1:]]) + '\\n')\n"
+            "if '/p' in sys.argv:\n"
+            "    print('SDK diagnostic: ' + sys.argv[sys.argv.index('/p') + 1], file=sys.stderr)\n"
             f"raise SystemExit(int(os.environ['ROW_TEST_{operation.upper()}_EXIT']))\n",
             encoding="utf-8",
         )
@@ -54,16 +59,20 @@ def run_signer(tmp_path: Path):
     artifact.touch()
     calls = tmp_path / "signtool-calls.jsonl"
 
-    def run(inputs, *, xp=False, sign_exit=0, verify_exit=0, shell=None):
+    def run(inputs, *, xp=False, sign_exit=0, verify_exit=0, shell=None, rehearse=False):
         env = {key: value for key, value in os.environ.items() if not key.upper().startswith("ROW_WINDOWS_")}
         env.update({f"ROW_WINDOWS_{key}": value for key, value in inputs.items()})
         env.update(
             ROW_TEST_SIGNTOOL_EXE=sys.executable, ROW_TEST_SIGNTOOL_CALLS=str(calls), ROW_TEST_SIGN_EXIT=str(sign_exit),
             ROW_TEST_VERIFY_EXIT=str(verify_exit), RUNNER_TEMP=str(tmp_path),
         )
+        arguments = ["-ArtifactPath", str(artifact)]
+        if rehearse:
+            env["ROW_TEST_SIGNTOOL_REHEARSE"] = "1"
+            arguments = ["-Rehearse"]
         result = subprocess.run(
             [shell or powershell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-             "-File", str(xp_driver if xp else signer), "-ArtifactPath", str(artifact)],
+             "-File", str(xp_driver if xp else signer), *arguments],
             cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30, check=False,
         )
         commands = [json.loads(line) for line in calls.read_text(encoding="utf-8-sig").splitlines()] if calls.exists() else []
@@ -132,6 +141,38 @@ def test_signing_preserves_exact_pfx_password(run_signer, tmp_path: Path, xp: bo
     assert sign[9:] == ["/p", password, artifact]
     assert verify == ["verify", "/pa", "/all", "/tw", artifact]
     assert password not in result.stdout + result.stderr
+    assert "SDK diagnostic: [redacted]" in result.stdout
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows signing rehearsal")
+@pytest.mark.parametrize(("sign_exit", "verify_exit", "steps", "error"), [
+    (0, 0, ["sign", "verify"], ""),
+    (1, 0, ["sign"], "Authenticode signing failed"),
+    (0, 2, ["sign", "verify"], "Authenticode signature or timestamp verification failed"),
+])
+def test_signing_rehearsal_checks_a_disposable_assembly(
+    run_signer, tmp_path: Path, sign_exit, verify_exit, steps, error,
+) -> None:
+    result, commands, original = run_signer({
+        "CERTIFICATE_THUMBPRINT": THUMBPRINT,
+        "TIMESTAMP_URL": TIMESTAMP,
+    }, rehearse=True, sign_exit=sign_exit, verify_exit=verify_exit)
+
+    assert result.returncode == bool(error), result.stderr
+    assert [command[0] for command in commands] == steps, result.stderr
+    rehearsal = Path(commands[0][-1])
+    assert rehearsal.name == "rehearsal.dll"
+    assert rehearsal.parent.name.startswith("row-signing-rehearsal-")
+    assert not rehearsal.parent.exists()
+    assert Path(original).read_bytes() == b""
+    assert commands[0][:7] == ["sign", "/fd", "SHA256", "/tr", TIMESTAMP, "/td", "SHA256"]
+    if "verify" in steps:
+        assert commands[-1] == ["verify", "/pa", "/all", "/tw", str(rehearsal)]
+    if error:
+        assert error in result.stderr
+        assert "rehearsal passed" not in result.stdout
+    else:
+        assert "signing, timestamp and trust rehearsal passed" in result.stdout
 
 
 @pytest.mark.parametrize(("overrides", "error"), [

@@ -1,6 +1,9 @@
+[CmdletBinding(DefaultParameterSetName = "Artifact")]
 param(
-  [Parameter(Mandatory)]
+  [Parameter(Mandatory, ParameterSetName = "Artifact")]
   [string]$ArtifactPath,
+  [Parameter(Mandatory, ParameterSetName = "Rehearsal")]
+  [switch]$Rehearse,
   [string]$CertificatePath = $env:ROW_WINDOWS_CERTIFICATE_PATH
 )
 
@@ -12,6 +15,8 @@ function Invoke-SignTool([string]$Executable, [string[]]$Arguments) {
   $StartInfo.FileName = $Executable
   $StartInfo.UseShellExecute = $false
   $StartInfo.CreateNoWindow = $true
+  $StartInfo.RedirectStandardOutput = $true
+  $StartInfo.RedirectStandardError = $true
   $StartInfo.WorkingDirectory = $ExecutionContext.SessionState.Path.CurrentFileSystemLocation.ProviderPath
   # Windows PowerShell 5.1 does not preserve native arguments with embedded quotes.
   # Double backslashes before each quote or the closing delimiter for Windows argv.
@@ -22,7 +27,17 @@ function Invoke-SignTool([string]$Executable, [string[]]$Arguments) {
   $StartInfo.Arguments = $EncodedArguments -join " "
   $Process = [System.Diagnostics.Process]::Start($StartInfo)
   try {
+    $Output = $Process.StandardOutput.ReadToEndAsync()
+    $Errors = $Process.StandardError.ReadToEndAsync()
     $Process.WaitForExit()
+    foreach ($Diagnostic in @($Output.Result, $Errors.Result)) {
+      if ($Diagnostic) {
+        if ($env:ROW_WINDOWS_CERTIFICATE_PASSWORD) {
+          $Diagnostic = $Diagnostic.Replace($env:ROW_WINDOWS_CERTIFICATE_PASSWORD, "[redacted]")
+        }
+        Write-Host $Diagnostic.TrimEnd()
+      }
+    }
     return $Process.ExitCode
   } finally {
     $Process.Dispose()
@@ -63,10 +78,31 @@ if (![string]::IsNullOrWhiteSpace($Thumbprint)) {
 }
 
 $SignTool = Find-WindowsSignTool
-$SignArgs = @("sign", "/fd", "SHA256", "/tr", $Timestamp.AbsoluteUri, "/td", "SHA256") + $CertificateArgs + @($ArtifactPath)
-if ((Invoke-SignTool $SignTool $SignArgs) -ne 0) {
-  throw "Authenticode signing failed for $ArtifactPath"
+$RehearsalDirectory = $null
+try {
+  if ($Rehearse) {
+    $RehearsalId = [guid]::NewGuid().ToString("N")
+    $RehearsalDirectory = (New-Item -ItemType Directory -Path (
+      Join-Path ([IO.Path]::GetTempPath()) "row-signing-rehearsal-$RehearsalId"
+    )).FullName
+    $ArtifactPath = Join-Path $RehearsalDirectory "rehearsal.dll"
+    Add-Type -TypeDefinition "public static class RowSigningRehearsal$RehearsalId {}" -OutputAssembly $ArtifactPath
+  }
+  $SignArgs = @("sign", "/fd", "SHA256", "/tr", $Timestamp.AbsoluteUri, "/td", "SHA256") + $CertificateArgs + @($ArtifactPath)
+  if ((Invoke-SignTool $SignTool $SignArgs) -ne 0) {
+    throw "Authenticode signing failed for $ArtifactPath"
+  }
+  if ((Invoke-SignTool $SignTool @("verify", "/pa", "/all", "/tw", $ArtifactPath)) -ne 0) {
+    throw "Authenticode signature or timestamp verification failed for $ArtifactPath"
+  }
+} finally {
+  if ($RehearsalDirectory) {
+    if (Test-Path -LiteralPath $ArtifactPath) {
+      Remove-Item -LiteralPath $ArtifactPath -Force
+    }
+    [IO.Directory]::Delete($RehearsalDirectory)
+  }
 }
-if ((Invoke-SignTool $SignTool @("verify", "/pa", "/all", "/tw", $ArtifactPath)) -ne 0) {
-  throw "Authenticode signature or timestamp verification failed for $ArtifactPath"
+if ($Rehearse) {
+  Write-Output "Windows Authenticode signing, timestamp and trust rehearsal passed."
 }

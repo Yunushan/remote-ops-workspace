@@ -292,6 +292,24 @@ verify platform trust, signing and notarization on the actual packages.
 [Apple Developer ID certificate roles](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements) ·
 [App Store Connect team API keys](https://developer.apple.com/documentation/appstoreconnectapi/generating-tokens-for-api-requests)
 
+Before creating the tag, you can also rehearse Windows signing on a Windows
+signing host with the Windows SDK. Set `ROW_WINDOWS_TIMESTAMP_URL` and select
+the certificate using the environment settings in the
+[production readiness guide](../PRODUCTION_READINESS.md#external-prerequisites).
+For PFX signing, set `ROW_WINDOWS_CERTIFICATE_PATH` to the local PFX and
+`ROW_WINDOWS_CERTIFICATE_PASSWORD` to its password. For a certificate from
+the Windows certificate store, use the configured thumbprint and store.
+
+```powershell
+.\scripts\sign_windows_artifact.ps1 -Rehearse
+```
+
+The rehearsal compiles a disposable DLL, signs it with SHA-256, and checks
+its Authenticode trust and RFC 3161 timestamp using the release SignTool
+commands. The timestamp service receives the signature digest. The script
+removes the temporary DLL after success or failure. The release build still
+signs and verifies the final installer bytes on its native runners.
+
 You can check the protected `release` environment while other approvals are
 pending. This command verifies the presence of the Windows and macOS signing
 secret names.

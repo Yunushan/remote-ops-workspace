@@ -6,6 +6,7 @@ import argparse
 import ctypes as c
 import hashlib
 import json
+import os
 import re
 import stat
 import sys
@@ -41,6 +42,7 @@ LIMIT = 1024
 MAX_PATH = 260
 MAX_LAUNCHER_BYTES = 150 * 1024 * 1024
 ROW_FILE_KEY = "RowExe"
+ROW_GUI_FILE_KEY = "RowGuiExe"
 FILE_NOT_COMPRESSED = 0x2000
 FILE_IN_CABINET = 0x11
 NEED_NEW_CABINET = 0x12
@@ -211,26 +213,43 @@ class Installer:
 
     def launcher_payload_sha256(self, path: Path) -> str:
         """Hash the stock launcher in its embedded cabinet without installing the MSI."""
+        return self.launcher_payload_digests(path, include_gui=False)["launcher_payload_sha256"]
+
+    def launcher_payload_digests(self, path: Path, *, include_gui: bool = True) -> dict[str, str]:
+        """Hash the requested stock launchers without extracting unrelated cabinet members."""
+        fields = [(ROW_FILE_KEY, "row.exe", "launcher_payload_sha256")]
+        if include_gui:
+            fields.append((ROW_GUI_FILE_KEY, "row-gui.exe", "gui_launcher_payload_sha256"))
         with TemporaryDirectory(prefix="row-msi-payload-") as temporary:
             work = Path(temporary)
-            cabinet = work / "payload.cab"
+            members: dict[str, dict[str, tuple[Path, int]]] = {}
+            outputs = {}
             with self.handle(self.dll.MsiOpenDatabaseW, str(path.absolute()), READONLY) as database:
-                rows = self.rows(
-                    database, "SELECT `FileSize`, `Sequence`, `Attributes` FROM `File` WHERE `File` = 'RowExe'", 3,
-                )
-                require(len(rows) == 1, "MSI must identify exactly one RowExe payload")
-                raw_size, sequence, attributes = rows[0]
-                size = int(raw_size)
-                require(0 < size <= MAX_LAUNCHER_BYTES and not (int(attributes or "0") & FILE_NOT_COMPRESSED),
-                        "MSI launcher must be a bounded, compressed file")
                 media = self.rows(
                     database, "SELECT `LastSequence`, `Cabinet` FROM `Media` ORDER BY `DiskId`", 2,
                 )
-                cabinet_name = embedded_cabinet_name(int(sequence), media)
-                self.copy_cabinet_stream(database, cabinet_name, cabinet, path.stat().st_size)
-            launcher = work / "launcher.bin"
-            extract_cabinet_launcher(cabinet, launcher, size)
-            return fingerprint(launcher)
+                for key, filename, digest_field in fields:
+                    rows = self.rows(
+                        database, "SELECT `FileSize`, `Sequence`, `Attributes`, `FileName`, `Component_` "
+                        f"FROM `File` WHERE `File` = '{key}'", 5,
+                    )
+                    if not rows and key == ROW_GUI_FILE_KEY:
+                        continue
+                    require(len(rows) == 1, f"MSI must identify exactly one {key} payload")
+                    raw_size, sequence, attributes, name, component = rows[0]
+                    size = int(raw_size)
+                    require(name.rsplit("|", 1)[-1].casefold() == filename and component == "RowExeComponent"
+                            and 0 < size <= MAX_LAUNCHER_BYTES and not (int(attributes or "0") & FILE_NOT_COMPRESSED),
+                            "MSI launcher must be a bounded, compressed stock component file")
+                    cabinet_name = embedded_cabinet_name(int(sequence), media)
+                    output = work / filename
+                    members.setdefault(cabinet_name, {})[key] = (output, size)
+                    outputs[digest_field] = output
+                for index, (name, expected) in enumerate(members.items()):
+                    cabinet = work / f"payload-{index}.cab"
+                    self.copy_cabinet_stream(database, name, cabinet, path.stat().st_size)
+                    extract_cabinet_launchers(cabinet, expected)
+            return {field: fingerprint(launcher) for field, launcher in outputs.items()}
 
     def copy_cabinet_stream(self, database, name: str, output: Path, limit: int) -> None:
         dll = self.dll
@@ -318,26 +337,28 @@ def embedded_cabinet_name(sequence: int, media: list[tuple[str | None, ...]]) ->
     raise ValueError("MSI launcher sequence has no matching cabinet")
 
 
-def extract_cabinet_launcher(cabinet: Path, output: Path, size: int) -> None:
-    destination = str(output.absolute())
-    require(len(destination.encode("utf-16-le")) // 2 < MAX_PATH, "MSI payload temporary path is too long")
+def extract_cabinet_launchers(cabinet: Path, members: dict[str, tuple[Path, int]]) -> None:
+    destinations = {key: (str(output.absolute()), size) for key, (output, size) in members.items()}
+    require(all(len(target.encode("utf-16-le")) // 2 < MAX_PATH for target, _ in destinations.values()),
+            "MSI payload temporary path is too long")
+    expected_paths = {target for target, _ in destinations.values()}
     iterate = c.WinDLL("setupapi.dll", winmode=SYSTEM32_ONLY, use_last_error=True).SetupIterateCabinetW
     callback_type = c.WINFUNCTYPE(win.UINT, c.c_void_p, win.UINT, c.c_size_t, c.c_size_t)
     iterate.argtypes = (win.LPCWSTR, win.DWORD, callback_type, c.c_void_p)
     iterate.restype = win.BOOL
-    found = False
-    extracted = False
+    found: set[str] = set()
+    extracted: set[str] = set()
 
     @callback_type
     def notification(_context, event, param, _unused):
-        nonlocal found, extracted
         if event == FILE_IN_CABINET:
             member = CabinetMember.from_address(param)
-            if member.name != ROW_FILE_KEY:
+            if member.name not in destinations:
                 return FILEOP_SKIP
-            if found or member.error or member.size != size:
+            destination, size = destinations[member.name]
+            if member.name in found or member.error or member.size != size:
                 return FILEOP_ABORT
-            found = True
+            found.add(member.name)
             # Select a fixed scratch path. Cabinet member names never determine the output path.
             member.destination = destination
             return FILEOP_DOIT
@@ -345,14 +366,16 @@ def extract_cabinet_launcher(cabinet: Path, output: Path, size: int) -> None:
             return ERROR_INVALID_DATA
         if event == FILE_EXTRACTED:
             result = CabinetExtraction.from_address(param)
-            if result.error or result.target != destination:
+            if result.error or result.target not in expected_paths or result.target in extracted:
                 return ERROR_INVALID_DATA
-            extracted = True
+            extracted.add(result.target)
         return 0
 
     if not iterate(str(cabinet.absolute()), 0, notification, None):
         raise OSError(c.get_last_error(), "MSI launcher cabinet extraction failed")
-    require(found and extracted and output.stat().st_size == size, "MSI cabinet did not yield the exact RowExe size")
+    require(found == members.keys() and extracted == expected_paths
+            and all(output.stat().st_size == size for output, size in members.values()),
+            "MSI cabinet did not yield the exact launcher payload sizes")
 
 
 def validate_package(package: dict, architecture: str, version: str | None = None) -> None:
@@ -369,6 +392,9 @@ def validate_package(package: dict, architecture: str, version: str | None = Non
         payload = package["launcher_payload_sha256"]
         require(isinstance(payload, str) and re.fullmatch(r"[0-9a-f]{64}", payload) is not None,
                 "MSI launcher payload digest is invalid")
+    gui = package.get("gui_launcher_payload_sha256")
+    require(gui is None or isinstance(gui, str) and re.fullmatch(r"[0-9a-f]{64}", gui) is not None,
+            "MSI GUI launcher payload digest is invalid")
     if "product_language" in package:
         validate_language(package.get("product_language"), package.get("template_languages"))
     for field in ("package_code", "product_code"):
@@ -495,6 +521,16 @@ def fingerprint(path: Path) -> str:
     require((before.st_ino, before.st_size, before.st_mtime_ns) == (after.st_ino, after.st_size, after.st_mtime_ns),
             "MSI changed during inspection")
     return digest.hexdigest()
+
+
+def installed_gui_launcher_sha256(launcher: Path, expected: str | None) -> str | None:
+    gui = launcher.with_name("row-gui.exe")
+    if expected is None and not os.path.lexists(gui):
+        return None
+    require(expected is not None and gui.resolve(strict=True) == gui, "Installed MSI GUI launcher path differs")
+    digest = fingerprint(gui)
+    require(digest == expected, "Installed MSI GUI launcher bytes differ from the exact payload")
+    return digest
 
 
 def main() -> int:

@@ -36,6 +36,7 @@ from inspect_windows_msi import (  # noqa: E402
     confirm,
     fingerprint,
     inspect_registration,
+    installed_gui_launcher_sha256,
     require,
     upgrade_properties,
     validate_managed_upgrade,
@@ -56,7 +57,7 @@ from scripts.release_candidate_source import InventoryPointer, materialize_asset
 REPOSITORY = "Yunushan/remote-ops-workspace"
 WORKFLOW = ".github/workflows/windows-msi-upgrade-qualification.yml"
 SOURCE_REF = "refs/heads/main"
-SCHEMA = "row.signed-windows-msi-upgrade.v5"
+SCHEMA = "row.signed-windows-msi-upgrade.v6"
 RECEIPT = Path("build/native-smoke/windows-x64/signed-msi-upgrade.json")
 ACTION_START = 0x08000000
 FATAL_EXIT = 0x00000000
@@ -214,7 +215,9 @@ def verified_msi(native: Installer, filesystem, directory: Path, tag: str, sha: 
             verify_platform_signature(native_installer_signature_commands(path, registered_sdk=True))
         package = native.inspect(path, require_transactional_upgrade=candidate)
         validate_package(package, "x64", tag[1:])
-        package["launcher_payload_sha256"] = native.launcher_payload_sha256(path)
+        package.update({"gui_launcher_payload_sha256": None, **native.launcher_payload_digests(path)})
+        require(not candidate or package["gui_launcher_payload_sha256"] is not None,
+                "Signed Windows x64 candidate is missing its GUI launcher payload")
         require(fingerprint(path) == digest, "Windows MSI changed during provenance and identity verification")
         yield path, {**package, "sha256": digest, "size_bytes": size, "release_tag": tag, "release_sha": sha,
                      "name_on_release": path.name, "source": source}
@@ -232,7 +235,9 @@ def launcher_snapshot(native: Installer, filesystem: storage._Native, package: d
         env["ROW_HOME"] = str(home)
         output = subprocess.check_output([str(path), "--version"], cwd=home, env=env, text=True, timeout=60).strip()
         require(output == f"remote-ops-workspace {package['version']}", "registered MSI launcher version differs")
-    return {**registration, "row_path": "Program Files/Remote Ops Workspace/bin/row.exe", "launcher_sha256": digest}
+    gui = installed_gui_launcher_sha256(path, package.get("gui_launcher_payload_sha256"))
+    return {**registration, "row_path": "Program Files/Remote Ops Workspace/bin/row.exe", "launcher_sha256": digest,
+            "gui_launcher_sha256": gui}
 
 
 def exercise(native: UpgradeInstaller, previous: tuple[Path, dict], candidate: tuple[Path, dict],
@@ -241,6 +246,7 @@ def exercise(native: UpgradeInstaller, previous: tuple[Path, dict], candidate: t
     old_path, old = previous
     new_path, new = candidate
     home = recovery.home
+    gui_launcher = launcher.with_name("row-gui.exe")
     require(old["product_code"] != new["product_code"] and old["package_code"] != new["package_code"],
             "major upgrade requires distinct ProductCode and PackageCode values")
     validate_upgrade_rollback(new["upgrade_sequence"], new["disable_rollback"])
@@ -322,7 +328,8 @@ def exercise(native: UpgradeInstaller, previous: tuple[Path, dict], candidate: t
     save()
     native.uninstall(new["product_code"])
     native.require_no_related_products()
-    require(not os.path.lexists(launcher), "candidate launcher remains after uninstall")
+    require(not os.path.lexists(launcher) and not os.path.lexists(gui_launcher),
+            "candidate launcher remains after uninstall")
     report["phase"] = "reinstall-predecessor"
     save()
     confirm(run_checked(old_path, old, native.install), "reinstall exact previous signed MSI")
@@ -344,7 +351,8 @@ def exercise(native: UpgradeInstaller, previous: tuple[Path, dict], candidate: t
     save()
     native.uninstall(old["product_code"])
     native.require_no_related_products()
-    require(not os.path.lexists(launcher), "previous launcher remains after final uninstall")
+    require(not os.path.lexists(launcher) and not os.path.lexists(gui_launcher),
+            "previous launcher remains after final uninstall")
     report.update(phase="complete", status="passed", stock_products_absent_after_uninstall=True)
     save()
 

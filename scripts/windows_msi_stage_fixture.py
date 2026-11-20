@@ -133,6 +133,7 @@ def require_same_inputs(result: dict, staged: dict, previous: dict, candidate: d
         msi = result[f"{role}_msi"]
         require(result[f"{role}_stage"] == staged[role]
                 and msi["asset"] == source["name_on_release"]
+                and msi.get("gui_launcher_payload_sha256") == source.get("gui_launcher_payload_sha256")
                 and all(msi[key] == source[key] for key in
                         ("sha256", "size_bytes", "version", "product_code", "package_code", "launcher_payload_sha256")),
                 f"managed MSI command used different {role} inputs")

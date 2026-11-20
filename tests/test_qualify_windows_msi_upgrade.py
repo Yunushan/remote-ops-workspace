@@ -142,7 +142,9 @@ def test_release_msi_must_pass_provenance_and_keep_verified_bytes(tmp_path, monk
     monkeypatch.setattr(upgrade, "validate_package", lambda *_: None)
     storage = SimpleNamespace(open_file=open_file, close=close)
     with pytest.raises(ValueError if modified else subprocess.CalledProcessError), upgrade.verified_msi(
-        SimpleNamespace(inspect=inspect, launcher_payload_sha256=lambda _: "a" * 64),
+        SimpleNamespace(inspect=inspect, launcher_payload_digests=lambda _: {
+            "launcher_payload_sha256": "a" * 64, "gui_launcher_payload_sha256": "b" * 64,
+        }),
         storage, tmp_path, tag, sha, candidate=True,
     ):
         pytest.fail("refused package reached the installer")
@@ -212,10 +214,10 @@ def test_sealed_candidate_msi_binds_exact_bytes_and_signature_through_installer(
     def payload(requested):
         assert requested == path and trace[-1] == "inspect"
         trace.append("launcher")
-        return "d" * 64
+        return {"launcher_payload_sha256": "d" * 64, "gui_launcher_payload_sha256": "e" * 64}
 
     storage = SimpleNamespace(open_file=hold, close=close)
-    native = SimpleNamespace(inspect=inspect, launcher_payload_sha256=payload)
+    native = SimpleNamespace(inspect=inspect, launcher_payload_digests=payload)
     scope = upgrade.verified_msi(native, storage, tmp_path, tag, sha, candidate=True, inventory=pointer)
     if message:
         with pytest.raises((ValueError, RuntimeError), match=message), scope:
@@ -224,6 +226,7 @@ def test_sealed_candidate_msi_binds_exact_bytes_and_signature_through_installer(
         with scope as (locked, package):
             assert locked == path and package["sha256"] == fingerprint and package["source"]["kind"] == "sealed-candidate"
             assert package["launcher_payload_sha256"] == "d" * 64
+            assert package["gui_launcher_payload_sha256"] == "e" * 64
             assert trace == ["materialize", "hold", "signature", "inspect", "launcher"]
     assert trace[-1] == "close"
 
@@ -235,6 +238,7 @@ def test_sealed_candidate_msi_binds_exact_bytes_and_signature_through_installer(
     ("too-early", "must return user exit after removal"),
     ("wrong-result", "must return user exit after removal"),
     ("wrong-rollback-bytes", "registered launcher bytes differ from the exact MSI payload"),
+    ("wrong-rollback-gui", "Installed MSI GUI launcher bytes differ"),
     ("candidate-still-registered", "candidate still registered"),
     ("modified-candidate", "MSI bytes changed"),
     ("wrong-preflight-launcher", "managed preflight did not verify the reinstalled predecessor"),
@@ -242,6 +246,7 @@ def test_sealed_candidate_msi_binds_exact_bytes_and_signature_through_installer(
 ])
 def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, monkeypatch, scenario, error):
     launcher = tmp_path / "Program Files" / "Remote Ops Workspace" / "bin" / "row.exe"
+    gui = launcher.with_name("row-gui.exe")
     home = tmp_path / "workspace"
     home.mkdir()
     restored = tmp_path / "restored"
@@ -254,6 +259,7 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
             "product_code": role, "package_code": f"{role}-package", "version": version,
             "row_component_code": "row-exe", "sha256": upgrade.fingerprint(path),
             "launcher_payload_sha256": hashlib.sha256(role.encode()).hexdigest(),
+            "gui_launcher_payload_sha256": hashlib.sha256(f"{role}-gui".encode()).hexdigest(),
             "upgrade_sequence": dict(zip(ROLLBACK_ACTIONS, (1400, 1500, 1501, 1600, 4000, 6600), strict=True)),
             "disable_rollback": "", "upgrade_code": upgrade.STOCK_UPGRADE,
             "major_upgrade": {
@@ -287,6 +293,7 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
                 launcher.unlink()
                 assert cancellation.observe("InstallFiles") == upgrade.IDCANCEL
             launcher.write_bytes(b"changed" if scenario == "wrong-rollback-bytes" else b"previous")
+            gui.write_bytes(b"candidate-gui" if scenario == "wrong-rollback-gui" else b"previous-gui")
             if scenario == "candidate-still-registered":
                 registered.add("candidate")
             return 1 if scenario == "wrong-result" else upgrade.INSTALL_USER_EXIT
@@ -294,6 +301,7 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
         registered.add(path.stem)
         launcher.parent.mkdir(parents=True, exist_ok=True)
         launcher.write_bytes(path.stem.encode())
+        gui.write_bytes(f"{path.stem}-gui".encode())
         if scenario == "modified-candidate" and path.stem == "previous":
             candidate[0].write_bytes(b"changed before execution")
         return 0
@@ -319,6 +327,7 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
         operations.append(f"uninstall-{product_code}")
         registered.clear()
         launcher.unlink()
+        gui.unlink()
 
     def no_products():
         assert not registered
@@ -396,6 +405,8 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
         assert report["status"] == "passed" and report["phase"] == "complete"
         assert report["previous_restored"] == report["previous_installed"]
         assert report["previous_reinstalled"] == report["previous_installed"]
+        assert report["previous_restored"]["gui_launcher_sha256"] == previous[1]["gui_launcher_payload_sha256"]
+        assert report["candidate_installed"]["gui_launcher_sha256"] == candidate[1]["gui_launcher_payload_sha256"]
         assert report["managed_preflight"]["phase"] == "msi-preflight-passed"
         assert update_actions == ["update", "update", "preflight"]
         assert report["managed_apply"]["phase"] == "msi-applied"

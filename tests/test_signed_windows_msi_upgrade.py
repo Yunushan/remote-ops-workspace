@@ -40,6 +40,8 @@ def package(reference, launcher, code) -> dict:
 def completed_receipt() -> dict:
     old = package(PREVIOUS, "1" * 64, "005A")
     new = package(CANDIDATE, "2" * 64, "006A")
+    old["gui_launcher_payload_sha256"] = "a" * 64
+    new["gui_launcher_payload_sha256"] = "b" * 64
     new.update({
         "upgrade_sequence": dict(zip(ROLLBACK_ACTIONS, (1400, 1500, 1501, 1600, 4000, 6600), strict=True)),
         "disable_rollback": "",
@@ -93,6 +95,7 @@ def coordinates(path: Path) -> list[str]:
     (("status",), "failed", "expected a completed"),
     (("source_commit",), "9" * 40, "expected a completed"),
     (("candidate", "sha256"), "0" * 64, "candidate MSI does not match"),
+    (("candidate", "gui_launcher_payload_sha256"), None, "missing the Windows x64 GUI launcher payload binding"),
     (("previous", "release_sha"), "0" * 40, "previous MSI does not match"),
     (("managed_staging", "initial_command"), "apply", "one-command download"),
     (("managed_staging", "initial_stages_absent"), False, "one-command download"),
@@ -104,6 +107,8 @@ def coordinates(path: Path) -> list[str]:
     (("cancellation", "previous_launcher_absent_at_cancel"), False, "cancellation after predecessor removal"),
     (("managed_retry", "installer_exit_code"), 0, "no-op retry was not demonstrated"),
     (("previous_reinstalled", "package_code"), "different package", "registration differs"),
+    (("previous_reinstalled", "gui_launcher_sha256"), "0" * 64, "registration differs"),
+    (("managed_retry", "candidate_msi", "gui_launcher_payload_sha256"), "0" * 64, "used different candidate inputs"),
     (("workspace_recovery", "predecessor_decrypted_restored_vault"), False, "workspace recovery"),
 ])
 def test_refuses_incomplete_or_mismatched_claims_before_network(
@@ -130,6 +135,18 @@ def test_old_receipt_cannot_claim_automatic_download(completed_receipt, tmp_path
     monkeypatch.setattr(PROVENANCE, "run_gh_json", lambda *a, **k: pytest.fail("legacy receipt reached GitHub"))
     assert review.main([*coordinates(path), "--require-automatic-update"]) == 1
     assert "requires an automatic update receipt" in capsys.readouterr().err
+
+
+def test_legacy_automatic_receipt_keeps_its_original_launcher_contract(completed_receipt):
+    completed_receipt["schema"] = review.AUTOMATIC_UPDATE_SCHEMA
+    for role in ("previous", "candidate"):
+        del completed_receipt[role]["gui_launcher_payload_sha256"]
+        for phase in ("managed_preflight", "managed_apply", "managed_retry"):
+            completed_receipt[phase][f"{role}_msi"].pop("gui_launcher_payload_sha256", None)
+    for field in ("previous_installed", "previous_restored", "previous_reinstalled", "candidate_installed"):
+        del completed_receipt[field]["gui_launcher_sha256"]
+    assert review.check_receipt(completed_receipt, WORKFLOW_COMMIT, PREVIOUS, CANDIDATE,
+                                require_automatic_update=True) == RUN
 
 
 @pytest.mark.parametrize("defect", [
@@ -214,5 +231,6 @@ def test_workflow_isolates_attestation_permissions_and_checks_exact_attempt() ->
     assert "needs.signed-windows-upgrade.result == 'success'" in issuer
     assert "artifact-ids: ${{ needs.signed-windows-upgrade.outputs.receipt-artifact-id }}" in issuer
     assert issuer.index("hashlib.sha256(raw).hexdigest()") < issuer.index("actions/attest@")
+    assert f'"schema": "{review.SCHEMA}"' in issuer
     assert '"run_attempt": os.environ["GITHUB_RUN_ATTEMPT"]' in issuer
     assert '"source_commit": os.environ["GITHUB_SHA"]' in issuer

@@ -148,7 +148,7 @@ jobs:
               raise SystemExit("Windows MSI qualification receipt digest or size mismatch")
           receipt = json.loads(raw)
           expected = {
-              "schema": "row.signed-windows-msi-upgrade.v5",
+              "schema": "row.signed-windows-msi-upgrade.v6",
               "status": "passed",
               "phase": "complete",
               "target": "windows-x64",

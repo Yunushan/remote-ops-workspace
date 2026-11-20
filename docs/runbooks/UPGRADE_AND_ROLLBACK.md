@@ -417,7 +417,8 @@ python -I scripts/check_signed_windows_msi_upgrade.py \
 The verifier checks the package and launcher identities, NTFS stage receipts,
 the initial download and offline retry, rollback, and encrypted-workspace recovery. It
 binds the receipt bytes to the GitHub-hosted attestation and checks the outcome
-of the specific workflow attempt.
+of the specific workflow attempt. Current receipts bind the installed console
+and GUI launchers to the verified MSI after installation and during rollback.
 [GitHub CLI attestation verification](https://cli.github.com/manual/gh_attestation_verify) ·
 [Workflow attempt API](https://docs.github.com/en/rest/actions/workflow-runs#get-a-workflow-run-attempt)
 
@@ -440,9 +441,10 @@ deny write and delete access. It checks both stock MSI signatures and
 timestamps, the candidate's rollback sequence, the exact installed predecessor
 registration, and the absence of the candidate registration. Windows
 Installer's related-products query must return exactly the predecessor.
-Preflight reads the launcher payload directly from each MSI's embedded
-cabinet. It requires the installed predecessor's launcher
-to match its MSI byte for byte and returns `install_permitted: false`. Windows
+Preflight reads the launcher payloads directly from each MSI's embedded
+cabinet. The x64 candidate must contain both `row.exe` and `row-gui.exe`.
+Preflight verifies both installed launchers against the predecessor MSI when it
+contains both, and returns `install_permitted: false`. Windows
 certificate checks may contact configured trust services.
 
 #### Stage and apply in one command
@@ -480,7 +482,7 @@ automatic reboot. Windows Installer owns rollback of a failed transaction.
 The staging deadline covers authentication and verification. The command waits
 for Windows Installer while the verified files remain held.
 
-`msi-applied` means the exact candidate registration and launcher were verified.
+`msi-applied` means the exact candidate registration and both launchers were verified.
 Reissuing either command reports `msi-already-applied` if that state is
 already present. `msi-previous-preserved` reports a failed install with the
 exact predecessor verified. An installer-busy or reboot-required result calls

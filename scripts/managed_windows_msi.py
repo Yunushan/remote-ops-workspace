@@ -25,6 +25,7 @@ from inspect_windows_msi import (  # noqa: E402
     Installer,
     fingerprint,
     inspect_registration,
+    installed_gui_launcher_sha256,
     validate_managed_upgrade,
     validate_package,
 )
@@ -71,9 +72,10 @@ def package_identity(native: Installer, root: Path, manifest, *, candidate: bool
     try:
         package = native.inspect(path, require_transactional_upgrade=candidate)
         validate_package(package, "x64", manifest.version)
-        package["launcher_payload_sha256"] = native.launcher_payload_sha256(path)
+        package.update({"gui_launcher_payload_sha256": None, **native.launcher_payload_digests(path)})
     except (KeyError, OSError, ValueError) as exc:
         raise UpdateError("msi-package-identity-refused") from exc
+    require(not candidate or package["gui_launcher_payload_sha256"] is not None, "msi-gui-launcher-payload-required")
     return {**package, "sha256": asset.sha256, "size_bytes": asset.size, "asset": name}
 
 
@@ -141,11 +143,15 @@ def installed_launcher(native: Installer, installed: dict, absent: dict, expecte
         require(launcher == expected and launcher.resolve(strict=True) == expected, "msi-launcher-path-refused")
         digest = fingerprint(launcher)
         require(digest == installed["launcher_payload_sha256"], "msi-launcher-bytes-refused")
-        return digest
     except UpdateError:
         raise
     except (OSError, ValueError) as exc:
         raise UpdateError("msi-registration-refused") from exc
+    try:
+        installed_gui_launcher_sha256(launcher, installed.get("gui_launcher_payload_sha256"))
+    except (OSError, ValueError) as exc:
+        raise UpdateError("msi-gui-launcher-bytes-refused") from exc
+    return digest
 
 
 def stock_launcher() -> Path:

@@ -35,7 +35,7 @@ def test_read_only_handle_refuses_writers_but_allows_verification(tmp_path):
         assert writer.read() == b"candidate"
 
 
-@pytest.mark.parametrize("scenario", ["accepted", "wrong-target", "unsigned", "invalid-msi", "bad-cabinet"])
+@pytest.mark.parametrize("scenario", ["accepted", "wrong-target", "unsigned", "invalid-msi", "bad-cabinet", "missing-gui"])
 def test_package_identity_checks_the_exact_selected_asset(tmp_path, monkeypatch, scenario):
     name = "remote-ops-workspace-v1.0.29-windows-x64.msi"
     artifact = SimpleNamespace(name=name, target="linux-x86_64" if scenario == "wrong-target" else "windows-x64",
@@ -71,11 +71,15 @@ def test_package_identity_checks_the_exact_selected_asset(tmp_path, monkeypatch,
         trace.append("launcher")
         if scenario == "bad-cabinet":
             raise ValueError("no launcher in cabinet")
-        return "b" * 64
+        digests = {"launcher_payload_sha256": "b" * 64}
+        if scenario != "missing-gui":
+            digests["gui_launcher_payload_sha256"] = "c" * 64
+        return digests
 
-    native = SimpleNamespace(inspect=inspect, launcher_payload_sha256=payload)
+    native = SimpleNamespace(inspect=inspect, launcher_payload_digests=payload)
     refusal = {"wrong-target": "selected-msi-absent", "unsigned": "msi-authenticode-refused",
-               "invalid-msi": "msi-package-identity-refused", "bad-cabinet": "msi-package-identity-refused"}.get(scenario)
+               "invalid-msi": "msi-package-identity-refused", "bad-cabinet": "msi-package-identity-refused",
+               "missing-gui": "msi-gui-launcher-payload-required"}.get(scenario)
     if refusal:
         with pytest.raises(msi.UpdateError, match=refusal):
             msi.package_identity(native, tmp_path, manifest, candidate=True)
@@ -83,9 +87,11 @@ def test_package_identity_checks_the_exact_selected_asset(tmp_path, monkeypatch,
         result = msi.package_identity(native, tmp_path, manifest, candidate=True)
         assert (result["asset"], result["sha256"], result["size_bytes"]) == (name, artifact.sha256, artifact.size)
         assert result["launcher_payload_sha256"] == "b" * 64
+        assert result["gui_launcher_payload_sha256"] == "c" * 64
     assert trace == {"wrong-target": [], "unsigned": ["signature"], "invalid-msi": ["signature", "identity"],
                      "bad-cabinet": ["signature", "identity", "launcher"],
-                     "accepted": ["signature", "identity", "launcher"]}[scenario]
+                     "accepted": ["signature", "identity", "launcher"],
+                     "missing-gui": ["signature", "identity", "launcher"]}[scenario]
 
 
 @pytest.mark.parametrize(("scenario", "refusal"), [
@@ -164,11 +170,13 @@ def test_preflight_holds_both_verified_stages_through_installed_registration(
 @pytest.mark.parametrize(("scenario", "phase", "refusal"), [
     ("normal", "msi-applied", None),
     ("retry", "msi-already-applied", None),
+    ("retry-with-stale-gui", None, "msi-gui-launcher-bytes-refused"),
     ("rollback", "msi-previous-preserved", None),
     ("busy", "msi-installer-busy", None),
     ("reboot", "msi-reboot-required", None),
     ("mixed-state", "msi-state-unverified", "msi-related-products-refused"),
     ("bad-launcher", "msi-state-unverified", "msi-launcher-bytes-refused"),
+    ("bad-gui", "msi-state-unverified", "msi-gui-launcher-bytes-refused"),
     ("api-failure", "msi-state-unverified", "msi-installer-call-failed"),
     ("unrelated-product", None, "msi-related-products-refused"),
     ("changed-stage", None, "msi-candidate-bytes-refused"),
@@ -186,18 +194,23 @@ def test_apply_keeps_both_stages_locked_and_rechecks_native_state(tmp_path, monk
     policy = SimpleNamespace(settings={"organization": "org", "channel": "stable", "public_key": "key",
                                        "selected_target": "windows-x64", "minimum_version": "1.0.28"})
     old = {"product_code": "previous-product", "package_code": "previous-package", "upgrade_code": "stock-family",
+           "gui_launcher_payload_sha256": hashlib.sha256(b"previous-gui").hexdigest(),
            "launcher_payload_sha256": hashlib.sha256(b"previous").hexdigest()}
     new = {"product_code": "new-product", "package_code": "new-package", "upgrade_code": "stock-family",
            "asset": installer.name, "sha256": hashlib.sha256(b"MSI input").hexdigest(),
+           "gui_launcher_payload_sha256": hashlib.sha256(b"new-gui").hexdigest(),
            "launcher_payload_sha256": hashlib.sha256(b"new").hexdigest(),
            "major_upgrade": {
                "launch_conditions": [] if scenario == "missing-predecessor-guard" else [EXPECTED_PREDECESSOR_CONDITION],
                "secure_properties": [EXPECTED_PREDECESSOR], "authored_expected_predecessor": False,
            }}
-    products = [new["product_code"]] if scenario == "retry" else [old["product_code"]]
+    retry = scenario in {"retry", "retry-with-stale-gui"}
+    products = [new["product_code"]] if retry else [old["product_code"]]
     if scenario == "unrelated-product":
         products.append("unrelated")
-    launcher.write_bytes(b"new" if scenario == "retry" else b"previous")
+    launcher.write_bytes(b"new" if retry else b"previous")
+    gui = launcher.with_name("row-gui.exe")
+    gui.write_bytes(b"new-gui" if scenario == "retry" else b"previous-gui")
     held, installs = [], []
     related_calls = 0
 
@@ -238,6 +251,8 @@ def test_apply_keeps_both_stages_locked_and_rechecks_native_state(tmp_path, monk
         if scenario == "mixed-state":
             products.append(old["product_code"])
         launcher.write_bytes(b"wrong" if scenario == "bad-launcher" else b"new")
+        if scenario != "bad-gui":
+            gui.write_bytes(b"new-gui")
         return 0
 
     native = SimpleNamespace(related_products=related, install_upgrade=install)

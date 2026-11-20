@@ -46,6 +46,32 @@ function Write-NativeChecksums([string]$Version, [string]$OutDir, [string]$Arch,
   return $ChecksumPath
 }
 
+function Write-WindowsPortableZip([string]$Source, [string]$Destination) {
+  Add-Type -AssemblyName System.IO.Compression
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $SourceRoot = (Get-Item -LiteralPath $Source).FullName.TrimEnd('\', '/')
+  $PendingZip = "$Destination.$([guid]::NewGuid()).tmp"
+  try {
+    $Archive = [IO.Compression.ZipFile]::Open($PendingZip, [IO.Compression.ZipArchiveMode]::Create)
+    try {
+      foreach ($File in Get-ChildItem -LiteralPath $SourceRoot -Recurse -File) {
+        # ZIP paths use forward slashes on every host, including Windows PowerShell.
+        $EntryName = $File.FullName.Substring($SourceRoot.Length + 1).Replace('\', '/')
+        [IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+          $Archive, $File.FullName, $EntryName, [IO.Compression.CompressionLevel]::Optimal
+        ) | Out-Null
+      }
+    } finally {
+      $Archive.Dispose()
+    }
+    Move-Item -LiteralPath $PendingZip -Destination $Destination -Force
+  } finally {
+    if (Test-Path -LiteralPath $PendingZip) {
+      Remove-Item -LiteralPath $PendingZip
+    }
+  }
+}
+
 function Invoke-WindowsPyInstaller([string]$Python, [scriptblock]$Build) {
   $Executable = (Get-Command -Name $Python -CommandType Application -TotalCount 1 -ErrorAction Stop).Path
   $OriginalPath = $env:PATH
@@ -626,7 +652,7 @@ if ($BuildGuiLauncher) {
 }
 
 $NativeZip = Join-Path $OutDir "remote-ops-workspace-v$Version-windows-$Arch-native.zip"
-Compress-Archive -Path (Join-Path $PortableStage "*") -DestinationPath $NativeZip -Force
+Write-WindowsPortableZip -Source $PortableStage -Destination $NativeZip
 
 $SetupExe = Build-InnoSetupInstaller -Version $Version -Stage $Stage -OutDir $OutDir -Arch $Arch -IconPath $IconIco -Branding $Branding
 $Msi = Build-WixMsi -Version $Version -Stage $Stage -OutDir $OutDir -Arch $Arch -IconPath $IconIco -Branding $Branding

@@ -337,6 +337,51 @@ def test_windows_native_package_builds_double_click_gui_launcher() -> None:
     assert "Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -NoNewWindow -Wait -PassThru" in smoke
 
 
+@pytest.mark.parametrize("shell_name", ["powershell.exe", "pwsh.exe"])
+def test_windows_portable_zip_is_readable_by_redistribution_scanner(tmp_path, shell_name) -> None:
+    from scripts.collect_unsigned_runtime import DEFAULT_LIMITS, Observations, zip_members
+
+    shell = shutil.which(shell_name) if os.name == "nt" else None
+    if shell is None:
+        pytest.skip(f"requires {shell_name} on Windows")
+    stage = tmp_path / "portable stage"
+    files = {"bin/row.exe": b"cli", "Remote Ops Workspace GUI.exe": b"gui", "docs/café.txt": b"notice"}
+    for member, data in files.items():
+        path = stage / member
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    output = tmp_path / "portable.zip"
+    output.write_bytes(b"previous archive")
+
+    builder = Path("scripts/make_windows_native.ps1").resolve()
+    assert "Write-WindowsPortableZip -Source $PortableStage -Destination $NativeZip" in builder.read_text(
+        encoding="utf-8"
+    )
+    probe = tmp_path / "write-portable.ps1"
+    probe.write_text(
+        '''
+param($Builder, $Stage, $Output)
+$ErrorActionPreference = "Stop"
+$Ast = [System.Management.Automation.Language.Parser]::ParseFile($Builder, [ref]$null, [ref]$null)
+$Function = $Ast.Find({
+  param($Node)
+  $Node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+  $Node.Name -eq "Write-WindowsPortableZip"
+}, $true)
+. ([scriptblock]::Create($Function.Extent.Text))
+Write-WindowsPortableZip -Source $Stage -Destination $Output
+''',
+        encoding="ascii",
+    )
+    result = subprocess.run(
+        [shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(probe), str(builder), str(stage), str(output)],
+        capture_output=True, text=True, check=False, timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    assert dict(zip_members(output.read_bytes(), Observations(DEFAULT_LIMITS))) == files
+    assert not list(tmp_path.glob("portable.zip.*.tmp"))
+
+
 @pytest.mark.parametrize("use_command_name", [False, True])
 def test_windows_pyinstaller_uses_a_private_build_path_and_restores_it(tmp_path, use_command_name) -> None:
     if os.name != "nt":

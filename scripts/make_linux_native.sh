@@ -128,6 +128,7 @@ install -Dm644 "$ROOT/LICENSE" "$PKGROOT/usr/share/doc/remote-ops-workspace/LICE
 install -Dm644 "$ROOT/NOTICE" "$PKGROOT/usr/share/doc/remote-ops-workspace/NOTICE"
 install -Dm644 "$ROOT/redistribution-evidence/THIRD_PARTY_NOTICES.md" "$PKGROOT/usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md"
 install -Dm644 "$ROOT/README.md" "$PKGROOT/usr/share/doc/remote-ops-workspace/README.md"
+"$PYTHON_BIN" scripts/stage_linux_runtime_licenses.py "$PKGROOT/usr/share/doc/remote-ops-workspace/licenses"
 cat > "$PKGROOT/usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md" <<EOF
 # Linux native release
 
@@ -222,6 +223,7 @@ cp "$PKGROOT/usr/share/doc/remote-ops-workspace/NOTICE" %{buildroot}/usr/share/d
 cp "$PKGROOT/usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md" %{buildroot}/usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md
 cp "$PKGROOT/usr/share/doc/remote-ops-workspace/README.md" %{buildroot}/usr/share/doc/remote-ops-workspace/README.md
 cp "$PKGROOT/usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md" %{buildroot}/usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md
+cp -a "$PKGROOT/usr/share/doc/remote-ops-workspace/licenses" %{buildroot}/usr/share/doc/remote-ops-workspace/
 find "%{buildroot}" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 
 %check
@@ -235,6 +237,7 @@ cmp "$PKGROOT/usr/bin/row" %{buildroot}/usr/bin/row
 /usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md
 /usr/share/doc/remote-ops-workspace/README.md
 /usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md
+%license /usr/share/doc/remote-ops-workspace/licenses
 EOF
 
 # Use the release timestamp and a stable BuildHost across runners.
@@ -253,6 +256,7 @@ install -Dm755 "$ROW_BIN" "$APPDIR/usr/bin/row"
 install -Dm644 "$ROOT/LICENSE" "$APPDIR/usr/share/doc/remote-ops-workspace/LICENSE"
 install -Dm644 "$ROOT/NOTICE" "$APPDIR/usr/share/doc/remote-ops-workspace/NOTICE"
 install -Dm644 "$ROOT/redistribution-evidence/THIRD_PARTY_NOTICES.md" "$APPDIR/usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md"
+cp -a "$PKGROOT/usr/share/doc/remote-ops-workspace/licenses" "$APPDIR/usr/share/doc/remote-ops-workspace/"
 {
   printf '#!/usr/bin/env sh\nminimum_glibc="%s"\n' "$minimum_glibc"
   cat <<'EOF'

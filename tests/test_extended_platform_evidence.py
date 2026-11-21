@@ -135,6 +135,22 @@ def test_protected_linux_source_extraction_rejects_unlocked_bytes(
     assert not output.exists()
 
 
+def test_protected_linux_cargo_reads_crate_checksums_before_fetch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
+    preparer = _load_script("prepare_protected_linux_cargo")
+    manifest = tmp_path / "Cargo.toml"
+    manifest.write_text("[workspace]\n", encoding="utf-8")
+    (tmp_path / "Cargo.lock").write_text(
+        '[[package]]\nname = "example"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="example must have a crates.io SHA-256 checksum"):
+        preparer.fetch_locked_crates(manifest, {})
+
+
 def test_extended_platform_evidence_requires_exact_runtime_lock_before_packaging() -> None:
     checker = _load_script("check_extended_platform_evidence")
     capture = (checker.ROOT / checker.LINUX_CAPTURE_PATH).read_text(encoding="utf-8")

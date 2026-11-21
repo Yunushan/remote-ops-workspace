@@ -13,7 +13,6 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
-import tomllib
 from check_release_license_compliance import (
     PROTECTED_LINUX_LOCK_DIR,
     ROOT,
@@ -71,6 +70,11 @@ def extract_locked_source(source: Path, digest: str, destination: Path) -> Path:
 
 
 def fetch_locked_crates(manifest: Path, environment: dict[str, str]) -> None:
+    try:
+        import tomllib
+    except ModuleNotFoundError:  # Python 3.10
+        import tomli as tomllib  # type: ignore[no-redef]
+
     cargo_lock = manifest.with_name("Cargo.lock")
     if not manifest.is_file() or not cargo_lock.is_file():
         raise ValueError(f"source archive must contain {manifest.name} and {cargo_lock.name}")

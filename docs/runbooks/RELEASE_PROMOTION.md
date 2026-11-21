@@ -170,6 +170,9 @@ records the executable and smoke receipt digests.
 Candidate inventory schema 12 validates the target executable path and the
 complete module observations during sealing, promotion, and retained-evidence
 verification. Older inventory versions keep their original smoke receipt rules.
+Schema 13 checks the exact file list for each build archive against the
+release matrix. Sealing rejects missing files, unexpected files, and files
+uploaded by the wrong job before making the candidate inventory available.
 
 ### Qualify the Windows x64 MSI before publication
 

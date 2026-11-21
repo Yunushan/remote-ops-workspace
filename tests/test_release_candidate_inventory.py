@@ -272,6 +272,8 @@ def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
         ("missing-linux-smoke", "missing=.*release-linux-native-smoke-aarch64"),
         ("wrong-linux-proof", "native proof does not bind the completed exact-run installer smoke receipt"),
         ("wrong-linux-package", "smoke receipt differs from the candidate installer"),
+        ("swapped-native-manifests", "files differ from its release matrix assignment"),
+        ("unexpected-source-file", "files differ from its release matrix assignment"),
         ("missing-gui-proof", "archive must contain one root gui-archive-proof.json"),
         ("wrong-gui-binding", "GUI archive proof does not bind the completed smoke receipt"),
         ("missing-gui-module", "GUI archive proof must attest every required frozen GUI module"),
@@ -330,6 +332,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
 ) -> None:
     sha = "a" * 40
     tag = "v1.2.3"
+    expected_archive_files = candidate.expected_candidate_archive_files(tag)
     standard = (
         "release-source-python",
         "release-windows-native-x64",
@@ -613,11 +616,20 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                 archive.writestr(candidate.RPM_SMOKE_FILES[0], proof)
                 if condition != "missing-rpm-smoke":
                     archive.writestr(candidate.RPM_SMOKE_FILES[1], binding)
+            elif name in expected_archive_files:
+                target = name.removeprefix("release-").replace("-native-", "-", 1)
+                files = expected_archive_files[name].copy()
+                if condition == "swapped-native-manifests" and target in {"windows-x86", "windows-x64"}:
+                    expected_manifest, = (asset for asset in files if asset.endswith("-native-manifest.json"))
+                    files.remove(expected_manifest)
+                    other_target = "windows-x64" if target == "windows-x86" else "windows-x86"
+                    files.add(expected_manifest.replace(target, other_target))
+                if condition == "unexpected-source-file" and name == "release-source-python":
+                    files.add("unexpected-build-notes.txt")
+                for filename in sorted(files):
+                    archive.writestr(filename, installers.get(target, {}).get(filename, f"bytes from {filename}".encode()))
             else:
                 archive.writestr(f"{name}.txt", f"bytes from {name}")
-                target = name.removeprefix("release-").replace("-native-", "-", 1)
-                for installer, data in installers.get(target, {}).items():
-                    archive.writestr(installer, data)
         data = stream.getvalue()
         artifacts.append({
             "id": artifact_id,
@@ -711,6 +723,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
         if condition in {
             "wrong-managed-deb", "wrong-rpm-digest", "wrong-managed-depends", "wrong-managed-bundle",
             "missing-gui-installers", "wrong-gui-installer", "wrong-linux-package",
+            "swapped-native-manifests", "unexpected-source-file",
         }:
             assert len(downloads) == len(archives)
         elif condition in {"wrong-managed-run", "wrong-managed-controller", "missing-rollback", "old-managed-schema", "unbundled"}:
@@ -745,10 +758,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
         run_id=123, run_attempt=1,
     )
     assert {record["name"] for record in records} == set(standard)
-    assert {path.name for path in root.iterdir()} == {
-        *(f"{name}.txt" for name in standard),
-        *(name for group in installers.values() for name in group),
-    }
+    assert {path.name for path in root.iterdir()} == set().union(*expected_archive_files.values())
     assert len(downloads) == len(archives) and set(downloads) == set(archives)
     assert inventory["runtime_reports"].keys() == candidate.RUNTIME_REPORT_ARTIFACT_NAMES.keys()
     for report in inventory["runtime_reports"].values():
@@ -782,6 +792,16 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     assert smoke_records[candidate.RPM_SMOKE_FILES[1]]["sha256"] == hashlib.sha256(binding).hexdigest()
     coordinates = dict(repository="example/project", release_tag=tag, release_sha=sha, run_id=123, run_attempt=1)
     public_coordinates = {key: coordinates[key] for key in ("repository", "release_tag", "release_sha")}
+    swapped = json.loads(output.read_bytes())
+    windows = {record["name"]: record["files"] for record in swapped["artifacts"] if "windows-native" in record["name"]}
+    x64, x86 = windows["release-windows-native-x64"], windows["release-windows-native-x86"]
+    x64_manifest, = (file for file in x64 if file["path"].endswith("-native-manifest.json"))
+    x86_manifest, = (file for file in x86 if file["path"].endswith("-native-manifest.json"))
+    x64[x64.index(x64_manifest)], x86[x86.index(x86_manifest)] = x86_manifest, x64_manifest
+    with pytest.raises(ValueError, match="files differ from its release matrix assignment"):
+        candidate.validate_inventory(swapped, **coordinates)
+    swapped["schema_version"] = candidate.GUI_MODULE_PROOF_SCHEMA_VERSION
+    candidate.validate_inventory(swapped, **coordinates)
     with pytest.raises(ValueError, match="managed Debian receipt is missing"):
         candidate.validate_inventory(inventory, **coordinates)
     # Historical inventory bytes remain readable when their tag's workflow

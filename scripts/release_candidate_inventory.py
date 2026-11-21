@@ -42,6 +42,14 @@ from scripts.candidate_native_proof import (  # noqa: E402
     GUI_PYZ_REQUIRED_MODULES,
 )
 from scripts.candidate_posix_byte_binding import binding_schema, target_contract  # noqa: E402
+from scripts.check_preview_redistribution import BUILD_TARGETS  # noqa: E402
+from scripts.check_release_publish_assets import (  # noqa: E402
+    MATRIX_PATH,
+    expand_asset_pattern,
+    expected_release_assets,
+    expected_source_release_assets,
+    normalize_version,
+)
 from scripts.debian_server_notices import read_verified_debian_notices  # noqa: E402
 from scripts.managed_debian_qualification import (  # noqa: E402
     HASH,
@@ -52,7 +60,8 @@ from scripts.managed_debian_qualification import (  # noqa: E402
 from scripts.release_evidence_file import retry_evidence_operation, stream_sha256  # noqa: E402
 
 GUI_MODULE_PROOF_SCHEMA_VERSION = 12
-SCHEMA_VERSION = GUI_MODULE_PROOF_SCHEMA_VERSION
+ARCHIVE_FILE_SCOPE_SCHEMA_VERSION = 13
+SCHEMA_VERSION = ARCHIVE_FILE_SCOPE_SCHEMA_VERSION
 REVIEWED_SERVER_BUNDLE_SCHEMA_VERSION = 11
 SERVER_BUNDLE_SCHEMA_VERSION = 10
 LINUX_INSTALLER_SCHEMA_VERSION = 9
@@ -402,6 +411,7 @@ def stage(
     server_bundle = seal_debian_server_bundle(client, server_bundle_artifact_id, server_bundle_sha256)
     records = materialize_records(
         client, build_artifacts, assets_root,
+        expected_archive_files=expected_candidate_archive_files(release_tag),
         managed_deb=(release_tag, managed["receipt"]),
         expected_runtime_sha256=server_bundle["runtime_sha256"],
         release_rpm=(release_tag, rpm_sha),
@@ -1208,6 +1218,7 @@ def materialize_records(
     assets_root: Path,
     *,
     expected_records: list[dict[str, Any]] | None = None,
+    expected_archive_files: dict[str, set[str]] | None = None,
     managed_deb: tuple[str, dict[str, Any]] | None = None,
     expected_runtime_sha256: str | None = None,
     release_rpm: tuple[str, str] | None = None,
@@ -1230,6 +1241,8 @@ def materialize_records(
         staged_root = Path(temporary) / "assets"
         staged_root.mkdir()
         records = materialize_candidate_files(client, artifacts, staged_root, expected_by_name)
+        if expected_archive_files is not None:
+            require_candidate_archive_files(records, expected_archive_files)
         if managed_deb is not None:
             release_tag, receipt = managed_deb
             require_managed_deb(records, release_tag, receipt["candidate_sha256"])
@@ -1420,7 +1433,58 @@ def validate_inventory(
     if schema >= LINUX_INSTALLER_SCHEMA_VERSION or "linux_smoke" in value:
         validate_smoke_records(value.get("linux_smoke"), ids, LINUX_SMOKE_ARTIFACT_NAMES, "Linux native")
         require_smoked_installer_assets(records, release_tag, value["linux_smoke"])
+    if schema >= ARCHIVE_FILE_SCOPE_SCHEMA_VERSION:
+        require_candidate_archive_files(records, expected_candidate_archive_files(release_tag))
     return sorted(records, key=lambda item: item["name"])
+
+
+def expected_candidate_archive_files(tag: str) -> dict[str, set[str]]:
+    """Resolve the exact standard files each build archive must own."""
+    matrix = json.loads(MATRIX_PATH.read_bytes())
+    groups = {"release-source-python": expected_source_release_assets(matrix, tag=tag)}
+    for job in matrix["default_github_release"]["native_jobs"]:
+        variants = {
+            normalize_version(asset, tag[1:])
+            for pattern in job["asset_patterns"] for asset in expand_asset_pattern(pattern)
+        }
+        for arch in job["arches"]:
+            target = f"{job['platform']}-{arch}"
+            if target not in BUILD_TARGETS:
+                raise ValueError(f"release matrix has an unsupported native build archive target: {target}")
+            prefixes = tuple(
+                f"remote-ops-workspace-{tag}-{label}{suffix}"
+                for label in BUILD_TARGETS[target] for suffix in ("-", ".")
+            )
+            archive = f"{job['upload_artifact_prefix']}{arch}"
+            if archive in groups:
+                raise ValueError(f"release matrix has a duplicated build archive: {archive}")
+            groups[archive] = {asset for asset in variants if asset.startswith(prefixes)}
+    expected = expected_release_assets(matrix, tag=tag)
+    if (
+        groups.keys() != set(EXPECTED_ARTIFACT_NAMES)
+        or any(not assets for assets in groups.values())
+        or sum(map(len, groups.values())) != len(expected)
+        or set().union(*groups.values()) != expected
+    ):
+        raise ValueError("release matrix must assign every standard file to exactly one build archive")
+    return groups
+
+
+def require_candidate_archive_files(
+    records: list[dict[str, Any]], expected: dict[str, set[str]],
+) -> None:
+    owners = {record["name"]: record["files"] for record in records}
+    if len(owners) != len(records) or owners.keys() != expected.keys():
+        raise ValueError("candidate archive owners must match the standard release matrix")
+    candidate_file_identities(file for files in owners.values() for file in files)
+    for archive, files in sorted(owners.items()):
+        actual = {file["path"] for file in files}
+        wanted = expected[archive]
+        if actual != wanted:
+            raise ValueError(
+                f"{archive} files differ from its release matrix assignment "
+                f"(missing {sorted(wanted - actual)}, unexpected {sorted(actual - wanted)})"
+            )
 
 
 def candidate_file_identities(files: Iterable[Any]) -> dict[str, tuple[int, str]]:

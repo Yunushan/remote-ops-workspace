@@ -274,6 +274,9 @@ def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
         ("wrong-linux-package", "smoke receipt differs from the candidate installer"),
         ("missing-gui-proof", "archive must contain one root gui-archive-proof.json"),
         ("wrong-gui-binding", "GUI archive proof does not bind the completed smoke receipt"),
+        ("missing-gui-module", "GUI archive proof must attest every required frozen GUI module"),
+        ("unverified-gui-module", "GUI archive proof must attest every required frozen GUI module"),
+        ("wrong-gui-path", "GUI archive proof must attest every required frozen GUI module"),
         ("wrong-gui-launcher", "GUI archive proof refers to different executable bytes"),
         ("wrong-gui-observation", "smoke did not observe the verified GUI executable bytes"),
         ("missing-gui-installers", "must bind the complete installer digest set"),
@@ -545,6 +548,9 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                 archive.writestr(report, body)
             elif name in smoke:
                 target = name.removeprefix("release-").replace("-gui-smoke-", "-", 1)
+                gui_path = candidate.GUI_PYZ_ARCHIVE_PATHS[target]
+                if (condition, name) == ("wrong-gui-path", smoke[0]):
+                    gui_path = "native/row-gui"
                 installer_hashes = {key: hashlib.sha256(data).hexdigest()
                                     for key, data in installers[target].items()}
                 if (condition, name) == ("missing-gui-installers", smoke[0]):
@@ -554,7 +560,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                 gui_binding = candidate.qualification_receipt_bytes({
                     "installer_sha256": installer_hashes,
                     "target": target, "status": "bound", "smoke_complete": True,
-                    "expected_executables": [{"role": "gui", "path": "native/row-gui", "sha256": "c" * 64}],
+                    "expected_executables": [{"role": "gui", "path": gui_path, "sha256": "c" * 64}],
                     "observations": [{
                         "role": "gui", "matched": True, "expected_sha256": "c" * 64,
                         "observed_sha256": (
@@ -565,8 +571,16 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                 archive.writestr(candidate.NATIVE_BYTE_BINDING_FILE, gui_binding)
                 archive.writestr("gui-example/result.png", b"fixture screenshot bytes")
                 if (condition, name) != ("missing-gui-proof", smoke[0]):
+                    required = list(candidate.GUI_PYZ_REQUIRED_MODULES)
+                    monitoring = "remote_ops_workspace.gui_remote_monitoring"
+                    if (condition, name) == ("missing-gui-module", smoke[0]):
+                        required.remove(monitoring)
+                    observed = dict.fromkeys(required, True)
+                    if (condition, name) == ("unverified-gui-module", smoke[0]):
+                        observed[monitoring] = False
                     archive.writestr(candidate.GUI_ARCHIVE_PROOF_FILE, candidate.qualification_receipt_bytes({
-                        "target": target, "status": "passed", "path": "native/row-gui",
+                        "schema_version": 1, "role": "gui", "target": target, "status": "passed", "path": gui_path,
+                        "required_modules": required, "observed_presence": observed, "errors": [],
                         "artifact_sha256": "d" * 64 if (condition, name) == ("wrong-gui-launcher", smoke[0]) else "c" * 64,
                         "smoke_binding_sha256": "d" * 64 if (condition, name) == ("wrong-gui-binding", smoke[0])
                         else hashlib.sha256(gui_binding).hexdigest(),
@@ -710,7 +724,10 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
             "wrong-managed-rpm-rollback-count",
         }:
             assert len(downloads) == len(runtime) + 2
-        elif condition in {"missing-gui-proof", "wrong-gui-binding", "wrong-gui-launcher", "wrong-gui-observation"}:
+        elif condition in {
+            "missing-gui-proof", "wrong-gui-binding", "wrong-gui-launcher", "wrong-gui-observation",
+            "missing-gui-module", "unverified-gui-module", "wrong-gui-path",
+        }:
             assert len(downloads) == len(runtime) + 3
         elif condition == "wrong-linux-proof":
             assert len(downloads) == len(runtime) + 2 + len(smoke) + len(linux_smoke)
@@ -929,6 +946,29 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     }
     candidate.verify_retained_qualification_archives(promoted_qualifications, inventory)
     candidate.verify_retained_qualification_archives(retained, inventory)
+    gui_archive = retained / f"{smoke[0]}.zip"
+    gui_bytes = gui_archive.read_bytes()
+    gui_record = gui_archives[smoke[0]]
+    with zipfile.ZipFile(io.BytesIO(gui_bytes)) as original:
+        native_binding = original.read(candidate.NATIVE_BYTE_BINDING_FILE)
+        gui_proof = json.loads(original.read(candidate.GUI_ARCHIVE_PROOF_FILE))
+    gui_proof.pop("observed_presence")
+    with zipfile.ZipFile(gui_archive, "w") as reduced:
+        reduced.writestr(candidate.NATIVE_BYTE_BINDING_FILE, native_binding)
+        reduced.writestr(candidate.GUI_ARCHIVE_PROOF_FILE, candidate.qualification_receipt_bytes(gui_proof))
+    legacy_bytes = gui_archive.read_bytes()
+    legacy_record = {
+        **gui_record, "size_in_bytes": len(legacy_bytes),
+        "archive_digest": f"sha256:{hashlib.sha256(legacy_bytes).hexdigest()}",
+    }
+    gui_archives[smoke[0]] = legacy_record
+    with pytest.raises(ValueError, match="GUI archive proof must attest every required frozen GUI module"):
+        candidate.verify_retained_qualification_archives(retained, inventory)
+    candidate.verify_retained_qualification_archives(
+        retained, {**inventory, "schema_version": candidate.REVIEWED_SERVER_BUNDLE_SCHEMA_VERSION},
+    )
+    gui_archives[smoke[0]] = gui_record
+    gui_archive.write_bytes(gui_bytes)
     arm_archive = retained / f"{linux_smoke[1]}.zip"
     arm_bytes = arm_archive.read_bytes()
     arm_archive.unlink()

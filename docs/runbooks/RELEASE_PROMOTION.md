@@ -135,6 +135,9 @@ The signed Windows x64, Windows ARM64, and macOS build jobs retain
 executables observed during installation and reinstall contain the required
 frozen GUI modules, including the connected SSH monitoring runtime. The proof
 records the executable and smoke receipt digests.
+Candidate inventory schema 12 validates the target executable path and the
+complete module observations during sealing, promotion, and retained-evidence
+verification. Older inventory versions keep their original smoke receipt rules.
 
 ### Qualify the Windows x64 MSI before publication
 

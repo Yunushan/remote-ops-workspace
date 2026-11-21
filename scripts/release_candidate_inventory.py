@@ -36,6 +36,10 @@ if str(ROOT) not in sys.path:
 
 from scripts import managed_rpm_qualification  # noqa: E402
 from scripts import qualify_rpm_candidate as rpm_qualification  # noqa: E402
+from scripts.candidate_native_proof import (  # noqa: E402
+    GUI_PYZ_ARCHIVE_PATHS,
+    GUI_PYZ_REQUIRED_MODULES,
+)
 from scripts.candidate_posix_byte_binding import binding_schema, target_contract  # noqa: E402
 from scripts.debian_server_notices import read_verified_debian_notices  # noqa: E402
 from scripts.managed_debian_qualification import (  # noqa: E402
@@ -46,8 +50,9 @@ from scripts.managed_debian_qualification import (  # noqa: E402
 )
 from scripts.release_evidence_file import retry_evidence_operation, stream_sha256  # noqa: E402
 
+GUI_MODULE_PROOF_SCHEMA_VERSION = 12
+SCHEMA_VERSION = GUI_MODULE_PROOF_SCHEMA_VERSION
 REVIEWED_SERVER_BUNDLE_SCHEMA_VERSION = 11
-SCHEMA_VERSION = REVIEWED_SERVER_BUNDLE_SCHEMA_VERSION
 SERVER_BUNDLE_SCHEMA_VERSION = 10
 LINUX_INSTALLER_SCHEMA_VERSION = 9
 GUI_INSTALLER_SCHEMA_VERSION = 8
@@ -740,7 +745,7 @@ def read_archive_reports(path: Path | io.BytesIO, name: str, filenames: tuple[st
     return reports
 
 
-def validate_gui_smoke_archive(path: Path | io.BytesIO, name: str) -> Any:
+def validate_gui_smoke_archive(path: Path | io.BytesIO, name: str, *, require_modules: bool) -> Any:
     reports = read_archive_reports(path, name, (GUI_ARCHIVE_PROOF_FILE, NATIVE_BYTE_BINDING_FILE))
     proof = json.loads(reports[GUI_ARCHIVE_PROOF_FILE])
     binding_bytes = reports[NATIVE_BYTE_BINDING_FILE]
@@ -754,6 +759,18 @@ def validate_gui_smoke_archive(path: Path | io.BytesIO, name: str) -> Any:
         or binding.get("status") != "bound" or binding.get("smoke_complete") is not True
     ):
         raise ValueError(f"{name} GUI archive proof does not bind the completed smoke receipt")
+    if require_modules:
+        observed_modules = proof.get("observed_presence")
+        if (
+            type(proof.get("schema_version")) is not int or proof["schema_version"] != 1
+            or proof.get("role") != "gui" or proof.get("path") != GUI_PYZ_ARCHIVE_PATHS.get(target)
+            or proof.get("required_modules") != list(GUI_PYZ_REQUIRED_MODULES)
+            or not isinstance(observed_modules, dict)
+            or set(observed_modules) != set(GUI_PYZ_REQUIRED_MODULES)
+            or any(present is not True for present in observed_modules.values())
+            or proof.get("errors") != []
+        ):
+            raise ValueError(f"{name} GUI archive proof must attest every required frozen GUI module")
     outputs = binding.get("expected_executables")
     if not isinstance(outputs, list) or [
         (output.get("path"), output.get("sha256"))
@@ -800,7 +817,7 @@ def validate_linux_smoke_archive(path: Path | io.BytesIO, name: str, run_id: int
 
 def verify_sealed_smoke(
     client: GitHubClient, records: dict[str, Any], run_id: int, release_sha: str,
-    *, archive_root: Path | None = None,
+    *, archive_root: Path | None = None, inventory_schema: int = SCHEMA_VERSION,
 ) -> dict[str, Any]:
     installers = {}
     with tempfile.TemporaryDirectory(prefix="row-release-native-smoke-") as temporary:
@@ -821,7 +838,7 @@ def verify_sealed_smoke(
                 or metadata.get("size_in_bytes") != record["size_in_bytes"]
             ):
                 raise ValueError(f"{name} archive digest or size differs from the sealed inventory")
-            installers[name] = check_smoke_archive(archive, name, record, run_id, release_sha)
+            installers[name] = check_smoke_archive(archive, name, record, run_id, release_sha, inventory_schema)
             if archive_root is not None:
                 with archive.open("rb") as source, (archive_root / archive.name).open("xb") as output:
                     shutil.copyfileobj(source, output)
@@ -829,11 +846,12 @@ def verify_sealed_smoke(
 
 
 def check_smoke_archive(
-    archive: Path | io.BytesIO, name: str, record: dict[str, Any], run_id: int, release_sha: str,
+    archive: Path | io.BytesIO, name: str, record: dict[str, Any], run_id: int, release_sha: str, inventory_schema: int,
 ) -> Any:
     observed = (
         validate_linux_smoke_archive(archive, name, run_id, release_sha)
-        if name in LINUX_SMOKE_ARTIFACT_NAMES else validate_gui_smoke_archive(archive, name)
+        if name in LINUX_SMOKE_ARTIFACT_NAMES
+        else validate_gui_smoke_archive(archive, name, require_modules=inventory_schema >= GUI_MODULE_PROOF_SCHEMA_VERSION)
     )
     if "installer_sha256" in record and observed != record["installer_sha256"]:
         raise ValueError(f"{name} installer smoke hashes differ from the sealed inventory")
@@ -861,7 +879,9 @@ def verify_retained_qualification_archives(archive_root: Path, inventory: dict[s
     smoke = {**inventory.get("gui_smoke", {}), **inventory.get("linux_smoke", {})}
     for name, record in smoke.items():
         with retained_archive(archive_root, name, record, record["size_in_bytes"]) as archive:
-            check_smoke_archive(archive, name, record, inventory["build_run_id"], inventory["release_sha"])
+            check_smoke_archive(
+                archive, name, record, inventory["build_run_id"], inventory["release_sha"], inventory["schema_version"],
+            )
 
 
 def retained_archive(root: Path, name: str, record: dict[str, Any], limit: int) -> io.BytesIO:
@@ -1092,7 +1112,9 @@ def download_qualification_archives(
             client, inventory, run_id, release_sha, archive_output=archive_root / f"{RPM_ARTIFACT}.zip",
         )
     smoke = {**inventory.get("gui_smoke", {}), **inventory.get("linux_smoke", {})}
-    verify_sealed_smoke(client, smoke, run_id, release_sha, archive_root=archive_root)
+    verify_sealed_smoke(
+        client, smoke, run_id, release_sha, archive_root=archive_root, inventory_schema=inventory["schema_version"],
+    )
 
 
 def materialize_sealed_records(

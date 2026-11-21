@@ -9,6 +9,22 @@ ROOT = Path(__file__).resolve().parents[1]
 CATALOGUE = ROOT / "tests" / "catalogue-browser"
 
 
+def test_catalogue_prepare_and_cleanup_pin_the_current_bootstrap_sources():
+    workflow = (ROOT / ".github/workflows/ubuntu-catalogue-browser.yml").read_text(encoding="utf-8")
+    declarations = re.findall(r"^ +PINS = (.+)$", workflow, re.MULTILINE)
+    assert len(declarations) == 2
+    sources = (
+        "browser_probe.py", "cft_bundle.py", "cft_git_config.py", "cft_git_owner.py",
+        "cft_runtime.py", "gate_contract.py", "host_controller.py", "cft-runtime-policy.json",
+    )
+    expected = {}
+    for name in sources:
+        raw = (CATALOGUE / name).read_bytes()
+        expected[name] = {"bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
+    for declaration in declarations:
+        assert ast.literal_eval(declaration) == expected
+
+
 def test_catalogue_preflight_allows_the_exact_repository_attributes():
     source = ast.parse((CATALOGUE / "cft_git_config.py").read_text(encoding="utf-8"))
     declaration = next(

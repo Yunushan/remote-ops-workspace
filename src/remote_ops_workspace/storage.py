@@ -326,8 +326,8 @@ class ProfileStore:
             )
             return accepted
 
-    def get(self, name: str) -> Profile:
-        for profile in self.load():
+    def get(self, name: str, *, resolve: bool = True) -> Profile:
+        for profile in self.load(resolve=resolve):
             if profile.name == name:
                 return profile
         raise KeyError(name)

@@ -61,7 +61,7 @@ class WindowSidebar:
         _sidebar_width_by_design: dict[str, int]
 
         def apply_moba_titlebar_chrome(self, title: str) -> None: ...
-        def build_mremoteng_property_grid_evidence(self) -> QFrame: ...
+        def build_mremoteng_config_dock(self) -> QFrame: ...
         def build_securecrt_session_manager_chrome(self) -> QFrame: ...
         def build_termius_hosts_chrome(self) -> QFrame: ...
         def clear_moba_quick_connect_connected_idle(self) -> None: ...
@@ -290,20 +290,11 @@ class WindowSidebar:
         self.moba_left_stack.addWidget(self.profile_list)
         body_layout.addWidget(self.moba_left_stack, 1)
         layout.addWidget(body, 1)
-        # mRemoteNG keeps a compact Config/property inspector docked
-        # beneath the Connections tree while a document is active.  Keep
-        # the real routed grid in the left chrome (rather than rendering
-        # it only on the welcome surface) so the connected layout follows
-        # the product's actual split-pane workflow.  It is hidden for
-        # other presets by ``apply_selected_design``.
-        self.mremoteng_left_property_grid_panel = (
-            self.build_mremoteng_property_grid_evidence()
-        )
+        self.mremoteng_left_property_grid_panel = self.build_mremoteng_config_dock()
         self.mremoteng_left_property_grid_panel.setProperty(
             "mRemoteNgLeftDockView",
             True,
         )
-        self.mremoteng_left_property_grid_panel.setMaximumHeight(176)
         self.mremoteng_left_property_grid_panel.setVisible(False)
         layout.addWidget(self.mremoteng_left_property_grid_panel, 0)
         return panel

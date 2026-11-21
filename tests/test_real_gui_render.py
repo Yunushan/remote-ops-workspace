@@ -3930,7 +3930,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "property_value_property": "mRemoteNgConnectionRoutePropertyValue",
         "signal": "clicked",
         "handler": "handle_mremoteng_document_reconnect",
-        "reconnect_state": "reconnected",
+        "reconnect_state": "reconnect requested",
         "signal_property": "mRemoteNgConnectionRouteSignal",
         "handler_property": "mRemoteNgConnectionRouteHandler",
         "captured_property": "mRemoteNgConnectionRouteCaptured",

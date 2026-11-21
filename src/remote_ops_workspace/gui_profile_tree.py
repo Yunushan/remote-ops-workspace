@@ -47,6 +47,8 @@ TREE_ROW_STATIC_HEIGHT_ROLE = int(Qt.ItemDataRole.UserRole) + 35
 TREE_ROW_STATIC_ICON_X_ROLE = int(Qt.ItemDataRole.UserRole) + 36
 TREE_ROW_STATIC_LABEL_X_ROLE = int(Qt.ItemDataRole.UserRole) + 37
 TREE_ROW_STATIC_TARGET_X_ROLE = int(Qt.ItemDataRole.UserRole) + 38
+TREE_SEARCH_TEXT_ROLE = int(Qt.ItemDataRole.UserRole) + 39
+TREE_CONNECT_ENDPOINT_ROLE = int(Qt.ItemDataRole.UserRole) + 40
 MREMOTENG_ROUTE_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 61
 MREMOTENG_ROUTE_ROLE_ROLE = int(Qt.ItemDataRole.UserRole) + 62
 MREMOTENG_ROUTE_PROFILE_ROLE = int(Qt.ItemDataRole.UserRole) + 63
@@ -54,6 +56,7 @@ MREMOTENG_ROUTE_TAB_ROLE = int(Qt.ItemDataRole.UserRole) + 64
 MREMOTENG_ROUTE_PROTOCOL_ROLE = int(Qt.ItemDataRole.UserRole) + 65
 MREMOTENG_ROUTE_STATE_ROLE = int(Qt.ItemDataRole.UserRole) + 66
 MREMOTENG_ROUTE_SELECTED_ROLE = int(Qt.ItemDataRole.UserRole) + 67
+MREMOTENG_CONFIG_ROLE = int(Qt.ItemDataRole.UserRole) + 68
 MREMOTENG_FILTER_ROUTE_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 91
 MREMOTENG_FILTER_ROUTE_ROLE_ROLE = int(Qt.ItemDataRole.UserRole) + 92
 MREMOTENG_FILTER_ROUTE_QUERY_ROLE = int(Qt.ItemDataRole.UserRole) + 93
@@ -96,8 +99,11 @@ class ProfileTree:
     """Project saved profiles into the Qt tree and maintain its selection."""
 
     if TYPE_CHECKING:
+        _profile_icons: dict[tuple[str, bool, int, float], QIcon]
+        _saved_profile_names: set[str]
         profile_list: QTreeWidget
         remmina_profile_list_chrome: QFrame
+        remmina_profile_filter: QLineEdit
         root_splitter: QSplitter
         store: ProfileStore
         tabs: QTabWidget
@@ -109,6 +115,8 @@ class ProfileTree:
         ) -> QIcon: ...
         def standard_icon(self, icon_name: str) -> QStyle.StandardPixmap: ...
         def refresh_layouts(self) -> None: ...
+        def refresh_recent_session_buttons(self) -> None: ...
+        def refresh_live_status_segments(self) -> bool: ...
         def show_message(self, icon: QMessageBox.Icon, title: object, message: object) -> QMessageBox.StandardButton: ...
         def update_layout_action_states(self, *_args) -> None: ...
         def update_profile_action_states(self) -> None: ...
@@ -116,6 +124,7 @@ class ProfileTree:
         def apply_mremoteng_reconnect_route_properties(
             widget: QWidget, route: GuiMRemoteNgConnectionDocumentRoute, *,
             triggered: bool = False, reconnect_state: str | None = None,
+            profile_name: str | None = None,
         ) -> None: ...
 
     def refresh_profiles(self) -> None:
@@ -126,6 +135,10 @@ class ProfileTree:
             self.show_message(QMessageBox.Icon.Warning, "Profile refresh failed", str(exc))
             return
         self.profile_list.clear()
+        preview = bool(cast("QWidget", self).property("guiPreviewSamples"))
+        self._saved_profile_names = {profile.name for profile in profiles}
+        self.refresh_recent_session_buttons()
+        self.refresh_live_status_segments()
         mremoteng_route = (
             gui_design_mremoteng_connection_document_route()
             if self.current_design_id() == "mremoteng"
@@ -183,19 +196,26 @@ class ProfileTree:
                     parent.addChild(group_item)
                     group_nodes[key] = group_item
                 parent = group_nodes[key]
-            item = QTreeWidgetItem([self.profile_tree_label(profile)])
+            label = self.profile_tree_label(profile)
+            tooltip = self.profile_tree_tooltip(profile)
+            item = QTreeWidgetItem([label])
             item.setData(0, Qt.ItemDataRole.UserRole, profile.name)
+            item.setData(0, TREE_CONNECT_ENDPOINT_ROLE, (profile.protocol, profile.host or "", profile.display_target))
+            item.setData(0, TREE_SEARCH_TEXT_ROLE, " ".join((label, tooltip, profile.group, *profile.tags)).casefold())
             profile_icon = gui_design_tree_row_icon(
                 self.current_design_id(),
-                self.profile_tree_label(profile),
-                self.profile_tree_tooltip(profile),
+                label,
+                tooltip,
                 False,
             )
             self.apply_profile_tree_icon(item, profile_icon, protocol=profile.protocol)
             self.apply_moba_profile_tree_geometry(item, "profile")
-            tooltip = self.profile_tree_tooltip(profile)
             if mremoteng_route is not None:
-                routed = profile.name == mremoteng_route.selected_profile_name
+                item.setData(0, MREMOTENG_CONFIG_ROLE, [
+                    profile.name, profile.protocol.upper(), profile.host or "", str(profile.port or ""),
+                    profile.username or "", profile.group,
+                ])
+                routed = preview and profile.name == mremoteng_route.selected_profile_name
                 item.setData(0, MREMOTENG_ROUTE_KEY_ROLE, mremoteng_route.key)
                 item.setData(0, MREMOTENG_ROUTE_ROLE_ROLE, mremoteng_route.route_role)
                 item.setData(0, MREMOTENG_ROUTE_PROFILE_ROLE, mremoteng_route.selected_profile_name)
@@ -208,7 +228,7 @@ class ProfileTree:
                     item.setSelected(True)
                     self.profile_list.setCurrentItem(item)
             if mremoteng_filter_route is not None:
-                filter_routed = profile.name == mremoteng_filter_route.selected_profile_name
+                filter_routed = preview and profile.name == mremoteng_filter_route.selected_profile_name
                 item.setData(0, MREMOTENG_FILTER_ROUTE_KEY_ROLE, mremoteng_filter_route.key)
                 item.setData(0, MREMOTENG_FILTER_ROUTE_ROLE_ROLE, mremoteng_filter_route.route_role)
                 item.setData(0, MREMOTENG_FILTER_ROUTE_QUERY_ROLE, mremoteng_filter_route.expected_query)
@@ -223,7 +243,7 @@ class ProfileTree:
                         f"{mremoteng_filter_route.selected_tree_label}"
                     )
             if securecrt_route is not None:
-                routed = profile.name == securecrt_route.selected_profile_name
+                routed = preview and profile.name == securecrt_route.selected_profile_name
                 item.setData(0, SECURECRT_ROUTE_KEY_ROLE, securecrt_route.key)
                 item.setData(0, SECURECRT_ROUTE_ROLE_ROLE, securecrt_route.route_role)
                 item.setData(0, SECURECRT_ROUTE_PROFILE_ROLE, securecrt_route.selected_profile_name)
@@ -236,7 +256,7 @@ class ProfileTree:
                     item.setSelected(True)
                     self.profile_list.setCurrentItem(item)
             if securecrt_filter_route is not None:
-                filter_routed = profile.name == securecrt_filter_route.selected_profile_name
+                filter_routed = preview and profile.name == securecrt_filter_route.selected_profile_name
                 item.setData(0, SECURECRT_FILTER_ROUTE_KEY_ROLE, securecrt_filter_route.key)
                 item.setData(0, SECURECRT_FILTER_ROUTE_ROLE_ROLE, securecrt_filter_route.route_role)
                 item.setData(0, SECURECRT_FILTER_ROUTE_QUERY_ROLE, securecrt_filter_route.expected_query)
@@ -250,7 +270,7 @@ class ProfileTree:
                         f"{securecrt_filter_route.expected_query} -> {securecrt_filter_route.matched_result_label}"
                     )
             if securecrt_sftp_route is not None:
-                sftp_routed = profile.name == securecrt_sftp_route.selected_profile_name
+                sftp_routed = preview and profile.name == securecrt_sftp_route.selected_profile_name
                 item.setData(0, SECURECRT_SFTP_ROUTE_KEY_ROLE, securecrt_sftp_route.key)
                 item.setData(0, SECURECRT_SFTP_ROUTE_ROLE_ROLE, securecrt_sftp_route.route_role)
                 item.setData(0, SECURECRT_SFTP_ROUTE_PROFILE_ROLE, securecrt_sftp_route.selected_profile_name)
@@ -264,7 +284,7 @@ class ProfileTree:
                         f"{securecrt_sftp_route.sftp_tab_label} -> {securecrt_sftp_route.status_value}"
                     )
             if termius_host_route is not None:
-                routed = profile.name == termius_host_route.selected_profile_name
+                routed = preview and profile.name == termius_host_route.selected_profile_name
                 item.setData(0, TERMIUS_HOST_ROUTE_KEY_ROLE, termius_host_route.key)
                 item.setData(0, TERMIUS_HOST_ROUTE_ROLE_ROLE, termius_host_route.route_role)
                 item.setData(0, TERMIUS_HOST_ROUTE_PROFILE_ROLE, termius_host_route.selected_profile_name)
@@ -283,6 +303,10 @@ class ProfileTree:
             self.select_profile(selected_name)
         design_id = self.current_design_id()
         window = cast("QMainWindow", self)
+        if design_id == "native" and self.profile_list.property("nativeHomeFilterText"):
+            self.filter_profile_tree(str(self.profile_list.property("nativeHomeFilterText")))
+        if design_id == "remmina" and not window.property("guiPreviewSamples"):
+            self.filter_profile_tree(self.remmina_profile_filter.text())
         if design_id == "securecrt":
             session_filter = window.findChild(QLineEdit, "secureCrtSessionFilter")
             if session_filter is not None:
@@ -803,12 +827,15 @@ class ProfileTree:
         item.setData(0, TREE_ROW_STATIC_TARGET_X_ROLE, target_x)
 
     def profile_tree_generated_icon(self, icon_key: str, *, group: bool, size: int = 16) -> QIcon:
-        return self.generated_icon(
-            size,
-            lambda painter, logical_size: draw_profile_tree_generated_icon(
-                painter, icon_key, group=group, size=logical_size
-            ),
-        )
+        key = (icon_key, group, size, cast("QWidget", self).devicePixelRatioF())
+        if key not in self._profile_icons:
+            self._profile_icons[key] = self.generated_icon(
+                size,
+                lambda painter, logical_size: draw_profile_tree_generated_icon(
+                    painter, icon_key, group=group, size=logical_size
+                ),
+            )
+        return self._profile_icons[key]
 
     def profile_icon_for_protocol(self, protocol: str) -> QIcon:
         normalized = protocol.lower()
@@ -874,15 +901,14 @@ class ProfileTree:
                 self.profile_list.setProperty(property_name, None)
 
     def filter_profile_tree(self, text: str) -> None:
-        needle = text.strip().lower()
+        needle = text.strip().casefold()
 
         def apply_filter(item) -> bool:
-            own_text = item.text(0).lower()
-            own_tooltip = item.toolTip(0).lower()
+            own_text = item.data(0, TREE_SEARCH_TEXT_ROLE) or item.text(0).casefold()
             child_match = False
             for child_index in range(item.childCount()):
                 child_match = apply_filter(item.child(child_index)) or child_match
-            item_match = not needle or needle in own_text or needle in own_tooltip or child_match
+            item_match = not needle or needle in own_text or child_match
             item.setHidden(not item_match)
             if item_match and child_match:
                 item.setExpanded(True)

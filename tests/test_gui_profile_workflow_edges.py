@@ -204,7 +204,7 @@ def test_profile_create_edit_remove_and_import_workflow_edges(
                 accepted.append(profile)
             return accepted
 
-        def get(self, _name: str):
+        def get(self, _name: str, *, resolve: bool = True):
             if isinstance(self.get_value, Exception):
                 raise self.get_value
             return self.get_value

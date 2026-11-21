@@ -292,6 +292,48 @@ def test_monitoring_stale_completion_and_absent_sftp_status_widgets(
     label.mouseReleaseEvent(event)
 
 
+def test_manual_sftp_browsing_preserves_each_tabs_listing_without_follow(connected_workspace, monkeypatch):
+    from remote_ops_workspace.file_transfer import build_sftp_list_plan
+    from remote_ops_workspace.moba_connected import RemoteFileEntry
+
+    app, window, first_panel, first_dock, profile = connected_workspace
+    _set_checked(first_dock.monitoring_control_widgets["follow-terminal-folder"], False)
+    requests = []
+    monkeypatch.setattr(first_dock, "request_sftp_refresh", lambda *, reason: requests.append(reason))
+    entries = (RemoteFileEntry("original.txt", "file", 1, ""),)
+    first_dock.apply_live_sftp_entries(entries, request_path="/", plan=build_sftp_list_plan(profile, "/"))
+    assert first_dock.file_table.topLevelItem(1).text(0) == "original.txt"
+    assert first_dock.navigate_moba_sftp_path("/logs")
+    assert first_dock.file_table.topLevelItemCount() == 0
+    assert first_dock.selected_sftp_item() is None
+    assert requests == ["path-change"]
+    first_dock.apply_live_sftp_entries(
+        (RemoteFileEntry("system.log", "file", 2, ""),), request_path="/logs", plan=build_sftp_list_plan(profile, "/logs")
+    )
+    assert first_panel.moba_connected_state.remote_path == "/logs"
+    second_panel = window.open_moba_connected_session_tab(
+        profile, TerminalPanePlan(title="another session", command=[], source="test"), remote_path="/other"
+    )
+    second_dock = window.moba_connected_dock
+    assert second_dock is not first_dock
+    second_dock.apply_live_remote_monitoring_snapshot(second_dock.state.monitoring)
+    assert second_panel.moba_connected_state.remote_path == "/other"
+    assert first_panel.moba_connected_state.remote_path == "/logs"
+    window.tabs.setCurrentWidget(first_panel)
+    app.processEvents()
+    restored = window.moba_connected_dock
+    assert restored.active_remote_path == "/logs"
+    assert restored.file_table.topLevelItem(1).text(0) == "system.log"
+    standalone = type(restored)(second_panel.state)
+    try:
+        standalone.apply_live_sftp_entries(entries, request_path="/other", plan=build_sftp_list_plan(profile, "/other"))
+        assert standalone.file_table.topLevelItem(1).text(0) == "original.txt"
+        assert second_panel.state.file_entries == ()
+    finally:
+        standalone.shutdown_runtime()
+        standalone.deleteLater()
+
+
 def test_live_monitoring_rebuilds_the_bottom_bar_for_extended_metrics(
     connected_workspace,
 ) -> None:
@@ -807,6 +849,8 @@ def test_sftp_navigation_widget_contract_and_reconnect_guards(
     original_table = dock.file_table
     original_queue = dock.sftp_transfer_queue
     _set_checked(dock.monitoring_control_widgets["follow-terminal-folder"], False)
+    requested = []
+    monkeypatch.setattr(dock, "request_sftp_refresh", lambda *, reason: requested.append(reason))
 
     monkeypatch.setattr(gui_connected, "normalise_remote_path", lambda _path: "relative/path")
     dock.browser = None
@@ -831,6 +875,7 @@ def test_sftp_navigation_widget_contract_and_reconnect_guards(
     dock.file_table = _SparseTable()
     del dock.sftp_transfer_queue
     assert dock.navigate_moba_sftp_path("/sparse") is True
+    assert requested == ["path-change", "path-change"]
     dock.file_table = original_table
     dock.sftp_transfer_queue = original_queue
 

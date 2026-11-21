@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-from PyQt6.QtCore import QSize, QTimer
+from PyQt6.QtCore import QSize, Qt, QTimer
 from PyQt6.QtWidgets import QLineEdit, QSizePolicy, QWidget
 
 from . import gui_preset_properties
@@ -121,7 +121,13 @@ class WindowDesign:
         if self._design_transition_depth == 0:
             self._design_transition_generation += 1
             self._design_transition_restore_window_updates = window.updatesEnabled()
-            self._design_transition_restore_tabs_updates = self.tabs.updatesEnabled()
+            # A preset change can replace Home before a queued tab transition
+            # finishes. Its temporary paint suppression must expire with it.
+            self._design_transition_restore_tabs_updates = bool(
+                not self.tabs.testAttribute(Qt.WidgetAttribute.WA_ForceUpdatesDisabled)
+                or self.tabs.property("terminalTabTransitionActive")
+                or self.tabs.property("terminalTabPrepaintGuardActive")
+            )
             window.setProperty("designTransitionActive", True)
             window.setProperty(
                 "designTransitionGeneration",
@@ -156,14 +162,14 @@ class WindowDesign:
             self.tabs.property("terminalTabTransitionActive")
             or self.tabs.property("terminalTabPrepaintGuardActive")
         )
-        if not tabs_are_transitioning:
-            self.set_terminal_tab_paint_frozen(False)
         window.setProperty("designTransitionActive", False)
+        window.setUpdatesEnabled(self._design_transition_restore_window_updates)
         self.tabs.setUpdatesEnabled(
             self._design_transition_restore_tabs_updates
             and not tabs_are_transitioning
         )
-        window.setUpdatesEnabled(self._design_transition_restore_window_updates)
+        if not tabs_are_transitioning:
+            self.set_terminal_tab_paint_frozen(False)
         if current is not None:
             current.update()
             self.tabs.update()
@@ -259,7 +265,7 @@ class WindowDesign:
         self.configure_left_panel_header_for_design(preset, is_moba)
         self.remmina_profile_list_chrome.setVisible(preset.id == "remmina")
         self.mremoteng_left_property_grid_panel.setVisible(
-            preset.id == "mremoteng"
+            preset.id == "mremoteng" and bool(self.mremoteng_left_property_grid_panel.property("mRemoteNgDockViewVisible"))
         )
         if preset.id == "remmina":
             self.filter_remmina_profile_rows(self.remmina_profile_filter.text())

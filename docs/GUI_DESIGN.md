@@ -502,7 +502,13 @@ View, Connections, Tools, Window and Help menus expose stable
 Refresh, New Conn, Config, Delete, Open, External, Transfer, Script, Tools and
 Tile controls. The static preview and live PyQt menu bar are checked from the
 same source.
-mRemoteNG-style property grid chrome is also shared metadata. The Config /
+The mRemoteNG-style Config dock beneath the connection tree shows the selected
+profile's effective protocol, host, port, username and group. Edit opens the
+saved profile. Fields supplied by group defaults stay inherited after an edit.
+Filtering out the selection clears the inspector. The Start Page's Dock View
+button controls the same dock across preset switches.
+
+In sample previews, mRemoteNG-style property grid chrome is shared metadata. The Config /
 Inheritance title, active document scope, Property/Inherited/Effective value/
 Source columns, inherited row state and generic effective values are drawn in
 the static config table, exposed as live `mRemoteNgPropertyGrid` and
@@ -514,11 +520,12 @@ tab, `Reconnect` document control and `Protocol` property-grid row share
 GUI. The live checker verifies the routed tree item data roles, document-control
 active state and property-grid effective value so the selected connection cannot
 silently diverge from the open document surface.
-mRemoteNG-style reconnect live route extends that contract with a real clicked
-path for the `Reconnect` document control. The live checker clicks the routed
-button and verifies `mRemoteNgConnectionRouteCaptured*` plus
-`mRemoteNgConnectionRouteLive*` state on the tree, document controls strip,
-routed button and property grid without embedding real host credentials.
+The mRemoteNG-style reconnect live route restarts the active terminal. From the
+Start Page, Reconnect looks for the selected connection in open tabs, starting
+at the right. The status reports the request while the process starts.
+The interaction checker observes two starts and two finishes of a local test
+transport. The render checker also verifies `mRemoteNgConnectionRouteCaptured*`
+and `mRemoteNgConnectionRouteLive*` on the sample preview.
 mRemoteNG-style document filter route is tracked separately too: the editable
 `mRemoteNgDocumentFilter`, `mRemoteNgDocumentControls` strip and selected
 `edge-prod [SSH]` tree row expose `mRemoteNgDocumentFilterRoute*` metadata. The

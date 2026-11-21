@@ -69,9 +69,14 @@ class MobaConnectedSessions:
     def show_moba_connected_dock(self, state: MobaConnectedSessionState) -> None:
         if not hasattr(self, "moba_left_stack"):
             return
+        widget = self.tabs.currentWidget()
+        owner = widget if isinstance(widget, self._connected_session_panel_type) else None
+        if owner is None and widget is not None:
+            owner = widget.findChild(self._connected_session_panel_type)
         if (
             self.moba_connected_dock is not None
             and hasattr(self.moba_connected_dock, "can_reuse_for_state")
+            and self.moba_connected_dock.session_panel is owner
             and self.moba_connected_dock.can_reuse_for_state(state)
         ):
             self.moba_left_stack.setCurrentWidget(self.moba_connected_dock)
@@ -91,6 +96,7 @@ class MobaConnectedSessions:
             self.clear_deleted_tab_object_names(self.moba_connected_dock)
             self.moba_connected_dock.deleteLater()
         self.moba_connected_dock = self._connected_sftp_dock_type(state)
+        self.moba_connected_dock.session_panel = owner
         self.moba_left_stack.addWidget(self.moba_connected_dock)
         self.moba_left_stack.setCurrentWidget(self.moba_connected_dock)
         self.moba_connected_dock.initialize_background_state()

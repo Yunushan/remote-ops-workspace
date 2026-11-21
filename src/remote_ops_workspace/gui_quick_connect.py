@@ -121,7 +121,6 @@ class WindowQuickConnect:
     def update_quick_connect_suggestions(self) -> None:
         chrome = gui_design_moba_quick_connect_suggestion_chrome()
         quick_connect_chrome = gui_design_moba_quick_connect_chrome()
-        self.quick_connect_suggestions.setProperty("mobaQuickConnectSuggestionQuery", self.quick_connect.text().strip())
         if not self.current_design_is_moba():
             self.quick_connect_suggestions.clear()
             self.quick_connect_suggestions.setProperty("mobaQuickConnectSuggestionKinds", [])
@@ -147,6 +146,7 @@ class WindowQuickConnect:
             self.statusBar().showMessage(f"Quick connect unavailable: {exc}")
             return
         self.quick_connect_suggestions.clear()
+        self.quick_connect_suggestions.setProperty("mobaQuickConnectSuggestionQuery", self.quick_connect.text().strip())
         self.quick_connect_suggestions.setProperty(
             "mobaQuickConnectSuggestionKinds",
             [candidate.kind for candidate in candidates],
@@ -169,10 +169,8 @@ class WindowQuickConnect:
             item.setToolTip(0, _safe_tooltip_html(candidate.detail))
             if candidate.kind == "direct":
                 item.setIcon(0, self.profile_icon_for_protocol(candidate.profile.protocol if candidate.profile else "ssh"))
-            else:
-                profile = self.profile_by_name(candidate.profile_name)
-                if profile is not None:
-                    item.setIcon(0, self.profile_icon_for_protocol(profile.protocol))
+            elif candidate.protocol:
+                item.setIcon(0, self.profile_icon_for_protocol(candidate.protocol))
             self.quick_connect_suggestions.addTopLevelItem(item)
         if self.quick_connect_suggestions.topLevelItemCount() > 0:
             self.quick_connect_suggestions.setCurrentItem(self.quick_connect_suggestions.topLevelItem(0))
@@ -193,7 +191,7 @@ class WindowQuickConnect:
         if not text:
             return
         item = self.quick_connect_suggestions.currentItem()
-        if item is not None:
+        if item is not None and self.quick_connect_suggestions.property("mobaQuickConnectSuggestionQuery") == text:
             candidate = item.data(0, Qt.ItemDataRole.UserRole)
             if isinstance(candidate, QuickConnectCandidate):
                 self.run_quick_connect_candidate(item)
@@ -217,8 +215,13 @@ class WindowQuickConnect:
     def run_quick_connect_candidate_value(self, candidate: QuickConnectCandidate) -> None:
         try:
             if candidate.kind == "profile" and candidate.profile_name:
-                self.select_profile(candidate.profile_name)
-                self.connect_selected(False)
+                profile = self.profile_by_name(candidate.profile_name)
+                if profile is None:
+                    raise ValueError(f"Saved profile no longer exists: {candidate.profile_name}")
+                if candidate.protocol and (candidate.protocol, candidate.detail) != (profile.protocol, profile.display_target):
+                    raise ValueError(f"Connection details changed for {profile.name}. Search again to review the new target.")
+                self.select_profile(profile.name)
+                self.launch_profile(profile, dry_run=False, prefix="QUICK CONNECT")
             elif candidate.profile is not None:
                 self.launch_profile(candidate.profile, dry_run=False, prefix="QUICK CONNECT")
         except (OSError, ValueError, LauncherError) as exc:

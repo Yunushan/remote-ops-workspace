@@ -47,6 +47,7 @@ class RemminaWorkspace:
         tabs: QTabWidget
 
         def filter_remmina_profile_rows(self, text: str) -> None: ...
+        def filter_profile_tree(self, text: str) -> None: ...
         def generated_icon(
             self, size: int, draw: Callable[[QPainter, int], None], *, antialias: bool = True,
         ) -> QIcon: ...
@@ -811,10 +812,14 @@ class RemminaWorkspace:
         for property_name, property_value in filter_route_properties.items():
             filter_input.setProperty(property_name, property_value)
         filter_input.setMinimumWidth(chrome.live_filter_width)
-        filter_input.textChanged.connect(self.filter_remmina_profile_rows)
         self.remmina_profile_filter = filter_input
         title_row.addWidget(filter_input, 1)
         layout.addLayout(title_row)
+
+        if not cast(QWidget, self).property("guiPreviewSamples"):
+            filter_input.textChanged.connect(self.filter_profile_tree)
+            return panel
+        filter_input.textChanged.connect(self.filter_remmina_profile_rows)
 
         header = QHBoxLayout()
         header.setSpacing(chrome.live_header_spacing)

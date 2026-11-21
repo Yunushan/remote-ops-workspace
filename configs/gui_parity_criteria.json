@@ -10035,17 +10035,22 @@
         },
         {
           "id": "mremoteng.connection-reconnect-live-route",
-          "description": "mRemoteNG-style Reconnect document control exposes a real clicked route that updates captured reconnect state on the tree, controls strip, routed button and property grid.",
+          "description": "Reconnect restarts the active document or the selected connection's existing session and reports a request while the transport starts.",
           "source_tokens": {
             "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "handler=\"handle_mremoteng_document_reconnect\"",
-              "reconnect_state=\"reconnected\"",
+              "reconnect_state=\"reconnect requested\"",
               "live_triggered_property=\"mRemoteNgConnectionRouteLiveTriggered\""
             ],
             "src/remote_ops_workspace/gui_mremoteng.py": [
               "handle_mremoteng_document_reconnect",
+              "pane.restart()",
               "apply_mremoteng_reconnect_route_properties",
               "route.live_triggered_property"
+            ],
+            "tests/test_gui_mremoteng_workflows.py": [
+              "test_reconnect_restarts_only_the_selected_open_document",
+              "wait_for_starts(3)"
             ],
             "scripts/render_gui_design_previews.py": [
               "route.handler",

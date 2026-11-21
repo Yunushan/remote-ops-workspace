@@ -2237,7 +2237,7 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "mRemoteNgInheritanceRouteInheritedValue" in product_workspace_source
     assert "MREMOTENG_FILTER_ROUTE_KEY_ROLE" in tree_source
     assert "mremoteng_document_control_icon" in mremoteng_source
-    assert "self.build_mremoteng_property_grid_evidence()" in sidebar_source
+    assert "self.build_mremoteng_config_dock()" in sidebar_source
     assert "mRemoteNgPropertyRowKey" in mremoteng_source
     assert "GuiRemminaViewerControl" in remmina_design_source
     assert "GuiRemminaProfileListChrome" in remmina_design_source

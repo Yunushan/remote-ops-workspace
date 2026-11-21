@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, cast
 
 from PyQt6.QtCore import QTimer
 
@@ -52,6 +52,7 @@ class TerminalLifecycle:
         def prepare_tab_transition(self, index: int) -> None: ...
         def refresh_moba_left_dock_for_current_tab(self) -> None: ...
         def refresh_special_tab_buttons(self) -> None: ...
+        def refresh_live_status_segments(self) -> bool: ...
         def remember_terminal_plan(self, plan: TerminalPanePlan, *, profile: Profile | None = None) -> None: ...
         def running_terminal_panes(self) -> list[TerminalPane]: ...
         def set_literal_tab_tooltip(self, index: int, text: object, *, update_base: bool = True) -> None: ...
@@ -91,7 +92,8 @@ class TerminalLifecycle:
         reference_label = tab_title or plan.title
         reference_route = (
             gui_design_preset_reference_tab_route(self.current_design_id())
-            if self.current_design_id() in PRODUCT_REFERENCE_TAB_PRESET_IDS
+            if cast("QWidget", self).property("guiPreviewSamples")
+            and self.current_design_id() in PRODUCT_REFERENCE_TAB_PRESET_IDS
             else None
         )
         if reference_route is not None and reference_label == reference_route.active_tab_label:
@@ -105,17 +107,18 @@ class TerminalLifecycle:
             self.apply_reference_tab_chrome_route_to_terminal_tab(tab_content, reference_label, index)
             self.apply_reference_status_bar_route_to_terminal_tab(tab_content, reference_label)
             self.apply_reference_session_action_route_to_terminal_tab(tab_content, reference_label, index)
-        self.apply_reference_tab_route_to_terminal_tab(pane, tab_title or plan.title)
+            self.apply_reference_tab_route_to_terminal_tab(pane, reference_label)
+            self.apply_reference_tab_chrome_route_to_terminal_tab(pane, reference_label, index)
         if tab_status:
             self.set_literal_tab_tooltip(
                 index,
                 f"{tab_title or plan.title}: {tab_status}",
                 update_base=False,
             )
-        self.apply_reference_tab_chrome_route_to_terminal_tab(pane, tab_title or plan.title, index)
         self.update_session_status()
-        self.apply_reference_status_bar_route_to_terminal_tab(pane, tab_title or plan.title)
-        self.apply_reference_session_action_route_to_terminal_tab(pane, tab_title or plan.title, index)
+        if tab_content is not pane:
+            self.apply_reference_status_bar_route_to_terminal_tab(pane, reference_label)
+            self.apply_reference_session_action_route_to_terminal_tab(pane, reference_label, index)
         self.start_terminal_pane_when_active(pane, index)
 
     def start_terminal_pane_when_active(self, pane: TerminalPane, index: int) -> None:
@@ -394,6 +397,7 @@ class TerminalLifecycle:
 
     def update_session_status(self) -> None:
         try:
+            self.refresh_live_status_segments()
             if self._status_message_override is not None:
                 remaining_ms = int(
                     (self._status_message_override_deadline - time.monotonic())

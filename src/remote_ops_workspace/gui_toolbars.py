@@ -897,7 +897,8 @@ class WindowToolbars:
                     "termius": "Search hosts",
                     "remmina": "Quick connect",
                     "mremoteng": "Filter connections",
-                }.get(preset.id, "Search")
+                }.get(preset.id, "Search") if cast(QWidget, self).property("guiPreviewSamples")
+                else "Search active terminal or log"
             )
             layout_toolbar_style = _widget_style(self.layout_toolbar)
             layout_toolbar_style.unpolish(self.layout_toolbar)

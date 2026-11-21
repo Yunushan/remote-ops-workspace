@@ -122,6 +122,7 @@ from .terminal import (
 if TYPE_CHECKING:
     class ConnectedSftpDock(SftpTextEditor):
         state: MobaConnectedSessionState
+        session_panel: ConnectedSessionPanel | None = None
 
         @abstractmethod
         def __init__(self, state: MobaConnectedSessionState) -> None: ...
@@ -451,6 +452,7 @@ def create_moba_connected_classes(
 
         def __init__(self, state: MobaConnectedSessionState) -> None:
             QFrame.__init__(self)
+            self.session_panel: ConnectedSessionPanel | None = None
             self._connected_services = services
             self.setObjectName("mobaConnectedLeftDock")
             self.state = replace(
@@ -1934,10 +1936,11 @@ def create_moba_connected_classes(
                         isinstance(candidate, MobaConnectedSessionPanel)
                         and candidate.state.profile_name == live_state.profile_name
                         and candidate.state.target == live_state.target
+                        and candidate.state.ssh_connection_key == live_state.ssh_connection_key
                     ):
                         matching_panels.append(candidate)
             for panel in matching_panels:
-                self._update_live_telemetry_panel(panel, live_state)
+                self._update_live_telemetry_panel(panel, replace(panel.state, monitoring=snapshot))
             return True
 
         def build_remote_monitoring_context_menu(self) -> QMenu:
@@ -2335,6 +2338,9 @@ def create_moba_connected_classes(
                 sftp_list_plan=plan,
                 follow_folder_plan=plan,
             )
+            if self.session_panel is not None:
+                self.session_panel.state = self.state
+                self.session_panel.moba_connected_state = self.state
             self.file_table.clear()
             parent_item = QTreeWidgetItem([chrome.parent_row_label, "", ""])
             self.apply_sftp_file_row_icon(parent_item, chrome.parent_row_kind)
@@ -2478,6 +2484,8 @@ def create_moba_connected_classes(
                 return False
             if not normalized.startswith("/"):
                 normalized = f"/{normalized}"
+            if normalized != self.active_remote_path and hasattr(self, "file_table"):
+                self.file_table.clear()
             self.active_remote_path = normalized
             self.path.setText(normalized)
             navigation_count = int(self.path.property("mobaSftpPathNavigationCount") or 0) + 1
@@ -2496,19 +2504,10 @@ def create_moba_connected_classes(
                 widget.setProperty("mobaSftpFollowRoutePath", normalized)
                 widget.setProperty("mobaSftpTerminalFolderRoutePath", normalized)
                 widget.setProperty("mobaConnectedRouteRemotePath", normalized)
-            if hasattr(self, "file_table"):
-                for index in range(self.file_table.topLevelItemCount()):
-                    item = self.file_table.topLevelItem(index)
-                    if item is not None:
-                        item.setData(0, SFTP_ROW_SOURCE_PATH_ROLE, normalized)
             if hasattr(self, "sftp_transfer_queue"):
                 self.sftp_transfer_queue.setText(f"Path: {normalized}")
             self.show_sftp_status(f"SFTP path: {normalized}")
-            follow_control = self.monitoring_control_widgets.get(
-                "follow-terminal-folder"
-            )
-            if follow_control is not None and follow_control.isChecked():
-                self.request_sftp_refresh(reason="path-change")
+            self.request_sftp_refresh(reason="path-change")
             return True
 
         def selected_sftp_item(self) -> tuple[str, str] | None:
@@ -2553,6 +2552,12 @@ def create_moba_connected_classes(
                 self.file_table.setCurrentItem(item)
                 item.setSelected(True)
             selected = item or self.file_table.currentItem()
+            menu_path = self.active_remote_path
+
+            def for_current_listing(action, *args):
+                if not self.runtime_shutting_down and self.active_remote_path == menu_path and self.file_table.currentItem() is selected:
+                    action(*args)
+
             kind = (
                 str(selected.data(0, SFTP_ROW_KIND_ROLE) or "")
                 if selected is not None
@@ -2566,7 +2571,7 @@ def create_moba_connected_classes(
             open_action = _required_gui_value(
                 menu.addAction(
                     "Open" if kind == "file" else "Open folder",
-                    lambda: self.open_sftp_context_item(selected),
+                    lambda: for_current_listing(self.open_sftp_context_item, selected),
                 ),
                 "SFTP open action",
             )
@@ -2575,19 +2580,19 @@ def create_moba_connected_classes(
             download_action = _required_gui_value(
                 menu.addAction(
                     "Download",
-                    lambda: self.show_moba_sftp_toolbar_action("download"),
+                    lambda: for_current_listing(self.show_moba_sftp_toolbar_action, "download"),
                 ),
                 "SFTP download action",
             )
             download_action.setEnabled(transfer_ready)
             menu.addAction(
                 "Upload here",
-                lambda: self.show_moba_sftp_toolbar_action("upload"),
+                lambda: for_current_listing(self.show_moba_sftp_toolbar_action, "upload"),
             )
             copy_action = _required_gui_value(
                 menu.addAction(
                     "Copy remote path",
-                    lambda: self.copy_sftp_context_path(selected),
+                    lambda: for_current_listing(self.copy_sftp_context_path, selected),
                 ),
                 "SFTP copy-path action",
             )
@@ -2595,7 +2600,7 @@ def create_moba_connected_classes(
             menu.addSeparator()
             menu.addAction(
                 "Parent folder",
-                lambda: self.show_moba_sftp_toolbar_action("parent-folder"),
+                lambda: for_current_listing(self.show_moba_sftp_toolbar_action, "parent-folder"),
             )
             auth_action = _required_gui_value(
                 menu.addAction(

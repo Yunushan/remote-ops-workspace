@@ -1899,21 +1899,15 @@ def test_process_finish_confirmation_and_expired_status_edges(
         ("Controlled close", "Stop 2 running process pane(s)?"),
     ]
 
-    messages: list[str] = []
-    status_bar = SimpleNamespace(showMessage=lambda message, *_args: messages.append(message))
-    update_owner = SimpleNamespace(
-        _status_message_override="expired",
-        _status_message_override_deadline=time.monotonic() - 1,
-        statusBar=lambda: status_bar,
-        running_terminal_panes=lambda: [object()],
-    )
-    update_status = type(window).update_session_status
-    update_status(update_owner)
-    assert update_owner._status_message_override is None
-    assert messages[-1] == "Running process panes: 1"
-    update_owner.running_terminal_panes = lambda: []
-    update_status(update_owner)
-    assert messages[-1] == "No running process panes"
+    window._status_message_override = "expired"
+    window._status_message_override_deadline = time.monotonic() - 1
+    monkeypatch.setattr(window, "running_terminal_panes", lambda: [object()])
+    window.update_session_status()
+    assert window._status_message_override is None
+    assert window.statusBar().currentMessage() == "Running process panes: 1"
+    monkeypatch.setattr(window, "running_terminal_panes", lambda: [])
+    window.update_session_status()
+    assert window.statusBar().currentMessage() == "No running process panes"
 
 
 def test_terminal_output_backpressure_empty_payload_and_initial_transcript_edges(

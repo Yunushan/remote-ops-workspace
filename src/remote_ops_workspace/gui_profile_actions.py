@@ -225,7 +225,7 @@ class ProfileActions:
             )
             return
         try:
-            current = self.store.get(name)
+            current = self.store.get(name, resolve=False)
         except (KeyError, OSError, ValueError) as exc:
             self.show_message(
                 QMessageBox.Icon.Warning,

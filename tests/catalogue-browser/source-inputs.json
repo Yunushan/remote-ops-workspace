@@ -106,8 +106,8 @@
     },
     {
       "path": "src/remote_ops_workspace/storage.py",
-      "sha256": "d0506788d591603d2b066ad8d4f5a523ffaa0c3c1c5b56aef6be725f8a3ae7aa",
-      "size": 25384
+      "sha256": "8082180893e936e793b173d0b7c2440b10c7757532f7293312eec7f0a30fe640",
+      "size": 25424
     },
     {
       "path": "src/remote_ops_workspace/web_server.py",

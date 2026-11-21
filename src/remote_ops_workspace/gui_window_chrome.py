@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from PyQt6.QtCore import QSize, Qt
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QToolButton
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QToolButton, QWidget
 
 from . import gui_preset_properties
 from .gui_designs import (
@@ -27,6 +27,7 @@ class WindowChrome:
     """Build and update the main window's status bar and top chrome."""
 
     if TYPE_CHECKING:
+        _saved_profile_names: set[str]
         main_menu_bar: QMenuBar
         main_toolbar: QToolBar
         moba_quick_connect_chrome: QFrame
@@ -39,6 +40,19 @@ class WindowChrome:
         def moba_utility_icon(self, icon_key: str, fill: str, *, size: int = 20) -> QIcon: ...
         def setProperty(self, name: str, value: object) -> bool: ...  # noqa: N802
         def statusBar(self) -> QStatusBar: ...  # noqa: N802
+        def tab_role(self, index: int) -> str: ...
+
+    def refresh_live_status_segments(self) -> bool:
+        if cast(QWidget, self).property("guiPreviewSamples"):
+            return False
+        count = sum(self.tab_role(index) not in {"home", "new-session"} for index in range(self.tabs.count()))
+        values = (("profiles", f"Saved profiles: {len(self._saved_profile_names)}"),
+                  ("sessions", f"Open workspace tabs: {count}"), ("", ""))
+        for label, (key, text) in zip(self.status_segment_labels, values, strict=True):
+            label.setText(text)
+            label.setToolTip(text)
+            label.setProperty("productStatusKey", key)
+        return True
 
     def create_status_segments(self) -> list[QLabel]:
         self.statusBar().setObjectName("statusBar")
@@ -113,6 +127,8 @@ class WindowChrome:
             self.status_marker_label.setProperty("mobaStatusMarkerWidth", chrome.marker_width)
             self.status_marker_label.setProperty("mobaStatusMarkerHeight", chrome.marker_height)
             self.moba_bottom_edge_controls.setVisible(True)
+            if self.refresh_live_status_segments():
+                return
             for label, segment in zip(self.status_segment_labels, gui_design_moba_status_segments(), strict=False):
                 label.setText(segment.text)
                 label.setToolTip(segment.tooltip)
@@ -127,6 +143,8 @@ class WindowChrome:
         self.status_marker_label.setToolTip("")
         self.status_marker_label.setProperty("productStatusKey", "right-marker")
         self.moba_bottom_edge_controls.setVisible(False)
+        if self.refresh_live_status_segments():
+            return
         for label, text in zip(self.status_segment_labels, gui_design_status_segments(preset.id), strict=False):
             label.setText(text)
             label.setToolTip(f"{preset.label}: {text}")

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, cast
 from PyQt6.QtCore import QSize, Qt, QTimer
 from PyQt6.QtWidgets import (
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -25,12 +26,17 @@ from .gui_designs import (
 )
 from .gui_dialogs import _literal_label
 from .gui_values import _widget_style
+from .quick_connect import QuickConnectCandidate
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from PyQt6.QtGui import QIcon
-    from PyQt6.QtWidgets import QStyle, QTabWidget
+    from PyQt6.QtWidgets import QStyle, QTabWidget, QTreeWidget, QTreeWidgetItem
 
     from .gui_designs import GuiPresetHomeSearchRoute, GuiWorkspaceSurface
+    from .models import Profile
+    from .terminal import TerminalPanePlan
 
 
 class WindowHome:
@@ -39,15 +45,25 @@ class WindowHome:
     if TYPE_CHECKING:
         tabs: QTabWidget
         quick_connect: QLineEdit
+        profile_list: QTreeWidget
+        securecrt_session_filter: QLineEdit
+        termius_host_search: QLineEdit
+        remmina_profile_filter: QLineEdit
+        recent_terminal_plans: list[tuple[TerminalPanePlan, Profile | None]]
+        _saved_profile_names: set[str]
 
         def add_workspace_tab(self, widget: QWidget, title: str, *, select: bool = True, role: str = "session") -> int: ...
         def apply_moba_tab_chrome(
             self, index: int, *, key: str, icon_key: str, tooltip: str, closeable: bool,
         ) -> None: ...
         def build_product_workflow_evidence(self) -> QFrame: ...
+        def build_mremoteng_start_page(self) -> QFrame: ...
         def build_product_workspace_surface_evidence(self, surface: GuiWorkspaceSurface) -> QFrame: ...
         def connect_selected(self, dry_run: bool) -> None: ...
         def create_profile(self) -> None: ...
+        def filter_profile_tree(self, text: str) -> None: ...
+        def iter_profile_tree_items(self) -> Iterator[QTreeWidgetItem]: ...
+        def selected_profile_name(self) -> str | None: ...
         def current_design_id(self) -> str: ...
         def current_design_is_moba(self) -> bool: ...
         def moba_ribbon_icon(self, icon_key: str, fill: str, *, size: int = 32) -> QIcon: ...
@@ -55,6 +71,7 @@ class WindowHome:
         def recover_previous_sessions(self) -> None: ...
         def run_operator_action(self, callback: Callable[[], object]) -> None: ...
         def run_quick_connect(self) -> None: ...
+        def run_quick_connect_candidate_value(self, candidate: QuickConnectCandidate) -> None: ...
         def standard_icon(self, icon_name: str) -> QStyle.StandardPixmap: ...
 
     def configure_welcome_responsiveness(self) -> None:
@@ -161,6 +178,7 @@ class WindowHome:
             widget.setProperty(route.captured_recent_count_property, len(recent_labels))
 
     def add_welcome_tab(self, *, select: bool | None = None) -> None:
+        self._recent_session_buttons: list[QPushButton] = []
         surface = gui_design_workspace_surface(self.current_design_id())
         self.home_action_callbacks = self.home_action_callbacks_for_design()
         box = QWidget()
@@ -209,6 +227,20 @@ class WindowHome:
             QTimer.singleShot(0, self.configure_welcome_responsiveness)
             return
 
+        preview = bool(cast(QWidget, self).property("guiPreviewSamples"))
+        if self.current_design_id() == "mremoteng" and not preview:
+            self.welcome_panel = self.build_mremoteng_start_page()
+            layout.addWidget(self.welcome_panel)
+            layout.addStretch(2)
+            self.add_workspace_tab(
+                box,
+                gui_design_home_tab_label("mremoteng"),
+                select=self.tabs.count() == 0 if select is None else select,
+                role="home",
+            )
+            QTimer.singleShot(0, self.configure_welcome_responsiveness)
+            return
+
         panel = QFrame()
         panel.setObjectName("welcomePanel")
         # Product presets are workspace-led in the reference applications
@@ -235,13 +267,9 @@ class WindowHome:
         panel_layout.setContentsMargins(0, 0, 0, 0)
         panel_layout.setSpacing(13)
 
-        early_workspace_evidence = None
-        early_workflow = None
-        if product_workspace_led:
-            early_workspace_evidence = self.build_product_workspace_surface_evidence(surface)
-            panel_layout.addWidget(early_workspace_evidence)
-            early_workflow = self.build_product_workflow_evidence()
-            panel_layout.addWidget(early_workflow)
+        if preview and product_workspace_led:
+            panel_layout.addWidget(self.build_product_workspace_surface_evidence(surface))
+            panel_layout.addWidget(self.build_product_workflow_evidence())
 
         title_row = QHBoxLayout()
         title_row.setSpacing(18)
@@ -313,16 +341,15 @@ class WindowHome:
         search.setPlaceholderText(surface.home_search_placeholder)
         search.setMinimumWidth(405)
         search.setMaximumWidth(405)
-        search.returnPressed.connect(lambda: self.run_home_search(search.text()))
+        if preview:
+            search.returnPressed.connect(lambda: self.run_home_search(search.text()))
+        else:
+            self.bind_home_profile_filter(search)
         panel_layout.addWidget(search, 0, Qt.AlignmentFlag.AlignCenter)
 
-        if early_workflow is None:
-            workflow = self.build_product_workflow_evidence()
-            panel_layout.addWidget(workflow)
-
-        if early_workspace_evidence is None:
-            workspace_evidence = self.build_product_workspace_surface_evidence(surface)
-            panel_layout.addWidget(workspace_evidence)
+        if preview and not product_workspace_led:
+            panel_layout.addWidget(self.build_product_workflow_evidence())
+            panel_layout.addWidget(self.build_product_workspace_surface_evidence(surface))
 
         recent_title = _literal_label(
             f"Recent {gui_design_home_tab_label(self.current_design_id()).lower()}"
@@ -332,17 +359,20 @@ class WindowHome:
         recent_title.setContentsMargins(0, 9, 0, 0)
         panel_layout.addWidget(recent_title)
 
-        recent_grid = QHBoxLayout()
-        recent_grid.setSpacing(44)
-        for column in surface.recent_columns:
-            column_layout = QVBoxLayout()
-            column_layout.setSpacing(5)
-            for item in column:
-                label = _literal_label(item)
-                label.setObjectName("recentSessionsLabel")
-                column_layout.addWidget(label)
-            recent_grid.addLayout(column_layout)
-        panel_layout.addLayout(recent_grid)
+        if preview:
+            recent_grid = QHBoxLayout()
+            recent_grid.setSpacing(44)
+            for column in surface.recent_columns:
+                column_layout = QVBoxLayout()
+                column_layout.setSpacing(5)
+                for item in column:
+                    label = _literal_label(item)
+                    label.setObjectName("recentSessionsLabel")
+                    column_layout.addWidget(label)
+                recent_grid.addLayout(column_layout)
+            panel_layout.addLayout(recent_grid)
+        else:
+            self.add_recent_session_buttons(panel_layout)
 
         promo = _literal_label(surface.footer)
         promo.setObjectName("homePromo")
@@ -380,6 +410,37 @@ class WindowHome:
             "primary": lambda: self.connect_selected(False),
             "secondary": self.create_profile,
         }
+
+    def bind_home_profile_filter(self, search: QLineEdit) -> None:
+        """Use the same saved-profile filter on Home and in the sidebar."""
+        search.setPlaceholderText("Filter saved connections…")
+        sidebar_search = {
+            "securecrt": self.securecrt_session_filter,
+            "termius": self.termius_host_search,
+            "remmina": self.remmina_profile_filter,
+        }.get(self.current_design_id())
+        if sidebar_search is None:
+            search.setText(str(self.profile_list.property("nativeHomeFilterText") or ""))
+
+            def filter_native(text: str) -> None:
+                self.profile_list.setProperty("nativeHomeFilterText", text)
+                self.filter_profile_tree(text)
+
+            search.textChanged.connect(filter_native)
+        else:
+            search.setText(sidebar_search.text())
+            search.textChanged.connect(sidebar_search.setText)
+            sidebar_search.textChanged.connect(search.setText)
+
+        def focus_match() -> None:
+            if search.text().strip() and not self.selected_profile_name():
+                for item in self.iter_profile_tree_items():
+                    if not item.isHidden() and item.data(0, Qt.ItemDataRole.UserRole):
+                        self.profile_list.setCurrentItem(item)
+                        break
+            self.profile_list.setFocus()
+
+        search.returnPressed.connect(focus_match)
 
     def run_home_action(self, action_key: str) -> None:
         callback = self.home_action_callbacks.get(action_key)
@@ -547,21 +608,24 @@ class WindowHome:
         recent_title.setContentsMargins(0, geometry.live_recent_title_top_margin, 0, 0)
         panel_layout.addWidget(recent_title)
 
-        recent_grid = QHBoxLayout()
-        recent_grid.setSpacing(geometry.live_recent_column_spacing)
-        for column_index, column in enumerate(surface.recent_columns):
-            column_layout = QVBoxLayout()
-            column_layout.setSpacing(geometry.live_recent_row_spacing)
-            for row_index, item in enumerate(column):
-                label = _literal_label(item)
-                label.setObjectName("mobaRecentSession")
-                label.setProperty("mobaHomeRecentColumn", column_index)
-                label.setProperty("mobaHomeRecentRow", row_index)
-                label.setProperty("mobaHomeRecentItemStep", geometry.recent_item_step)
-                label.setProperty("mobaHomeRecentColumnPadding", geometry.recent_column_padding)
-                column_layout.addWidget(label)
-            recent_grid.addLayout(column_layout)
-        panel_layout.addLayout(recent_grid)
+        if cast(QWidget, self).property("guiPreviewSamples"):
+            recent_grid = QHBoxLayout()
+            recent_grid.setSpacing(geometry.live_recent_column_spacing)
+            for column_index, column in enumerate(surface.recent_columns):
+                column_layout = QVBoxLayout()
+                column_layout.setSpacing(geometry.live_recent_row_spacing)
+                for row_index, item in enumerate(column):
+                    label = _literal_label(item)
+                    label.setObjectName("mobaRecentSession")
+                    label.setProperty("mobaHomeRecentColumn", column_index)
+                    label.setProperty("mobaHomeRecentRow", row_index)
+                    label.setProperty("mobaHomeRecentItemStep", geometry.recent_item_step)
+                    label.setProperty("mobaHomeRecentColumnPadding", geometry.recent_column_padding)
+                    column_layout.addWidget(label)
+                recent_grid.addLayout(column_layout)
+            panel_layout.addLayout(recent_grid)
+        else:
+            self.add_recent_session_buttons(panel_layout)
 
         footer = _literal_label(surface.footer)
         footer.setObjectName("mobaHomeFooter")
@@ -573,6 +637,37 @@ class WindowHome:
         footer.setContentsMargins(0, geometry.live_footer_top_margin, 0, 0)
         panel_layout.addWidget(footer)
         return panel
+
+    def add_recent_session_buttons(self, layout: QVBoxLayout) -> None:
+        self._recent_empty = _literal_label("No recent saved sessions in this window.")
+        self._recent_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self._recent_empty)
+        grid = QGridLayout()
+        for index in range(8):
+            button = QPushButton()
+            button.setFlat(True)
+            button.setObjectName("recentSavedSession")
+            button.clicked.connect(lambda _checked, button=button: self.run_quick_connect_candidate_value(
+                QuickConnectCandidate("profile", button.accessibleName(), "", profile_name=button.accessibleName())
+            ))
+            grid.addWidget(button, index // 3, index % 3)
+            self._recent_session_buttons.append(button)
+        layout.addLayout(grid)
+        self.refresh_recent_session_buttons()
+
+    def refresh_recent_session_buttons(self) -> None:
+        if not getattr(self, "_recent_session_buttons", None):
+            return
+        names = list(dict.fromkeys(
+            profile.name for _, profile in reversed(self.recent_terminal_plans)
+            if profile is not None and profile.name in self._saved_profile_names
+        ))
+        self._recent_empty.setVisible(not names)
+        for index, button in enumerate(self._recent_session_buttons):
+            name = names[index] if index < len(names) else ""
+            button.setAccessibleName(name)
+            button.setText(name.replace("&", "&&"))
+            button.setVisible(bool(name))
 
     def run_home_search(self, text: str) -> None:
         self.quick_connect.setText(text)

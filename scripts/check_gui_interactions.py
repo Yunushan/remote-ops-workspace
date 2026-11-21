@@ -332,7 +332,7 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
             QTimer,
         )
         from PyQt6.QtGui import QPalette
-        from PyQt6.QtTest import QTest
+        from PyQt6.QtTest import QSignalSpy, QTest
         from PyQt6.QtWidgets import (
             QApplication,
             QComboBox,
@@ -1640,23 +1640,46 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         },
     )
     reconnect_button = document_buttons["reconnect"]
+    reconnect_profile = window.store.get(mremoteng_route.selected_profile_name)
+    window.open_terminal_tab(
+        TerminalPanePlan(
+            title="Reconnect transport",
+            command=[sys.executable, "-c", "print('reconnect transport')"],
+            source="profile",
+        ),
+        profile=reconnect_profile,
+    )
+    reconnect_index = window.tabs.currentIndex()
+    reconnect_pane = window.active_terminal_pane()
+    starts = QSignalSpy(reconnect_pane.process.started)
+    finishes = QSignalSpy(reconnect_pane.process.finished)
+    if not finishes:
+        finishes.wait(5000)
+    window.tabs.setCurrentIndex(window.find_tab_by_role("home"))
+    window.select_profile(reconnect_profile.name)
     reconnect_button.click()
-    app.processEvents()
+    requested_message = window.statusBar().currentMessage()
+    if len(finishes) < 2:
+        finishes.wait(5000)
     record(
         "mremoteng-reconnect-routes-statefully",
-        bool(reconnect_button.property(mremoteng_route.live_triggered_property))
+        len(starts) == len(finishes) == 2
+        and bool(reconnect_button.property(mremoteng_route.live_triggered_property))
         and reconnect_button.property(mremoteng_route.live_state_property)
         == mremoteng_route.reconnect_state
         and mremoteng_route.selected_profile_name
-        in window.statusBar().currentMessage(),
+        in requested_message,
         {
+            "process_starts": len(starts),
+            "process_finishes": len(finishes),
             "triggered": reconnect_button.property(
                 mremoteng_route.live_triggered_property
             ),
             "state": reconnect_button.property(mremoteng_route.live_state_property),
-            "status": window.statusBar().currentMessage(),
+            "status": requested_message,
         },
     )
+    window.close_tab(reconnect_index)
     external_dialog_state: dict[str, object] = {}
 
     def inspect_external_tools_dialog() -> None:
@@ -1901,7 +1924,7 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         save_failed_closed = (
             blocked_save_button.property("mRemoteNgDocumentSaveTriggered") is False
             and bool(blocked_save_button.property("mRemoteNgDocumentSaveError"))
-            and "not writable" in window.statusBar().currentMessage()
+            and "direct ROW_HOME denial proof" in window.statusBar().currentMessage()
         )
         window.set_design_preset("remmina")
         app.processEvents()

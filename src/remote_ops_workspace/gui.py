@@ -158,7 +158,7 @@ def create_main_window(
     from .gui_operator_workflows import OperatorWorkflows
     from .gui_product_workspace import ProductWorkspaceContent
     from .gui_profile_actions import ProfileActions
-    from .gui_profile_tree import ProfileTree
+    from .gui_profile_tree import TREE_CONNECT_ENDPOINT_ROLE, ProfileTree
     from .gui_quick_connect import WindowQuickConnect
     from .gui_reference_tabs import ReferenceTabs
     from .gui_remmina import RemminaWorkspace
@@ -332,6 +332,10 @@ def create_main_window(
             self.apply_moba_titlebar_chrome("Remote Ops Workspace")
             self.resize(1180, 720)
             self.store = ProfileStore()
+            self._search_revision: tuple[Path, int, int, int, int] | None = None
+            self._search_profiles: list[Profile] = []
+            self._saved_profile_names: set[str] = set()
+            self._profile_icons: dict[tuple[str, bool, int, float], QIcon] = {}
             # Production GUI starts empty. Render and interaction harnesses can
             # opt into deterministic sample rows without changing that default.
             self.setProperty("guiPreviewSamples", bool(preview_samples))
@@ -738,7 +742,19 @@ def create_main_window(
                 widget.setProperty(route.captured_count_property, len(captured_keys))
 
         def _find_quick_connect_candidates(self, text: str, *, limit: int) -> list[QuickConnectCandidate]:
-            return quick_connect_candidates(text, self.store.load(), limit=limit)
+            if not text.strip():
+                return []
+            try:
+                stat = self.store.path.stat()
+            except FileNotFoundError:
+                self._search_revision = None
+                self._search_profiles = []
+            else:
+                revision = (self.store.path, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+                if revision != self._search_revision:
+                    self._search_profiles = self.store.load()
+                    self._search_revision = revision
+            return quick_connect_candidates(text, self._search_profiles, limit=limit)
 
         def profile_by_name(self, name: str | None) -> Profile | None:
             if not name:
@@ -992,24 +1008,33 @@ def create_main_window(
                 self.connect_selected(False)
                 return
             needle = query.casefold()
+            matches: list[tuple[int, QuickConnectCandidate]] = []
             for item in self.iter_profile_tree_items():
+                endpoint = item.data(0, TREE_CONNECT_ENDPOINT_ROLE)
+                if not endpoint or not self.profile_tree_item_is_visible(item):
+                    continue
                 profile_name = item.data(0, Qt.ItemDataRole.UserRole)
-                profile = self.profile_by_name(profile_name if isinstance(profile_name, str) else None)
-                haystack = " ".join(
-                    (
-                        item.text(0),
-                        profile.name if profile is not None else "",
-                        (profile.host or "") if profile is not None else "",
-                        (profile.display_target or "") if profile is not None else "",
-                    )
-                ).casefold()
-                if profile is not None and needle in haystack and self.profile_tree_item_is_visible(item):
-                    self.profile_list.setCurrentItem(item)
-                    self.connect_selected(False)
-                    self.statusBar().showMessage(f"Connected: {profile.name}")
-                    return
-            self.statusBar().showMessage(f"No saved session matches: {query}")
-            self.log.append(f"PRODUCT HOST MISS: {query}")
+                protocol, host, target = endpoint
+                if needle == profile_name.casefold():
+                    rank = 0
+                elif needle in (host.casefold(), target.casefold()):
+                    rank = 1
+                elif needle in " ".join((item.text(0), host, target)).casefold():
+                    rank = 2
+                else:
+                    continue
+                candidate = QuickConnectCandidate("profile", profile_name, target, profile_name=profile_name, protocol=protocol)
+                matches.append((rank, candidate))
+            if not matches:
+                self.statusBar().showMessage(f"No saved session matches: {query}")
+                self.log.append(f"PRODUCT HOST MISS: {query}")
+                return
+            best_rank = min(rank for rank, _ in matches)
+            best = [candidate for rank, candidate in matches if rank == best_rank]
+            if len(best) > 1:
+                self.statusBar().showMessage(f"{len(best)} saved sessions match. Enter a more specific name or target.")
+                return
+            self.run_quick_connect_candidate_value(best[0])
 
         def find_product_keyword(self, text: str) -> None:
             """Route SecureCRT's keyword field through the shared terminal finder."""

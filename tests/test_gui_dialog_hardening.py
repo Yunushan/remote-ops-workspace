@@ -2195,11 +2195,15 @@ def test_moba_sftp_supersedes_stale_path_results_and_opens_current_row(
         for index in range(dock.file_table.topLevelItemCount())
         if dock.file_table.topLevelItem(index).text(0) == "app.log"
     )
+    assert dock.text_editor_remote_path_for_item(selected_file).endswith("/app.log")
+    menu = dock.build_sftp_context_menu(selected_file)
+    opened = []
+    monkeypatch.setattr(dock, "open_sftp_context_item", opened.append)
     assert dock.navigate_moba_sftp_path("/new/path")
-    assert (
-        dock.text_editor_remote_path_for_item(selected_file)
-        == "/new/path/app.log"
-    )
+    assert dock.file_table.topLevelItemCount() == 0
+    next(action for action in menu.actions() if action.text() == "Open").trigger()
+    assert not opened
+    menu.deleteLater()
 
     original_entries = dock.state.file_entries
     dock.sftp_refresh_output_buffer = bytearray(

@@ -12,8 +12,11 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPlainTextEdit,
+    QPushButton,
     QSizePolicy,
     QToolButton,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
 )
 
@@ -29,6 +32,7 @@ from .gui_designs import (
 )
 from .gui_dialogs import _literal_label
 from .gui_icons import draw_mremoteng_document_control_icon
+from .gui_profile_tree import MREMOTENG_CONFIG_ROLE
 from .gui_values import _safe_tooltip_html
 from .paths import ensure_data_dir
 
@@ -47,7 +51,16 @@ class MRemoteNgWorkspace:
 
     if TYPE_CHECKING:
         log: QTextEdit
+        profile_list: QTreeWidget
+        mremoteng_left_property_grid_panel: QFrame
+        mremoteng_protocol_label: QLabel
 
+        def active_terminal_pane(self) -> TerminalPane | None: ...
+        def property(self, name: str) -> object: ...
+        def all_terminal_panes(self) -> list[TerminalPane]: ...
+        def selected_profile_name(self) -> str | None: ...
+        def create_profile(self) -> None: ...
+        def edit_selected_profile(self) -> None: ...
         def filter_profile_tree(self, text: str) -> None: ...
         def generated_icon(
             self, size: int, draw: Callable[[QPainter, int], None], *, antialias: bool = True,
@@ -57,6 +70,72 @@ class MRemoteNgWorkspace:
         def set_interaction_state(self, widget: QWidget, state: str) -> None: ...
         def show_external_tools_status(self, *_args: object) -> None: ...
         def statusBar(self) -> QStatusBar: ...
+
+    def build_mremoteng_config_dock(self) -> QFrame:
+        panel = QFrame()
+        panel.setObjectName("mRemoteNgConfigDock")
+        panel.setProperty("mRemoteNgDockViewVisible", True)
+        self.mremoteng_property_grid_panel = panel
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(5, 3, 5, 3)
+        layout.setSpacing(2)
+        heading = QHBoxLayout()
+        heading.addWidget(QLabel("Config"))
+        heading.addStretch()
+        edit = QToolButton()
+        edit.setText("Edit…")
+        edit.setAccessibleName("Edit selected connection")
+        edit.clicked.connect(self.edit_selected_profile)
+        heading.addWidget(edit)
+        layout.addLayout(heading)
+        grid = QTreeWidget()
+        grid.setObjectName("mRemoteNgConnectionProperties")
+        grid.setColumnCount(2)
+        grid.setHeaderHidden(True)
+        grid.setRootIsDecorated(False)
+        grid.setUniformRowHeights(True)
+        grid.setAccessibleName("Effective connection properties")
+        rows = [QTreeWidgetItem(grid, [field, ""]) for field in (
+            "Name", "Protocol", "Hostname", "Port", "Username", "Group",
+        )]
+        grid.resizeColumnToContents(0)
+        grid.setMaximumHeight(145)
+        layout.addWidget(grid)
+        empty = QLabel("Select a connection to view its properties.")
+        empty.setWordWrap(True)
+        layout.addWidget(empty)
+        preview = bool(self.property("guiPreviewSamples"))
+        if not preview:
+            self.mremoteng_protocol_label.setToolTip("Selected connection protocol")
+
+        def update_config(current: QTreeWidgetItem | None) -> None:
+            values = current.data(0, MREMOTENG_CONFIG_ROLE) if current is not None else None
+            if not preview:
+                self.mremoteng_protocol_label.setText(values[1] if values else "")
+            edit.setEnabled(bool(values))
+            grid.setVisible(bool(values))
+            empty.setVisible(not values)
+            for row, value in zip(rows, values or [""] * len(rows), strict=True):
+                row.setText(1, value or "—")
+
+        self.profile_list.currentItemChanged.connect(update_config)
+        update_config(self.profile_list.currentItem())
+        return panel
+
+    def build_mremoteng_start_page(self) -> QFrame:
+        panel = QFrame()
+        panel.setObjectName("welcomePanel")
+        panel.setProperty("welcomePreferredWidth", 620)
+        panel.setProperty("welcomeMaximumWidth", 1060)
+        layout = QVBoxLayout(panel)
+        layout.addWidget(self.build_mremoteng_document_controls_evidence())
+        instructions = QLabel("Double-click a saved connection in the Connections tree to open a session.")
+        instructions.setWordWrap(True)
+        layout.addWidget(instructions)
+        new_connection = QPushButton("New connection…")
+        new_connection.clicked.connect(self.create_profile)
+        layout.addWidget(new_connection, 0, Qt.AlignmentFlag.AlignLeft)
+        return panel
 
     def build_mremoteng_runtime_document_surface(
         self,
@@ -162,8 +241,10 @@ class MRemoteNgWorkspace:
         *,
         triggered: bool = False,
         reconnect_state: str | None = None,
+        profile_name: str | None = None,
     ) -> None:
         state_value = reconnect_state or route.workspace_state
+        profile_name = route.selected_profile_name if profile_name is None else profile_name
         properties = {
             "mRemoteNgConnectionRouteKey": route.key,
             "mRemoteNgConnectionRouteRole": route.route_role,
@@ -183,10 +264,10 @@ class MRemoteNgWorkspace:
             route.handler_property: route.handler,
             route.captured_property: triggered,
             route.captured_state_property: state_value if triggered else "",
-            route.captured_profile_property: route.selected_profile_name if triggered else "",
+            route.captured_profile_property: profile_name if triggered else "",
             route.live_triggered_property: triggered,
             route.live_state_property: state_value,
-            route.live_profile_property: route.selected_profile_name,
+            route.live_profile_property: profile_name,
             "mRemoteNgConnectionRouteRenderSource": route.render_source,
         }
         for property_name, property_value in properties.items():
@@ -194,6 +275,17 @@ class MRemoteNgWorkspace:
 
     def handle_mremoteng_document_reconnect(self, _checked: bool = False) -> None:
         route = gui_design_mremoteng_connection_document_route()
+        pane = self.active_terminal_pane()
+        if pane is None:
+            selected = self.selected_profile_name()
+            pane = next((
+                session for session in reversed(self.all_terminal_panes())
+                if session.profile is not None and session.profile.name == selected
+            ), None)
+        name = ""
+        if pane is not None:
+            name = pane.profile.name if pane.profile is not None else pane.plan.title
+            pane.restart()
         route_widgets = (
             getattr(self, "profile_list", None),
             getattr(self, "mremoteng_document_controls_panel", None),
@@ -208,19 +300,20 @@ class MRemoteNgWorkspace:
             self.apply_mremoteng_reconnect_route_properties(
                 route_widget,
                 route,
-                triggered=True,
-                reconnect_state=route.reconnect_state,
+                triggered=pane is not None,
+                reconnect_state=route.reconnect_state if pane is not None else "no open connection",
+                profile_name=name,
             )
         self.statusBar().showMessage(
-            f"mRemoteNG reconnected {route.selected_profile_name}: {route.protocol}"
+            f"Reconnect requested for {name}" if pane is not None
+            else "Open a connection before reconnecting."
         )
 
     def save_mremoteng_document_artifact(self) -> Path:
-        route = gui_design_mremoteng_connection_document_route()
         profile = self.selected_profile_for_workflow()
         if profile is None:
-            profile = self.profile_by_name(route.selected_profile_name)
-        profile_name = profile.name if profile is not None else route.selected_profile_name
+            raise ValueError("Select a connection before saving its document.")
+        profile_name = profile.name
         safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", profile_name).strip(".-")
         artifact_path = (
             ensure_data_dir()
@@ -233,14 +326,8 @@ class MRemoteNgWorkspace:
             "state": "saved",
             "profile": {
                 "name": profile_name,
-                "protocol": (
-                    profile.protocol if profile is not None else route.protocol
-                ),
-                "target": (
-                    profile.display_target
-                    if profile is not None
-                    else route.selected_tree_label
-                ),
+                "protocol": profile.protocol,
+                "target": profile.display_target,
             },
         }
         write_json_atomic(artifact_path, payload, private=True)
@@ -258,7 +345,7 @@ class MRemoteNgWorkspace:
             try:
                 artifact_path = self.save_mremoteng_document_artifact()
                 artifact_size = artifact_path.stat().st_size
-            except OSError as exc:
+            except (OSError, ValueError) as exc:
                 for widget in (panel, button):
                     if widget is None:
                         continue
@@ -272,7 +359,7 @@ class MRemoteNgWorkspace:
                     widget.setProperty("mRemoteNgDocumentSaveArtifactBytes", 0)
                 self.log.append("MREMOTENG DOCUMENT SAVE FAILED")
                 self.statusBar().showMessage(
-                    "mRemoteNG document save failed; ROW_HOME is not writable"
+                    f"Could not save connection document: {exc}"
                 )
                 return
             for widget in (panel, button):
@@ -314,9 +401,10 @@ class MRemoteNgWorkspace:
         if action_key == "dock-view":
             dock = getattr(self, "mremoteng_property_grid_panel", None)
             visible = bool(checked)
-            if dock is not None:
-                dock.setVisible(visible)
-                dock.setProperty("mRemoteNgDockViewVisible", visible)
+            for view in (dock, self.mremoteng_left_property_grid_panel):
+                if view is not None:
+                    view.setVisible(visible)
+                    view.setProperty("mRemoteNgDockViewVisible", visible)
             if button is not None:
                 button.setChecked(visible)
                 self.set_interaction_state(
@@ -392,7 +480,8 @@ class MRemoteNgWorkspace:
         )
         layout.setSpacing(chrome.live_spacing)
 
-        title = QLabel(chrome.title)
+        preview = bool(self.property("guiPreviewSamples"))
+        title = QLabel(chrome.title if preview else "Connection")
         title.setObjectName("mRemoteNgDocumentTitle")
         title.setMinimumWidth(chrome.title_width)
         title.setMaximumWidth(chrome.title_width)
@@ -436,14 +525,16 @@ class MRemoteNgWorkspace:
             else:
                 button.setProperty(route.control_active_property, "false")
             button.setText(control.label)
-            button.setToolTip(control.tooltip)
-            control_state = (
-                "checked"
-                if control.key in {"external-tool", "dock-view"}
-                else "normal"
+            button.setToolTip(
+                "Save a JSON summary of the selected connection" if control.key == "save" and not preview
+                else control.tooltip
             )
+            dock_checked = control.key == "dock-view" and bool(
+                self.mremoteng_left_property_grid_panel.property("mRemoteNgDockViewVisible")
+            )
+            control_state = "checked" if control.key == "external-tool" or dock_checked else "normal"
             button.setCheckable(control.key == "dock-view")
-            button.setChecked(control.key == "dock-view")
+            button.setChecked(dock_checked)
             self.set_interaction_state(button, control_state)
             button.setIcon(self.mremoteng_document_control_icon(control.icon_key, size=control.live_icon_size))
             button.setIconSize(QSize(control.live_icon_size, control.live_icon_size))

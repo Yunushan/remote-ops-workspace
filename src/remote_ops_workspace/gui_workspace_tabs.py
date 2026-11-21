@@ -650,7 +650,7 @@ class WorkspaceTabs:
 
     def reference_session_action_route_for_tab(self, index: int):
         preset_id = self.current_design_id()
-        if preset_id not in PRODUCT_REFERENCE_TAB_PRESET_IDS or index < 0:
+        if preset_id not in PRODUCT_REFERENCE_TAB_PRESET_IDS or index < 0 or not cast(QWidget, self).property("guiPreviewSamples"):
             return None
         route = gui_design_preset_reference_session_action_route(preset_id)
         if self.tabs.tabText(index) != route.active_tab_label:

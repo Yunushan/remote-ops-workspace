@@ -80,8 +80,8 @@ def test_mremoteng_document_controls_save_reconnect_tool_and_dock_edges(
 
     monkeypatch.setattr(window, "selected_profile_for_workflow", lambda: None)
     monkeypatch.setattr(window, "profile_by_name", lambda _name: None)
-    fallback_artifact = window.save_mremoteng_document_artifact()
-    assert fallback_artifact.is_file()
+    with pytest.raises(ValueError, match="Select a connection"):
+        window.save_mremoteng_document_artifact()
 
     saved_artifact = tmp_path / "saved-document.json"
     saved_artifact.write_text("{}", encoding="utf-8")
@@ -104,8 +104,9 @@ def test_mremoteng_document_controls_save_reconnect_tool_and_dock_edges(
     assert "read-only storage" in panel.property("mRemoteNgDocumentSaveError")
 
     window.handle_mremoteng_document_control("reconnect", True)
-    assert panel.property(route.captured_property) is True
-    assert "reconnected" in window.statusBar().currentMessage()
+    assert panel.property(route.captured_property) is False
+    assert panel.property(route.live_profile_property) == ""
+    assert "Open a connection" in window.statusBar().currentMessage()
 
     tool_calls: list[str] = []
     monkeypatch.setattr(

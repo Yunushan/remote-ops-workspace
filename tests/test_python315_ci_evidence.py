@@ -84,6 +84,53 @@ def test_latest_matching_run_must_succeed() -> None:
     assert any("conclusion must be success" in error for error in errors)
 
 
+@pytest.mark.parametrize(("change", "error"), [
+    ("none", None),
+    ("queued-rerun", "status must be completed"),
+    ("failed-rerun", "conclusion must be success"),
+    ("completed-rerun", "CI run or attempt changed while verifying its jobs"),
+    ("new-run", "CI run or attempt changed while verifying its jobs"),
+    ("disappeared-run", "no .github/workflows/ci.yml push run matches"),
+])
+def test_live_ci_evidence_rechecks_the_current_run_after_verifying_jobs(monkeypatch, capsys, change, error):
+    initial = _runs()
+    if change == "queued-rerun":
+        latest = _runs(status="queued", conclusion=None)
+    elif change == "failed-rerun":
+        latest = _runs(conclusion="failure")
+    elif change == "new-run":
+        latest = _runs(run_id=124)
+        latest["workflow_runs"].append(initial["workflow_runs"][0])
+        latest["total_count"] += 1
+    elif change == "disappeared-run":
+        latest = {"workflow_runs": [], "total_count": 0}
+    else:
+        latest = _runs()
+    if change.endswith("-rerun"):
+        latest["workflow_runs"][0]["run_attempt"] = 2
+
+    monkeypatch.setenv("GITHUB_TOKEN", "fixture-token")
+    monkeypatch.setenv("GITHUB_API_URL", "https://api.github.com")
+    base = "https://api.github.com/repos/example/project/actions"
+    runs_url = f"{base}/workflows/ci.yml/runs?branch=main&event=push&head_sha={SHA}&per_page=100"
+    jobs_url = f"{base}/runs/123/attempts/1/jobs?per_page={evidence.JOBS_PAGE_SIZE}&page=1"
+    remaining = [(runs_url, initial), (jobs_url, _jobs()), (runs_url, latest)]
+
+    def fetch_json(url: str, *, token: str) -> dict:
+        expected, response = remaining.pop(0)
+        assert token == "fixture-token" and url == expected
+        return response
+
+    monkeypatch.setattr(evidence, "fetch_json", fetch_json)
+    result = evidence.main(["--repository", "example/project", "--sha", SHA])
+    output = capsys.readouterr()
+    assert not remaining
+    if error:
+        assert result == 1 and error in output.err and not output.out
+    else:
+        assert result == 0 and "run 123 attempt 1" in output.out and not output.err
+
+
 def test_pull_request_or_wrong_sha_cannot_satisfy_release_evidence() -> None:
     payload = _runs()
     payload["workflow_runs"][0]["event"] = "pull_request"

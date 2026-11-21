@@ -504,6 +504,17 @@ def main(argv: list[str] | None = None) -> int:
         job_errors = validate_readiness_job(jobs_payload, run=run)
         if job_errors:
             raise RuntimeError("; ".join(job_errors))
+        if not args.runs_json:
+            latest, errors = select_exact_push_run(
+                fetch_json(runs_url, token=token),
+                repository=repository,
+                sha=sha,
+                branch=branch,
+            )
+            if errors or latest is None:
+                raise RuntimeError("latest CI evidence could not be confirmed after verifying its jobs: " + "; ".join(errors))
+            if (latest["id"], latest["run_attempt"]) != (run["id"], run["run_attempt"]):
+                raise RuntimeError("CI run or attempt changed while verifying its jobs; retry the evidence check")
     except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
         print(f"Release CI evidence: {exc}", file=sys.stderr)
         return 1

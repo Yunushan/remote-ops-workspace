@@ -393,6 +393,9 @@ The gate checks the runner labels and recorded step results for the frozen
 CLI, runtime evidence, tests, GUI, distribution installs, and Windows SSH,
 ConPTY and tab-switch paint checks. It also verifies execution of the full
 coverage suite and validation of its 100% aggregate and 100% branch thresholds.
+After reading the job pages, the live check confirms that the verified attempt
+is still the latest push attempt for that commit and still reports success.
+Retry the check if a rerun begins while it is verifying the jobs.
 The aggregate production gate additionally runs
 `python scripts/check_repository_governance.py --repository <owner/repo> --branch main --sha <release-source-sha>`;
 that command verifies both the configured branch-protection contexts and the

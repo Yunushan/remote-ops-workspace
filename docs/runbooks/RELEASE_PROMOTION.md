@@ -133,7 +133,8 @@ The signed Windows x64, Windows ARM64, and macOS build jobs retain
 `gui-archive-proof.json` alongside the installed GUI smoke reports and
 `candidate-runtime-byte-binding.json`. The archive check confirms that the
 executables observed during installation and reinstall contain the required
-frozen GUI modules. The proof records the executable and smoke receipt digests.
+frozen GUI modules, including the connected SSH monitoring runtime. The proof
+records the executable and smoke receipt digests.
 
 ### Qualify the Windows x64 MSI before publication
 

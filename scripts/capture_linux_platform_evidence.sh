@@ -82,12 +82,7 @@ python -m pip check
 python -X utf8 -m pip inspect --local > "$WORKSPACE/$EVIDENCE_DIR/candidate-pip-inspect.json"
 python scripts/check_release_dependency_locks.py --runtime-report "$WORKSPACE/$EVIDENCE_DIR/candidate-pip-inspect.json" \
   --lock "requirements-locks/protected-linux/$TARGET.txt"
-(
-  if [[ "$TARGET" == linux-i386 ]]; then
-    umask 022
-  fi
-  TARGET_ARCH="$ARCH" PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh
-)
+TARGET_ARCH="$ARCH" PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh
 
 if [[ "$TARGET" == linux-i386 ]]; then
   mkdir -p -- "$WORKSPACE/native-dist"

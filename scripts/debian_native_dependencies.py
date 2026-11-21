@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.linux_frozen_elf import archive_elf_members  # noqa: E402
+from scripts.linux_frozen_runpaths import TOOLCACHE_LIB  # noqa: E402
 
 # Package names shared by the supported Debian and Ubuntu builders.
 LIBRARY_PACKAGES = {
@@ -62,6 +63,9 @@ def elf_requirements(path: Path) -> tuple[set[str], set[tuple[int, ...]]]:
         env={**os.environ, "LC_ALL": "C"}, timeout=30,
     )
     needed = set(re.findall(r"\(NEEDED\).*Shared library: \[([^\]]+)\]", result.stdout))
+    for runpath in re.findall(r"\(RUNPATH\).*?\[([^\]]*)\]", result.stdout):
+        if any(TOOLCACHE_LIB.fullmatch(entry.encode()) for entry in runpath.split(":")):
+            raise ValueError(f"{path.name} retains a build-toolcache DT_RUNPATH")
     versions = set()
     requirements = result.stdout.partition("Version needs section ")[2]
     for name in re.findall(r"\bName: GLIBC_(\S+)", requirements):

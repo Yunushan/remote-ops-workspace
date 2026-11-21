@@ -32,6 +32,19 @@ the executable in each DMG and PKG copy to the original signed app executable
 before its runtime and GUI probes. Modern Linux smoke compares installed DEB and
 RPM executables to the original PyInstaller executable before each probe.
 
+For Linux x86-64 and ARM64, the freezer stages private copies of ELF inputs
+whose `DT_RUNPATH` includes the hosted CPython build directory. The DEB
+dependency check inspects the finished launcher and each bundled ELF with
+`readelf`. After installation the smoke test traces glibc while the packaged
+CLI prints its version, reads the platform inventory and initializes a
+temporary encrypted vault. The retained `deb-loader-selection.json` binds
+these observations to the DEB and launcher hashes. It records the input and
+packaged SHA-256 for each edited ELF, and lists the observed host
+library files and the archive members loaded from PyInstaller's extraction
+directory. The bootloader uses host zlib before unpacking its bundled zlib.
+The three workloads exercise the CLI start-up and vault paths. Optional
+plugins and external protocol tools require their own runtime observations.
+
 The RPM build preserves the finalized onefile executable by disabling its ELF
 stripping hooks. Its `%check` compares the staged executable with the original
 package input and fails the build if their bytes differ. Other packaging hooks

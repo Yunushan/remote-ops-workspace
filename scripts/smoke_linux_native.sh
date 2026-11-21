@@ -562,6 +562,11 @@ echo "native installer smoke: DEB install"
 install_debian_package
 echo "native installer smoke: DEB verify"
 verify_row /usr/bin/row direct "DEB verify" deb/usr/bin/row install
+if [[ -n "$BINDING_TARGET" ]]; then
+  python3 scripts/qualify_deb_loader.py --target "$BINDING_TARGET" --deb "$DEB" \
+    --staged-elf-report "$ROOT/build/native/linux/staged-elf.json" \
+    --executable /usr/bin/row --source-sha "$SMOKE_GIT_HEAD_SHA" --report "$SMOKE_ROOT/deb-loader-selection.json"
+fi
 debian_server_manifest=/usr/lib/remote-ops-workspace/servers/servers-runtime.json
 if [[ -f "$debian_server_manifest" ]]; then
   server_status="$SMOKE_ROOT/debian-server-status.json"

@@ -91,14 +91,10 @@ from remote_ops_workspace.cli import main
 raise SystemExit(main())
 PY
 
-"$PYTHON_BIN" -m PyInstaller \
-  --clean \
-  --noconfirm \
+"$PYTHON_BIN" -m PyInstaller.utils.cliutils.makespec \
   --onefile \
   --name row \
   --console \
-  --distpath "$PY_DIST" \
-  --workpath "$PY_WORK" \
   --specpath "$BUILD_DIR" \
   --collect-submodules remote_ops_workspace \
   --collect-data remote_ops_workspace \
@@ -110,6 +106,8 @@ PY
   --hidden-import asyncore \
   --hidden-import asynchat \
   "$LAUNCHER"
+"$PYTHON_BIN" scripts/linux_frozen_runpaths.py "$BUILD_DIR/row.spec"
+"$PYTHON_BIN" -m PyInstaller --clean --noconfirm --distpath "$PY_DIST" --workpath "$PY_WORK" "$BUILD_DIR/row.spec"
 
 ROW_BIN="$PY_DIST/row"
 if [[ ! -x "$ROW_BIN" ]]; then

@@ -30,6 +30,11 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlsplit
 
+try:
+    from compression import zstd
+except ImportError:
+    zstd = None
+
 SCHEMA = "row.unsigned-runtime-observations.v1"
 TARGETS = {
     "windows-x86",
@@ -238,6 +243,20 @@ def decompressed(raw: bytes, method: str, maximum: int) -> bytes:
     elif method == "bzip2":
         decoder = bz2.BZ2Decompressor()
         result = decoder.decompress(raw, max_length=maximum + 1)
+        if not decoder.eof or decoder.unused_data:
+            raise Refusal("compressed-bound-or-trailing-data")
+    elif method == "zstd":
+        if zstd is None:
+            raise Refusal("deb-zstd-backend-unavailable")
+        if not raw.startswith(b"\x28\xb5\x2f\xfd"):
+            raise Refusal("deb-zstd-frame-invalid")
+        try:
+            decoder = zstd.ZstdDecompressor(options={zstd.DecompressionParameter.window_log_max: 27})
+            result = decoder.decompress(raw, max_length=maximum + 1)
+        except zstd.ZstdError as exc:
+            raise Refusal("deb-zstd-frame-invalid") from exc
+        if len(result) > maximum:
+            raise Refusal("expanded-byte-bound")
         if not decoder.eof or decoder.unused_data:
             raise Refusal("compressed-bound-or-trailing-data")
     elif method == "zlib":
@@ -598,8 +617,10 @@ def zip_members(raw: bytes, observations: Observations):
     yield from checked_members(entries, observations)
 
 
-def tar_members(raw: bytes, observations: Observations):
-    if raw.startswith(b"\x1f\x8b"):
+def tar_members(raw: bytes, observations: Observations, *, deb_zstd: bool = False):
+    if deb_zstd:
+        raw = decompressed(raw, "zstd", observations.limits.expanded_bytes)
+    elif raw.startswith(b"\x1f\x8b"):
         raw = decompressed(raw, "gzip", observations.limits.expanded_bytes)
     elif raw.startswith(b"\xfd7zXZ\0"):
         raw = decompressed(raw, "xz", observations.limits.expanded_bytes)
@@ -666,7 +687,7 @@ def tar_members(raw: bytes, observations: Observations):
     yield from checked_members(entries(), observations)
 
 
-def deb_tar(raw: bytes, observations: Observations) -> bytes:
+def deb_tar(raw: bytes, observations: Observations) -> tuple[str, bytes]:
     if not raw.startswith(b"!<arch>\n"):
         raise Refusal("deb-ar-invalid")
     cursor, data, names = 8, None, set()
@@ -690,7 +711,7 @@ def deb_tar(raw: bytes, observations: Observations) -> bytes:
         if name.startswith("data.tar"):
             if data is not None:
                 raise Refusal("deb-data-duplicate")
-            data = payload
+            data = name, payload
         elif name == "debian-binary" and payload != b"2.0\n":
             raise Refusal("deb-version-invalid")
         end = cursor + 60 + size
@@ -788,7 +809,8 @@ def scan_package(raw: bytes, name: str, observations: Observations):
         entries = tar_members(raw, observations)
         backend = "bounded-tar"
     elif name.endswith(".deb"):
-        entries = tar_members(deb_tar(raw, observations), observations)
+        member_name, payload = deb_tar(raw, observations)
+        entries = tar_members(payload, observations, deb_zstd=member_name == "data.tar.zst")
         backend = "ar-data-tar"
     elif name.endswith(".rpm"):
         entries = cpio_members(rpm_payload(raw, observations.limits), observations)

@@ -66,6 +66,11 @@ Dependency/link/runtime-option descriptors remain uncertainty gaps, not observed
 - ZIP32, ordinary bounded TAR, DEB ar/data.tar, gzip/xz/bzip2 RPM/CPIO and
   executable CArchive cookie/TOC bytes are parsed without native execution,
   archive commands or filesystem extraction.
+- For Debian packages containing `data.tar.zst`, Python 3.14 and later can
+  decode one Zstandard frame with the standard library. The collector caps
+  the decoder window at 128 MiB and applies the existing expanded-byte and
+  tar-member limits. Runtimes without that decoder record
+  `deb-zstd-backend-unavailable`.
 - MSI, Inno EXE, DMG, PKG and AppImage are explicitly opaque. RPM zstd, archive
   links, PAX metadata and unsupported codecs remain explicit gaps. Observing a
   companion ZIP/TAR cannot establish the opaque package's contents.

@@ -606,6 +606,30 @@ class RuntimeObservationCollectorTests(unittest.TestCase):
         self.assertEqual(result["license_records"][0]["sha256"], c.digest(b"terms"))
         self.assertTrue(result["all_regular_payload_files_observed"])
 
+    def test_deb_zstd_requires_available_decoder(self):
+        package = ar_bytes([("debian-binary", b"2.0\n"), ("data.tar.zst", b"\x28\xb5\x2f\xfd")])
+        with mock.patch.object(c, "zstd", None):
+            self.refuses("deb-zstd-backend-unavailable", c.scan_package, package, "row.deb", self.obs())
+
+    @unittest.skipIf(c.zstd is None, "requires the standard library zstd decoder")
+    def test_deb_zstd_scans_a_bounded_tar_and_rejects_incomplete_or_extra_frames(self):
+        payload = tar_bytes([("./usr/share/doc/row/LICENSE", b"terms")])
+        frame = c.zstd.compress(payload)
+        def package(data):
+            return ar_bytes([("debian-binary", b"2.0\n"), ("data.tar.zst", data)])
+
+        result = c.scan_package(package(frame), "row.deb", self.obs())
+        self.assertEqual(result["license_records"][0]["sha256"], c.digest(b"terms"))
+        self.assertTrue(result["all_regular_payload_files_observed"])
+        for data in (frame[:-1], frame + frame, frame + b"trailing"):
+            with self.subTest(data=data):
+                self.refuses("compressed-bound-or-trailing-data", c.scan_package, package(data), "row.deb", self.obs())
+        for data in (payload, b"\x28\xb5\x2f\xfd\xff" * 4):
+            with self.subTest(data=data):
+                self.refuses("deb-zstd-frame-invalid", c.scan_package, package(data), "row.deb", self.obs())
+        limited = c.Observations(c.Limits(expanded_bytes=len(payload) - 1))
+        self.refuses("expanded-byte-bound", c.scan_package, package(frame), "row.deb", limited)
+
     def test_rpm_and_cpio_observe_license_without_execution(self):
         obs = self.obs()
         result = c.scan_package(

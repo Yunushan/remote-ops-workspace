@@ -13,6 +13,11 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
+if __package__:
+    from .github_evidence_pages import collect_evidence_pages
+else:
+    from github_evidence_pages import collect_evidence_pages
+
 EXPECTED_WORKFLOW_PATH = ".github/workflows/ci.yml"
 PYTHON315_RUNNERS = (
     "ubuntu-latest",
@@ -315,54 +320,7 @@ def validate_job_steps(
 def collect_paginated_attempt_jobs(
     fetch_page: Callable[[int], dict[str, Any]],
 ) -> dict[str, Any]:
-    jobs: list[dict[str, Any]] = []
-    seen_ids: set[int] = set()
-    expected_total: int | None = None
-    page = 1
-    while True:
-        payload = fetch_page(page)
-        raw_jobs = payload.get("jobs")
-        total_count = payload.get("total_count")
-        if not isinstance(raw_jobs, list):
-            raise RuntimeError(f"workflow-jobs page {page} must contain jobs")
-        if not _nonnegative_int(total_count):
-            raise RuntimeError(
-                f"workflow-jobs page {page} must contain a non-negative integer total_count"
-            )
-        if expected_total is None:
-            expected_total = total_count
-        elif total_count != expected_total:
-            raise RuntimeError(
-                "workflow-jobs pagination total_count changed: "
-                f"expected {expected_total}, page {page} reported {total_count}"
-            )
-        if len(raw_jobs) > JOBS_PAGE_SIZE:
-            raise RuntimeError(
-                f"workflow-jobs page {page} exceeds requested page size {JOBS_PAGE_SIZE}"
-            )
-        for job in raw_jobs:
-            if not isinstance(job, dict) or not _positive_int(job.get("id")):
-                raise RuntimeError(
-                    f"workflow-jobs page {page} must contain objects with positive integer ids"
-                )
-            job_id = int(job["id"])
-            if job_id in seen_ids:
-                raise RuntimeError(f"workflow-jobs pagination repeated job id {job_id}")
-            seen_ids.add(job_id)
-            jobs.append(job)
-        if len(jobs) > expected_total:
-            raise RuntimeError(
-                "workflow-jobs pagination returned more jobs than total_count: "
-                f"total_count={expected_total}, received={len(jobs)}"
-            )
-        if len(jobs) == expected_total:
-            return {"total_count": expected_total, "jobs": jobs}
-        if len(raw_jobs) < JOBS_PAGE_SIZE:
-            raise RuntimeError(
-                "workflow-jobs pagination ended before total_count: "
-                f"total_count={expected_total}, received={len(jobs)}"
-            )
-        page += 1
+    return collect_evidence_pages(fetch_page, key="jobs", label="workflow-jobs", page_size=JOBS_PAGE_SIZE)
 
 
 def _positive_int(value: Any) -> bool:

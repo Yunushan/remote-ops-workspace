@@ -65,6 +65,15 @@ def test_production_notices_cover_protected_linux_and_require_exact_bytes(
     assert len(names) == 29
     assert f"remote-ops-workspace-{tag}-linux-i386.deb" in names
     assert f"remote-ops-workspace-{tag}-linux-armv7hl.rpm" in names
+    groups = notices.expected_production_manifest_packages(tag, json.loads(notices.MATRIX_PATH.read_bytes()))
+    assert len(groups) == 9
+    assert {member for group in groups.values() for member in group} == names
+    assert f"remote-ops-workspace-{tag}-linux-arm64.deb" in groups[
+        f"remote-ops-workspace-{tag}-linux-aarch64-native-manifest.json"
+    ]
+    assert f"remote-ops-workspace-{tag}-linux-armv7hl.rpm" in groups[
+        f"remote-ops-workspace-{tag}-linux-armhf-native-manifest.json"
+    ]
     assets = tmp_path / "assets"
     assets.mkdir()
     bundle = tmp_path / "bundle"
@@ -275,6 +284,34 @@ def test_manifest_review_inputs_preserve_paths_and_debian_component_scope(
             assert hashlib.sha256((bundle / row["file"]).read_bytes()).hexdigest() == row["sha256"]
         assert required[asset] <= {(row["path"], row["sha256"], row["size_bytes"]) for row in rows}
     assert all(row["path"] != debian_path for row in scans[rpm])
+
+
+def test_manifest_review_refuses_swapped_architectures_with_valid_hashes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    from check_packaged_release_notices import expected_production_manifest_packages
+    from package_license_review_inputs import manifest_review_inputs
+
+    tag = "v2.3.4"
+    stem = f"remote-ops-workspace-{tag}-windows"
+    matrix = {"default_github_release": {"native_jobs": [{"asset_patterns": [
+        f"{stem}-<x64|arm64>-native.zip", f"{stem}-<x64|arm64>-native-manifest.json",
+    ]}]}}
+    groups = expected_production_manifest_packages(tag, matrix)
+    x64, arm64 = (f"{stem}-{architecture}-native.zip" for architecture in ("x64", "arm64"))
+    packages = {}
+    for asset in (x64, arm64):
+        raw = asset.encode()
+        (tmp_path / asset).write_bytes(raw)
+        packages[asset] = {"sha256": hashlib.sha256(raw).hexdigest(), "size_bytes": len(raw), "notice_files": []}
+    for architecture, misplaced in (("x64", arm64), ("arm64", x64)):
+        (tmp_path / f"{stem}-{architecture}-native-manifest.json").write_text(
+            json.dumps([{"file": misplaced, **packages[misplaced]}]), encoding="utf-8",
+        )
+
+    with pytest.raises(ValueError, match="package inventory differs from its release matrix target"):
+        manifest_review_inputs(tmp_path, tag, groups, packages)
 
 
 @pytest.mark.parametrize("fault", ["", "missing-license", "duplicate-license", "linked-license",

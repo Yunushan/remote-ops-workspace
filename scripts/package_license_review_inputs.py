@@ -7,8 +7,8 @@ from typing import Any
 
 from check_preview_redistribution import file_hash, regular_child
 from check_release_license_compliance import (
-    expected_native_manifest_names,
     native_manifest_entries,
+    native_manifest_package_scope_error,
     normalize_component_name,
     path_is_reparse,
 )
@@ -17,11 +17,11 @@ LICENSE_RECORD_FIELDS = ("path", "file", "sha256", "size_bytes")
 
 
 def manifest_review_inputs(
-    assets_dir: Path, tag: str, matrix: dict[str, Any], packages: dict[str, Any],
+    assets_dir: Path, tag: str, manifest_packages: dict[str, set[str]], packages: dict[str, Any],
 ) -> dict[str, Any]:
     review = {}
     assigned = set()
-    for name in sorted(expected_native_manifest_names(matrix, tag)):
+    for name, expected in sorted(manifest_packages.items()):
         manifest = regular_child(assets_dir, name, "native manifest")
         if path_is_reparse(manifest):
             raise ValueError(f"{name} must be a regular unlinked native manifest")
@@ -31,8 +31,8 @@ def manifest_review_inputs(
             raise ValueError("; ".join(errors))
         if file_hash(manifest) != manifest_digest:
             raise ValueError(f"{name} changed during license review preparation")
-        if duplicates := assigned & entries.keys():
-            raise ValueError(f"packages are named by multiple native manifests: {sorted(duplicates)}")
+        if package_scope_error := native_manifest_package_scope_error(name, entries, expected):
+            raise ValueError(package_scope_error)
         scans = {}
         for asset, identity in sorted(entries.items()):
             capture = packages.get(asset)

@@ -336,13 +336,21 @@ def _positive_fixture(
             if notice_fault == "different-runtime-bytes" and license_file is all_licenses[0]:
                 payload = payload.replace(b"license", b"licence")
             archive.writestr(license_file["path"], payload)
-    manifest_path.write_text(json.dumps([
+    manifest_entries = [
         {
             "file": f"native-dist/windows/{artifact_name}",
             "size_bytes": artifact.stat().st_size,
             "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
         }
-    ]), encoding="utf-8")
+    ]
+    unexpected_asset = assets / "license-review-cover.txt"
+    if notice_fault == "unexpected-manifest-member":
+        contents = b"Review cover sheet"
+        unexpected_asset.write_bytes(contents)
+        manifest_entries.append({
+            "file": unexpected_asset.name, "size_bytes": len(contents), "sha256": hashlib.sha256(contents).hexdigest(),
+        })
+    manifest_path.write_text(json.dumps(manifest_entries), encoding="utf-8")
     signed_scans = [*all_licenses]
     if notice_fault != "missing-general-notice":
         signed_scans.append(common)
@@ -374,6 +382,9 @@ def _positive_fixture(
         "components": components,
         "artifact_license_files": {artifact_name: signed_scans},
     }
+    if notice_fault == "unexpected-manifest-member":
+        inventory["artifact_license_files"][unexpected_asset.name] = signed_scans
+        components[0]["license_files"][0]["artifact_paths"][unexpected_asset.name] = python_license["path"]
     protected_registry = _write_record(
         evidence_root,
         "platform/platform_verified_evidence.json",
@@ -545,6 +556,14 @@ def test_complete_signed_release_compliance_fixture_passes(tmp_path: Path) -> No
     checker = _load_checker()
 
     assert checker.main(_positive_fixture(tmp_path, checker)) == 0
+
+
+def test_signed_approval_requires_exact_manifest_package_membership(tmp_path: Path, capsys) -> None:
+    checker = _load_checker()
+    args = _positive_fixture(tmp_path, checker, notice_fault="unexpected-manifest-member")
+
+    assert checker.main(args) == 1
+    assert "package inventory differs from its release matrix target" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("fault", ["different-runtime-bytes", "missing-general-notice", "duplicate-general-notice"])

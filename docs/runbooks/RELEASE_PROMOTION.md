@@ -127,7 +127,9 @@ command also captures the frozen Python runtime licenses under
 `usr/share/doc/remote-ops-workspace/licenses/`. It also tags the installed
 application license and the GUI packages' PyQt6 and Qt license texts with
 their component names. `review-inputs.json` binds these observations to each
-native manifest digest. Copy each `artifact_license_files` map into the
+native manifest digest. The export and signed audit verify that each manifest
+lists exactly the packages assigned to its target in the release matrix.
+Copy each `artifact_license_files` map into the
 matching native inventory and use `component_license_files` to populate the
 reviewed components' `license_files`. The export supplies `artifact_paths`
 when installers place identical license bytes at different paths. The signed

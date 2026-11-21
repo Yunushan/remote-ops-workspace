@@ -21,6 +21,7 @@ import re
 import sys
 import tarfile
 import zipfile
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, NamedTuple
@@ -713,9 +714,10 @@ def check_evidence(
     if path_is_reparse(evidence_root) or not evidence_root.is_dir():
         return [*errors, f"compliance evidence root must be a real directory: {evidence_root}"]
 
-    from check_packaged_release_notices import expected_production_packages
+    from check_packaged_release_notices import expected_production_manifest_packages
 
-    expected_packages = expected_production_packages(tag, matrix=matrix)
+    manifest_packages = expected_production_manifest_packages(tag, matrix)
+    expected_packages = set().union(*manifest_packages.values())
     approved_package_scans: dict[str, ApprovedPackageNotices] = {}
     candidate_record = evidence.get("candidate_inventory")
     runtime_reports: dict[str, Any] = {}
@@ -873,6 +875,10 @@ def check_evidence(
                     published_audit=published_audit,
                 ))
             continue
+        package_scope_error = native_manifest_package_scope_error(name, entries, manifest_packages.get(name, set()))
+        if package_scope_error:
+            errors.append(package_scope_error)
+            continue
         profile = profile_for_manifest(name)
         if target in RUNTIME_REPORT_ARTIFACT_NAMES:
             realized = inventory.get("realized_environment")
@@ -925,11 +931,9 @@ def check_evidence(
             errors.extend(inventory_errors)
             continue
         scans = inventory["artifact_license_files"]
-        for artifact in sorted(expected_packages & entries.keys()):
-            if artifact in approved_package_scans:
-                errors.append(f"{artifact} is named by multiple signed native manifests")
+        for artifact in sorted(entries):
             approved_package_scans[artifact] = ApprovedPackageNotices(
-                entries[artifact], scans.get(artifact, []), inventory["components"],
+                entries[artifact], scans[artifact], inventory["components"],
             )
     if not errors:
         errors.extend(check_packaged_notice_scans(assets_dir, expected_packages, approved_package_scans))
@@ -1427,6 +1431,16 @@ def native_manifest_entries(
             errors.append(f"{label} sha256 does not match release asset {name}")
         entries[name] = item
     return entries, errors
+
+
+def native_manifest_package_scope_error(name: str, actual: Iterable[str], expected: set[str]) -> str | None:
+    files = set(actual)
+    if files == expected:
+        return None
+    return (
+        f"{name} package inventory differs from its release matrix target "
+        f"(missing {sorted(expected - files)}, unexpected {sorted(files - expected)})"
+    )
 
 
 def profile_for_manifest(name: str) -> str:

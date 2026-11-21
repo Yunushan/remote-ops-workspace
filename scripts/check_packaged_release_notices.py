@@ -17,6 +17,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, NamedTuple
 
 from check_preview_redistribution import (
+    BUILD_TARGETS,
     GUI_TARGET,
     MATRIX_PATH,
     NATIVE_PACKAGE,
@@ -62,6 +63,41 @@ def expected_production_packages(tag: str, *, matrix: dict[str, Any] | None = No
         if PROTECTED_LINUX_PACKAGE.fullmatch(name := re.sub(r"v\d+\.\d+\.\d+", tag, pattern))
     }
     return standard | protected
+
+
+def expected_production_manifest_packages(tag: str, matrix: dict[str, Any]) -> dict[str, set[str]]:
+    """Map each packaged release manifest to its exact release matrix assets."""
+    standard = expected_native_assets(tag, matrix=matrix)
+    groups: dict[str, set[str]] = {}
+    for name in sorted(standard):
+        if not name.endswith("-native-manifest.json"):
+            continue
+        target = name.removeprefix(f"remote-ops-workspace-{tag}-").removesuffix("-native-manifest.json")
+        if target not in BUILD_TARGETS:
+            raise ValueError(f"release matrix has an unsupported native manifest: {name}")
+        groups[name] = {
+            asset for asset in standard
+            if (match := NATIVE_PACKAGE.fullmatch(asset)) and match[2] in BUILD_TARGETS[target]
+        }
+
+    for target in matrix.get("script_supported_native", ()):
+        names = {re.sub(r"v\d+\.\d+\.\d+", tag, pattern) for pattern in target["asset_patterns"]}
+        packages = {name for name in names if PROTECTED_LINUX_PACKAGE.fullmatch(name)}
+        if not packages:
+            continue
+        manifests = sorted(name for name in names if name.endswith("-native-manifest.json"))
+        if len(manifests) != 1 or manifests[0] in groups:
+            raise ValueError(f"protected Linux package group requires one unique native manifest: {sorted(packages)}")
+        groups[manifests[0]] = packages
+
+    expected = expected_production_packages(tag, matrix=matrix)
+    if (
+        any(not members for members in groups.values())
+        or sum(map(len, groups.values())) != len(expected)
+        or set().union(*groups.values()) != expected
+    ):
+        raise ValueError("release matrix must assign every production package to exactly one native manifest")
+    return groups
 
 
 def publish_notice_capture(
@@ -189,7 +225,9 @@ def verify_notices(
             }
     if capture is not None:
         review = (
-            manifest_review_inputs(assets_dir, tag, json.loads(MATRIX_PATH.read_bytes()), packages)
+            manifest_review_inputs(
+                assets_dir, tag, expected_production_manifest_packages(tag, json.loads(MATRIX_PATH.read_bytes())), packages,
+            )
             if write_review_inputs else None
         )
         publish_notice_capture(capture, tag, packages, blobs, review=review)

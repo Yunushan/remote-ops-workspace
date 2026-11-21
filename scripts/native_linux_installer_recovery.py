@@ -202,7 +202,7 @@ PUBLIC_FAILURE_CODES = frozenset(
         "package-expanded-payload-bound",
         "package-payload-files-incomplete",
         "payload-archive-bound",
-        "pinned-cpython3147-required",
+        "pinned-cpython31410-required",
         "preexisting-or-partial-package-registration",
         "preexisting-or-residual-owned-path",
         "previous-backup-modified-state",
@@ -495,8 +495,8 @@ def validate_host_values(values: dict, sha: str) -> None:
         "x86_64",
     ):
         raise EvidenceError("native-linux-x64-required")
-    if values.get("implementation") != "cpython" or values.get("version_info") != (3, 14, 7):
-        raise EvidenceError("pinned-cpython3147-required")
+    if values.get("implementation") != "cpython" or values.get("version_info") != (3, 14, 10):
+        raise EvidenceError("pinned-cpython31410-required")
     if (values.get("distro_id"), values.get("distro_version")) != ("ubuntu", "24.04"):
         raise EvidenceError("ubuntu2404-required")
     if values.get("workspace_absolute") is not True or values.get("workspace_resolved") != str(

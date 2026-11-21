@@ -73,7 +73,7 @@ jobs:
           git merge-base --is-ancestor HEAD "refs/remotes/origin/$DEFAULT_BRANCH"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.14.7"
+          python-version: "3.14.10"
       - name: Require release tag and project version match
         run: python scripts/check_release_version.py --release-tag "$RELEASE_TAG"
       - name: Require production maturity metadata
@@ -187,7 +187,7 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.14.7"
+          python-version: "3.14.10"
       - name: Create isolated release build environment
         run: |
           python -m venv "$RUNNER_TEMP/release-venv"
@@ -316,7 +316,7 @@ jobs:
         run: .\scripts\sign_windows_artifact.ps1 -Rehearse
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.14.7"
+          python-version: "3.14.10"
           architecture: ${{ matrix.python-architecture }}
       - name: Create isolated release build environment
         shell: powershell
@@ -530,7 +530,7 @@ jobs:
         run: bash scripts/with_macos_release_signing.sh --rehearse
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.14.7"
+          python-version: "3.14.10"
       - name: Create isolated release build environment
         run: |
           python -m venv "$RUNNER_TEMP/release-venv"
@@ -636,7 +636,7 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.14.7"
+          python-version: "3.14.10"
       - name: Install Linux packaging toolchains
         run: bash scripts/install_ci_ubuntu_packages.sh rpm
       - name: Create isolated release build environment
@@ -792,7 +792,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.14.7"
+          python-version: "3.14.10"
       - name: Materialize exact staged artifacts and seal candidate inventory
         env:
           GH_TOKEN: ${{ github.token }}

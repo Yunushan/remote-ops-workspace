@@ -963,7 +963,7 @@ def test_individual_host_predicates_refuse_pure_data_without_spoofing_run(
         "sys_platform": "linux",
         "machine": "x86_64",
         "implementation": "cpython",
-        "version_info": (3, 14, 7),
+        "version_info": (3, 14, 10),
         "distro_id": "ubuntu",
         "distro_version": "24.04",
         "workspace_absolute": True,

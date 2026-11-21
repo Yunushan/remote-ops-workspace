@@ -418,8 +418,8 @@ def main():
         save(output / f"{args.phase}.json", record)
         raise RuntimeError("actual checkout HEAD differs from bound candidate SHA")
     if args.phase == "bind":
-        if sys.version_info[:3] != (3, 14, 7) or sys.implementation.name != "cpython":
-            raise RuntimeError("candidate builder must use CPython 3.14.7 exactly")
+        if sys.version_info[:3] != (3, 14, 10) or sys.implementation.name != "cpython":
+            raise RuntimeError("candidate builder must use CPython 3.14.10 exactly")
         if subprocess.run(["git", "diff", "--quiet", "HEAD", "--"], check=False).returncode:
             raise RuntimeError("candidate starts with changed tracked source")
         expected_bits = 32 if args.target == "windows-x86" else 64

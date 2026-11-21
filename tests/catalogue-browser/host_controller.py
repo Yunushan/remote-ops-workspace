@@ -304,7 +304,7 @@ def command(registry, argv, repo, env, deadline):
 
 
 def host_context():
-    need(sys.platform == 'linux' and platform.machine() == 'x86_64' and platform.python_version() == '3.14.7')
+    need(sys.platform == 'linux' and platform.machine() == 'x86_64' and platform.python_version() == '3.14.10')
     need(sys.flags.isolated == 1 and sys.flags.no_site == 1 and sys.dont_write_bytecode)
     need(os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted'
          and os.environ.get('GITHUB_REPOSITORY') == PUBLIC_REPO and os.environ.get('ImageOS') == 'ubuntu24')

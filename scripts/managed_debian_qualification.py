@@ -6,7 +6,7 @@ import re
 from signal import SIGTERM
 
 REPORT_NAME = "managed-debian-update.json"
-MANAGED_IMAGE = "python:3.14.7-slim-trixie@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d"
+MANAGED_IMAGE = "python:3.14.10-slim-trixie@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f"
 HASH = re.compile(r"[0-9a-f]{64}")
 SCHEMA = "row.managed-debian-qualification.v6"
 ROLLBACK_PLAN_SCHEMA = "row.managed-debian-qualification.v5"

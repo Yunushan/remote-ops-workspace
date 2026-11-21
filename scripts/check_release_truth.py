@@ -350,7 +350,7 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
         "candidate_build_ready: ${{ steps.signing-readiness.outputs.candidate_build_ready }}": (
             "candidate readiness output"
         ),
-        'python-version: "3.14.7"': "exact release Python",
+        'python-version: "3.14.10"': "exact release Python",
         '[[ "$GITHUB_EVENT_NAME" == "push" || "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]': (
             "candidate event guard"
         ),

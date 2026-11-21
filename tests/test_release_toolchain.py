@@ -83,11 +83,11 @@ def test_release_toolchain_pins_exact_native_python_patch_in_every_release_job()
     promotion = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
     certification = Path(".github/workflows/release-certification.yml").read_text(encoding="utf-8")
 
-    assert manifest["python"]["version"] == "3.14.7"
+    assert manifest["python"]["version"] == "3.14.10"
     assert 'python-version: "3.12"' not in workflow
-    assert workflow.count('python-version: "3.14.7"') == 6
-    assert promotion.count('python-version: "3.14.7"') == 1
-    assert certification.count('python-version: "3.14.7"') == 1
+    assert workflow.count('python-version: "3.14.10"') == 6
+    assert promotion.count('python-version: "3.14.10"') == 1
+    assert certification.count('python-version: "3.14.10"') == 1
 
 
 @pytest.mark.parametrize("mutation", ["presence-only", "file-metadata", "no-final-probe"])

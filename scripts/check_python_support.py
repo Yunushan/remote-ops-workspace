@@ -279,7 +279,7 @@ def check_python_support(overrides: dict[str, str] | None = None) -> list[str]:
         "PyInstaller 6.21 or newer": "Python 3.15-capable PyInstaller lower bound",
         "runtime.json": "exact runtime evidence artifact",
         "Free-threaded `3.15t` is not claimed": "free-threading exclusion",
-        "exact Python 3.14.7 release\n  toolchain": "release-toolchain distinction",
+        "exact Python 3.14.10 release\n  toolchain": "release-toolchain distinction",
         "it is not a substitute for that six-host result": "hosted evidence boundary",
         "`Python 3.15 readiness`": "stable branch-protection context",
         "`Native Windows readiness`": "stable native Windows branch-protection context",
@@ -324,8 +324,8 @@ def check_python_support(overrides: dict[str, str] | None = None) -> list[str]:
             )
 
     toolchain = read(RELEASE_TOOLCHAIN, overrides)
-    if '"version": "3.14.7"' not in toolchain:
-        errors.append("release toolchain must keep its exact Python 3.14.7 builder")
+    if '"version": "3.14.10"' not in toolchain:
+        errors.append("release toolchain must keep its exact Python 3.14.10 builder")
 
     return errors
 

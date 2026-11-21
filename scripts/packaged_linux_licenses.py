@@ -11,7 +11,6 @@ from pathlib import Path, PurePosixPath
 
 from check_preview_redistribution import (
     MAX_LICENSE_BYTES,
-    EmbeddedFile,
     appimage_squashfs_offset,
     deb_tar_payload,
     rpm_cpio_payload,
@@ -19,6 +18,7 @@ from check_preview_redistribution import (
 from check_release_license_compliance import path_is_reparse
 from collect_unsigned_runtime import DEFAULT_LIMITS, Observations, cpio_members
 from stage_linux_runtime_licenses import LICENSE_COMPONENTS, LICENSE_ROOT, is_runtime_license_member
+from stage_runtime_licenses import RuntimeLicense
 
 REQUIRED_LICENSE_PATHS = {
     LICENSE_ROOT / "cpython/LICENSE.txt",
@@ -96,7 +96,7 @@ def license_members(archive: Path) -> Iterator[tuple[PurePosixPath, bytes]]:
         raise ValueError(f"unsupported Linux license package: {archive.name}")
 
 
-def read_runtime_licenses(archive: Path) -> list[EmbeddedFile]:
+def read_runtime_licenses(archive: Path) -> list[RuntimeLicense]:
     records = {}
     for path, data in license_members(archive):
         if path in records or not is_runtime_license_member(path) or not 0 < len(data) <= MAX_LICENSE_BYTES:
@@ -111,4 +111,7 @@ def read_runtime_licenses(archive: Path) -> list[EmbeddedFile]:
             f"{archive.name} is missing Linux runtime licenses "
             f"(components {sorted(missing_components)}, files {sorted(map(str, missing_paths))})"
         )
-    return [EmbeddedFile(path.as_posix(), data) for path, data in sorted(records.items())]
+    return [
+        RuntimeLicense(path.as_posix(), data, path.relative_to(LICENSE_ROOT).parts[0])
+        for path, data in sorted(records.items())
+    ]

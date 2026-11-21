@@ -23,7 +23,7 @@ import tarfile
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -668,6 +668,12 @@ def strict_b64(value: Any, label: str) -> bytes:
         raise ValueError(f"{label} must be valid base64") from exc
 
 
+class ApprovedPackageNotices(NamedTuple):
+    manifest_entry: dict[str, Any]
+    scans: list[dict[str, Any]]
+    components: list[dict[str, Any]]
+
+
 def check_evidence(
     evidence: dict[str, Any],
     *,
@@ -710,7 +716,7 @@ def check_evidence(
     from check_packaged_release_notices import expected_production_packages
 
     expected_packages = expected_production_packages(tag, matrix=matrix)
-    approved_package_scans: dict[str, tuple[dict[str, Any], list[dict[str, Any]]]] = {}
+    approved_package_scans: dict[str, ApprovedPackageNotices] = {}
     candidate_record = evidence.get("candidate_inventory")
     runtime_reports: dict[str, Any] = {}
     if not isinstance(candidate_record, dict) or not valid_evidence_record(candidate_record):
@@ -903,26 +909,28 @@ def check_evidence(
                         debian_notices[artifact] = notices
                 except ValueError as exc:
                     errors.append(f"{artifact}: {exc}")
-        errors.extend(
-            check_inventory(
-                inventory,
-                manifest_name=name,
-                profile=profile,
-                required_names=required,
-                versions=versions,
-                artifact_names=set(entries),
-                evidence_root=evidence_root,
-                expected_lock_file=expected_lock,
-                expected_lock_sha256=expected_lock_sha256,
-                debian_notices=debian_notices,
-            )
+        inventory_errors = check_inventory(
+            inventory,
+            manifest_name=name,
+            profile=profile,
+            required_names=required,
+            versions=versions,
+            artifact_names=set(entries),
+            evidence_root=evidence_root,
+            expected_lock_file=expected_lock,
+            expected_lock_sha256=expected_lock_sha256,
+            debian_notices=debian_notices,
         )
-        scans = inventory.get("artifact_license_files")
-        if isinstance(scans, dict):
-            for artifact in sorted(expected_packages & entries.keys()):
-                if artifact in approved_package_scans:
-                    errors.append(f"{artifact} is named by multiple signed native manifests")
-                approved_package_scans[artifact] = (entries[artifact], scans.get(artifact, []))
+        if inventory_errors:
+            errors.extend(inventory_errors)
+            continue
+        scans = inventory["artifact_license_files"]
+        for artifact in sorted(expected_packages & entries.keys()):
+            if artifact in approved_package_scans:
+                errors.append(f"{artifact} is named by multiple signed native manifests")
+            approved_package_scans[artifact] = ApprovedPackageNotices(
+                entries[artifact], scans.get(artifact, []), inventory["components"],
+            )
     if not errors:
         errors.extend(check_packaged_notice_scans(assets_dir, expected_packages, approved_package_scans))
     return errors
@@ -931,9 +939,10 @@ def check_evidence(
 def check_packaged_notice_scans(
     assets_dir: Path,
     expected_packages: set[str],
-    approved: dict[str, tuple[dict[str, Any], list[dict[str, Any]]]],
+    approved: dict[str, ApprovedPackageNotices],
 ) -> list[str]:
     from check_packaged_release_notices import observe_notices
+    from stage_runtime_licenses import RuntimeLicense
 
     missing = expected_packages - approved.keys()
     if missing:
@@ -941,17 +950,38 @@ def check_packaged_notice_scans(
     errors: list[str] = []
     try:
         for package in observe_notices(assets_dir, expected_packages):
-            entry, scans = approved[package.name]
+            entry, scans, components = approved[package.name]
             if package.sha256 != entry.get("sha256") or package.size_bytes != entry.get("size_bytes"):
                 errors.append(f"{package.name} inspected package differs from the signed native manifest")
                 continue
-            observed = {
-                (item.path, hashlib.sha256(item.data).hexdigest(), len(item.data)) for item in package.files
-            }
+            observed = set()
+            runtime_licenses: dict[str, set[tuple[str, str, int]]] = {}
+            for item in package.files:
+                key = (item.path, hashlib.sha256(item.data).hexdigest(), len(item.data))
+                observed.add(key)
+                if isinstance(item, RuntimeLicense):
+                    runtime_licenses.setdefault(item.component, set()).add(key)
             required_paths = {path for path, _, _ in observed}
             declared = [license_record_key(item) for item in scans if item["path"] in required_paths]
             if len(declared) != len(observed) or set(declared) != observed:
                 errors.append(f"{package.name} signed license scan differs from the required packaged notices")
+            bundled = {
+                normalize_component_name(component["name"]): component["license_files"]
+                for component in components if component["scope"] == "bundled"
+            }
+            for name, required in runtime_licenses.items():
+                declared_for_component = {
+                    (
+                        record.get("artifact_paths", {}).get(package.name, record["path"]),
+                        record["sha256"],
+                        record["size_bytes"],
+                    )
+                    for record in bundled.get(name, [])
+                }
+                if not required <= declared_for_component:
+                    errors.append(
+                        f"{package.name} signed bundled component {name} does not bind its packaged runtime licenses"
+                    )
     except (OSError, ValueError, tarfile.TarError, zipfile.BadZipFile) as exc:
         errors.append(f"exact native package notices: {exc}")
     return errors

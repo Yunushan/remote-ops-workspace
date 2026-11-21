@@ -345,6 +345,16 @@ def _positive_fixture(
         signed_scans.append(common)
     if notice_fault == "duplicate-general-notice":
         signed_scans.append(common)
+    python_license = components[0]["license_files"][0]
+    components[0]["license_files"] = [{
+        **python_license,
+        "path": "licenses/cpython/LICENSE.txt",
+        "artifact_paths": {artifact_name: python_license["path"]},
+    }]
+    if notice_fault == "wrong-runtime-component":
+        components[0]["license_files"], components[2]["license_files"] = (
+            components[2]["license_files"], components[0]["license_files"],
+        )
     inventory = {
         "schema_version": 1,
         "profile": "minimal-cli",
@@ -537,6 +547,16 @@ def test_signed_approval_must_match_notices_read_from_the_package(tmp_path: Path
 
     assert checker.main(args) == 1
     assert "signed license scan differs from the required packaged notices" in capsys.readouterr().err
+
+
+def test_signed_approval_binds_runtime_licenses_to_their_bundled_components(tmp_path: Path, capsys) -> None:
+    checker = _load_checker()
+    args = _positive_fixture(tmp_path, checker, notice_fault="wrong-runtime-component")
+
+    assert checker.main(args) == 1
+    errors = capsys.readouterr().err
+    assert "signed bundled component cpython does not bind its packaged runtime licenses" in errors
+    assert "signed bundled component pyinstaller does not bind its packaged runtime licenses" in errors
 
 
 def test_published_compliance_passes_the_authenticated_bundle_to_provenance(tmp_path, monkeypatch) -> None:

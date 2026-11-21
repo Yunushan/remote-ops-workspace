@@ -17,7 +17,7 @@ from check_preview_redistribution import (
     windows_installer_payload,
 )
 from check_release_license_compliance import path_is_reparse
-from stage_runtime_licenses import LICENSE_PATH_PART, LICENSE_PROFILES
+from stage_runtime_licenses import LICENSE_PATH_PART, LICENSE_PROFILES, RuntimeLicense
 
 WINDOWS_LICENSE_ROOT = PurePosixPath("docs/licenses/runtime")
 MSI_LICENSE_DIRS = tuple(
@@ -110,7 +110,7 @@ def runtime_members(archive: Path) -> Iterator[tuple[PurePosixPath, EmbeddedFile
         raise ValueError(f"unsupported desktop license package: {archive.name}")
 
 
-def read_desktop_runtime_licenses(archive: Path, target: str) -> list[EmbeddedFile]:
+def read_desktop_runtime_licenses(archive: Path, target: str) -> list[RuntimeLicense]:
     profile = "windows-x86" if target == "windows-x86" else "desktop"
     components = {"cpython", *LICENSE_PROFILES[profile]}
     required_files = REQUIRED_BASE_LICENSES | (REQUIRED_CRYPTOGRAPHY_LICENSES if profile == "desktop" else set())
@@ -134,4 +134,7 @@ def read_desktop_runtime_licenses(archive: Path, target: str) -> list[EmbeddedFi
             f"{archive.name} has an incomplete runtime license inventory "
             f"(missing components {sorted(components - observed)}, files {sorted(required_files - paths)})"
         )
-    return [member for _, member in sorted(found.values())]
+    return [
+        RuntimeLicense(member.path, member.data, relative.parts[0])
+        for relative, member in sorted(found.values())
+    ]

@@ -31,6 +31,7 @@ from check_preview_redistribution import (
 from check_release_license_compliance import path_is_reparse, safe_relative_path
 from packaged_desktop_licenses import read_desktop_runtime_licenses
 from packaged_linux_licenses import read_runtime_licenses
+from stage_runtime_licenses import RuntimeLicense
 
 PROTECTED_LINUX_PACKAGE = re.compile(
     r"remote-ops-workspace-v\d+\.\d+\.\d+-linux-(?:i386|i686|armhf|armv7hl)"
@@ -42,7 +43,7 @@ class PackageNotices(NamedTuple):
     name: str
     sha256: str
     size_bytes: int
-    files: list[EmbeddedFile]
+    files: list[EmbeddedFile | RuntimeLicense]
 
 
 def expected_production_packages(tag: str, *, matrix: dict[str, Any] | None = None) -> set[str]:
@@ -113,7 +114,9 @@ def observe_notices(assets_dir: Path, expected: set[str]) -> Iterator[PackageNot
         package = regular_child(assets_dir, name, "native package")
         package_sha = file_hash(package)
         package_size = package.stat().st_size
-        embedded = check_packaged_legal_material(package, gui if GUI_TARGET.search(name) else notices)
+        embedded: list[EmbeddedFile | RuntimeLicense] = list(
+            check_packaged_legal_material(package, gui if GUI_TARGET.search(name) else notices),
+        )
         if "-linux-" in name:
             embedded.extend(read_runtime_licenses(package))
         else:
@@ -148,12 +151,15 @@ def verify_notices(assets_dir: Path, tag: str, *, evidence_root: Path | None = N
             for member in package.files:
                 digest = hashlib.sha256(member.data).hexdigest()
                 blobs.setdefault(digest, member.data)
-                records.append({
+                record = {
                     "path": member.path,
                     "file": f"packaged-notices/files/{digest}.bin",
                     "sha256": digest,
                     "size_bytes": len(member.data),
-                })
+                }
+                if isinstance(member, RuntimeLicense):
+                    record["component"] = member.component
+                records.append(record)
             packages[package.name] = {
                 "sha256": package.sha256, "size_bytes": package.size_bytes, "notice_files": records,
             }

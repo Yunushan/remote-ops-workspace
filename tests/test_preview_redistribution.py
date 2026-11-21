@@ -103,6 +103,10 @@ def test_production_notices_cover_protected_linux_and_require_exact_bytes(
                 assert packaged == (bundle / record["file"]).read_bytes()
                 assert record["sha256"] == hashlib.sha256(packaged).hexdigest()
                 assert record["size_bytes"] == len(packaged)
+                if record["path"].startswith("docs/licenses/runtime/"):
+                    assert record["component"] == record["path"].split("/")[3]
+                else:
+                    assert "component" not in record
     with pytest.raises(ValueError, match="no packaged-notices output"):
         notices.verify_notices(assets, tag, evidence_root=bundle)
     assert json.loads((output / "notice-extraction.json").read_bytes()) == capture
@@ -192,11 +196,14 @@ def test_production_captures_runtime_licenses_by_installed_path(
     assert notices.verify_notices(assets, tag, evidence_root=bundle) == 1
     report = json.loads((bundle / "packaged-notices/notice-extraction.json").read_bytes())
     records = {
-        record["path"]: (bundle / record["file"]).read_bytes()
+        record["path"]: (record["component"], (bundle / record["file"]).read_bytes())
         for record in report["packages"][package.name]["notice_files"]
         if record["path"].startswith(LICENSE_ROOT.as_posix() + "/")
     }
-    assert records == contents
+    assert records == {
+        path: (path.removeprefix(LICENSE_ROOT.as_posix() + "/").split("/")[0], data)
+        for path, data in contents.items()
+    }
 
 
 @pytest.mark.parametrize("suffix", [".dmg", ".pkg"])

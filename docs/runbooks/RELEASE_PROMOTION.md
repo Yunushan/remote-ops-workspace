@@ -123,13 +123,14 @@ package matrix passes. Its `notice-extraction.json` records each package's
 digest and the extracted notice paths, sizes, and digests. The corresponding
 `notice_files` entries identify the original bytes under
 `packaged-notices/files/` relative to `bundle/`. For each Linux package the
-command also requires and captures the frozen Python runtime licenses under
-`usr/share/doc/remote-ops-workspace/licenses/`. Include these observations
-in the artifact extraction scans. If a component's license appears at a
-different path in a package, add that package name and its extracted path to
-`artifact_paths` on the component's license record. Each package scan must
-match the required path, size, and digest. Complete the remaining component
-license review before signing.
+command also captures the frozen Python runtime licenses under
+`usr/share/doc/remote-ops-workspace/licenses/`. Include each runtime file
+in both the artifact extraction scan and the bundled component's
+`license_files` using the extraction row's `component` name. If a component's
+license appears at a different path in a package, add that package name and
+its extracted path to `artifact_paths` on the component's license record.
+The signed audit matches the package scan and component license record
+against the extracted path, size, and digest.
 
 Windows packages ship their frozen runtime license files under
 `docs/licenses/runtime/`. Native smoke checks compare the installed bytes

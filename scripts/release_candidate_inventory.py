@@ -1150,6 +1150,10 @@ def materialize_sealed_records(
         managed_deb = (inventory["release_tag"], inventory["managed_debian_update"]["receipt"])
     materialize_records(
         client, live, assets_root, expected_records=records, managed_deb=managed_deb,
+        expected_archive_files=(
+            expected_candidate_archive_files(inventory["release_tag"])
+            if inventory["schema_version"] >= ARCHIVE_FILE_SCOPE_SCHEMA_VERSION else None
+        ),
         expected_runtime_sha256=inventory.get("debian_server_bundle", {}).get("runtime_sha256"),
     )
 
@@ -1243,6 +1247,7 @@ def materialize_records(
         records = materialize_candidate_files(client, artifacts, staged_root, expected_by_name)
         if expected_archive_files is not None:
             require_candidate_archive_files(records, expected_archive_files)
+            require_candidate_archive_indexes(staged_root, records)
         if managed_deb is not None:
             release_tag, receipt = managed_deb
             require_managed_deb(records, release_tag, receipt["candidate_sha256"])
@@ -1485,6 +1490,68 @@ def require_candidate_archive_files(
                 f"{archive} files differ from its release matrix assignment "
                 f"(missing {sorted(wanted - actual)}, unexpected {sorted(actual - wanted)})"
             )
+
+
+def require_candidate_archive_indexes(assets: Path, records: list[dict[str, Any]]) -> None:
+    """Verify each build's manifest and checksums against its extracted file records."""
+    for archive in records:
+        members = candidate_file_identities(archive["files"])
+        checksums = [name for name in members if name.endswith("-SHA256SUMS.txt")]
+        manifests = [name for name in members if name.endswith(("-native-manifest.json", "-release-manifest.json"))]
+        if len(checksums) != 1 or len(manifests) != 1:
+            raise ValueError(f"{archive['name']} requires one checksum sidecar and one release manifest")
+        checksum, manifest = checksums[0], manifests[0]
+        digests = {name: digest for name, (_, digest) in members.items() if name != checksum}
+        checked = set()
+        for line in read_candidate_index(assets / checksum, members[checksum]).splitlines():
+            if not line.strip():
+                continue
+            match = re.fullmatch(r"([0-9a-f]{64})\s+(.+)", line.strip())
+            if match is None:
+                raise ValueError(f"{checksum} contains an invalid checksum line")
+            digest, filename = match.groups()
+            if filename not in digests or filename in checked or digest != digests[filename]:
+                raise ValueError(f"{checksum} has a foreign, repeated or mismatched checksum for {filename}")
+            checked.add(filename)
+        if checked != digests.keys():
+            raise ValueError(f"{checksum} is missing checksums for {sorted(digests.keys() - checked)}")
+
+        try:
+            payload = json.loads(read_candidate_index(assets / manifest, members[manifest]))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{manifest} is not valid JSON") from exc
+        rows = payload
+        if manifest.endswith("-release-manifest.json"):
+            rows = payload.get("artifacts") if isinstance(payload, dict) else None
+        expected = members.keys() - {checksum, manifest}
+        seen = set()
+        if not isinstance(rows, list):
+            raise ValueError(f"{manifest} must list its archive's release files")
+        for row in rows:
+            path = row.get("file") if isinstance(row, dict) else None
+            if not isinstance(path, str) or not all(safe_name(part) for part in path.split("/")):
+                raise ValueError(f"{manifest} contains an invalid release file path")
+            filename = path.rsplit("/", 1)[-1]
+            if filename not in expected or filename in seen:
+                raise ValueError(f"{manifest} has a foreign or repeated release file: {filename}")
+            if type(row.get("size_bytes")) is not int or (row["size_bytes"], row.get("sha256")) != members[filename]:
+                raise ValueError(f"{manifest} size or digest differs from extracted archive file {filename}")
+            seen.add(filename)
+        if seen != expected:
+            raise ValueError(f"{manifest} is missing release file records for {sorted(expected - seen)}")
+
+
+def read_candidate_index(path: Path, identity: tuple[int, str]) -> str:
+    if identity[0] > MAX_JSON_BYTES:
+        raise ValueError(f"{path.name} exceeds the release index size limit")
+    with path.open("rb") as stream:
+        raw = stream.read(MAX_JSON_BYTES + 1)
+    if (len(raw), hashlib.sha256(raw).hexdigest()) != identity:
+        raise ValueError(f"{path.name} differs from the extracted build archive")
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"{path.name} must contain UTF-8 text") from exc
 
 
 def candidate_file_identities(files: Iterable[Any]) -> dict[str, tuple[int, str]]:

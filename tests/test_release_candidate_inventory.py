@@ -274,6 +274,10 @@ def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
         ("wrong-linux-package", "smoke receipt differs from the candidate installer"),
         ("swapped-native-manifests", "files differ from its release matrix assignment"),
         ("unexpected-source-file", "files differ from its release matrix assignment"),
+        ("foreign-checksum-reference", "foreign, repeated or mismatched checksum"),
+        ("repeated-checksum-reference", "foreign, repeated or mismatched checksum"),
+        ("stale-native-manifest-digest", "size or digest differs from extracted archive file"),
+        ("missing-native-manifest-row", "missing release file records"),
         ("missing-gui-proof", "archive must contain one root gui-archive-proof.json"),
         ("wrong-gui-binding", "GUI archive proof does not bind the completed smoke receipt"),
         ("missing-gui-module", "GUI archive proof must attest every required frozen GUI module"),
@@ -539,6 +543,47 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
         f"remote-ops-workspace-{tag}-linux-{label}": f"candidate aarch64 {label}".encode()
         for label in ("arm64.deb", "aarch64.rpm", "aarch64.AppImage")
     }
+    staged_artifacts = {}
+    for name, files in expected_archive_files.items():
+        target = name.removeprefix("release-").replace("-native-", "-", 1)
+        manifest, = (asset for asset in files if asset.endswith(("-native-manifest.json", "-release-manifest.json")))
+        checksum, = (asset for asset in files if asset.endswith("-SHA256SUMS.txt"))
+        body = {
+            filename: installers.get(target, {}).get(filename, f"bytes from {filename}".encode())
+            for filename in sorted(files - {manifest, checksum})
+        }
+        rows = [
+            {"file": filename, "size_bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+            for filename, data in body.items()
+        ]
+        if target == "windows-x86":
+            if condition == "stale-native-manifest-digest":
+                rows[0]["sha256"] = "b" * 64
+            elif condition == "missing-native-manifest-row":
+                rows.pop(0)
+        payload = {"artifacts": rows} if name == "release-source-python" else rows
+        body[manifest] = json.dumps(payload).encode()
+        lines = [f"{hashlib.sha256(data).hexdigest()}  {filename}\n" for filename, data in body.items()]
+        if condition == "repeated-checksum-reference" and target == "windows-x86":
+            lines.append(lines[0])
+        body[checksum] = "".join(lines).encode()
+        staged_artifacts[name] = body
+    x86 = staged_artifacts["release-windows-native-x86"]
+    x64 = staged_artifacts["release-windows-native-x64"]
+    x86_manifest = f"remote-ops-workspace-{tag}-windows-x86-native-manifest.json"
+    x64_manifest = f"remote-ops-workspace-{tag}-windows-x64-native-manifest.json"
+    if condition == "swapped-native-manifests":
+        x86[x64_manifest], x64[x86_manifest] = x64.pop(x64_manifest), x86.pop(x86_manifest)
+    elif condition == "foreign-checksum-reference":
+        x86_checksum, = (asset for asset in x86 if asset.endswith("-SHA256SUMS.txt"))
+        x64_checksum, = (asset for asset in x64 if asset.endswith("-SHA256SUMS.txt"))
+        x86_row = f"{hashlib.sha256(x86[x86_manifest]).hexdigest()}  {x86_manifest}\n".encode()
+        x64_row = f"{hashlib.sha256(x64[x64_manifest]).hexdigest()}  {x64_manifest}\n".encode()
+        x86[x86_checksum] = x86[x86_checksum].replace(x86_row, x64_row)
+        x64[x64_checksum] = x64[x64_checksum].replace(x64_row, x86_row)
+    elif condition == "unexpected-source-file":
+        staged_artifacts["release-source-python"]["unexpected-build-notes.txt"] = b"Unexpected build notes"
+
     for artifact_id, name in enumerate(names, start=1):
         stream = io.BytesIO()
         with zipfile.ZipFile(stream, "w") as archive:
@@ -616,18 +661,9 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                 archive.writestr(candidate.RPM_SMOKE_FILES[0], proof)
                 if condition != "missing-rpm-smoke":
                     archive.writestr(candidate.RPM_SMOKE_FILES[1], binding)
-            elif name in expected_archive_files:
-                target = name.removeprefix("release-").replace("-native-", "-", 1)
-                files = expected_archive_files[name].copy()
-                if condition == "swapped-native-manifests" and target in {"windows-x86", "windows-x64"}:
-                    expected_manifest, = (asset for asset in files if asset.endswith("-native-manifest.json"))
-                    files.remove(expected_manifest)
-                    other_target = "windows-x64" if target == "windows-x86" else "windows-x86"
-                    files.add(expected_manifest.replace(target, other_target))
-                if condition == "unexpected-source-file" and name == "release-source-python":
-                    files.add("unexpected-build-notes.txt")
-                for filename in sorted(files):
-                    archive.writestr(filename, installers.get(target, {}).get(filename, f"bytes from {filename}".encode()))
+            elif name in staged_artifacts:
+                for filename, data in staged_artifacts[name].items():
+                    archive.writestr(filename, data)
             else:
                 archive.writestr(f"{name}.txt", f"bytes from {name}")
         data = stream.getvalue()
@@ -724,6 +760,8 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
             "wrong-managed-deb", "wrong-rpm-digest", "wrong-managed-depends", "wrong-managed-bundle",
             "missing-gui-installers", "wrong-gui-installer", "wrong-linux-package",
             "swapped-native-manifests", "unexpected-source-file",
+            "foreign-checksum-reference", "repeated-checksum-reference", "stale-native-manifest-digest",
+            "missing-native-manifest-row",
         }:
             assert len(downloads) == len(archives)
         elif condition in {"wrong-managed-run", "wrong-managed-controller", "missing-rollback", "old-managed-schema", "unbundled"}:

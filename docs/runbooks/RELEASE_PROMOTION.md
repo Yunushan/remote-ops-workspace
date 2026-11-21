@@ -173,6 +173,8 @@ verification. Older inventory versions keep their original smoke receipt rules.
 Schema 13 checks the exact file list for each build archive against the
 release matrix. Sealing rejects missing files, unexpected files, and files
 uploaded by the wrong job before making the candidate inventory available.
+Sealing and promotion also verify each archive's manifest and checksum
+sidecar against the files extracted from that archive.
 
 ### Qualify the Windows x64 MSI before publication
 

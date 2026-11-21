@@ -13,6 +13,7 @@ NEW = updater.Header("1.0.28", "c" * 64, "d" * 64)
 FOREIGN = updater.Header("1.0.28", "e" * 64, "f" * 64)
 INSTALLED_ROW = "/usr/bin/row\t-rwxr-xr-x\troot\troot\t" + OLD.launcher_sha256
 OLD_METADATA = "\t".join((updater.PACKAGE, "0", OLD.version, "1", updater.ARCH, "8", OLD.header_sha256))
+RPM_LICENSE_ROOT = "/usr/share/doc/remote-ops-workspace/licenses"
 
 
 @pytest.mark.parametrize(("header", "files", "refusal"), [
@@ -21,6 +22,14 @@ OLD_METADATA = "\t".join((updater.PACKAGE, "0", OLD.version, "1", updater.ARCH, 
     (OLD_METADATA, INSTALLED_ROW.replace("-rwx", "lrwx"), "rpm-payload-refused"),
     (OLD_METADATA, INSTALLED_ROW + "\n" + OLD_METADATA, "rpm-payload-refused"),
     (OLD_METADATA, INSTALLED_ROW + "\n" + INSTALLED_ROW.replace("/usr/bin/row", "/tmp/row"), "rpm-payload-refused"),
+    (OLD_METADATA, INSTALLED_ROW + f"\n{RPM_LICENSE_ROOT}\tdrwxr-xr-x\troot\troot\t", None),
+    (OLD_METADATA, INSTALLED_ROW + f"\n{RPM_LICENSE_ROOT}/cpython/LICENSE.txt\t-rw-r--r--\troot\troot\t" + "a" * 64, None),
+    (OLD_METADATA, INSTALLED_ROW + f"\n{RPM_LICENSE_ROOT}/unknown/LICENSE.txt\t-rw-r--r--\troot\troot\t" + "a" * 64,
+     "rpm-payload-refused"),
+    (OLD_METADATA, INSTALLED_ROW + f"\n{RPM_LICENSE_ROOT}/cpython/LICENSE.txt\t-rwxr-xr-x\troot\troot\t" + "a" * 64,
+     "rpm-payload-refused"),
+    (OLD_METADATA, INSTALLED_ROW + f"\n{RPM_LICENSE_ROOT}/cpython/LICENSE.txt\tlrwxrwxrwx\troot\troot\t",
+     "rpm-payload-refused"),
     (OLD_METADATA, "", "rpm-launcher-missing"),
 ])
 def test_rpm_header_requires_a_single_stock_launcher(header, files, refusal, monkeypatch):

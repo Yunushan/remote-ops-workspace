@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sysconfig
 from importlib.metadata import Distribution, PackageNotFoundError, distribution
 from pathlib import Path, PurePosixPath
@@ -12,6 +13,24 @@ FROZEN_DISTRIBUTIONS = (
     "bcrypt", "cffi", "cryptography", "pyasynchat", "pyasyncore", "pycparser",
     "pyftpdlib", "pyinstaller", "pyopenssl", "truststore",
 )
+LICENSE_ROOT = PurePosixPath("usr/share/doc/remote-ops-workspace/licenses")
+LICENSE_COMPONENTS = {"cpython", *FROZEN_DISTRIBUTIONS}
+LICENSE_PATH_PART = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
+
+
+def is_runtime_license_member(path: PurePosixPath, *, directory: bool = False) -> bool:
+    if path.anchor == "/":
+        path = path.relative_to("/")
+    if path == LICENSE_ROOT:
+        return directory
+    if not path.is_relative_to(LICENSE_ROOT):
+        return False
+    component, *relative = path.relative_to(LICENSE_ROOT).parts
+    return (
+        component in LICENSE_COMPONENTS
+        and (directory or bool(relative))
+        and all(LICENSE_PATH_PART.fullmatch(part) for part in relative)
+    )
 
 
 def copy_license(source: Path, destination: Path) -> None:
@@ -29,7 +48,7 @@ def copy_distribution_licenses(installed: Distribution, destination: Path) -> No
         if len(parts) < 3 or not parts[0].endswith(".dist-info") or parts[1] != "licenses":
             continue
         relative = PurePosixPath(*parts[2:])
-        if ".." in relative.parts or relative in files:
+        if relative in files or any(not LICENSE_PATH_PART.fullmatch(part) for part in relative.parts):
             raise ValueError(f"{installed.name} has an invalid installed license path")
         files[relative] = Path(entry.locate())
 

@@ -271,6 +271,29 @@ def test_candidate_still_requires_third_party_notices(module):
         module.payload_inventory(tar_bytes(payload_rows(module, "1.0.24")), "1.0.27")
 
 
+@pytest.mark.parametrize(("version", "component", "kind", "mode", "accepted"), [
+    ("1.0.28", "cpython", tarfile.REGTYPE, 0o644, True),
+    ("1.0.24", "cpython", tarfile.REGTYPE, 0o644, False),
+    ("1.0.28", "unknown", tarfile.REGTYPE, 0o644, False),
+    ("1.0.28", "cpython", tarfile.REGTYPE, 0o755, False),
+    ("1.0.28", "cpython", tarfile.SYMTYPE, 0o644, False),
+])
+def test_package_license_paths_preserve_stock_payload_restrictions(module, version, component, kind, mode, accepted):
+    root = "usr/share/doc/remote-ops-workspace/licenses"
+    license_file = f"{root}/{component}/LICENSE.txt"
+    rows = payload_rows(module, version) + [
+        (root, b"", tarfile.DIRTYPE, 0o755, 0),
+        (f"{root}/{component}", b"", tarfile.DIRTYPE, 0o755, 0),
+        (license_file, b"license fixture", kind, mode, 0),
+    ]
+    if accepted:
+        payload = module.payload_inventory(tar_bytes(rows), version)
+        assert license_file in {row[0] for row in payload.files}
+    else:
+        with pytest.raises(module.EvidenceError):
+            module.payload_inventory(tar_bytes(rows), version)
+
+
 @pytest.mark.parametrize("version", ["1.0.23", "1.0.024", "1.0.24\n"])
 def test_compatibility_is_only_for_exact_reviewed_previous_version(module, version):
     with pytest.raises(module.EvidenceError):

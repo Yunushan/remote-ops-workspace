@@ -41,6 +41,7 @@ from scripts.managed_linux_update import (  # noqa: E402
     verify_bytes,
 )
 from scripts.managed_linux_update import snapshot_deb as snapshot_installer  # noqa: E402
+from scripts.stage_linux_runtime_licenses import is_runtime_license_member  # noqa: E402
 
 RPM = "/usr/bin/rpm"
 ARCH = "x86_64"
@@ -91,11 +92,14 @@ def rpm_header(*selection: str) -> Header:
         if name == LAUNCHER.as_posix():
             require(mode == "-rwxr-xr-x" and SHA256.fullmatch(checksum), "rpm-payload-refused")
             launcher_digest = checksum
-        elif path == DOCS:
+        elif path == DOCS or (mode.startswith("d") and is_runtime_license_member(path, directory=True)):
             require(mode == "drwxr-xr-x" and checksum in ("", "(none)"), "rpm-payload-refused")
         else:
-            require(path.parent == DOCS and mode == "-rw-r--r--" and SHA256.fullmatch(checksum),
-                    "rpm-payload-refused")
+            require(
+                (path.parent == DOCS or is_runtime_license_member(path))
+                and mode == "-rw-r--r--" and SHA256.fullmatch(checksum),
+                "rpm-payload-refused",
+            )
     require(launcher_digest is not None, "rpm-launcher-missing")
     return Header(version, digest, launcher_digest)
 

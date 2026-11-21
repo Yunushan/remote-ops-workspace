@@ -39,6 +39,7 @@ from scripts.managed_debian_qualification import (  # noqa: E402
     REPORT_NAME,
     validate_receipt,
 )
+from scripts.stage_linux_runtime_licenses import is_runtime_license_member  # noqa: E402
 
 REPO = "Yunushan/remote-ops-workspace"
 PREVIOUS = "1.0.24"
@@ -47,6 +48,7 @@ PACKAGE = "remote-ops-workspace"
 SCHEMA = "row.linux-deb-upgrade-rollback.v1"
 MAX_FILE = 150 * 1024 * 1024
 MAX_PAYLOAD = 180 * 1024 * 1024
+MAX_PAYLOAD_MEMBERS = 64
 REPORT = Path("build/native-smoke/linux-x86_64/native-upgrade-rollback.json")
 MANAGED_REPORT = REPORT.with_name(REPORT_NAME)
 PINS = Path("configs/native_linux_previous_release_pins.json")
@@ -694,17 +696,29 @@ def expected_payload_files(version: str) -> tuple[str, ...]:
     return FILES
 
 
+def license_parent_directories(files: set[str]) -> set[str]:
+    return {
+        parent.as_posix()
+        for name in files
+        for parent in PurePosixPath(name).parents
+        if is_runtime_license_member(parent, directory=True)
+    }
+
+
 def payload_inventory(raw: bytes, version: str) -> Payload:
     expected_files = set(expected_payload_files(version))
     if len(raw) > MAX_PAYLOAD:
         raise EvidenceError("payload-archive-bound")
-    seen, rows, total = set(), [], 0
+    seen, directories, rows, total = set(), set(), [], 0
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as archive:
         for item in archive:
             name = member_name(item.name)
+            license_member = version != PREVIOUS and is_runtime_license_member(
+                PurePosixPath(name), directory=item.isdir(),
+            )
             if (
                 name in seen
-                or len(seen) >= 30
+                or len(seen) >= MAX_PAYLOAD_MEMBERS
                 or item.uid != 0
                 or item.gid != 0
                 or item.pax_headers
@@ -712,13 +726,14 @@ def payload_inventory(raw: bytes, version: str) -> Payload:
                 raise EvidenceError("duplicate-or-unexpected-package-member")
             seen.add(name)
             if item.isdir():
-                if name not in DIRECTORIES or item.size != 0 or item.mode != 0o755:
+                if (name not in DIRECTORIES and not license_member) or item.size != 0 or item.mode != 0o755:
                     raise EvidenceError("unexpected-package-directory")
+                directories.add(name)
                 continue
             expected_mode = 0o755 if name == "usr/bin/row" else 0o644
             bound = MAX_FILE if name == "usr/bin/row" else 4 * 1024 * 1024
             if (
-                name not in expected_files
+                (name not in expected_files and not license_member)
                 or item.type != tarfile.REGTYPE
                 or item.name.endswith("/")
                 or item.mode != expected_mode
@@ -734,7 +749,8 @@ def payload_inventory(raw: bytes, version: str) -> Payload:
             if size != item.size or total > MAX_PAYLOAD:
                 raise EvidenceError("package-expanded-payload-bound")
             rows.append((name, size, value.hexdigest(), expected_mode))
-    if {row[0] for row in rows} != expected_files or not DIRECTORIES.issubset(seen):
+    files = {row[0] for row in rows}
+    if not expected_files <= files or directories != DIRECTORIES | license_parent_directories(files):
         raise EvidenceError("package-payload-files-incomplete")
     return Payload(version, tuple(sorted(rows)))
 
@@ -763,7 +779,11 @@ def installed_identity(commands: Commands, payload: Payload) -> None:
 
 
 def verify_payload_files(root: Path, payload: Payload) -> None:
-    if {row[0] for row in payload.files} != set(expected_payload_files(payload.version)):
+    files = {row[0] for row in payload.files}
+    expected = set(expected_payload_files(payload.version))
+    if not expected <= files or any(
+        payload.version == PREVIOUS or not is_runtime_license_member(PurePosixPath(name)) for name in files - expected
+    ):
         raise EvidenceError("package-payload-files-incomplete")
     for name, size, sha, mode in payload.files:
         path = root / name
@@ -775,9 +795,12 @@ def verify_payload_files(root: Path, payload: Payload) -> None:
         ):
             raise EvidenceError("owned-installed-payload-bytes-or-path-mismatch")
     docs = root / "usr/share/doc/remote-ops-workspace"
-    if {path.name for path in docs.iterdir()} != {
-        PurePosixPath(name).name for name, *_ in payload.files if name.startswith("usr/share/doc/")
-    }:
+    license_directories = license_parent_directories(files)
+    expected_docs = {name for name in files if name.startswith("usr/share/doc/")} | license_directories
+    if (
+        {path.relative_to(root).as_posix() for path in docs.rglob("*")} != expected_docs
+        or any(stat.S_IMODE((root / name).lstat().st_mode) != 0o755 for name in license_directories)
+    ):
         raise EvidenceError("owned-documentation-directory-changed")
 
 

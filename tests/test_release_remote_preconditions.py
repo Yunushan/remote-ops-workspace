@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import struct
+from base64 import b64encode
 from pathlib import Path
 from subprocess import CompletedProcess
 
@@ -18,6 +20,18 @@ SECOND_PAGE = f"{API_ROOT}{RELEASES_PATH}?per_page=100&page=2"
 RELEASE_TAG = "v1.2.3"
 RELEASE_SHA = "a" * 40
 BUNDLE_SHA = "b" * 64
+PROFESSIONAL_DEPLOYMENT_ID = "d36b9320-836e-42fe-82f3-e3868beebf43"
+PROFESSIONAL_ICON_TABLE = struct.pack("<HHHBBBBHHII", 0, 1, 1, 16, 16, 0, 0, 1, 32, 4, 22)
+PROFESSIONAL_ICON = b64encode(PROFESSIONAL_ICON_TABLE + b"icon").decode("ascii")
+PROFESSIONAL_VALUES = {
+    "ROW_PROFESSIONAL_BRAND": "fixture-value-not-for-output",
+    "ROW_PROFESSIONAL_ORGANIZATION": "Example organization",
+    "ROW_PROFESSIONAL_LOGO_BASE64": PROFESSIONAL_ICON[:12] + "\r\n" + PROFESSIONAL_ICON[12:],
+    "ROW_PROFESSIONAL_DEPLOYMENT_ID": f" {PROFESSIONAL_DEPLOYMENT_ID.upper()} ",
+    "RELEASE_PROFESSIONAL_UPDATE_URL": "https://updates.example.test:8443/releases/manifest.json",
+    "RELEASE_PROFESSIONAL_UPDATE_ORIGINS": "https://updates.example.test:8443 \n https://downloads.example.test",
+    "RELEASE_PROFESSIONAL_UPDATE_PUBLIC_KEY": "ed25519:" + b64encode(b"k" * 32).decode("ascii"),
+}
 
 
 def test_signing_inventory_matches_the_production_workflow() -> None:
@@ -57,6 +71,17 @@ def test_parity_configuration_matches_the_qualification_workflows() -> None:
     ("different-tag", "smartcard-evidence environment must allow v1.2.3 through a tag-only deployment policy"),
     ("wrong-variable", "ROW_PROFESSIONAL_BRAND in the release environment must have a nonempty value"),
     ("blank-variable", "RELEASE_PROFESSIONAL_UPDATE_PUBLIC_KEY in the professional-update-review environment must have a nonempty value"),
+    ("brand-control", "ROW_PROFESSIONAL_BRAND contains control characters"),
+    ("invalid-base64", "ROW_PROFESSIONAL_LOGO_BASE64 must encode an ICO"),
+    ("invalid-ico", "ROW_PROFESSIONAL_LOGO_BASE64 must encode an ICO"),
+    ("no-ico-image", "ROW_PROFESSIONAL_LOGO_BASE64 must encode an ICO"),
+    ("malformed-deployment", "ROW_PROFESSIONAL_DEPLOYMENT_ID must be a hyphenated GUID"),
+    ("noncanonical-deployment", "ROW_PROFESSIONAL_DEPLOYMENT_ID must be a hyphenated GUID"),
+    ("stock-deployment", "ROW_PROFESSIONAL_DEPLOYMENT_ID must differ from the stock installer IDs"),
+    ("invalid-origin", "RELEASE_PROFESSIONAL_UPDATE_ORIGINS: approved professional update origin"),
+    ("local-origin", "RELEASE_PROFESSIONAL_UPDATE_ORIGINS: published professional update channel"),
+    ("unapproved-url", "RELEASE_PROFESSIONAL_UPDATE_URL must be an HTTPS URL on an approved origin"),
+    ("invalid-key", "RELEASE_PROFESSIONAL_UPDATE_PUBLIC_KEY must encode a 32-byte ed25519 public key"),
 ])
 def test_parity_preflight_checks_review_holds_tag_rules_and_professional_variables(monkeypatch, capsys, change, error):
     monkeypatch.setenv("GITHUB_API_URL", API_ROOT)
@@ -64,6 +89,24 @@ def test_parity_preflight_checks_review_holds_tag_rules_and_professional_variabl
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     calls = []
     prefix = f"{REPOSITORY_URL}/environments/"
+    changes = {
+        "blank-variable": ("RELEASE_PROFESSIONAL_UPDATE_PUBLIC_KEY", " \t"),
+        "brand-control": ("ROW_PROFESSIONAL_BRAND", "fixture-value-not-for-output\x01"),
+        "invalid-base64": ("ROW_PROFESSIONAL_LOGO_BASE64", "fixture-value-not-for-output"),
+        "invalid-ico": ("ROW_PROFESSIONAL_LOGO_BASE64", "bm90LWFuLWljbw=="),
+        "no-ico-image": ("ROW_PROFESSIONAL_LOGO_BASE64", b64encode(PROFESSIONAL_ICON_TABLE).decode("ascii")),
+        "malformed-deployment": ("ROW_PROFESSIONAL_DEPLOYMENT_ID", "fixture-value-not-for-output"),
+        "noncanonical-deployment": ("ROW_PROFESSIONAL_DEPLOYMENT_ID", f"{{{PROFESSIONAL_DEPLOYMENT_ID}}}"),
+        "stock-deployment": ("ROW_PROFESSIONAL_DEPLOYMENT_ID", "5C887096-F4E5-4AB8-8D6F-65052D08D284"),
+        "invalid-origin": ("RELEASE_PROFESSIONAL_UPDATE_ORIGINS", "https://updates.example.test/path"),
+        "local-origin": ("RELEASE_PROFESSIONAL_UPDATE_ORIGINS", "https://127.0.0.1"),
+        "unapproved-url": ("RELEASE_PROFESSIONAL_UPDATE_URL", "https://fixture-value-not-for-output.test/manifest.json"),
+        "invalid-key": ("RELEASE_PROFESSIONAL_UPDATE_PUBLIC_KEY", "ed25519:aw=="),
+    }
+    variables = dict(PROFESSIONAL_VALUES)
+    if change in changes:
+        name, value = changes[change]
+        variables[name] = value
 
     def get_json(url, token, *, api_version):
         assert url.startswith(prefix) and api_version == "2026-03-10"
@@ -79,11 +122,9 @@ def test_parity_preflight_checks_review_holds_tag_rules_and_professional_variabl
         if resource.startswith("variables/"):
             name = resource.removeprefix("variables/")
             assert name in preconditions.PROFESSIONAL_ENVIRONMENT_VARIABLES[environment]
+            value = variables[name]
             if change == "wrong-variable" and name == "ROW_PROFESSIONAL_BRAND":
                 name = "OTHER_VAR"
-            value = "fixture-value-not-for-output"
-            if change == "blank-variable" and name == "RELEASE_PROFESSIONAL_UPDATE_PUBLIC_KEY":
-                value = " \t"
             return {"name": name, "value": value}, {}
 
         assert resource == ""

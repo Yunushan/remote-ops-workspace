@@ -17,6 +17,9 @@ from typing import Any
 from urllib.parse import parse_qs, urljoin, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 REPOSITORY_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 TAG_RE = re.compile(r"v\d+\.\d+\.\d+")
 PRODUCTION_BRANCH = "main"
@@ -424,10 +427,17 @@ def require_parity_environment_readiness(
     api_root: str, repository: str, tag: str, token: str | None, *, variable_token: str,
 ) -> None:
     require_parity_deployments(api_root, repository, tag, token)
+    variables = {}
     for environment, names in PROFESSIONAL_ENVIRONMENT_VARIABLES.items():
         for name in names:
-            if read_environment_variable(api_root, repository, environment, name, variable_token) is None:
+            value = read_environment_variable(api_root, repository, environment, name, variable_token)
+            if value is None:
                 raise RuntimeError(f"{name} in the {environment} environment must have a nonempty value")
+            variables[name] = value
+
+    from scripts.check_moba_professional_deployment_evidence import validate_professional_variables
+
+    validate_professional_variables(variables)
 
 
 def require_parity_deployments(api_root: str, repository: str, tag: str, token: str | None) -> None:

@@ -7,6 +7,8 @@ import json
 import struct
 import sys
 import time
+from base64 import b64decode
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -20,8 +22,10 @@ for location in (ROOT, SRC):
         sys.path.insert(0, str(location))
 
 from remote_ops_workspace import update_channel  # noqa: E402
+from remote_ops_workspace.command_safety import clean_text  # noqa: E402
 from remote_ops_workspace.moba_customizer import (  # noqa: E402
     MobaProfessionalDeploymentEvidenceValidation,
+    _validate_update_public_key,
     build_installer_branding_plan,
     validate_professional_deployment_evidence,
 )
@@ -38,6 +42,7 @@ from scripts.check_release_license_compliance import (  # noqa: E402
 
 INSTALLER_CAPTURE_SCHEMA = "row.moba-professional.windows-installers.v1"
 POLICY_CAPTURE_SCHEMA = "row.moba-professional.policy-surfaces.v1"
+MAX_ATTACHMENT_BYTES = 1024 * 1024
 STOCK_INSTALLER_IDS = {
     "00000000-0000-0000-0000-000000000000",
     "5C887096-F4E5-4AB8-8D6F-65052D08D284",
@@ -47,8 +52,8 @@ STOCK_INSTALLER_IDS = {
 
 def read_small(path: Path, label: str) -> bytes:
     with path.open("rb") as stream:
-        data = stream.read(1024 * 1024 + 1)
-    if len(data) > 1024 * 1024:
+        data = stream.read(MAX_ATTACHMENT_BYTES + 1)
+    if len(data) > MAX_ATTACHMENT_BYTES:
         raise ValueError(f"{label} exceeds 1 MiB")
     return data
 
@@ -142,7 +147,7 @@ def verify_installer_payloads(
     return digests
 
 
-def verify_exe_icon(ico: bytes, resource: bytes) -> None:
+def ico_image_payloads(ico: bytes) -> Iterator[bytes]:
     if len(ico) < 6 or ico[:4] != b"\0\0\1\0":
         raise ValueError("reviewed branding logo must be an ICO file")
     images = struct.unpack_from("<H", ico, 4)[0]
@@ -151,9 +156,13 @@ def verify_exe_icon(ico: bytes, resource: bytes) -> None:
         raise ValueError("reviewed ICO image table is invalid")
     for entry in range(6, table_end, 16):
         size, start = struct.unpack_from("<II", ico, entry + 8)
-        if size and start >= table_end and start + size <= len(ico) and resource == ico[start:start + size]:
-            return
-    raise ValueError("extracted EXE icon resource must match the branding logo")
+        if size and start >= table_end and start + size <= len(ico):
+            yield ico[start:start + size]
+
+
+def verify_exe_icon(ico: bytes, resource: bytes) -> None:
+    if resource not in ico_image_payloads(ico):
+        raise ValueError("extracted EXE icon resource must match the branding logo")
 
 
 def verify_windows_capture(
@@ -394,6 +403,44 @@ def approved_update_origins(origins: list[str], *, published: bool) -> set[str]:
             raise ValueError("published professional update channel requires a hosted HTTPS origin")
         approved.add(origin)
     return approved
+
+
+def validate_professional_variables(variables: Mapping[str, str]) -> None:
+    """Check protected Professional inputs before the tagged builds consume them."""
+    for name in ("ROW_PROFESSIONAL_BRAND", "ROW_PROFESSIONAL_ORGANIZATION"):
+        clean_text(variables[name], name)
+
+    try:
+        # Convert.FromBase64String in the Windows build accepts these spaces.
+        encoded_logo = variables["ROW_PROFESSIONAL_LOGO_BASE64"].translate(str.maketrans("", "", " \t\r\n"))
+        logo = b64decode(encoded_logo, validate=True)
+        if len(logo) > MAX_ATTACHMENT_BYTES or next(ico_image_payloads(logo), None) is None:
+            raise ValueError("invalid ICO payload")
+    except ValueError as exc:
+        raise ValueError("ROW_PROFESSIONAL_LOGO_BASE64 must encode an ICO with an image and fit within 1 MiB") from exc
+
+    deployment = variables["ROW_PROFESSIONAL_DEPLOYMENT_ID"].strip()
+    try:
+        identifier = str(UUID(deployment))
+    except ValueError as exc:
+        raise ValueError("ROW_PROFESSIONAL_DEPLOYMENT_ID must be a hyphenated GUID") from exc
+    if identifier != deployment.lower():
+        raise ValueError("ROW_PROFESSIONAL_DEPLOYMENT_ID must be a hyphenated GUID")
+    if identifier.upper() in STOCK_INSTALLER_IDS:
+        raise ValueError("ROW_PROFESSIONAL_DEPLOYMENT_ID must differ from the stock installer IDs")
+
+    try:
+        origins = approved_update_origins(variables["RELEASE_PROFESSIONAL_UPDATE_ORIGINS"].split(), published=True)
+    except ValueError as exc:
+        raise ValueError(f"RELEASE_PROFESSIONAL_UPDATE_ORIGINS: {exc}") from exc
+    try:
+        update_channel._approved_url(variables["RELEASE_PROFESSIONAL_UPDATE_URL"], {"allowed_origins": origins})
+    except ValueError as exc:
+        raise ValueError("RELEASE_PROFESSIONAL_UPDATE_URL must be an HTTPS URL on an approved origin") from exc
+    try:
+        _validate_update_public_key(variables["RELEASE_PROFESSIONAL_UPDATE_PUBLIC_KEY"])
+    except ValueError as exc:
+        raise ValueError("RELEASE_PROFESSIONAL_UPDATE_PUBLIC_KEY must encode a 32-byte ed25519 public key") from exc
 
 
 def reviewed_delivery_object(root: Path, name: Any, digest: Any, label: str) -> tuple[dict[str, Any], int]:

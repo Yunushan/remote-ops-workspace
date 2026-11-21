@@ -355,8 +355,10 @@ python scripts/check_release_remote_preconditions.py parity --deployment-only \
 ```
 
 Run the full parity check with an Environments read token after setting the
-Professional branding and update variables. The qualification jobs verify the
-actual variable inputs and hosted installer bytes after the tag is created.
+Professional branding and update variables. This checks the branding text and
+ICO structure, the deployment GUID, the Ed25519 public key, and whether the
+update URL uses an approved HTTPS origin. The qualification jobs retrieve and
+verify the signed update and hosted installer bytes after the tag is created.
 
 ```bash
 python scripts/check_release_remote_preconditions.py parity \

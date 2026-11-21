@@ -32,6 +32,8 @@ import tarfile
 import tempfile
 import urllib.request
 import zipfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from importlib import metadata
 from pathlib import Path, PurePosixPath
 from typing import Any, NamedTuple
@@ -577,7 +579,7 @@ def rpm_embedded_file(archive: Path, wanted: str) -> EmbeddedFile | None:
     return cpio_embedded_file(rpm_cpio_payload(archive), archive, wanted)
 
 
-def pkg_embedded_file(archive: Path, wanted: str) -> EmbeddedFile | None:
+def pkg_cpio_payload(archive: Path) -> bytes:
     """Read the single component payload in a macOS installer."""
     try:
         listing = subprocess.run(
@@ -615,17 +617,20 @@ def pkg_embedded_file(archive: Path, wanted: str) -> EmbeddedFile | None:
             + (f": {detail}" if detail else "")
         )
     try:
-        payload = gzip.decompress(result.stdout)
+        return gzip.decompress(result.stdout)
     except (OSError, EOFError) as exc:
         raise ValueError(f"cannot decompress {archive.name} CPIO payload: {exc}") from exc
-    return cpio_embedded_file(payload, archive, wanted)
+def pkg_embedded_file(archive: Path, wanted: str) -> EmbeddedFile | None:
+    return cpio_embedded_file(pkg_cpio_payload(archive), archive, wanted)
 
 
-def dmg_embedded_file(archive: Path, wanted: str) -> EmbeddedFile | None:
-    """Read a regular DMG member without extracting unrelated app symlinks."""
+def seven_zip_members(archive: Path, *, archive_format: str | None = None) -> list[dict[str, str]]:
+    command = ["7z", "l", "-slt", "-ba"]
+    if archive_format is not None:
+        command.append(f"-t{archive_format}")
     try:
         listing = subprocess.run(
-            ["7z", "l", "-slt", "-ba", str(archive)],
+            [*command, str(archive)],
             capture_output=True, text=True, timeout=300, check=False,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
@@ -642,8 +647,13 @@ def dmg_embedded_file(archive: Path, wanted: str) -> EmbeddedFile | None:
         elif " = " in line:
             key, value = line.split(" = ", 1)
             record[key] = value
+    return records
+
+
+def dmg_embedded_file(archive: Path, wanted: str) -> EmbeddedFile | None:
+    """Read a regular DMG member without extracting unrelated app symlinks."""
     matches = [
-        record["Path"] for record in records
+        record["Path"] for record in seven_zip_members(archive)
         if "Path" in record and PurePosixPath(record["Path"]).name == wanted
         and record.get("Mode", "").startswith("-") and not record.get("Symbolic Link")
     ]
@@ -653,16 +663,23 @@ def dmg_embedded_file(archive: Path, wanted: str) -> EmbeddedFile | None:
     member_path = PurePosixPath(member)
     if member_path.is_absolute() or ".." in member_path.parts or member.startswith("-"):
         raise ValueError(f"unsafe DMG member path in {archive.name}")
+    return EmbeddedFile(member_path.as_posix(), seven_zip_read(archive, member))
+
+
+def seven_zip_read(archive: Path, member: str, *, archive_format: str | None = None) -> bytes:
+    command = ["7z", "x", "-so", "-spd"]
+    if archive_format is not None:
+        command.append(f"-t{archive_format}")
     try:
         result = subprocess.run(
-            ["7z", "x", "-so", "-spd", str(archive), member],
+            [*command, str(archive), member],
             capture_output=True, timeout=300, check=False,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-        raise ValueError(f"cannot read {wanted} from {archive.name}: {exc}") from exc
+        raise ValueError(f"cannot read {member} from {archive.name}: {exc}") from exc
     if result.returncode != 0:
-        raise ValueError(f"cannot read {wanted} from {archive.name} (exit {result.returncode})")
-    return EmbeddedFile(member_path.as_posix(), result.stdout)
+        raise ValueError(f"cannot read {member} from {archive.name} (exit {result.returncode})")
+    return result.stdout
 
 
 def extracted_file(destination: Path, wanted: str) -> EmbeddedFile | None:
@@ -677,8 +694,8 @@ def extracted_file(destination: Path, wanted: str) -> EmbeddedFile | None:
     return EmbeddedFile(matches[0].relative_to(destination).as_posix(), matches[0].read_bytes())
 
 
-def windows_installer_file(archive: Path, wanted: str) -> EmbeddedFile | None:
-    """Decode Inno Setup and MSI installed files with their format readers."""
+@contextmanager
+def windows_installer_payload(archive: Path, include: str) -> Iterator[Path]:
     with tempfile.TemporaryDirectory(prefix="row-license-extract-") as temp:
         destination = Path(temp)
         if archive.suffix.lower() == ".msi":
@@ -686,7 +703,7 @@ def windows_installer_file(archive: Path, wanted: str) -> EmbeddedFile | None:
         else:
             command = [
                 "innoextract", "--silent", "--extract", "--test", "--no-extract-unknown",
-                "--include", wanted, "--output-dir", str(destination), str(archive),
+                "--include", include, "--output-dir", str(destination), str(archive),
             ]
         try:
             result = subprocess.run(
@@ -700,6 +717,12 @@ def windows_installer_file(archive: Path, wanted: str) -> EmbeddedFile | None:
                 f"cannot extract {archive.name} with {command[0]} (exit {result.returncode})"
                 + (f": {detail}" if detail else "")
             )
+        yield destination
+
+
+def windows_installer_file(archive: Path, wanted: str) -> EmbeddedFile | None:
+    """Decode Inno Setup and MSI installed files with their format readers."""
+    with windows_installer_payload(archive, wanted) as destination:
         return extracted_file(destination, wanted)
 
 

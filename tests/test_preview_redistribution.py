@@ -27,6 +27,16 @@ def checker():
     return module
 
 
+def runtime_license_fixture(profile: str) -> dict[str, bytes]:
+    from scripts.stage_runtime_licenses import LICENSE_PROFILES
+
+    paths = {"cpython/LICENSE.txt", "pyinstaller/COPYING.txt"}
+    paths.update(f"{component}/LICENSE" for component in LICENSE_PROFILES[profile] if component != "pyinstaller")
+    if "cryptography" in LICENSE_PROFILES[profile]:
+        paths |= {"cryptography/LICENSE.APACHE", "cryptography/LICENSE.BSD"}
+    return {path: path.encode() for path in sorted(paths)}
+
+
 def test_native_package_inventory_matches_real_release_matrix() -> None:
     module = checker()
     names = module.expected_native_assets("v1.0.27")
@@ -65,10 +75,14 @@ def test_production_notices_cover_protected_linux_and_require_exact_bytes(
     monkeypatch.setattr(notices, "expected_production_packages", lambda _tag: {package.name, gui_package.name})
     with zipfile.ZipFile(package, "w") as archive:
         archive.write(material, "docs/THIRD_PARTY_NOTICES.md")
+        for path, data in runtime_license_fixture("windows-x86").items():
+            archive.writestr(f"docs/licenses/runtime/{path}", data)
     with zipfile.ZipFile(gui_package, "w") as archive:
         archive.write(material, "docs/THIRD_PARTY_NOTICES.md")
         for name in ("PyQt6-GPL-3.0.txt", "Qt-LGPL-3.0.txt", "Qt-Relinking.md"):
             archive.write(material_dir / name, f"docs/licenses/{name}")
+        for path, data in runtime_license_fixture("desktop").items():
+            archive.writestr(f"docs/licenses/runtime/{path}", data)
 
     assert notices.verify_notices(assets, tag) == 2
     assert not list(bundle.iterdir())
@@ -77,12 +91,12 @@ def test_production_notices_cover_protected_linux_and_require_exact_bytes(
     capture = json.loads((output / "notice-extraction.json").read_bytes())
     assert capture["release_tag"] == tag
     assert set(capture["packages"]) == {package.name, gui_package.name}
-    assert len(list((output / "files").iterdir())) == 4
+    assert len(list((output / "files").iterdir())) == 18
     for artifact in (package, gui_package):
         found = capture["packages"][artifact.name]
         assert found["sha256"] == hashlib.sha256(artifact.read_bytes()).hexdigest()
         assert found["size_bytes"] == artifact.stat().st_size
-        assert len(found["notice_files"]) == (1 if artifact == package else 4)
+        assert len(found["notice_files"]) == (3 if artifact == package else 18)
         with zipfile.ZipFile(artifact) as archive:
             for record in found["notice_files"]:
                 packaged = archive.read(record["path"])
@@ -116,15 +130,17 @@ def test_notice_capture_refuses_package_changed_after_extraction(
     material = ROOT / "redistribution-evidence" / "THIRD_PARTY_NOTICES.md"
     with zipfile.ZipFile(package, "w") as archive:
         archive.write(material, "docs/THIRD_PARTY_NOTICES.md")
+        for path, data in runtime_license_fixture("windows-x86").items():
+            archive.writestr(f"docs/licenses/runtime/{path}", data)
     monkeypatch.setattr(notices, "expected_production_packages", lambda _tag: {package.name})
-    inspect = notices.check_packaged_legal_material
+    inspect = notices.read_desktop_runtime_licenses
 
-    def replace_after_inspection(artifact, expected):
-        verified = inspect(artifact, expected)
+    def replace_after_inspection(artifact, target):
+        verified = inspect(artifact, target)
         artifact.write_bytes(b"replacement bytes")
         return verified
 
-    monkeypatch.setattr(notices, "check_packaged_legal_material", replace_after_inspection)
+    monkeypatch.setattr(notices, "read_desktop_runtime_licenses", replace_after_inspection)
     with pytest.raises(ValueError, match="changed during notice extraction"):
         notices.verify_notices(assets, tag, evidence_root=bundle)
     assert not list(bundle.iterdir())
@@ -181,6 +197,51 @@ def test_production_captures_runtime_licenses_by_installed_path(
         if record["path"].startswith(LICENSE_ROOT.as_posix() + "/")
     }
     assert records == contents
+
+
+@pytest.mark.parametrize("suffix", [".dmg", ".pkg"])
+@pytest.mark.parametrize("fault", ["", "wrong-root", "linked-member"])
+def test_macos_runtime_licenses_require_regular_members_at_the_installed_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: str, fault: str,
+) -> None:
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    import packaged_desktop_licenses as desktop
+
+    package = tmp_path / f"remote-ops-workspace-v2.3.4-macos-x64{suffix}"
+    package.write_bytes(b"fixture")
+    runtime_root = desktop.PKG_LICENSE_ROOT if suffix == ".pkg" else desktop.DMG_LICENSE_ROOT
+    member_root = Path("unrelated") / runtime_root if fault == "wrong-root" else runtime_root
+    member_prefix = "./" if suffix == ".pkg" else ""
+    contents = {
+        f"{member_prefix}{member_root.as_posix()}/{path}": data
+        for path, data in runtime_license_fixture("desktop").items()
+    }
+    members = [
+        {"Path": name, "Mode": "-rw-r--r--", "Size": str(len(data)), "Links": "1"}
+        for name, data in contents.items()
+    ]
+    if fault == "linked-member":
+        members[0]["Links"] = "2"
+
+    def list_members(archive, *, archive_format):
+        if suffix == ".pkg":
+            assert archive.read_bytes() == b"CPIO fixture" and archive_format == "Cpio"
+        else:
+            assert archive == package and archive_format is None
+        return members
+
+    monkeypatch.setattr(desktop, "pkg_cpio_payload", lambda _package: b"CPIO fixture")
+    monkeypatch.setattr(desktop, "seven_zip_members", list_members)
+    monkeypatch.setattr(desktop, "seven_zip_read", lambda _archive, name, **_kwargs: contents[name])
+    if fault:
+        with pytest.raises(ValueError, match="runtime license"):
+            desktop.read_desktop_runtime_licenses(package, "macos-x64")
+        return
+
+    result = desktop.read_desktop_runtime_licenses(package, "macos-x64")
+    assert {member.path: member.data for member in result} == {
+        name.removeprefix("./"): data for name, data in contents.items()
+    }
 
 
 def test_missing_evidence_fails_before_native_publication(tmp_path: Path) -> None:

@@ -27,6 +27,7 @@ from check_preview_redistribution import (
     regular_child,
 )
 from check_release_license_compliance import path_is_reparse, safe_relative_path
+from packaged_desktop_licenses import read_desktop_runtime_licenses
 from packaged_linux_licenses import read_runtime_licenses
 
 PROTECTED_LINUX_PACKAGE = re.compile(
@@ -118,6 +119,10 @@ def verify_notices(assets_dir: Path, tag: str, *, evidence_root: Path | None = N
         embedded = check_packaged_legal_material(package, gui if GUI_TARGET.search(name) else notices)
         if "-linux-" in name:
             embedded.extend(read_runtime_licenses(package))
+        else:
+            target = NATIVE_PACKAGE.fullmatch(name)
+            assert target is not None
+            embedded.extend(read_desktop_runtime_licenses(package, target[2]))
         if capture is not None:
             if file_hash(package) != package_sha:
                 raise ValueError(f"{name} changed during notice extraction")

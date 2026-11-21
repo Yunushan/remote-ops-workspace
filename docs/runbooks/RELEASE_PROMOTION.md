@@ -136,8 +136,11 @@ Windows packages ship their frozen runtime license files under
 with the build staging files after portable extraction, EXE installation and
 upgrade, and MSI installation and reinstall. The macOS packages ship the
 files inside the signed app at `Contents/Resources/licenses/runtime/`, where
-the installed app bundle checks cover them. The Windows x86 profile ships
-the CPython and PyInstaller licenses for its CLI package.
+the installed app bundle checks cover them. The release notice checker
+requires these files in the finished Windows and macOS packages and captures
+their installed paths and original bytes alongside the general notices.
+The Windows x86 profile ships the CPython and PyInstaller licenses for its CLI
+package.
 
 The signed Windows x64, Windows ARM64, and macOS build jobs retain
 `gui-archive-proof.json` alongside the installed GUI smoke reports and

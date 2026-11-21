@@ -310,6 +310,64 @@ def test_config_inline_selection_and_store_conflicts(config_cells):
     assert grid.isHidden()
 
 
+def test_config_edit_key_during_popup_window_focus_restore(config_cells):
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+    from PyQt6.QtWidgets import QApplication, QWidget
+
+    window, grid, open_cell, finish = config_cells
+    other = QWidget()
+    try:
+        protocol = open_cell("Protocol")
+        protocol.showPopup()
+        QTest.keyClick(protocol.view(), Qt.Key.Key_Escape)
+        finish(protocol, cancel=True)
+        other.show()
+        other.activateWindow()
+        QApplication.processEvents()
+        assert QApplication.activeWindow() is other
+        row = grid.topLevelItem(0)
+        grid.setCurrentItem(row, 1)
+        grid.setFocus()
+        window.activateWindow()
+        QTest.keyClick(grid, Qt.Key.Key_Return)
+        editor = grid.indexWidget(grid.indexFromItem(row, 1))
+        assert editor is not None
+        finish(editor, "After popup")
+        assert window.store.get("After popup").host == "beta.example.invalid"
+    finally:
+        other.close()
+
+
+def test_config_keypad_edit_preserves_active_input_method(config_cells):
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QInputMethodEvent
+    from PyQt6.QtTest import QTest
+    from PyQt6.QtWidgets import QApplication
+
+    window, grid, _open_cell, finish = config_cells
+    row = grid.topLevelItem(4)
+    grid.setCurrentItem(row, 1)
+    grid.setFocus()
+    index = grid.currentIndex()
+    QTest.keyClick(grid, Qt.Key.Key_F2, Qt.KeyboardModifier.ShiftModifier)
+    assert grid.indexWidget(index) is None
+    QTest.keyClick(grid, Qt.Key.Key_Enter, Qt.KeyboardModifier.KeypadModifier)
+    editor = grid.indexWidget(index)
+    assert editor is not None
+    editor.selectAll()
+    QTest.keyClicks(editor, "user")
+    QApplication.sendEvent(editor, QInputMethodEvent("名", []))
+    QTest.keyClick(grid, Qt.Key.Key_F2)
+    assert grid.indexWidget(index) is editor
+    commit = QInputMethodEvent()
+    commit.setCommitString("名")
+    QApplication.sendEvent(editor, commit)
+    assert editor.text() == "user名"
+    finish(editor)
+    assert window.store.get("Beta", resolve=False).username == "user名"
+
+
 def test_reconnect_restarts_only_the_selected_open_document(workspace, tmp_path):
     from PyQt6.QtTest import QTest
 

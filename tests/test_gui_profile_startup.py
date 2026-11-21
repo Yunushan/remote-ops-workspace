@@ -137,7 +137,8 @@ def test_saved_group_navigation_and_search(clean_gui_window, preset, prefix) -> 
 def test_remmina_search_switches_between_folder_tree_and_flat_results(clean_gui_window, monkeypatch):
     from unittest.mock import Mock
 
-    from PyQt6.QtCore import Qt
+    from PyQt6.QtCore import QEvent, Qt
+    from PyQt6.QtGui import QKeyEvent
     from PyQt6.QtTest import QTest
 
     from remote_ops_workspace.models import Profile
@@ -180,15 +181,31 @@ def test_remmina_search_switches_between_folder_tree_and_flat_results(clean_gui_
     search.setText("Field")
     tree.setFocus()
     QTest.keyClick(tree, Qt.Key.Key_Up)
+    assert window.selected_profile_name() == "Night desk"
     QTest.keyClick(tree, Qt.Key.Key_Return)
     app.processEvents()
     assert opened == ["Night desk"]
+    QTest.keyClick(tree, Qt.Key.Key_Enter, Qt.KeyboardModifier.KeypadModifier)
+    assert opened == ["Night desk", "Night desk"]
+    app.sendEvent(tree, QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier, "", True))
+    assert opened == ["Night desk", "Night desk"]
     search.clear()
     assert window.selected_profile_name() == "Night desk"
     assert tree.currentItem().parent().text(0) == "Standby"
+    tree.setCurrentItem(tree.currentItem().parent())
+    QTest.keyClick(tree, Qt.Key.Key_Return)
+    assert opened == ["Night desk", "Night desk"]
+    tree.setCurrentItem(None)
+    QTest.keyClick(tree, Qt.Key.Key_Return)
+    assert opened == ["Night desk", "Night desk"]
     assert [item.text(0) for item in window.iter_profile_tree_items()] == [
         "Field", "Primary", "North database", "Standby", "Night desk", "Home", "Home desk",
     ]
+    window.set_design_preset("native")
+    window.select_profile("Night desk")
+    key = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier)
+    assert not window._remmina_open_keys.eventFilter(tree, key)
+    assert opened == ["Night desk", "Night desk"]
 
 
 def test_mremoteng_tree_shows_stored_names_and_routes_duplicate_imports(clean_gui_window, tmp_path, monkeypatch):

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from PyQt6.QtCore import QSize, Qt, QTimer
-from PyQt6.QtGui import QIcon, QShortcut
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -45,11 +45,25 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from PyQt6.QtCore import QAbstractItemModel, QLocale, QModelIndex
-    from PyQt6.QtGui import QPainter
+    from PyQt6.QtGui import QKeyEvent, QPainter
     from PyQt6.QtWidgets import QStatusBar, QStyleOptionViewItem, QTextEdit, QWidget
 
     from .gui_terminal import TerminalPane
     from .storage import ProfileStore
+
+
+class _ConfigPropertyGrid(QTreeWidget):
+    def keyPressEvent(self, event: QKeyEvent | None) -> None:  # noqa: N802
+        key = cast("QKeyEvent", event)
+        if (
+            key.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_F2)
+            and key.modifiers() in (Qt.KeyboardModifier.NoModifier, Qt.KeyboardModifier.KeypadModifier)
+            and self.state() != QAbstractItemView.State.EditingState
+        ):
+            self.editItem(self.currentItem(), 1)
+            key.accept()
+            return
+        super().keyPressEvent(event)
 
 
 class _ConfigValueDelegate(QStyledItemDelegate):
@@ -161,7 +175,7 @@ class MRemoteNgWorkspace:
         edit.clicked.connect(self.edit_selected_profile)
         heading.addWidget(edit)
         layout.addLayout(heading)
-        grid = QTreeWidget()
+        grid = _ConfigPropertyGrid()
         grid.setObjectName("mRemoteNgConnectionProperties")
         grid.setColumnCount(2)
         grid.setHeaderHidden(True)
@@ -196,10 +210,6 @@ class MRemoteNgWorkspace:
         grid.setItemDelegateForColumn(1, delegate)
         grid.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
 
-        edit_key = QShortcut(grid)
-        edit_key.setKeys([Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_F2])
-        edit_key.setContext(Qt.ShortcutContext.WidgetShortcut)
-        edit_key.activated.connect(lambda: grid.editItem(grid.currentItem(), 1))
         grid.itemClicked.connect(lambda row, column: grid.editItem(row, 1) if column == 1 else None)
         grid.setMaximumHeight(145)
         layout.addWidget(grid)

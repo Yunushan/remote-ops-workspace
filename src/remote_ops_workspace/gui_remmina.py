@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from PyQt6.QtCore import QBuffer, QByteArray, QIODevice, QSize, Qt
-from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, QObject, QSize, Qt
+from PyQt6.QtGui import QIcon, QKeyEvent
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -36,7 +36,29 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from PyQt6.QtGui import QPainter
-    from PyQt6.QtWidgets import QStatusBar, QTabWidget, QTextEdit
+    from PyQt6.QtWidgets import QStatusBar, QTabWidget, QTextEdit, QTreeWidget
+
+
+class _RemminaProfileOpenKeys(QObject):
+    def __init__(self, tree: QTreeWidget, current_design: Callable[[], str]) -> None:
+        super().__init__(tree)
+        self.current_design = current_design
+
+    def eventFilter(self, watched: QObject | None, event: QEvent | None) -> bool:  # noqa: N802
+        if (
+            isinstance(event, QKeyEvent) and event.type() == QEvent.Type.KeyPress
+            and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+            and event.modifiers() in (Qt.KeyboardModifier.NoModifier, Qt.KeyboardModifier.KeypadModifier)
+            and self.current_design() == "remmina"
+        ):
+            tree = cast("QTreeWidget", watched)
+            item = tree.currentItem()
+            if item is not None and item.data(0, Qt.ItemDataRole.UserRole):
+                # Qt maps Return to editing on macOS. Dispatch once through the same row activation as a double click.
+                if not event.isAutoRepeat():
+                    tree.itemActivated.emit(item, 0)
+                return True
+        return False
 
 
 class RemminaWorkspace:
@@ -44,8 +66,10 @@ class RemminaWorkspace:
 
     if TYPE_CHECKING:
         log: QTextEdit
+        profile_list: QTreeWidget
         tabs: QTabWidget
 
+        def current_design_id(self) -> str: ...
         def filter_remmina_profile_rows(self, text: str) -> None: ...
         def filter_profile_tree(self, text: str) -> None: ...
         def generated_icon(
@@ -818,6 +842,8 @@ class RemminaWorkspace:
 
         if not cast(QWidget, self).property("guiPreviewSamples"):
             filter_input.textChanged.connect(self.filter_profile_tree)
+            self._remmina_open_keys = _RemminaProfileOpenKeys(self.profile_list, self.current_design_id)
+            self.profile_list.installEventFilter(self._remmina_open_keys)
             return panel
         filter_input.textChanged.connect(self.filter_remmina_profile_rows)
 

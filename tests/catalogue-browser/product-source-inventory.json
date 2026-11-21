@@ -183,8 +183,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_mremoteng.py",
-      "sha256": "c48b06eac57cf8128686a268c2b1a684d36305b7e3f338e46d1ccb5958880d42",
-      "size": 46820
+      "sha256": "abfd0ed82383001cbd240433b1c55d7b2407299d8c898d518e2bb1b71d483b6d",
+      "size": 47132
     },
     {
       "path": "src/remote_ops_workspace/gui_operator_workflows.py",
@@ -253,8 +253,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_remmina.py",
-      "sha256": "c2cb261a47078c8d0a7c4e9dfeb81601e19bba8835c8e47936882172e4153122",
-      "size": 55616
+      "sha256": "6e3098e8abf64a156d6c821b9ca3ef7a1b369de7b5d4ae80da1032058dea37e2",
+      "size": 56979
     },
     {
       "path": "src/remote_ops_workspace/gui_remote_monitoring.py",

@@ -380,7 +380,9 @@ To qualify a sealed candidate before publication, supply the corresponding
 the successful release build's summary. Both versions can use sealed
 candidates. The workflow resolves each live tag, verifies the inventory
 attestation for its exact build attempt, and compares the Windows x64 MSI
-with that inventory under the retained file handle. All packages must pass
+with that inventory under the retained file handle. For schema 13, it also
+verifies the owning archive's manifest and checksum sidecar before handing
+the MSI to the drill. All packages must pass
 Authenticode and timestamp checks. At each installed checkpoint, the drill
 holds the launcher against write and delete access and matches it to the
 corresponding MSI's cabinet before running the CLI. Use an MSI predecessor

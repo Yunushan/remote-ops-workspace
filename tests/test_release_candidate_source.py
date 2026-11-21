@@ -52,6 +52,9 @@ def test_candidate_pointer_requires_exact_coordinates(bad):
 @pytest.mark.parametrize(("kind", "owner", "filename"), ASSETS)
 @pytest.mark.parametrize(("defect", "message", "download_count"), [
     ("valid", "", 2),
+    ("current-valid", "", 2),
+    ("current-stale-manifest", "size or digest differs from extracted archive file", 2),
+    ("current-foreign-checksum", "foreign, repeated or mismatched checksum", 2),
     ("moved-tag", "live release tag", 0),
     ("failed-run", "completed successfully", 0),
     ("rerun", "run_attempt must be", 0),
@@ -68,13 +71,49 @@ def test_candidate_pointer_requires_exact_coordinates(bad):
 def test_resolves_only_asset_from_exact_attested_build(
     tmp_path, monkeypatch, kind, owner, filename, defect, message, download_count,
 ):
+    current = defect.startswith("current-")
+    archive_files = core.expected_candidate_archive_files(TAG) if current else {}
     payloads = {filename: b"asset fixture", "manifest.json": b"manifest fixture"}
+    if current:
+        manifest, = (name for name in archive_files[owner] if name.endswith("-manifest.json"))
+        checksum, = (name for name in archive_files[owner] if name.endswith("-SHA256SUMS.txt"))
+        payloads = {
+            name: b"asset fixture" if name == filename else name.encode()
+            for name in sorted(archive_files[owner] - {manifest, checksum})
+        }
+        entries = [
+            {
+                "file": name, "size_bytes": len(body),
+                "sha256": "a" * 64 if defect == "current-stale-manifest" and name == filename else sha256(body),
+            }
+            for name, body in payloads.items()
+        ]
+        payloads[manifest] = json.dumps({"artifacts": entries} if kind == "wheel" else entries).encode()
+        payloads[checksum] = "".join(
+            f"{sha256(body)}  "
+            f"{'foreign-release-material.txt' if defect == 'current-foreign-checksum' and name == filename else name}\n"
+            for name, body in payloads.items()
+        ).encode()
+
+        def validate_current_scope(document, **coordinates):
+            # The managed Debian and installer smoke receipts have separate fixtures.
+            assert document["schema_version"] == core.ARCHIVE_FILE_SCOPE_SCHEMA_VERSION
+            records = core.validate_inventory({**document, "schema_version": core.LEGACY_SCHEMA_VERSION}, **coordinates)
+            core.require_candidate_archive_files(records, archive_files)
+            return records
+
+        monkeypatch.setattr(source, "validate_inventory", validate_current_scope)
     if defect == "missing-file":
         payloads.pop(filename)
     archives = {}
     records = []
     for artifact_id, label in enumerate(sorted(core.EXPECTED_ARTIFACT_NAMES), 200):
-        contents = payloads if label == owner else {"other.txt": b"other platform bytes"}
+        if label == owner:
+            contents = payloads
+        elif current:
+            contents = {name: name.encode() for name in sorted(archive_files[label])}
+        else:
+            contents = {"other.txt": b"other platform bytes"}
         archive = zip_bytes(contents)
         archives[artifact_id] = archive
         records.append({
@@ -87,7 +126,8 @@ def test_resolves_only_asset_from_exact_attested_build(
     if defect == "payload-entry-mismatch":
         next(entry for entry in selected["files"] if entry["path"] == filename)["sha256"] = "a" * 64
     inventory = {
-        "schema_version": core.LEGACY_SCHEMA_VERSION, "repository": REPO,
+        "schema_version": core.ARCHIVE_FILE_SCOPE_SCHEMA_VERSION if current else core.LEGACY_SCHEMA_VERSION,
+        "repository": REPO,
         "release_tag": TAG, "release_sha": SHA, "source_ref": f"refs/tags/{TAG}",
         "workflow": core.BUILD_WORKFLOW, "build_run_id": RUN, "build_run_attempt": 1,
         "artifacts": records, "runtime_reports": {

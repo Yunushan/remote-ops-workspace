@@ -9,6 +9,7 @@ from pathlib import Path
 
 from scripts.check_platform_evidence_source_ref import resolve_tag_commit
 from scripts.release_candidate_inventory import (
+    ARCHIVE_FILE_SCOPE_SCHEMA_VERSION,
     CANDIDATE_INVENTORY_ARTIFACT,
     GitHubClient,
     check_artifact_metadata,
@@ -86,7 +87,9 @@ def read_attested_inventory(
         inventory_path, repository=repository, **coordinates,
         inventory_sha256=inventory["sha256"], build_event=run["event"],
     )
-    return validate_inventory(json.loads(raw), repository=repository, **coordinates), inventory
+    document = json.loads(raw)
+    records = validate_inventory(document, repository=repository, **coordinates)
+    return records, {**inventory, "schema_version": document["schema_version"]}
 
 
 def materialize_asset(
@@ -113,7 +116,13 @@ def materialize_asset(
         digest=artifact["archive_digest"], run_id=pointer.run_id, release_sha=sha,
     )
     assets = root / "assets"
-    materialize_records(client, {artifact_name: payload}, assets, expected_records=[artifact])
+    expected_files = (
+        {artifact_name: {entry["path"] for entry in artifact["files"]}}
+        if inventory["schema_version"] >= ARCHIVE_FILE_SCOPE_SCHEMA_VERSION else None
+    )
+    materialize_records(
+        client, {artifact_name: payload}, assets, expected_records=[artifact], expected_archive_files=expected_files,
+    )
     return assets / filename, file, {
         "kind": "sealed-candidate",
         "build_run_id": pointer.run_id,

@@ -40,8 +40,10 @@ the eight workflows accepts the optional `candidate_inventory` input as
 `RUN_ID ARTIFACT_ID sha256:DIGEST`. Use the run ID, numeric inventory artifact
 ID and original ZIP digest from the successful build's **Report promotion
 coordinates** summary. The workflow verifies the inventory's GitHub
-attestation and the exact wheel or Debian package it names. Leave the input
-empty to verify and use bytes from the immutable published release.
+attestation and the exact wheel or Debian package it names. For schema 13,
+it also verifies the manifest and checksum sidecar of the owning build archive.
+Leave the input empty to verify and use bytes from the immutable published
+release.
 See the [candidate staging procedure](runbooks/RELEASE_PROMOTION.md#stage-the-candidate-for-review).
 
 Put each article's reviewed files in its own `<article-id>/` directory, with

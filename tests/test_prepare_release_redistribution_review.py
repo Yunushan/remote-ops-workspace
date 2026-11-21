@@ -242,6 +242,7 @@ def test_review_captures_exact_candidate_and_all_runtime_inputs(tmp_path, monkey
     index = json.loads((destination / "review-materials.json").read_bytes())
     assert index["policy_sha256"] == digest(policy)
     assert index["candidate_inventory_source"]["archive_digest"] == inventory_digest
+    assert index["candidate_inventory_source"]["schema_version"] == candidate.MANAGED_SCHEMA_VERSION
     assert (destination / "archives/release-candidate-inventory.zip").read_bytes() == archives[INVENTORY_ID]
     qualification = index["qualification_archives"][candidate.MANAGED_DEBIAN_ARTIFACT]
     assert (destination / qualification["file"]).read_bytes() == archives[500]

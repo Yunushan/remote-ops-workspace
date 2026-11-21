@@ -180,6 +180,103 @@ def test_notice_capture_refuses_package_changed_after_extraction(
     assert not list(bundle.iterdir())
 
 
+@pytest.mark.parametrize(("fault", "failure"), [
+    ("", ""),
+    ("changed-manifest-identity", "sha256 does not match release asset"),
+    ("different-license-bytes", "inconsistent packaged license files for cpython"),
+])
+def test_manifest_review_inputs_preserve_paths_and_debian_component_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str, failure: str,
+) -> None:
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    import check_packaged_release_notices as capture
+    from check_preview_redistribution import ComponentLicense, EmbeddedFile
+    from check_release_license_compliance import (
+        check_debian_notice_inventory,
+        required_artifact_license_records,
+    )
+    from debian_server_notices import notice_path
+
+    tag = "v2.3.4"
+    assets, bundle = tmp_path / "assets", tmp_path / "review"
+    assets.mkdir()
+    bundle.mkdir()
+    deb, rpm = [f"remote-ops-workspace-{tag}-linux-{suffix}" for suffix in ("amd64.deb", "x86_64.rpm")]
+    manifest = assets / f"remote-ops-workspace-{tag}-linux-x86_64-native-manifest.json"
+    matrix = tmp_path / "matrix.json"
+    matrix.write_text(json.dumps({"default_github_release": {"native_jobs": [
+        {"asset_patterns": [deb, rpm, manifest.name]},
+    ]}}), encoding="utf-8")
+    monkeypatch.setattr(capture, "MATRIX_PATH", matrix)
+    notice = b"Debian openssh-server copyright"
+    version = "1:10.0p1-7+deb13u4"
+    debian_path = notice_path("openssh-server").as_posix()
+    receipts = [
+        capture.PackageNotices(deb, "", 0, [
+            ComponentLicense("usr/share/docs/cpython/LICENSE.txt", b"Python license", "CPython"),
+            ComponentLicense(debian_path, notice, "openssh-server", version),
+        ]),
+        capture.PackageNotices(rpm, "", 0, [
+            ComponentLicense(
+                "usr/share/licenses/cpython/LICENSE.txt",
+                b"Different bytes" if fault == "different-license-bytes" else b"Python license",
+                "cpython",
+            ),
+            EmbeddedFile("docs/THIRD_PARTY_NOTICES.md", b"Common notices"),
+        ]),
+    ]
+    entries = []
+    for index, package in enumerate(receipts):
+        raw = package.name.encode()
+        (assets / package.name).write_bytes(raw)
+        digest = hashlib.sha256(raw).hexdigest()
+        receipts[index] = package._replace(sha256=digest, size_bytes=len(raw))
+        entries.append({"file": f"native-dist/linux/{package.name}", "sha256": digest, "size_bytes": len(raw)})
+    if fault == "changed-manifest-identity":
+        entries[0]["sha256"] = "0" * 64
+    manifest.write_text(json.dumps(entries), encoding="utf-8")
+
+    def inspect(directory, expected):
+        assert directory == assets and expected == {deb, rpm}
+        return iter(receipts)
+
+    monkeypatch.setattr(capture, "observe_notices", inspect)
+    if failure:
+        with pytest.raises(ValueError, match=failure):
+            capture.verify_notices(assets, tag, evidence_root=bundle, write_review_inputs=True)
+        assert not list(bundle.iterdir())
+        return
+
+    assert capture.verify_notices(assets, tag, evidence_root=bundle, write_review_inputs=True) == 2
+    report = json.loads((bundle / "packaged-notices/review-inputs.json").read_bytes())
+    assert report["release_tag"] == tag
+    assert set(report["native_manifests"]) == {manifest.name}
+    result = report["native_manifests"][manifest.name]
+    assert result["sha256"] == hashlib.sha256(manifest.read_bytes()).hexdigest()
+    classifications = {
+        name: {"scope": "bundled", **component}
+        for name, component in result["component_license_files"].items()
+    }
+    cpython, = classifications["cpython"]["license_files"]
+    assert cpython["path"] == receipts[0].files[0].path
+    assert cpython["artifact_paths"] == {rpm: receipts[1].files[0].path}
+    openssh, = classifications["openssh-server"]["license_files"]
+    assert openssh["path"] == debian_path
+    errors = []
+    scoped = check_debian_notice_inventory(
+        {deb: {"openssh-server": {**openssh, "version": version}}}, classifications, manifest.name, errors,
+    )
+    required = required_artifact_license_records(classifications, {deb, rpm}, scoped, manifest.name, errors)
+    assert not errors
+    scans = result["artifact_license_files"]
+    for asset, rows in scans.items():
+        for row in rows:
+            assert set(row) == {"path", "file", "sha256", "size_bytes"}
+            assert hashlib.sha256((bundle / row["file"]).read_bytes()).hexdigest() == row["sha256"]
+        assert required[asset] <= {(row["path"], row["sha256"], row["size_bytes"]) for row in rows}
+    assert all(row["path"] != debian_path for row in scans[rpm])
+
+
 @pytest.mark.parametrize("fault", ["", "missing-license", "duplicate-license", "linked-license",
                                   "missing-application-license", "changed-application-license"])
 def test_production_captures_runtime_licenses_by_installed_path(

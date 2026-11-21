@@ -115,7 +115,7 @@ capture the required notices after importing the protected Linux packages.
 ```bash
 python scripts/check_packaged_release_notices.py \
   --assets-dir "$release_assets_dir" --tag "$release_tag" \
-  --evidence-root "$approval_dir/bundle"
+  --evidence-root "$approval_dir/bundle" --write-review-inputs
 ```
 
 The command adds `packaged-notices/` to the evidence bundle after the full
@@ -126,12 +126,14 @@ digest and the extracted notice paths, sizes, and digests. The corresponding
 command also captures the frozen Python runtime licenses under
 `usr/share/doc/remote-ops-workspace/licenses/`. It also tags the installed
 application license and the GUI packages' PyQt6 and Qt license texts with
-their component names. Include each tagged file in the artifact extraction scan
-and in the bundled component's `license_files`. If a component's
-license appears at a different path in a package, add that package name and
-its extracted path to `artifact_paths` on the component's license record.
-The signed audit matches the package scan and component license record
-against the extracted path, size, and digest.
+their component names. `review-inputs.json` binds these observations to each
+native manifest digest. Copy each `artifact_license_files` map into the
+matching native inventory and use `component_license_files` to populate the
+reviewed components' `license_files`. The export supplies `artifact_paths`
+when installers place identical license bytes at different paths. The signed
+audit verifies the recorded paths, sizes, and digests against the package.
+Complete the component classifications, license expressions, and channel
+review before signing the approval.
 
 If a Debian package contains the reviewed server bundle, the extraction also
 retains each distro copyright file and records its package name, version, and

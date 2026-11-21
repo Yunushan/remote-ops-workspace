@@ -30,6 +30,7 @@ from check_preview_redistribution import (
     regular_child,
 )
 from check_release_license_compliance import path_is_reparse, safe_relative_path
+from package_license_review_inputs import manifest_review_inputs
 from packaged_desktop_licenses import read_desktop_component_licenses
 from packaged_linux_licenses import read_linux_component_licenses
 
@@ -65,6 +66,7 @@ def expected_production_packages(tag: str, *, matrix: dict[str, Any] | None = No
 
 def publish_notice_capture(
     destination: Path, tag: str, packages: dict[str, Any], blobs: dict[str, bytes],
+    *, review: dict[str, Any] | None = None,
 ) -> None:
     with tempfile.TemporaryDirectory(prefix=".row-packaged-notices-", dir=destination.parent) as temporary:
         staged = Path(temporary) / "packaged-notices"
@@ -78,6 +80,8 @@ def publish_notice_capture(
             "packages": packages,
         }
         (staged / "notice-extraction.json").write_bytes((json.dumps(report, indent=2) + "\n").encode("utf-8"))
+        if review is not None:
+            (staged / "review-inputs.json").write_bytes((json.dumps(review, indent=2) + "\n").encode("utf-8"))
         if os.name == "nt":
             staged.rename(destination)
         else:
@@ -143,9 +147,13 @@ def observe_notices(assets_dir: Path, expected: set[str]) -> Iterator[PackageNot
         yield PackageNotices(name, package_sha, package_size, embedded)
 
 
-def verify_notices(assets_dir: Path, tag: str, *, evidence_root: Path | None = None) -> int:
+def verify_notices(
+    assets_dir: Path, tag: str, *, evidence_root: Path | None = None, write_review_inputs: bool = False,
+) -> int:
     if not TAG.fullmatch(tag):
         raise ValueError("release tag must be an exact vX.Y.Z tag")
+    if write_review_inputs and evidence_root is None:
+        raise ValueError("--write-review-inputs requires --evidence-root")
     capture = None
     if evidence_root is not None:
         evidence_root = evidence_root.absolute()
@@ -180,7 +188,11 @@ def verify_notices(assets_dir: Path, tag: str, *, evidence_root: Path | None = N
                 "sha256": package.sha256, "size_bytes": package.size_bytes, "notice_files": records,
             }
     if capture is not None:
-        publish_notice_capture(capture, tag, packages, blobs)
+        review = (
+            manifest_review_inputs(assets_dir, tag, json.loads(MATRIX_PATH.read_bytes()), packages)
+            if write_review_inputs else None
+        )
+        publish_notice_capture(capture, tag, packages, blobs, review=review)
     return len(expected)
 
 
@@ -189,9 +201,12 @@ def main() -> int:
     parser.add_argument("--assets-dir", type=Path, required=True)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--evidence-root", type=Path, help="retain verified notices in a new packaged-notices subdirectory")
+    parser.add_argument("--write-review-inputs", action="store_true", help="prepare per-manifest license scan records")
     args = parser.parse_args()
     try:
-        count = verify_notices(args.assets_dir, args.tag, evidence_root=args.evidence_root)
+        count = verify_notices(
+            args.assets_dir, args.tag, evidence_root=args.evidence_root, write_review_inputs=args.write_review_inputs,
+        )
     except (OSError, ValueError, zipfile.BadZipFile, tarfile.TarError) as exc:
         print(f"production package notices: {exc}", file=sys.stderr)
         return 1

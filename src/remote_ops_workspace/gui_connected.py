@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ntpath
 import os
 import posixpath
 import re
@@ -8,7 +7,6 @@ import shlex
 import stat
 import subprocess
 import sys
-import time
 from abc import abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -92,6 +90,7 @@ from .gui_designs import (
     gui_design_moba_sftp_toolbar_action_route,
 )
 from .gui_processes import _background_process
+from .gui_remote_monitoring import RemoteMonitoringRuntime
 from .gui_sftp_editor import (
     SFTP_ROW_INDEX_ROLE,
     SFTP_ROW_KIND_ROLE,
@@ -108,7 +107,6 @@ from .moba_connected import (
     moba_sftp_terminal_folder_route,
     moba_telemetry_cells,
     normalise_remote_path,
-    parse_remote_monitoring_output,
     parse_sftp_ls_output,
 )
 from .models import Profile
@@ -225,7 +223,7 @@ def create_moba_connected_classes(
     SFTP_ROW_TERMINAL_FOLDER_ROUTE_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 50
 
 
-    class MobaSftpDock(ConnectedSftpDock):
+    class MobaSftpDock(ConnectedSftpDock, RemoteMonitoringRuntime):
         OPERATIONAL_ACTIONS = frozenset(
             {
                 "parent-folder",
@@ -461,7 +459,6 @@ def create_moba_connected_classes(
             )
             self.active_remote_path = normalise_remote_path(self.state.remote_path)
             self.monitoring_control_widgets: dict[str, QAbstractButton] = {}
-            self.monitoring_output_buffer = bytearray()
             self.runtime_shutting_down = False
             self.background_auth_retry_attempt = 0
             self._background_password: bytearray | None = None
@@ -486,37 +483,7 @@ def create_moba_connected_classes(
             self.background_state_activation_timer.timeout.connect(
                 self.activate_initial_background_state
             )
-            self.monitoring_generation = 0
-            self.monitoring_active_generation = 0
-            self._monitoring_manual_request = False
-            self.monitoring_refresh_timer = QTimer(self)
-            self.monitoring_refresh_timer.setInterval(
-                gui_design_moba_remote_monitoring_dock_chrome().refresh_seconds * 1000
-            )
-            self.monitoring_refresh_timer.timeout.connect(
-                self.request_remote_monitoring_refresh
-            )
-            # Monitoring is periodic and must never open a visible interactive
-            # prompt. Reusing the active SSH control path or configured key/
-            # agent remains non-interactive; a session-only password may use
-            # the hidden PTY transport after an explicit manual auth action.
-            self.monitoring_process = _background_process(self, interactive_auth=True)
-            self.monitoring_process.setProperty(
-                "mobaMonitoringNonInteractive",
-                True,
-            )
-            self.monitoring_process.setProcessChannelMode(
-                QProcess.ProcessChannelMode.MergedChannels
-            )
-            self.monitoring_process.readyReadStandardOutput.connect(
-                self.read_remote_monitoring_output
-            )
-            self.monitoring_process.finished.connect(
-                self.handle_remote_monitoring_finished
-            )
-            self.monitoring_process.errorOccurred.connect(
-                self.handle_remote_monitoring_error
-            )
+            self.initialize_monitoring_runtime(_background_process)
             self.sftp_refresh_output_buffer = bytearray()
             self.sftp_refresh_plan: SftpBatchPlan | None = None
             self.sftp_refresh_generation = 0
@@ -1730,13 +1697,6 @@ def create_moba_connected_classes(
                 return self.state.follow_terminal_folder
             return bool(control.checked)
 
-        def activate_initial_monitoring_state(self) -> None:
-            control = self.monitoring_control_widgets.get("remote-monitoring")
-            self.set_remote_monitoring_runtime(
-                bool(control is not None and control.isChecked()),
-                immediate=True,
-            )
-
         def set_remote_monitoring_expanded(self, expanded: bool) -> None:
             panel = getattr(self, "remote_monitoring_panel", None)
             if panel is None:
@@ -1809,32 +1769,11 @@ def create_moba_connected_classes(
                     widget.setProperty("mobaRemoteMonitoringRuntimeState", state)
                     widget.setProperty("mobaRemoteMonitoringRuntimeMessage", message)
 
-        def monitoring_surface_is_current(self) -> bool:
-            if self.runtime_shutting_down:
-                return False
-            main_window = self.main_window()
-            if main_window is not None and hasattr(main_window, "moba_connected_dock"):
-                return main_window.moba_connected_dock is self
-            return True
-
-        def remote_monitoring_request_is_current(self) -> bool:
-            control = self.monitoring_control_widgets.get("remote-monitoring")
-            return (
-                self.monitoring_surface_is_current()
-                and self.monitoring_active_generation != 0
-                and self.monitoring_active_generation
-                == self.monitoring_generation
-                and control is not None
-                and (control.isChecked() or self._monitoring_manual_request)
-            )
-
         def shutdown_runtime(self) -> None:
             if self.runtime_shutting_down:
                 return
             self.runtime_shutting_down = True
-            self.monitoring_generation += 1
-            self.monitoring_active_generation = 0
-            self._monitoring_manual_request = False
+            self._invalidate_monitoring_request()
             self.sftp_refresh_generation += 1
             self.sftp_refresh_active_generation = 0
             self.sftp_refresh_pending = None
@@ -1883,216 +1822,6 @@ def create_moba_connected_classes(
                 and self.state.banner == state.banner
                 and self.state.smartcard_selection
                 == state.smartcard_selection
-            )
-
-        def set_remote_monitoring_runtime(
-            self,
-            enabled: bool,
-            *,
-            immediate: bool,
-            start_periodic: bool = True,
-        ) -> None:
-            active = bool(enabled)
-            self.set_remote_monitoring_expanded(active)
-            for widget in (
-                self,
-                getattr(self, "browser", None),
-                getattr(self, "remote_monitoring_panel", None),
-                getattr(self, "remote_monitoring_controls", None),
-            ):
-                if widget is not None:
-                    widget.setProperty(
-                        "mobaRemoteMonitoringRuntimeActive",
-                        active,
-                    )
-            refresh_button = getattr(self, "monitoring_refresh_button", None)
-            if refresh_button is not None:
-                # Manual refresh is also the recovery path for password-only
-                # SSH on Windows, so it must remain usable while the periodic
-                # toggle is paused.
-                refresh_button.setEnabled(True)
-            if active:
-                if start_periodic and not self.monitoring_refresh_timer.isActive():
-                    self.monitoring_refresh_timer.start()
-                self.set_remote_monitoring_status(
-                    "Monitoring on · waiting for live data",
-                    state="starting",
-                )
-                if immediate:
-                    QTimer.singleShot(0, self.request_remote_monitoring_refresh)
-                return
-            self.monitoring_generation += 1
-            self.monitoring_active_generation = 0
-            self._monitoring_manual_request = False
-            self.monitoring_refresh_timer.stop()
-            if self.monitoring_process.state() != QProcess.ProcessState.NotRunning:
-                self.monitoring_process.kill()
-            self.set_remote_monitoring_status("Monitoring off", state="paused")
-
-        def monitoring_runtime_command(self) -> list[str]:
-            command = list(self.state.monitoring_plan.command)
-            if not command:
-                return command
-            executable = ntpath.basename(command[0]).lower()
-            if executable in {"ssh", "ssh.exe"}:
-                command = openssh_command_without_windows_connection_sharing(command)
-                command = openssh_command_with_overrides(command, self.background_ssh_overrides())
-                control_path = self.shared_ssh_control_path()
-                if control_path:
-                    command = ssh_command_with_control_path(
-                        command,
-                        control_path,
-                        master=False,
-                    )
-            return command
-
-        def request_remote_monitoring_refresh(
-            self,
-            *_args,
-            allow_prompt: bool = False,
-        ) -> None:
-            if self.runtime_shutting_down or not self.monitoring_surface_is_current():
-                return
-            control = self.monitoring_control_widgets.get("remote-monitoring")
-            manual_request = bool(allow_prompt)
-            if control is None or (not control.isChecked() and not manual_request):
-                return
-            if not manual_request and self._waiting_for_shared_ssh():
-                self.set_remote_monitoring_status(
-                    "Monitoring is waiting for the managed SSH connection",
-                    state="auth-required",
-                )
-                return
-            if manual_request:
-                auth_ready = self.ensure_background_authentication_for_request(
-                    allow_prompt=True,
-                )
-            else:
-                auth_ready = self.ensure_background_authentication_for_request()
-            if not auth_ready:
-                if manual_request:
-                    self.set_remote_monitoring_status(
-                        "Monitoring authentication required",
-                        state="auth-required",
-                    )
-                    return
-                self.setProperty("mobaBackgroundSshApplyingAuthGate", True)
-                try:
-                    control.setChecked(False)
-                finally:
-                    self.setProperty("mobaBackgroundSshApplyingAuthGate", False)
-                return
-            self._monitoring_manual_request = manual_request and not control.isChecked()
-            count = int(
-                self.property("mobaRemoteMonitoringRefreshRequestCount") or 0
-            ) + 1
-            for widget in (
-                self,
-                getattr(self, "remote_monitoring_panel", None),
-                control,
-            ):
-                if widget is not None:
-                    widget.setProperty(
-                        "mobaRemoteMonitoringRefreshRequestCount",
-                        count,
-                    )
-            if self.monitoring_process.state() != QProcess.ProcessState.NotRunning:
-                self.set_remote_monitoring_status(
-                    "Monitoring refresh already running",
-                    state="refreshing",
-                )
-                return
-            command = self.monitoring_runtime_command()
-            if not command:
-                self.set_remote_monitoring_status(
-                    "Monitoring unavailable: empty command",
-                    state="error",
-                )
-                return
-            self.monitoring_output_buffer.clear()
-            self.monitoring_generation += 1
-            self.monitoring_active_generation = self.monitoring_generation
-            self._background_auth_prompt_buffers["monitoring"].clear()
-            self._background_auth_prompt_complete["monitoring"] = False
-            self.set_remote_monitoring_status(
-                "Refreshing live telemetry…",
-                state="refreshing",
-            )
-            self.monitoring_process.setProgram(command[0])
-            self.monitoring_process.setArguments(command[1:])
-            self.monitoring_process.start()
-
-        def read_remote_monitoring_output(self) -> None:
-            payload = bytes(self.monitoring_process.readAllStandardOutput())
-            self._submit_background_password_if_prompt("monitoring", payload)
-            self.monitoring_output_buffer.extend(payload)
-
-        def handle_remote_monitoring_error(self, error) -> None:
-            request_is_current = self.remote_monitoring_request_is_current()
-            self.monitoring_active_generation = 0
-            self._monitoring_manual_request = False
-            if not request_is_current:
-                return
-            self.set_remote_monitoring_status(
-                f"Monitoring error: {error.name}",
-                state="error",
-            )
-            self.setProperty("mobaRemoteMonitoringLastError", error.name)
-            self.schedule_background_auth_retry()
-
-        def handle_remote_monitoring_finished(
-            self,
-            exit_code: int,
-            _exit_status: QProcess.ExitStatus,
-        ) -> None:
-            request_is_current = self.remote_monitoring_request_is_current()
-            self.read_remote_monitoring_output()
-            output = self.monitoring_output_buffer.decode(errors="replace")
-            self.monitoring_active_generation = 0
-            self._monitoring_manual_request = False
-            if not request_is_current:
-                return
-            snapshot = parse_remote_monitoring_output(output) if exit_code == 0 else None
-            if snapshot is None:
-                detail = next(
-                    (line.strip() for line in reversed(output.splitlines()) if line.strip()),
-                    f"exit {exit_code}",
-                )
-                if "permission denied" in detail.lower() and "password" in detail.lower():
-                    detail = (
-                        "password-only SSH cannot run background monitoring; "
-                        "configure key or agent authentication"
-                    )
-                elif "host key verification failed" in detail.lower():
-                    detail = (
-                        "host key not trusted; verify it in the terminal, then refresh"
-                    )
-                shared_control = self.shared_ssh_control_path()
-                self.set_remote_monitoring_status(
-                    (
-                        f"Waiting for terminal SSH authentication: {detail[:120]}"
-                        if shared_control
-                        else f"Monitoring unavailable: {detail[:120]}"
-                    ),
-                    state="auth-required" if shared_control else "error",
-                )
-                self.setProperty("mobaRemoteMonitoringLastError", detail)
-                self.schedule_background_auth_retry()
-                return
-            if not self.apply_live_remote_monitoring_snapshot(snapshot):
-                return
-            refreshed_at = time.strftime("%H:%M:%S")
-            last_refresh = getattr(self, "monitoring_last_refresh_label", None)
-            if last_refresh is not None:
-                last_refresh.setText(refreshed_at)
-                last_refresh.setToolTip(f"Last successful refresh: {refreshed_at}")
-            self.setProperty("mobaRemoteMonitoringLastRefresh", refreshed_at)
-            self.background_auth_retry_attempt = 0
-            self.background_auth_retry_timer.stop()
-            self.setProperty("mobaBackgroundSshWaitingForTerminalAuth", False)
-            self.set_remote_monitoring_status(
-                f"Live · {refreshed_at}",
-                state="live",
             )
 
         def _update_live_telemetry_panel(self, panel, live_state) -> None:

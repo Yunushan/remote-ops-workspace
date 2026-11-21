@@ -182,6 +182,9 @@ Rules:
   creation, the active SFTP dock, and its session metadata.
   `gui_sftp_editor.py` manages the remote editor and its SFTP transfers.
   The connected dock supplies the shared SSH state.
+  `gui_remote_monitoring.py` manages the connected telemetry process, refresh
+  timer, and stale requests. The dock keeps the controls and applies live data
+  to matching connected terminal panels.
   `gui_reference_tabs.py` composes the live connected documents for the
   SecureCRT, Termius, Remmina, and mRemoteNG presets and records their tab,
   status, terminal, and session-action state for the render checks.

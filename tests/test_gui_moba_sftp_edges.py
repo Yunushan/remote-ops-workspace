@@ -234,7 +234,7 @@ def test_monitoring_stale_completion_and_absent_sftp_status_widgets(
     from PyQt6.QtGui import QMouseEvent
     from PyQt6.QtWidgets import QLabel
 
-    from remote_ops_workspace import gui_connected
+    from remote_ops_workspace import gui_remote_monitoring
 
     _app, window, _panel, dock, _profile = connected_workspace
     runtime_calls: list[tuple[bool, bool]] = []
@@ -255,7 +255,7 @@ def test_monitoring_stale_completion_and_absent_sftp_status_widgets(
 
     snapshot = object()
     monkeypatch.setattr(dock, "remote_monitoring_request_is_current", lambda: True)
-    monkeypatch.setattr(gui_connected, "parse_remote_monitoring_output", lambda _output: snapshot)
+    monkeypatch.setattr(gui_remote_monitoring, "parse_remote_monitoring_output", lambda _output: snapshot)
     monkeypatch.setattr(dock, "apply_live_remote_monitoring_snapshot", lambda value: value is snapshot)
     original_last_refresh_label = dock.monitoring_last_refresh_label
     dock.monitoring_last_refresh_label = None
@@ -861,7 +861,7 @@ def test_monitoring_refresh_generation_and_snapshot_edges(
 ) -> None:
     from PyQt6.QtCore import QProcess
 
-    from remote_ops_workspace import gui_connected
+    from remote_ops_workspace import gui_remote_monitoring
 
     _app, window, panel, dock, _profile = connected_workspace
     control = dock.monitoring_control_widgets["remote-monitoring"]
@@ -916,7 +916,7 @@ def test_monitoring_refresh_generation_and_snapshot_edges(
 
     retries: list[str] = []
     dock.schedule_background_auth_retry = lambda: retries.append("retry")
-    monkeypatch.setattr(gui_connected, "parse_remote_monitoring_output", lambda _output: None)
+    monkeypatch.setattr(gui_remote_monitoring, "parse_remote_monitoring_output", lambda _output: None)
     dock.shared_ssh_control_path = lambda: ""
     process.output = b"Permission denied (password).\n"
     dock.monitoring_output_buffer.clear()
@@ -931,7 +931,7 @@ def test_monitoring_refresh_generation_and_snapshot_edges(
     assert retries == ["retry", "retry"]
 
     snapshot = dock.state.monitoring
-    monkeypatch.setattr(gui_connected, "parse_remote_monitoring_output", lambda _output: snapshot)
+    monkeypatch.setattr(gui_remote_monitoring, "parse_remote_monitoring_output", lambda _output: snapshot)
     dock.apply_live_remote_monitoring_snapshot = lambda _snapshot: False
     process.output = b"valid"
     dock.monitoring_output_buffer.clear()

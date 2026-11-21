@@ -144,6 +144,9 @@ main window stays a composition layer rather than a monolith:
 - `gui_workspace.py` and `gui_connected.py` assemble the connected SSH
   workspace, SFTP browser, and monitoring controls. The dock coordinates
   background SSH authentication and owns the active SFTP path.
+- `gui_remote_monitoring.py` manages the telemetry process, refresh timer,
+  and cancellation of stale requests. The dock applies live data to the
+  matching connected terminal tabs.
 - `gui_reference_tabs.py` composes connected preset documents and supplies
   the live tab, terminal, and status properties used by the render checks.
 - `gui_connected_terminal.py` builds the terminal panel, SSH banner, and

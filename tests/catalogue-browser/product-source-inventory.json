@@ -113,8 +113,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_connected.py",
-      "sha256": "08c8d8ae2a5b897829fd66732719f174c17aa313a387e9a21b2e56299ec1d419",
-      "size": 168499
+      "sha256": "d3ef031884a8014a3d9dcfa328036578303464597e4265eeb0ca93e891cbb00a",
+      "size": 156106
     },
     {
       "path": "src/remote_ops_workspace/gui_connected_terminal.py",
@@ -250,6 +250,11 @@
       "path": "src/remote_ops_workspace/gui_remmina.py",
       "sha256": "e1a36eec15550ffef5b198d90f5c914a30317e072e801d40ca5df529342d06fd",
       "size": 55391
+    },
+    {
+      "path": "src/remote_ops_workspace/gui_remote_monitoring.py",
+      "sha256": "35782921541b3164c442be7066adb8973e13be2436622432c166ca3e5a7629e5",
+      "size": 13599
     },
     {
       "path": "src/remote_ops_workspace/gui_securecrt.py",

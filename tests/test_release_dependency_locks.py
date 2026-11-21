@@ -34,18 +34,23 @@ def test_protected_linux_uses_exact_hash_locked_build_inputs(target: str) -> Non
     capture = (checker.ROOT / LINUX_CAPTURE_PATH).read_text(encoding="utf-8")
     block = native_capture_for_target(capture, target)
     lock_dir = compliance.PROTECTED_LINUX_LOCK_DIR
+    source_bootstrap = compliance.PROTECTED_LINUX_CFFI_LOCK if target == "linux-armhf" else None
     options = {
         "bootstrap_lock_path": f"{lock_dir}/{target}-bootstrap.txt",
-        "source_bootstrap_lock_path": compliance.PROTECTED_LINUX_CFFI_LOCK,
+        "source_bootstrap_lock_path": source_bootstrap,
         "direct_script": True,
     }
     assert compliance.check_native_job_lock_usage(block, job, target, f"{lock_dir}/{target}.txt", **options) == []
 
-    without_cffi_bootstrap = "\n".join(line for line in block.splitlines() if compliance.PROTECTED_LINUX_CFFI_LOCK not in line)
+    source_step = source_bootstrap or "python scripts/build_protected_i386_wheels.py"
+    without_source_step = "\n".join(line for line in block.splitlines() if source_step not in line)
     errors = compliance.check_native_job_lock_usage(
-        without_cffi_bootstrap, job, target, f"{lock_dir}/{target}.txt", **options,
+        without_source_step, job, target, f"{lock_dir}/{target}.txt", **options,
     )
-    assert any("must install" in error and "linux-32bit-cffi.txt" in error for error in errors)
+    if source_bootstrap is None:
+        assert any("does not consume linux-i386 lock" in error for error in errors)
+    else:
+        assert any(f"must install {source_bootstrap}" in error for error in errors)
 
 
 def test_macos_lock_resolution_uses_the_native_installer_minimum(

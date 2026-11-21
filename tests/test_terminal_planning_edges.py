@@ -384,6 +384,11 @@ def test_control_path_refuses_non_socket_at_expected_endpoint(tmp_path, monkeypa
 def test_ssh_connection_key_matches_launch_inputs_not_profile_labels() -> None:
     profile = Profile(name="edge", protocol="ssh", host="target.example", username="operator")
     key = ssh_connection_key(profile)
+    # Unpinned sessions keep their existing socket. A pinned session must not
+    # attach to a master created when OpenSSH also read host-config identities.
+    assert key == "d4d6915d6e9e5bb0abf6b5d4dbd4faacfe1634921cc6184b7c590aa131b47a4f"
+    pinned = replace(profile, options={"smartcard_pinned_public_key": "saved-key"})
+    assert ssh_connection_key(pinned) != "8ee9e3320ca8b89b9dbca7b1057f625ea7d2075d4afe5286716eb8bd597e5cac"
     assert ssh_connection_key(replace(profile, description="Updated label", port=22)) == key
     assert ssh_connection_key(replace(profile, options={"moba_monitoring_output": "cpu=2"})) == key
     for changes in (

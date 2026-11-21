@@ -251,7 +251,7 @@ def _build_ssh_family(profile: Profile, protocol: str) -> LaunchPlan:
             notes.append("Use only for isolated legacy systems; protocol v1 cannot provide modern SSH security.")
             notes.append("Requires an SSH client build that still supports protocol version 1.")
         cmd.extend(["-p", str(port)])
-        cmd.extend(_ssh_identity_args(profile))
+        cmd.extend(_ssh_identity_args(profile, notes))
         cmd.extend(_ssh_connection_option_args(profile.options))
         notes.extend(_ssh_smartcard_notes(profile.options))
         cmd.extend(_ssh_proxy_args(profile, notes))
@@ -275,7 +275,7 @@ def _build_ssh_family(profile: Profile, protocol: str) -> LaunchPlan:
 
     if protocol == "sftp":
         cmd = ["sftp", "-P", str(port)]
-        cmd.extend(_ssh_identity_args(profile))
+        cmd.extend(_ssh_identity_args(profile, notes))
         cmd.extend(_ssh_connection_option_args(profile.options, file_transfer=True))
         notes.extend(_ssh_smartcard_notes(profile.options))
         cmd.extend(_ssh_proxy_args(profile, notes))
@@ -283,7 +283,7 @@ def _build_ssh_family(profile: Profile, protocol: str) -> LaunchPlan:
         return LaunchPlan(protocol, cmd, notes)
 
     cmd = ["scp", "-P", str(port)]
-    cmd.extend(_ssh_identity_args(profile))
+    cmd.extend(_ssh_identity_args(profile, notes))
     cmd.extend(_ssh_connection_option_args(profile.options, file_transfer=True))
     notes.extend(_ssh_smartcard_notes(profile.options))
     cmd.extend(_ssh_proxy_args(profile, notes))
@@ -292,16 +292,18 @@ def _build_ssh_family(profile: Profile, protocol: str) -> LaunchPlan:
     return LaunchPlan(protocol, cmd, notes)
 
 
-def _ssh_identity_args(profile: Profile) -> list[str]:
+def _ssh_identity_args(profile: Profile, notes: list[str]) -> list[str]:
     if PINNED_SMARTCARD_KEY in profile.options:
         try:
             identity = materialize_pinned_smartcard_key(profile.options[PINNED_SMARTCARD_KEY])
         except (OSError, ValueError) as exc:
             raise LauncherError(f"Cannot use the saved smart-card key: {exc}") from exc
         path = safe.path_arg(str(identity), "smart-card identity file").replace("%", "%%")
-        # A saved key requires a new authentication unless ROW attaches to its
-        # own control socket, which is keyed to the current profile options.
-        return ["-o", _ssh_config_path_option("IdentityFile", path), "-o", "IdentitiesOnly=yes",
+        notes.append("Pinned smart-card profiles use the destination, proxy and host-key settings "
+                     "from the profile and skip user and system SSH configuration files.")
+        # IdentityFile and CertificateFile accumulate across OpenSSH config
+        # files even with IdentitiesOnly. Use only the profile's options.
+        return ["-F", "none", "-o", _ssh_config_path_option("IdentityFile", path), "-o", "IdentitiesOnly=yes",
                 "-o", "ControlMaster=no", "-o", "ControlPath=none"]
     if not profile.identity_file:
         return []
@@ -334,14 +336,20 @@ def _ssh_connection_option_args(options: Mapping[str, str], *, file_transfer: bo
         "strict_host_key_checking",
         allowed={"accept-new", "ask", "no", "yes"},
     )
-    if strict_host_key_checking:
+    pinned = PINNED_SMARTCARD_KEY in options
+    if pinned or strict_host_key_checking:
+        # An isolated profile must not silently fall back to a first-use prompt
+        # when its previous ssh_config supplied a stricter trust policy.
+        strict_host_key_checking = strict_host_key_checking or "yes"
         args.extend(["-o", f"StrictHostKeyChecking={strict_host_key_checking}"])
 
     user_known_hosts_file = _option(options, "user_known_hosts_file", "known_hosts_file")
     if user_known_hosts_file:
-        args.extend(["-o", f"UserKnownHostsFile={safe.path_arg(user_known_hosts_file, 'user_known_hosts_file')}"])
+        known_hosts = safe.path_arg(user_known_hosts_file, "user_known_hosts_file")
+        trust_option = (_ssh_config_path_option("UserKnownHostsFile", known_hosts)
+                        if pinned else f"UserKnownHostsFile={known_hosts}")
+        args.extend(["-o", trust_option])
 
-    pinned = PINNED_SMARTCARD_KEY in options
     agent_for_pinned_key = pinned and pinned_smartcard_uses_agent(options)
     identity_agent = ssh_identity_agent(options)
     if pinned:
@@ -524,7 +532,7 @@ def _build_mosh(profile: Profile) -> LaunchPlan:
     target = _target(profile, host)
     notes: list[str] = []
     ssh_cmd = ["ssh", "-p", str(port)]
-    ssh_cmd.extend(_ssh_identity_args(profile))
+    ssh_cmd.extend(_ssh_identity_args(profile, notes))
     ssh_cmd.extend(_ssh_connection_option_args(profile.options))
     ssh_cmd.extend(_ssh_proxy_args(profile, notes))
     if _option_bool(profile.options, "agent_forward", "forward_agent"):

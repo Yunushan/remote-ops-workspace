@@ -173,7 +173,7 @@ def verify_browser(root: Path, browser: dict[str, Any], profile: dict[str, Any],
         if len(identity_options) != 1:
             raise ValueError("terminal capture must show the single saved smart-card IdentityFile")
         configured_identity = ("-o", identity_options[0])
-        shared_auth = (("-o", "IdentitiesOnly=yes"), configured_identity)
+        shared_auth = (("-F", "none"), ("-o", "IdentitiesOnly=yes"), configured_identity)
         if pinned_smartcard_uses_agent(options):
             agent = ssh_identity_agent(options) or "SSH_AUTH_SOCK"
             agent_only = (("-o", f"IdentityAgent={agent}"), ("-o", "PKCS11Provider=none"))

@@ -920,11 +920,17 @@ card whose public certificate and token metadata can be shared with the reviewer
 Open **Tools → Smart cards → PKCS#11 inventory**, choose the installed vendor
 library, and refresh. Use **Copy public key** to capture the OpenSSH record and
 **Use key for profile** to save the chosen key. ROW writes an OpenSSH public
-identity file from the saved record and requests `IdentitiesOnly=yes`. An
+identity file from the saved record and uses `-F none` and `IdentitiesOnly=yes`
+for the destination. Pinned profiles skip both user and system OpenSSH
+configuration files, including their additional identities and certificates.
+Enter the actual destination and any jump host in the profile. Configure
+site-specific host-key settings there as well. Pinned profiles default to
+`StrictHostKeyChecking=yes` and OpenSSH's standard known-hosts files.
+Sites that require SSH configuration directives the profile cannot express
+should use an unpinned profile with their existing SSH configuration. An
 explicit `IdentityAgent` or the profile's agent handoff setting selects the
 agent as the private key source. With direct card authentication, ROW disables
-agent authentication for that launch. OpenSSH can also offer identities
-explicitly listed in SSH configuration.
+agent authentication for that launch.
 
 Use **Load into SSH agent** to load the provider's keys. If the profile sets
 `IdentityAgent`, the dialog uses that socket. Otherwise it uses the active

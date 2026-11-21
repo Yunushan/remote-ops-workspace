@@ -186,11 +186,22 @@ def test_saved_card_release_capture_requires_identity_file_and_exclusive_auth(ca
         if agent != "none":
             index = argv.index("-I") if name == "terminal_argv" else 3
             argv[index:index + 2] = ["-o", "PKCS11Provider=none"]
-        argv[-1:-1] = ["-o", 'IdentityFile="/tmp/chosen.pub"', "-o", "IdentitiesOnly=yes", "-o", f"IdentityAgent={agent}"]
+        argv[-1:-1] = ["-F", "none", "-o", 'IdentityFile="/tmp/chosen.pub"', "-o", "IdentitiesOnly=yes",
+                       "-o", f"IdentityAgent={agent}"]
     capture.bundle["ssh_browser"].update(capture.save("ssh_browser.json", browser))
     capture.save("evidence.json", capture.bundle)
     result = smartcard.validate_smartcard_connected_release_evidence(capture.root / "evidence.json")
     assert result.passed, result.errors
+
+    for name in ("terminal_argv", "sftp_argv"):
+        argv = browser[name]
+        config = argv.index("-F") + 1
+        argv[config] = "host-config"
+        capture.bundle["ssh_browser"].update(capture.save("ssh_browser.json", browser))
+        capture.save("evidence.json", capture.bundle)
+        result = smartcard.validate_smartcard_connected_release_evidence(capture.root / "evidence.json")
+        assert not result.passed and "shared socket" in result.errors[0]
+        argv[config] = "none"
 
     browser["sftp_argv"] = [arg for arg in browser["sftp_argv"] if arg != 'IdentityFile="/tmp/chosen.pub"']
     capture.bundle["ssh_browser"].update(capture.save("ssh_browser.json", browser))

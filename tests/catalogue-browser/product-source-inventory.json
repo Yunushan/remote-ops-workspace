@@ -283,8 +283,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_smartcards.py",
-      "sha256": "218a8d7fbed0a0a34b1e62e9d94fed39c3bff0a3177017503d28781c6fa5ae7a",
-      "size": 12857
+      "sha256": "351165c977a9142b0040d4533c3166fb3cf5fb3cdae21fb1b2f98db32d8e133e",
+      "size": 13052
     },
     {
       "path": "src/remote_ops_workspace/gui_smoke.py",
@@ -343,8 +343,8 @@
     },
     {
       "path": "src/remote_ops_workspace/launcher.py",
-      "sha256": "4029133521b03d2a4eb3084e42d2064c8f87bf1cc831a9e1baacbaca2f5f8cbd",
-      "size": 45494
+      "sha256": "7c0b10d8183785b1cfbf652f5212c95c37d9f0c417fa5ab4d07484ddd94aa22f",
+      "size": 46141
     },
     {
       "path": "src/remote_ops_workspace/layouts.py",
@@ -513,8 +513,8 @@
     },
     {
       "path": "src/remote_ops_workspace/terminal.py",
-      "sha256": "eb0dec0a555329615c5f7d5b4910e7f2acc4c6aaf72b1499ab9274c10cc70131",
-      "size": 29416
+      "sha256": "b88d1cc6ab2a47752dc297bd1243448913ab22a8977055862ca04987d17655b3",
+      "size": 29708
     },
     {
       "path": "src/remote_ops_workspace/terminal_emulation.py",

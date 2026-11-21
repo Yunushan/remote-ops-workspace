@@ -91,6 +91,10 @@ class SmartCardDialog(QDialog):
         layout.addWidget(self.status)
 
         self.use_key = QPushButton("Use key for profile", self)
+        self.use_key.setToolTip(
+            "Pinned profiles skip user and system SSH configuration. Set the destination, "
+            "jump host and host-key policy in the profile."
+        )
         self.use_key.setAutoDefault(False)
         self.use_key.clicked.connect(lambda: self.change_profile_key(clear=False))
         self.clear_key = QPushButton("Clear saved selection", self)

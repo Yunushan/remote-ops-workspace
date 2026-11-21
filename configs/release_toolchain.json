@@ -89,7 +89,7 @@
     },
     {
       "name": "PyQt6-sip",
-      "version": "13.13.0",
+      "version": "13.13.1",
       "purpose": "Pinned PyQt6 SIP runtime dependency."
     },
     {

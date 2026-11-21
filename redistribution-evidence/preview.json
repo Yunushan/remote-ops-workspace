@@ -5,7 +5,7 @@
   "materials": {
     "third_party_notices": {
       "file": "THIRD_PARTY_NOTICES.md",
-      "sha256": "e5c085fc9fda3a0fc3388d9a5f4be1fcbb921d744b43be039107521e8f3d3781"
+      "sha256": "cdd691d32e6e6286d2fe52dda85243f6ff6bb876213619b21769db19812e79a5"
     },
     "pyqt6_gplv3": {
       "file": "PyQt6-GPL-3.0.txt",
@@ -16,8 +16,8 @@
       "sha256": "e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118"
     },
     "pyqt6_source": {
-      "file": "PyQt6-6.12.0-source.json",
-      "sha256": "c83e471b86c4f8f4e337f88e8f468cbc30bc94e71b38b652b7142a883d08a1e9"
+      "file": "PyQt6-6.12.1-source.json",
+      "sha256": "6007ab8857c3847f845fb2f3e725701fafc2c8b7491fa0ea18981eb345a32777"
     },
     "qt_source": {
       "file": "qt-everywhere-src-6.12.0-source.json",
@@ -25,7 +25,7 @@
     },
     "qt_relink_instructions": {
       "file": "Qt-Relinking.md",
-      "sha256": "4ff84993bd52265047fe875aa3964575e4e378fa6023075e99d2ab394fc3ad8e"
+      "sha256": "25171e80495938a4a42724d5de05f1f6f507fa1e290d2e2f43832d4bb53818dd"
     }
   }
 }

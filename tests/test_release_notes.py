@@ -55,9 +55,9 @@ def test_unsigned_preview_notes_report_boundaries(tmp_path: Path, monkeypatch) -
     assert "Strict MobaXterm parity evidence accepted for this source is 0/8" in notes
     assert "must not be treated as trusted production artifacts" in notes
     assert "GUI package licenses and corresponding source" in notes
-    assert "PyQt6 6.12.0 source" in notes
+    assert "PyQt6 6.12.1 source" in notes
     assert "Qt 6.12.0 source" in notes
-    assert "d3e021b716bae880224422f9d1b894d2d53de7e60e60dbc43f860723f9cc300b" in notes
+    assert "17bb18b3ae953ab54b23026291ecea2579b028597b56c281a752c8ed66dd1a58" in notes
 
 
 def test_release_notes_reject_invalid_tag_and_channel(tmp_path: Path) -> None:

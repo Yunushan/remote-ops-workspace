@@ -464,19 +464,20 @@ def _ref_pattern_matches(pattern: Any, ref: str) -> bool:
         return False
     pattern_parts = pattern.split("/")
     ref_parts = ref.split("/")
-    if "**" in pattern_parts:
-        # GitHub rulesets use fnmatch syntax; a complete ** segment is the only
-        # form permitted here to cross a ref-name slash.
-        expression = "^" + re.escape(pattern) + "$"
-        expression = expression.replace(r"\*\*", ".*")
-        expression = expression.replace(r"\*", "[^/]*").replace(r"\?", "[^/]")
-        return re.fullmatch(expression, ref) is not None
-    if len(pattern_parts) != len(ref_parts):
-        return False
-    return all(
-        fnmatchcase(value, expected)
-        for value, expected in zip(ref_parts, pattern_parts, strict=True)
-    )
+    offsets = {0}
+    for index, part in enumerate(pattern_parts):
+        if not offsets:
+            return False
+        if part == "**" and index < len(pattern_parts) - 1:
+            # Ruby's pathname matching lets **/ consume zero or more complete
+            # components. A final ** matches only the final component.
+            offsets = set(range(min(offsets), len(ref_parts) + 1))
+        else:
+            offsets = {
+                offset + 1 for offset in offsets
+                if offset < len(ref_parts) and fnmatchcase(ref_parts[offset], part)
+            }
+    return len(ref_parts) in offsets
 
 
 def _ruleset_applies_to_tag(value: dict[str, Any], tag: str) -> bool:

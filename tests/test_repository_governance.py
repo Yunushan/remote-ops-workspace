@@ -364,10 +364,11 @@ def test_release_tag_requires_active_non_bypassable_update_and_deletion_rules() 
     assert governance.audit_tag_rulesets(_tag_rulesets(), "v1.2.3") == []
 
 
-def test_release_tag_ruleset_must_apply_to_exact_tag() -> None:
+@pytest.mark.parametrize("pattern", ["refs/tags/v2*", "refs/**", "refs/tags/**/v2*"])
+def test_release_tag_ruleset_must_apply_to_exact_tag(pattern: str) -> None:
     payload = _tag_rulesets()
     payload["rulesets"][0]["conditions"]["ref_name"] = {
-        "include": ["refs/tags/v2*"],
+        "include": [pattern],
         "exclude": [],
     }
 
@@ -410,15 +411,27 @@ def test_capture_uses_only_rulesets_that_enforce_the_required_operations() -> No
     assert governance.protected_tag_ruleset_ids(payload, "v1.2.3") == ([501, 503], [])
 
 
-def test_release_tag_ruleset_exclusion_wins_over_include() -> None:
+@pytest.mark.parametrize("pattern", [
+    "refs/tags/v1.2.3",
+    "refs/tags/**/v1.2.3",
+    "refs/**/[vV][0-3].[0-9].?",
+    "refs/**/tags/**/v1.2.3",
+])
+def test_release_tag_ruleset_exclusion_wins_over_include(pattern: str) -> None:
     payload = _tag_rulesets()
-    payload["rulesets"][0]["conditions"]["ref_name"]["exclude"] = [
-        "refs/tags/v1.2.3"
-    ]
+    payload["rulesets"][0]["conditions"]["ref_name"]["exclude"] = [pattern]
 
     assert governance.audit_tag_rulesets(payload, "v1.2.3") == [
         "no active tag ruleset applies to refs/tags/v1.2.3"
     ]
+
+
+@pytest.mark.parametrize("pattern", ["refs/tags/**", "refs/**/v*", "refs/tags/**/v*", "refs/**/[vV][0-3].[0-9].?"])
+def test_release_tag_ruleset_matches_recursive_and_component_wildcards(pattern: str) -> None:
+    payload = _tag_rulesets()
+    payload["rulesets"][0]["conditions"]["ref_name"]["include"] = [pattern]
+
+    assert governance.protected_tag_ruleset_ids(payload, "v1.2.3") == ([501], [])
 
 
 def test_fetch_protection_uses_gh_after_python_tls_failure(monkeypatch) -> None:

@@ -195,7 +195,7 @@ jobs:
             --builder-evidence "platform-evidence-staging/linux-i386/${RELEASE_TAG}/builder-identity-linux-i386.json" \
             --smoke-evidence "platform-evidence-staging/linux-i386/${RELEASE_TAG}/native-smoke-linux-i386.log" \
             --runtime-report "platform-evidence-staging/linux-i386/${RELEASE_TAG}/candidate-pip-inspect.json" \
-            --require-i386-source-wheel-inventory \
+            --require-source-wheel-inventory \
             --candidate-record "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/platform-verified-evidence-linux-i386.json" \
             --out-dir "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts"
       - name: Finalize Linux i386 accepted-evidence candidate
@@ -321,6 +321,7 @@ jobs:
             --builder-evidence "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/builder-identity-linux-armhf.json" \
             --smoke-evidence "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/native-smoke-linux-armhf.log" \
             --runtime-report "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/candidate-pip-inspect.json" \
+            --require-source-wheel-inventory \
             --candidate-record "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts/platform-verified-evidence-linux-armhf.json" \
             --out-dir "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts"
       - name: Finalize Linux armhf accepted-evidence candidate

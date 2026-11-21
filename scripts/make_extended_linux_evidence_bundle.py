@@ -58,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
         candidate_record=args.candidate_record,
         out_dir=args.out_dir,
         force=args.force,
-        require_i386_source_wheel_inventory=args.require_i386_source_wheel_inventory,
+        require_source_wheel_inventory=args.require_source_wheel_inventory,
     )
     if errors:
         for error in errors:
@@ -82,9 +82,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--smoke-evidence", type=Path, required=True, help="native smoke log captured on the builder")
     parser.add_argument("--runtime-report", type=Path, help="raw pip inspect report from the native build environment")
     parser.add_argument(
-        "--require-i386-source-wheel-inventory",
+        "--require-source-wheel-inventory",
         action="store_true",
-        help="require a native smoke inventory that matches the protected i386 source lock",
+        help="require a native smoke inventory that matches the target's protected source lock",
     )
     parser.add_argument("--candidate-record", type=Path, required=True, help="candidate accepted-evidence JSON")
     parser.add_argument("--out-dir", type=Path, required=True, help="directory that will receive the bundle")
@@ -103,7 +103,7 @@ def make_extended_linux_evidence_bundle(
     out_dir: object,
     runtime_report: Path | None = None,
     force: bool = False,
-    require_i386_source_wheel_inventory: bool = False,
+    require_source_wheel_inventory: bool = False,
 ) -> list[str]:
     errors: list[str] = []
     errors.extend(check_required_path_arg(assets_dir, "artifact directory"))
@@ -205,7 +205,7 @@ def make_extended_linux_evidence_bundle(
                 source_head_sha=source_head_sha,
                 artifact_sha256=candidate.get("artifact_sha256"),
                 builder_identity=builder_identity,
-                require_i386_source_wheel_inventory=require_i386_source_wheel_inventory,
+                require_source_wheel_inventory=require_source_wheel_inventory,
             )
         )
     actual_artifact_sha = artifact_sha256_map(target, release_tag, assets_dir, promotion)
@@ -669,7 +669,7 @@ def check_linux_smoke_evidence_file(
     source_head_sha: str,
     artifact_sha256: Any | None = None,
     builder_identity: Any | None = None,
-    require_i386_source_wheel_inventory: bool = False,
+    require_source_wheel_inventory: bool = False,
 ) -> list[str]:
     try:
         text = smoke_evidence.read_text(encoding="utf-8")
@@ -684,7 +684,7 @@ def check_linux_smoke_evidence_file(
         workflow_run_attempt=workflow_run_attempt,
         source_head_sha=source_head_sha,
         artifact_sha256=artifact_sha256,
-        require_i386_source_wheel_inventory=require_i386_source_wheel_inventory,
+        require_source_wheel_inventory=require_source_wheel_inventory,
     )
     if builder_identity is not None:
         errors.extend(

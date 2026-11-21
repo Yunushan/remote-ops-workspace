@@ -52,7 +52,7 @@ def locked_source(lock: dict[str, tuple[str, set[str]]], name: str) -> tuple[str
     version, hashes = lock[name]
     filename = f"{name}-{version}.tar.gz"
     if not SOURCE_DISTRIBUTIONS[name][0].endswith(f"/{filename}") or len(hashes) != 1:
-        raise ValueError(f"{name} source URL must match its single i386 lock hash and version")
+        raise ValueError(f"{name} source URL must match its single protected lock hash and version")
     return filename, next(iter(hashes))
 
 

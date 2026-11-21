@@ -875,7 +875,6 @@ def expected_linux_protected_requirement_commands(target: str) -> dict[str, str]
     bundle_stem = f"extended-linux-evidence-bundle-{target}-v<project.version>"
     final_record = f"platform-verified-evidence-{target}-final.json"
     upload_dir = scoped_platform_evidence_upload_dir(target)
-    source_wheel_gate = "--require-i386-source-wheel-inventory " if target == "linux-i386" else ""
     return {
         "artifact_validation_command": (
             "python scripts/check_platform_promotion_artifacts.py "
@@ -917,7 +916,7 @@ def expected_linux_protected_requirement_commands(target: str) -> dict[str, str]
             "--builder-evidence <builder-identity.json> "
             "--smoke-evidence <native-smoke-log> "
             "--runtime-report <target-release-evidence-dir>/candidate-pip-inspect.json "
-            f"{source_wheel_gate}"
+            "--require-source-wheel-inventory "
             f"--candidate-record <{candidate}> "
             "--out-dir <target-release-artifact-dir>"
         ),

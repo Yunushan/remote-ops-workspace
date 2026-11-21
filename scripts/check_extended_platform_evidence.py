@@ -9,11 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "extended-platform-evidence.yml"
 LINUX_CAPTURE_PATH = Path("scripts") / "capture_linux_platform_evidence.sh"
 NATIVE_LOCK_DIR = "requirements-locks/protected-linux"
-I386_PROJECTED_LOCK = '"$I386_BUILD_ROOT/remaining-i386-requirements.txt"'
-I386_BUILD_WHEELS_COMMAND = (
-    'python scripts/build_protected_i386_wheels.py --workspace "$I386_BUILD_ROOT" '
-    '--inventory "$WORKSPACE/$EVIDENCE_DIR/i386-source-wheel-inventory.json"'
-)
+PROTECTED_PROJECTED_LOCK = '"$BUILD_ROOT/remaining-requirements.txt"'
 NATIVE_LINUX_ARCHES = {
     "linux-i386": ("i386", "i686", "i686"),
     "linux-armhf": ("armhf", "armv7hl", "armhf"),
@@ -25,7 +21,7 @@ WORKFLOW_SCRIPT_DEPENDENCIES = (
     Path("scripts") / "check_linux_native_elf.py",
     Path("scripts") / "check_protected_linux_build_inputs.py",
     Path("scripts") / "prepare_protected_linux_cargo.py",
-    Path("scripts") / "build_protected_i386_wheels.py",
+    Path("scripts") / "build_protected_linux_wheels.py",
     Path("scripts") / "protected_linux_cargo.sh",
     Path("scripts") / "make_linux_native.sh",
     Path("scripts") / "smoke_linux_native.sh",
@@ -371,10 +367,9 @@ def check_linux_job(workflow: str, *, target: str) -> list[str]:
     )
     if workflow_step_block(block, f"name: Wait for completed {step_prefix} evidence") != wait_step:
         errors.append(f"{job} must wait for staged native evidence before collector validation")
-    if target == "linux-i386":
-        package_step = workflow_step_block(block, f"name: Package {step_prefix} review evidence bundle")
-        if "            --require-i386-source-wheel-inventory \\\n" not in package_step:
-            errors.append(f"{job} must require the source-wheel inventory when packaging the review bundle")
+    package_step = workflow_step_block(block, f"name: Package {step_prefix} review evidence bundle")
+    if "            --require-source-wheel-inventory \\\n" not in package_step:
+        errors.append(f"{job} must require the source-wheel inventory when packaging the review bundle")
     for snippet, label in required_snippets.items():
         if snippet not in block:
             errors.append(f"{job} missing {label}: {snippet}")
@@ -460,6 +455,13 @@ def native_capture_for_target(shell: str, target: str) -> str:
     return shell[:cases.start()] + dict(branches)[target] + shell[cases.end():]
 
 
+def source_wheel_build_command(target: str) -> str:
+    return (
+        f'python scripts/build_protected_linux_wheels.py --target {target} --workspace "$BUILD_ROOT" '
+        '--inventory "$WORKSPACE/$WHEEL_INVENTORY"'
+    )
+
+
 def check_native_capture(shell: str, target: str) -> list[str]:
     arch, rpm_arch, appimage_arch = NATIVE_LINUX_ARCHES[target]
     label = f"native {arch} capture"
@@ -472,29 +474,28 @@ def check_native_capture(shell: str, target: str) -> list[str]:
     ).replace(" \\\n", " ")
     cargo = (
         ("locked offline Cargo configuration", 'export CARGO_NET_OFFLINE=true MATURIN_NO_INSTALL_RUST=true MATURIN_PEP517_ARGS="--locked --offline"'),
-        ("locked Cargo prefetch", 'python3 scripts/prepare_protected_linux_cargo.py --source-archives "$I386_BUILD_ROOT/source-archives"'),
+        ("locked Cargo prefetch", 'python3 scripts/prepare_protected_linux_cargo.py --source-archives "$BUILD_ROOT/source-archives"'),
         ("locked Cargo wrapper", 'export CARGO="$CARGO_HOME/locked-cargo"'),
     ) if target == "linux-i386" else ()
     workspace = (
-        ("stable private i386 build workspace", 'mkdir -m 0700 -- "$I386_BUILD_ROOT"'),
-        ("exact tagged source archive", 'git archive --format=tar "$SOURCE_HEAD_SHA" | tar -xf - -C "$I386_BUILD_ROOT/source"'),
-    ) if target == "linux-i386" else ()
+        ("stable build workspace path", 'readonly BUILD_ROOT="/tmp/row-protected-${TARGET#linux-}-build"'),
+        ("stable private build workspace", 'mkdir -m 0700 -- "$BUILD_ROOT"'),
+        ("exact tagged source archive", 'git archive --format=tar "$SOURCE_HEAD_SHA" | tar -xf - -C "$BUILD_ROOT/source"'),
+        ("build from the canonical checkout", 'cd -- "$BUILD_ROOT/source"'),
+    )
+    source_packages = "pyftpdlib" if target == "linux-i386" else "pyftpdlib,pyinstaller"
     runtime = (
-        ("locked source-wheel build", I386_BUILD_WHEELS_COMMAND),
+        ("locked source-wheel build", source_wheel_build_command(target)),
         ("remaining protected runtime lock", "pip install --require-hashes --no-cache-dir --no-build-isolation "
-         f"--only-binary=:all: --no-binary=pyftpdlib --requirement {I386_PROJECTED_LOCK}"),
-    ) if target == "linux-i386" else (
-        ("protected CFFI lock", "pip install --require-hashes --no-cache-dir --no-build-isolation "
-         f"--only-binary=:all: --no-binary=cffi --requirement {NATIVE_LOCK_DIR}/linux-32bit-cffi.txt"),
-        ("protected runtime lock", "pip install --require-hashes --no-cache-dir --no-build-isolation "
-         f"--only-binary=:all: --no-binary=cffi,pyftpdlib,pyinstaller --requirement {NATIVE_LOCK_DIR}/{target}.txt"),
+         f"--only-binary=:all: --no-binary={source_packages} --requirement {PROTECTED_PROJECTED_LOCK}"),
     )
     inventory = (
+        ("native smoke from the tagged checkout", 'cd -- "$WORKSPACE"'),
         ("generated source-wheel inventory input",
-         r'''i386_source_wheel_inventory="$(tr -d '\r\n' < "$EVIDENCE_DIR/i386-source-wheel-inventory.json")"'''),
+         r'''source_wheel_inventory="$(tr -d '\r\n' < "$WHEEL_INVENTORY")"'''),
         ("source-wheel inventory in the native smoke log",
-         r'''printf 'native installer smoke i386 source-wheel inventory: %s\n' "$i386_source_wheel_inventory"'''),
-    ) if target == "linux-i386" else ()
+         r'''printf 'native installer smoke %s source-wheel inventory: %s\n' "${TARGET#linux-}" "$source_wheel_inventory"'''),
+    )
     required = (
         ("strict shell safety", "#!/usr/bin/env bash\nset -euo pipefail\numask 077"),
         ("dispatch input preflight", 'python3 scripts/check_extended_platform_dispatch_inputs.py --target "$TARGET"'),

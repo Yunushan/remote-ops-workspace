@@ -94,8 +94,8 @@ def test_extended_platform_evidence_requires_locked_offline_cargo_builds() -> No
         ('git archive --format=tar "$SOURCE_HEAD_SHA"', "exact tagged source archive"),
         ("export CARGO_NET_OFFLINE=true", "locked offline Cargo configuration"),
         ("python3 scripts/prepare_protected_linux_cargo.py", "locked Cargo prefetch"),
-        ("python scripts/build_protected_i386_wheels.py", "locked source-wheel build"),
-        ("printf 'native installer smoke i386 source-wheel inventory:", "source-wheel inventory in the native smoke log"),
+        ("python scripts/build_protected_linux_wheels.py --target linux-i386", "locked source-wheel build"),
+        ("printf 'native installer smoke %s source-wheel inventory:", "source-wheel inventory in the native smoke log"),
     ):
         changed = capture.replace(required, f"# {required}", 1)
         assert f"native i386 capture missing {message}" in checker.check_extended_platform_evidence(
@@ -103,15 +103,19 @@ def test_extended_platform_evidence_requires_locked_offline_cargo_builds() -> No
         )
 
 
-def test_i386_collector_requires_source_wheel_inventory_in_package_step() -> None:
+@pytest.mark.parametrize("target", ["linux-i386", "linux-armhf"])
+def test_linux_collector_requires_source_wheel_inventory_in_package_step(target: str) -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = checker.WORKFLOW_PATH.read_text(encoding="utf-8")
-    changed = workflow.replace("--require-i386-source-wheel-inventory", "--unrelated-option", 1)
+    input_path = f'--runtime-report "platform-evidence-staging/{target}/${{RELEASE_TAG}}/candidate-pip-inspect.json"'
+    required = f"{input_path} \\\n            --require-source-wheel-inventory"
+    assert required in workflow
+    changed = workflow.replace(required, required.replace("--require-source-wheel-inventory", "--unrelated-option"), 1)
 
     errors = checker.check_extended_platform_evidence(changed)
 
     assert (
-        "linux-i386-native-evidence must require the source-wheel inventory when packaging the review bundle"
+        f"{target}-native-evidence must require the source-wheel inventory when packaging the review bundle"
         in errors
     )
 

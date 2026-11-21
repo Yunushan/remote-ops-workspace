@@ -32,8 +32,8 @@ if str(SCRIPTS) not in sys.path:
 
 import check_platform_release_evidence_remote as platform_evidence  # noqa: E402
 from check_extended_platform_evidence import (  # noqa: E402
-    I386_BUILD_WHEELS_COMMAND,
-    I386_PROJECTED_LOCK,
+    PROTECTED_PROJECTED_LOCK,
+    source_wheel_build_command,
 )
 from check_platform_verified_evidence import LINUX_TARGETS  # noqa: E402
 from check_release_publish_assets import normalize_version  # noqa: E402
@@ -473,14 +473,11 @@ def check_policy(
         )
         job_block = workflow_job_block(producer_workflow, job)
         native_bootstrap_lock = None
-        source_bootstrap_lock = None
         if target in LINUX_TARGETS:
             expected_lock = f"{PROTECTED_LINUX_LOCK_DIR}/{target}.txt"
             if raw_path != expected_lock:
                 errors.append(f"{target} must consume the tracked protected Linux lock {expected_lock}")
             native_bootstrap_lock = f"{PROTECTED_LINUX_LOCK_DIR}/{target}-bootstrap.txt"
-            if target == "linux-armhf":
-                source_bootstrap_lock = PROTECTED_LINUX_CFFI_LOCK
         if matrix_arch is not None and not matrix_row_binds_lock(
             job_block,
             matrix_arch,
@@ -502,7 +499,6 @@ def check_policy(
                     if matrix_arch is not None
                     else native_bootstrap_lock
                 ),
-                source_bootstrap_lock_path=source_bootstrap_lock,
                 lock_root=policy_root,
                 direct_script=target in LINUX_TARGETS,
             )
@@ -1979,7 +1975,7 @@ def installs_hashed_requirements(command: str, lock_paths: tuple[str, ...]) -> b
     for path in lock_paths:
         if path in ("${{ matrix.lock }}", "${{ matrix.bootstrap_lock }}"):
             paths.append(re.escape(f'"{path}"'))
-        elif path == I386_PROJECTED_LOCK:
+        elif path == PROTECTED_PROJECTED_LOCK:
             paths.append(re.escape(path))
         elif re.fullmatch(r"[A-Za-z0-9_./-]+", path) is not None:
             escaped = re.escape(path)
@@ -2017,10 +2013,10 @@ def check_native_job_lock_usage(
         for index, command in enumerate(commands)
         if re.match(r"^(?:python|python3)\s+-m\s+pip\s+install(?:\s|$)", command)
     ]
-    builds_i386_source_wheels = direct_script and target == "linux-i386"
+    builds_protected_source_wheels = direct_script and target in LINUX_TARGETS
     lock_tokens = (lock_path, "${{ matrix.lock }}") if allow_matrix_lock else (lock_path,)
-    if builds_i386_source_wheels:
-        lock_tokens = (I386_PROJECTED_LOCK,)
+    if builds_protected_source_wheels:
+        lock_tokens = (PROTECTED_PROJECTED_LOCK,)
     bootstrap_tokens: tuple[str, ...] = ()
     lock_indexes = [
         index
@@ -2029,10 +2025,11 @@ def check_native_job_lock_usage(
     ]
     first_runtime_install = min(lock_indexes, default=len(commands))
     lock_consumed = lock_path in job_block and bool(lock_indexes)
-    if builds_i386_source_wheels:
-        wheel_builds = [index for index, command in enumerate(commands) if command == I386_BUILD_WHEELS_COMMAND]
+    if builds_protected_source_wheels:
+        wheel_command = source_wheel_build_command(target)
+        wheel_builds = [index for index, command in enumerate(commands) if command == wheel_command]
         lock_consumed = (
-            lock_path == f"{PROTECTED_LINUX_LOCK_DIR}/linux-i386.txt"
+            lock_path == f"{PROTECTED_LINUX_LOCK_DIR}/{target}.txt"
             and len(wheel_builds) == 1 and len(lock_indexes) == 1 and wheel_builds[0] < lock_indexes[0]
         )
         if wheel_builds:

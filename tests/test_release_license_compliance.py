@@ -813,8 +813,8 @@ def test_wrong_lock_argument_fails_the_native_python_check() -> None:
 def test_i386_projected_lock_requires_the_ordered_source_wheel_build() -> None:
     checker = _load_checker()
     bootstrap = "requirements-locks/protected-linux/linux-i386-bootstrap.txt"
-    source_build = checker.I386_BUILD_WHEELS_COMMAND
-    install = f"python -m pip install --require-hashes --requirement {checker.I386_PROJECTED_LOCK}"
+    source_build = checker.source_wheel_build_command("linux-i386")
+    install = f"python -m pip install --require-hashes --requirement {checker.PROTECTED_PROJECTED_LOCK}"
     project = 'python -m pip install --no-deps --no-build-isolation ".[security,package,servers]"'
     bootstrap_install = f"python -m pip install --require-hashes --requirement {bootstrap}"
 

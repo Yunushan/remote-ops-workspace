@@ -61,7 +61,8 @@ from scripts.release_evidence_file import retry_evidence_operation, stream_sha25
 
 GUI_MODULE_PROOF_SCHEMA_VERSION = 12
 ARCHIVE_FILE_SCOPE_SCHEMA_VERSION = 13
-SCHEMA_VERSION = ARCHIVE_FILE_SCOPE_SCHEMA_VERSION
+FEDORA_RELEASE_IMAGE_SCHEMA_VERSION = 14
+SCHEMA_VERSION = FEDORA_RELEASE_IMAGE_SCHEMA_VERSION
 REVIEWED_SERVER_BUNDLE_SCHEMA_VERSION = 11
 SERVER_BUNDLE_SCHEMA_VERSION = 10
 LINUX_INSTALLER_SCHEMA_VERSION = 9
@@ -393,7 +394,7 @@ def stage(
     rpm = {**rpm_archive, **rpm_records[RPM_REPORT_NAME], "receipt": json.loads(rpm_files[RPM_REPORT_NAME])}
     _, rpm_sha = validate_rpm_report(
         rpm, repository, release_tag, release_sha, run_id, run_attempt, require_managed=True, source_root=ROOT,
-        require_current_managed=True,
+        require_current_managed=True, expected_image=rpm_qualification.IMAGE,
     )
     rpm_smoke = {name: rpm_records[name] for name in RPM_SMOKE_FILES}
     validate_rpm_smoke_files(rpm_files, rpm["receipt"], rpm_smoke)
@@ -577,6 +578,7 @@ def validate_managed_report(
 def validate_rpm_report(
     record: Any, repository: str, release_tag: str, release_sha: str, run_id: int, run_attempt: int,
     *, require_managed: bool = False, source_root: Path | None = None, require_current_managed: bool = False,
+    expected_image: str | None = None,
 ) -> tuple[int, str]:
     artifact_id = validate_qualification_archive(record, "RPM recovery")
     receipt = record["receipt"]
@@ -584,7 +586,6 @@ def validate_rpm_report(
         "target": rpm_qualification.TARGET,
         "source_commit": release_sha,
         "workflow_ref": f"{repository}/{BUILD_WORKFLOW}@refs/tags/{release_tag}",
-        "container_image": rpm_qualification.IMAGE,
         "previous_release_asset_id": rpm_qualification.PREVIOUS_ASSET,
         "previous_release_url": rpm_qualification.PREVIOUS_URL,
     }
@@ -598,6 +599,11 @@ def validate_rpm_report(
         or HASH.fullmatch(receipt["candidate_native_proof_sha256"]) is None
     ):
         raise ValueError("RPM recovery receipt does not match the release source and Actions attempt")
+    allowed_images = (expected_image,) if expected_image is not None else (
+        rpm_qualification.IMAGE, rpm_qualification.LEGACY_IMAGE,
+    )
+    if receipt.get("container_image") not in allowed_images:
+        raise ValueError("RPM recovery receipt does not match the pinned Fedora qualification image")
     try:
         native = receipt["receipt"]
         candidate_sha = native["candidate"]["package_sha256"]
@@ -1424,6 +1430,9 @@ def validate_inventory(
         artifact_id, rpm_sha = validate_rpm_report(
             value.get("rpm_recovery"), repository, release_tag, release_sha, run_id, run_attempt,
             require_managed=schema >= MANAGED_RPM_SCHEMA_VERSION,
+            require_current_managed=schema >= FEDORA_RELEASE_IMAGE_SCHEMA_VERSION,
+            expected_image=(rpm_qualification.IMAGE if schema >= FEDORA_RELEASE_IMAGE_SCHEMA_VERSION
+                            else rpm_qualification.LEGACY_IMAGE),
         )
         if artifact_id in ids:
             raise ValueError(f"RPM recovery report artifact id is duplicated: {artifact_id}")

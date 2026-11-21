@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -22,7 +23,13 @@ REPORT_NAME = "rpm-recovery.json"
 PROOF = Path("build/candidate-proof") / TARGET / "finish.json"
 SMOKE_BINDING = Path("build/native-smoke") / TARGET / "candidate-runtime-byte-binding.json"
 DRILL = Path("scripts/qualify_rpm_recovery.py")
-IMAGE = "quay.io/fedora/fedora-toolbox@sha256:0612cc841f649cda34bafbc3138a9a8eec2bc06fad6f6ad576d1a900f0b3c7da"
+LEGACY_IMAGE = "quay.io/fedora/fedora-toolbox@sha256:0612cc841f649cda34bafbc3138a9a8eec2bc06fad6f6ad576d1a900f0b3c7da"
+# Fedora's numbered release archive outlives Quay's daily toolbox manifests.
+FEDORA_ARCHIVE = "Fedora-Container-Toolbox-44-1.7.x86_64.oci.tar.xz"
+FEDORA_URL = f"https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Container/x86_64/images/{FEDORA_ARCHIVE}"
+FEDORA_SIZE = 323_108_132
+FEDORA_SHA256 = "214a6735d8dbd73d2bd708e103eabf4aa5ee7f3b4a6b2ca0f05061374be82b02"
+IMAGE = "sha256:5668e6a4c9bdb0a46d984d152fe232f114d421e9d837fdd29787fcd230d7aebc"
 PREVIOUS_VERSION = "1.0.27"
 PREVIOUS_SIZE = 32_092_015
 PREVIOUS_SHA256 = "928e93ed2679fe01ce127e1393cf245df854bb6579c1356ed97cd9a5a3a1daf6"
@@ -51,6 +58,62 @@ exec /tmp/managed-rpm/bin/python -I -B /tmp/source/scripts/qualify_managed_rpm_u
 
 class QualificationError(ValueError):
     """A failed input or receipt check with a public diagnostic."""
+
+
+def download_pinned(url: str, path: Path, size: int, digest: str, timeout: int) -> None:
+    subprocess.run(
+        ["curl", "--disable", "--fail", "--silent", "--show-error", "--location",
+         "--proto", "=https", "--proto-redir", "=https", "--max-time", str(timeout),
+         "--max-filesize", str(size), "--output", str(path), url],
+        check=True, timeout=timeout + 15,
+    )
+    if path.stat().st_size != size or sha256(path) != digest:
+        raise QualificationError(f"{path.name} differs from the pinned input")
+
+
+def load_fedora_image(temporary: Path) -> str:
+    archive = temporary / FEDORA_ARCHIVE
+    download_pinned(FEDORA_URL, archive, FEDORA_SIZE, FEDORA_SHA256, 600)
+    return import_fedora_image(archive, temporary)
+
+
+def import_fedora_image(archive: Path, temporary: Path) -> str:
+    layout = temporary / "fedora-oci"
+    layout.mkdir()
+    with tarfile.open(archive, "r|xz") as source:
+        source.extractall(layout, filter="data")
+    index_path = layout / "index.json"
+    index = json.loads(index_path.read_bytes())
+    descriptor, = index["manifests"]
+    manifest_path = layout / "blobs/sha256" / IMAGE.removeprefix("sha256:")
+    if descriptor["digest"] != IMAGE or f"sha256:{sha256(manifest_path)}" != IMAGE:
+        raise QualificationError("Fedora archive does not contain the pinned OCI manifest")
+    manifest = json.loads(manifest_path.read_bytes())
+    config = manifest["config"]["digest"]
+    local_tag = f"localhost/row-rpm-qualification:{temporary.name}"
+    descriptor["annotations"] = {"org.opencontainers.image.ref.name": local_tag}
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+    # The classic Docker store reads manifest.json; containerd reads index.json.
+    docker_manifest = {
+        "Config": "blobs/" + config.replace(":", "/"),
+        "Layers": ["blobs/" + layer["digest"].replace(":", "/") for layer in manifest["layers"]],
+        "RepoTags": [local_tag],
+    }
+    (layout / "manifest.json").write_text(json.dumps([docker_manifest]), encoding="utf-8")
+    compatible = temporary / "fedora.docker.tar"
+    with tarfile.open(compatible, "w") as output:
+        for entry in layout.iterdir():
+            output.add(entry, arcname=entry.name)
+    subprocess.run(
+        ["docker", "image", "load", "--input", str(compatible)],
+        check=True, stdout=sys.stderr, timeout=300,
+    )
+    image_id = subprocess.check_output(
+        ["docker", "image", "inspect", "--format", "{{.Id}}", local_tag], text=True, timeout=30,
+    ).strip()
+    if image_id not in (IMAGE, config):
+        raise QualificationError("Loaded Docker image differs from the pinned Fedora manifest and config")
+    return image_id
 
 
 def rpm_name(version: str) -> str:
@@ -145,7 +208,7 @@ def build_dependency_blocker(directory: Path, name: str, version: str) -> Path:
 
 
 def managed_drill(root: Path, temporary: Path, commit: str, previous: Path, candidate: Path,
-                  digest: str, wheelhouse: Path | None, *, version: str) -> dict:
+                  digest: str, wheelhouse: Path | None, *, version: str, image_id: str) -> dict:
     requirements = temporary / "crypto.txt"
     requirements.write_bytes(managed.locked_crypto_requirements(root))
     if wheelhouse is None:
@@ -168,7 +231,7 @@ def managed_drill(root: Path, temporary: Path, commit: str, previous: Path, cand
         temporary / "rollback-blocker", managed.ROLLBACK_BLOCKER, version,
     )
     result = subprocess.run(
-        ["docker", "run", "--rm", "--platform", "linux/amd64", "--network", "none",
+        ["docker", "run", "--rm", "--pull=never", "--platform", "linux/amd64", "--network", "none",
          "--security-opt", "no-new-privileges",
          "--mount", f"type=bind,source={source},target=/input/source.tar,readonly",
          "--mount", f"type=bind,source={requirements},target=/input/crypto.txt,readonly",
@@ -177,7 +240,7 @@ def managed_drill(root: Path, temporary: Path, commit: str, previous: Path, cand
          "--mount", f"type=bind,source={candidate},target=/candidate/{candidate.name},readonly",
          "--mount", f"type=bind,source={blocker},target=/input/dependency-blocker.rpm,readonly",
          "--mount", f"type=bind,source={rollback_blocker},target=/input/rollback-blocker.rpm,readonly",
-         "--entrypoint", "/bin/sh", IMAGE, "-ec", MANAGED_ENTRYPOINT, "row-managed-rpm",
+         "--entrypoint", "/bin/sh", image_id, "-ec", MANAGED_ENTRYPOINT, "row-managed-rpm",
          "--previous-rpm", f"/previous/{previous.name}", "--previous-sha256", PREVIOUS_SHA256,
          "--candidate-rpm", f"/candidate/{candidate.name}", "--candidate-sha256", digest,
          "--dependency-blocker", "/input/dependency-blocker.rpm", "--rollback-blocker", "/input/rollback-blocker.rpm"],
@@ -214,36 +277,14 @@ def qualify(root: Path, tag: str, commit: str, run_id: str, attempt: str, *, whe
     with TemporaryDirectory(prefix="row-rpm-candidate-") as directory:
         temporary = Path(directory)
         previous = temporary / filename
-        subprocess.run(
-            [
-                "curl",
-                "--disable",
-                "--fail",
-                "--silent",
-                "--show-error",
-                "--location",
-                "--proto",
-                "=https",
-                "--proto-redir",
-                "=https",
-                "--max-time",
-                "120",
-                "--max-filesize",
-                str(PREVIOUS_SIZE),
-                "--output",
-                str(previous),
-                PREVIOUS_URL,
-            ],
-            check=True,
-            timeout=135,
-        )
-        if previous.stat().st_size != PREVIOUS_SIZE or sha256(previous) != PREVIOUS_SHA256:
-            raise QualificationError("Previous release RPM differs from the pinned input")
+        download_pinned(PREVIOUS_URL, previous, PREVIOUS_SIZE, PREVIOUS_SHA256, 120)
+        image_id = load_fedora_image(temporary)
         result = subprocess.run(
             [
                 "docker",
                 "run",
                 "--rm",
+                "--pull=never",
                 "--platform",
                 "linux/amd64",
                 "--network",
@@ -256,7 +297,7 @@ def qualify(root: Path, tag: str, commit: str, run_id: str, attempt: str, *, whe
                 f"type=bind,source={previous},target=/previous/{filename},readonly",
                 "--mount",
                 f"type=bind,source={candidate},target=/candidate/{candidate.name},readonly",
-                IMAGE,
+                image_id,
                 "python3",
                 "-I",
                 "/drill.py",
@@ -275,7 +316,8 @@ def qualify(root: Path, tag: str, commit: str, run_id: str, attempt: str, *, whe
         )
         receipt = json.loads(result.stdout)
         verify_receipt(receipt, version, digest)
-        managed_receipt = managed_drill(root, temporary, commit, previous, candidate, digest, wheelhouse, version=version)
+        managed_receipt = managed_drill(root, temporary, commit, previous, candidate, digest, wheelhouse,
+                                        version=version, image_id=image_id)
         managed.verify_receipt(
             managed_receipt, receipt, controller_sha256=sha256(root / managed.CONTROLLER),
             requirements_sha256=hashlib.sha256(managed.locked_crypto_requirements(root)).hexdigest(),

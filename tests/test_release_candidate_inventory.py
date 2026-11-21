@@ -830,6 +830,27 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     assert smoke_records[candidate.RPM_SMOKE_FILES[1]]["sha256"] == hashlib.sha256(binding).hexdigest()
     coordinates = dict(repository="example/project", release_tag=tag, release_sha=sha, run_id=123, run_attempt=1)
     public_coordinates = {key: coordinates[key] for key in ("repository", "release_tag", "release_sha")}
+
+    def revised_rpm(record, **fields):
+        receipt = {**record["receipt"], **fields}
+        encoded = candidate.qualification_receipt_bytes(receipt)
+        return {**record, "receipt": receipt, "sha256": hashlib.sha256(encoded).hexdigest(),
+                "size_bytes": len(encoded)}
+
+    historic = json.loads(output.read_bytes())
+    historic["schema_version"] = candidate.ARCHIVE_FILE_SCOPE_SCHEMA_VERSION
+    with pytest.raises(ValueError, match="pinned Fedora qualification image"):
+        candidate.validate_inventory(historic, **coordinates)
+    old_managed = {**rpm["receipt"]["managed_update"], "schema": managed_rpm_qualification.ROLLBACK_PLAN_SCHEMA}
+    old_rpm = revised_rpm(rpm, container_image=rpm_qualification.LEGACY_IMAGE, managed_update=old_managed)
+    historic["rpm_recovery"] = old_rpm
+    candidate.validate_inventory(historic, **coordinates)
+    historic["schema_version"] = candidate.SCHEMA_VERSION
+    with pytest.raises(ValueError, match="pinned Fedora qualification image"):
+        candidate.validate_inventory(historic, **coordinates)
+    historic["rpm_recovery"] = revised_rpm(rpm, managed_update=old_managed)
+    with pytest.raises(ValueError, match="installer retries"):
+        candidate.validate_inventory(historic, **coordinates)
     swapped = json.loads(output.read_bytes())
     windows = {record["name"]: record["files"] for record in swapped["artifacts"] if "windows-native" in record["name"]}
     x64, x86 = windows["release-windows-native-x64"], windows["release-windows-native-x86"]
@@ -839,6 +860,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     with pytest.raises(ValueError, match="files differ from its release matrix assignment"):
         candidate.validate_inventory(swapped, **coordinates)
     swapped["schema_version"] = candidate.GUI_MODULE_PROOF_SCHEMA_VERSION
+    swapped["rpm_recovery"] = old_rpm
     candidate.validate_inventory(swapped, **coordinates)
     with pytest.raises(ValueError, match="managed Debian receipt is missing"):
         candidate.validate_inventory(inventory, **coordinates)
@@ -860,10 +882,11 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     inventory["schema_version"] = candidate.SCHEMA_VERSION
     with pytest.raises(ValueError, match="RPM recovery receipt is missing"):
         candidate.validate_inventory(inventory, **coordinates)
-    inventory["rpm_recovery"] = rpm
+    inventory["rpm_recovery"] = old_rpm
     inventory["schema_version"] = candidate.RPM_SCHEMA_VERSION
     candidate.validate_inventory(inventory, **coordinates)
     inventory["schema_version"] = candidate.SCHEMA_VERSION
+    inventory["rpm_recovery"] = rpm
     with pytest.raises(ValueError, match="RPM native smoke evidence is missing"):
         candidate.validate_inventory(inventory, **coordinates)
     inventory["rpm_smoke"] = smoke_records
@@ -876,13 +899,14 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     with pytest.raises(ValueError, match="requires the managed-update qualification"):
         candidate.validate_inventory(inventory, **coordinates)
     inventory["schema_version"] = candidate.RPM_SMOKE_SCHEMA_VERSION
+    inventory["rpm_recovery"] = revised_rpm(inventory["rpm_recovery"], container_image=rpm_qualification.LEGACY_IMAGE)
     candidate.validate_inventory(inventory, **coordinates)
     inventory["schema_version"] = candidate.SCHEMA_VERSION
     inventory["rpm_recovery"] = rpm
     with pytest.raises(ValueError, match="must contain all desktop GUI smoke archives"):
         candidate.validate_inventory(inventory, **coordinates)
     inventory["schema_version"] = candidate.MANAGED_RPM_SCHEMA_VERSION
-    candidate.validate_inventory(inventory, **coordinates)
+    candidate.validate_inventory({**inventory, "rpm_recovery": old_rpm}, **coordinates)
     inventory["schema_version"] = candidate.SCHEMA_VERSION
     inventory["gui_smoke"] = gui_archives
     gui_record = gui_archives[smoke[0]]
@@ -890,13 +914,13 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     with pytest.raises(ValueError, match="must bind the complete installer digest set"):
         candidate.validate_inventory(inventory, **coordinates)
     inventory["schema_version"] = candidate.GUI_SMOKE_SCHEMA_VERSION
-    candidate.validate_inventory(inventory, **coordinates)
+    candidate.validate_inventory({**inventory, "rpm_recovery": old_rpm}, **coordinates)
     inventory["schema_version"] = candidate.SCHEMA_VERSION
     gui_record["installer_sha256"] = installer_hashes
     with pytest.raises(ValueError, match="must contain all Linux native smoke archives"):
         candidate.validate_inventory(inventory, **coordinates)
     inventory["schema_version"] = candidate.GUI_INSTALLER_SCHEMA_VERSION
-    candidate.validate_inventory(inventory, **coordinates)
+    candidate.validate_inventory({**inventory, "rpm_recovery": old_rpm}, **coordinates)
     inventory["schema_version"] = candidate.SCHEMA_VERSION
     inventory["linux_smoke"] = linux_archives
     old_receipt = {**managed["receipt"], "candidate_has_server_bundle": False}
@@ -912,16 +936,16 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     inventory["schema_version"] = candidate.LINUX_INSTALLER_SCHEMA_VERSION
     del inventory["linux_smoke"]
     with pytest.raises(ValueError, match="must contain all Linux native smoke archives"):
-        candidate.validate_inventory(inventory, **coordinates)
+        candidate.validate_inventory({**inventory, "rpm_recovery": old_rpm}, **coordinates)
     inventory["linux_smoke"] = linux_archives
-    candidate.validate_inventory(inventory, **coordinates)
+    candidate.validate_inventory({**inventory, "rpm_recovery": old_rpm}, **coordinates)
     inventory["schema_version"] = candidate.SCHEMA_VERSION
     inventory["managed_debian_update"] = managed
     assert inventory.pop("debian_server_bundle") == reviewed_bundle
     with pytest.raises(ValueError, match="missing verified Debian server archive coordinates"):
         candidate.validate_inventory(inventory, **coordinates)
     inventory["schema_version"] = candidate.SERVER_BUNDLE_SCHEMA_VERSION
-    candidate.validate_inventory(inventory, **coordinates)
+    candidate.validate_inventory({**inventory, "rpm_recovery": old_rpm}, **coordinates)
     inventory["schema_version"] = candidate.SCHEMA_VERSION
     inventory["debian_server_bundle"] = {**reviewed_bundle, "runtime_sha256": "invalid digest"}
     with pytest.raises(ValueError, match="missing verified Debian server archive coordinates"):

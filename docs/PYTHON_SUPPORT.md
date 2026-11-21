@@ -62,7 +62,7 @@ or an ambiguous distribution set fails the job.
 ## PyQt6 compatibility
 
 The desktop extra supports PyQt6 6.11.0 up to, but excluding, PyQt6 7.0.
-Release builds pin PyQt6 and its Qt runtime to 6.12.0. CI also tests the
+Release builds pin PyQt6 to 6.12.1 and its Qt runtime to 6.12.0. CI also tests the
 hash-pinned PyQt6 6.11.0 and Qt 6.11.2 minimum across Linux, Windows and
 macOS on x64 and ARM64. The minimum job starts Qt and renders the GUI presets.
 

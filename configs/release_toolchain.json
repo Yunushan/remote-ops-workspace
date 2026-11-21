@@ -79,7 +79,7 @@
     },
     {
       "name": "PyQt6",
-      "version": "6.12.0",
+      "version": "6.12.1",
       "purpose": "Pinned desktop GUI dependency for native GUI bundles, including Windows x64 and ARM64 wheels."
     },
     {

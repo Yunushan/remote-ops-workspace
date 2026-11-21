@@ -86,7 +86,7 @@ def test_commercial_channel_has_no_self_asserted_bypass(tmp_path: Path) -> None:
 def test_source_archive_records_pin_official_urls_versions_and_upstream_digests() -> None:
     module = checker()
     upstream_digests = {
-        "pyqt6_source": "d3e021b716bae880224422f9d1b894d2d53de7e60e60dbc43f860723f9cc300b",
+        "pyqt6_source": "17bb18b3ae953ab54b23026291ecea2579b028597b56c281a752c8ed66dd1a58",
         "qt_source": "98ff4f44bac6ec3e1e62ee2a4316ae0e3d15badb015d753cc0268a20db52f165",
     }
     with patch.object(module, "fetch_upstream_checksum", side_effect=lambda key, _url, _filename: upstream_digests[key]):
@@ -95,11 +95,11 @@ def test_source_archive_records_pin_official_urls_versions_and_upstream_digests(
 
     assert records["pyqt6_source"] == {
         "component": "PyQt6",
-        "version": "6.12.0",
-        "filename": "pyqt6-6.12.0.tar.gz",
-        "url": "https://files.pythonhosted.org/packages/8b/77/73ae0fd2ce7915ce87269743fd11f14f009b8db60a58759afc1c402327f2/pyqt6-6.12.0.tar.gz",
-        "sha256": "d3e021b716bae880224422f9d1b894d2d53de7e60e60dbc43f860723f9cc300b",
-        "upstream_checksum_page": "https://pypi.org/pypi/PyQt6/6.12.0/json",
+        "version": "6.12.1",
+        "filename": "pyqt6-6.12.1.tar.gz",
+        "url": "https://files.pythonhosted.org/packages/61/5f/39d2cf3eabc36006a5c87df6e1ed34928025b4a1768d752859bf404ec341/pyqt6-6.12.1.tar.gz",
+        "sha256": "17bb18b3ae953ab54b23026291ecea2579b028597b56c281a752c8ed66dd1a58",
+        "upstream_checksum_page": "https://pypi.org/pypi/PyQt6/6.12.1/json",
     }
     assert records["qt_source"]["version"] == "6.12.0"
     assert records["qt_source"]["filename"] == "qt-everywhere-src-6.12.0.tar.xz"
@@ -137,8 +137,8 @@ def test_upstream_digest_mismatch_fails_closed() -> None:
 
 def test_source_archive_record_rejects_unpinned_hosts_or_versions(tmp_path: Path) -> None:
     module = checker()
-    record = json.loads(Path("redistribution-evidence/PyQt6-6.12.0-source.json").read_text())
-    record["url"] = "https://attacker.example/pyqt6-6.12.0.tar.gz"
+    record = json.loads(Path("redistribution-evidence/PyQt6-6.12.1-source.json").read_text())
+    record["url"] = "https://attacker.example/pyqt6-6.12.1.tar.gz"
     path = tmp_path / "source.json"
     path.write_text(json.dumps(record), encoding="utf-8")
 
@@ -181,14 +181,14 @@ def test_capture_builder_inventory_uses_installed_distribution_metadata(tmp_path
     tag = "v1.0.27"
     for name in module.target_asset_names(tag, target):
         (assets / name).write_bytes(b"actual asset")
-    versions = {"pyqt6": "6.12.0", "pyqt6-qt6": "6.12.0"}
+    versions = {"pyqt6": "6.12.1", "pyqt6-qt6": "6.12.0"}
     with patch.object(module, "installed_distribution_versions", return_value=versions):
         record = module.capture_builder_inventory(
             assets_dir=assets, tag=tag, sha="a" * 40,
             repository="owner/project", target=target,
         )
     assert record["distribution_inventory_source"] == "importlib.metadata"
-    assert record["distributions"] == {"PyQt6": "6.12.0", "PyQt6-Qt6": "6.12.0"}
+    assert record["distributions"] == {"PyQt6": "6.12.1", "PyQt6-Qt6": "6.12.0"}
     assert set(record["assets_sha256"]) == module.target_asset_names(tag, target)
 
 
@@ -499,7 +499,7 @@ def test_builder_inventory_rejects_unhashed_native_bytes(tmp_path: Path) -> None
                 "release_sha": sha,
                 "target": target,
                 "distribution_inventory_source": "importlib.metadata",
-                "distributions": {"PyQt6": "6.12.0", "PyQt6-Qt6": "6.12.0"},
+                "distributions": {"PyQt6": "6.12.1", "PyQt6-Qt6": "6.12.0"},
                 "assets_sha256": {name: "0" * 64 for name in names},
             }),
             encoding="utf-8",

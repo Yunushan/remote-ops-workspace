@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "component": "PyQt6",
+  "version": "6.12.1",
+  "filename": "pyqt6-6.12.1.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/61/5f/39d2cf3eabc36006a5c87df6e1ed34928025b4a1768d752859bf404ec341/pyqt6-6.12.1.tar.gz",
+  "sha256": "17bb18b3ae953ab54b23026291ecea2579b028597b56c281a752c8ed66dd1a58",
+  "upstream_checksum_page": "https://pypi.org/pypi/PyQt6/6.12.1/json"
+}

@@ -78,12 +78,17 @@ def test_docker_load_binds_the_fedora_manifest_in_both_image_stores(tmp_path, mo
     index = {"manifests": [{"digest": image}]}
     files = {
         "index.json": json.dumps(index).encode(),
+        "oci-layout": b'{"imageLayoutVersion":"1.0.0"}',
         "blobs/" + image.replace(":", "/"): manifest,
         "blobs/" + config.replace(":", "/"): b"config",
         "blobs/" + layer.replace(":", "/"): b"layer",
     }
     archive = tmp_path / "fedora.tar.xz"
     with tarfile.open(archive, "w:xz") as output:
+        for name in ("blobs", "blobs/sha256"):
+            directory = tarfile.TarInfo(name)
+            directory.type = tarfile.DIRTYPE
+            output.addfile(directory)
         for name, data in files.items():
             member = tarfile.TarInfo(name)
             member.size = len(data)
@@ -109,6 +114,26 @@ def test_docker_load_binds_the_fedora_manifest_in_both_image_stores(tmp_path, mo
             candidate.import_fedora_image(archive, tmp_path)
     else:
         assert candidate.import_fedora_image(archive, tmp_path) == observed
+
+
+@pytest.mark.parametrize(("name", "member_type"), [
+    ("../outside", tarfile.REGTYPE),
+    ("index.json", tarfile.SYMTYPE),
+    ("blobs/sha256/" + "0" * 64, tarfile.LNKTYPE),
+    ("oci-layout", tarfile.FIFOTYPE),
+    ("extra", tarfile.DIRTYPE),
+])
+def test_fedora_import_rejects_members_outside_regular_oci_layout(tmp_path, name, member_type):
+    archive = tmp_path / "fedora.tar.xz"
+    with tarfile.open(archive, "w:xz") as output:
+        member = tarfile.TarInfo(name)
+        member.type = member_type
+        if member.islnk() or member.issym():
+            member.linkname = "../outside"
+        output.addfile(member)
+    with pytest.raises(candidate.QualificationError, match="Unexpected member"):
+        candidate.import_fedora_image(archive, tmp_path)
+    assert not (tmp_path / "outside").exists()
 
 
 @pytest.mark.parametrize(

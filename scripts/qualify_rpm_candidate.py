@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -80,8 +81,17 @@ def load_fedora_image(temporary: Path) -> str:
 def import_fedora_image(archive: Path, temporary: Path) -> str:
     layout = temporary / "fedora-oci"
     layout.mkdir()
+    (layout / "blobs/sha256").mkdir(parents=True)
     with tarfile.open(archive, "r|xz") as source:
-        source.extractall(layout, filter="data")
+        for member in source:
+            if member.isdir() and member.name in ("blobs", "blobs/sha256"):
+                continue
+            if member.type not in (tarfile.REGTYPE, tarfile.AREGTYPE) or not re.fullmatch(
+                r"index\.json|oci-layout|blobs/sha256/[0-9a-f]{64}", member.name,
+            ):
+                raise QualificationError("Unexpected member in the Fedora OCI archive")
+            with source.extractfile(member) as stream, (layout / member.name).open("xb") as destination:
+                shutil.copyfileobj(stream, destination, length=1024 * 1024)
     index_path = layout / "index.json"
     index = json.loads(index_path.read_bytes())
     descriptor, = index["manifests"]

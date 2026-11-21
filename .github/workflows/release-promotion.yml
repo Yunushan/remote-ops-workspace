@@ -201,12 +201,6 @@ jobs:
           --native-release-channel production-signed
       - name: Install native archive inspector
         run: bash scripts/install_native_archive_inspector.sh
-      - name: Verify notices in the exact native packages
-        timeout-minutes: 20
-        run: >-
-          python scripts/check_packaged_release_notices.py
-          --assets-dir release-assets
-          --tag "$RELEASE_TAG"
       - name: Audit signed exact-byte redistribution and resolver evidence
         env:
           GH_TOKEN: ${{ github.token }}

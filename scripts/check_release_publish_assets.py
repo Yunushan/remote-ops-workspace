@@ -455,12 +455,6 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
             "Install native archive inspector",
         ),
         (
-            "python scripts/check_packaged_release_notices.py",
-            "exact package notices audit",
-            "run",
-            "Verify notices in the exact native packages",
-        ),
-        (
             "check_release_license_compliance.py",
             "signed exact-byte compliance audit",
             "run",
@@ -596,11 +590,6 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
     indexes: list[int] = []
     command_contracts = {
         "Install native archive inspector": ((), (), frozenset()),
-        "Verify notices in the exact native packages": (
-            ("--assets-dir release-assets", '--tag "$RELEASE_TAG"'),
-            (),
-            frozenset({"--assets-dir", "--tag"}),
-        ),
         "Verify final immutable release and complete exact-tag provenance": (
             (
                 "python scripts/check_release_provenance.py",

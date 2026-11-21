@@ -89,8 +89,9 @@ def check_packaged_legal_material(package: Path, expected: dict[str, str]) -> li
     return verified
 
 
-def expected_native_assets(tag: str) -> set[str]:
-    matrix = json.loads(MATRIX_PATH.read_text(encoding="utf-8"))
+def expected_native_assets(tag: str, *, matrix: dict[str, Any] | None = None) -> set[str]:
+    if matrix is None:
+        matrix = json.loads(MATRIX_PATH.read_text(encoding="utf-8"))
     names: set[str] = set()
     for job in matrix["default_github_release"]["native_jobs"]:
         for pattern in job["asset_patterns"]:

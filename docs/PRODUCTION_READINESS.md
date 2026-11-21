@@ -325,7 +325,9 @@ boundary. Modern security defaults must remain unchanged while legacy support is
 isolated per profile.
 
 Once the external prerequisites are ready, run the strict aggregate gate against
-the exact downloaded release assets:
+the exact downloaded release assets. Use a verifier with the native archive
+readers installed by `scripts/install_native_archive_inspector.sh` so the
+published compliance audit can re-extract the required notices.
 
 ```bash
 make production-readiness \

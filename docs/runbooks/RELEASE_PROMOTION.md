@@ -142,6 +142,10 @@ their installed paths and original bytes alongside the general notices.
 The Windows x86 profile ships the CPython and PyInstaller licenses for its CLI
 package.
 
+The signed compliance audit extracts the required notices again from the local
+release assets. Their installed paths, sizes, and digests must match the signed
+artifact scans, and the packages must match the signed native manifest hashes.
+
 The signed Windows x64, Windows ARM64, and macOS build jobs retain
 `gui-archive-proof.json` alongside the installed GUI smoke reports and
 `candidate-runtime-byte-binding.json`. The archive check confirms that the
@@ -495,6 +499,8 @@ inventory and signed platform registry the promotion job will consume. Set
 `approval_dir` to the directory containing the two approval files and its
 `bundle/` subdirectory. Set `release_assets_dir` to the complete staged asset
 inventory and authenticate GitHub CLI for the live source checks.
+Use a verifier with the archive readers installed by
+`scripts/install_native_archive_inspector.sh`.
 
 ```bash
 python scripts/check_release_license_compliance.py \

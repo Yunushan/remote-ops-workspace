@@ -166,7 +166,9 @@ def test_debian_server_notice_scope_comes_from_exact_package_evidence(tmp_path: 
     assert any("requires the exact bundled Debian component and notice for openssh-server" in error for error in verify())
 
 
-def _positive_fixture(tmp_path: Path, checker, *, different_runtime_report: bool = False) -> list[str]:
+def _positive_fixture(
+    tmp_path: Path, checker, *, different_runtime_report: bool = False, notice_fault: str = "",
+) -> list[str]:
     assets = tmp_path / "assets"
     evidence_root = tmp_path / "evidence"
     assets.mkdir()
@@ -177,16 +179,7 @@ def _positive_fixture(tmp_path: Path, checker, *, different_runtime_report: bool
     manifest_name = f"remote-ops-workspace-{tag}-windows-x86-native-manifest.json"
     artifact_name = f"remote-ops-workspace-{tag}-windows-x86-native.zip"
     artifact = assets / artifact_name
-    artifact.write_bytes(b"native bytes")
-    manifest = [
-        {
-            "file": f"native-dist/windows/{artifact_name}",
-            "size_bytes": artifact.stat().st_size,
-            "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
-        }
-    ]
     manifest_path = assets / manifest_name
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     toolchain = {
         "python": {"version": "3.14.7"},
@@ -201,7 +194,8 @@ def _positive_fixture(tmp_path: Path, checker, *, different_runtime_report: bool
                     "platform_target_ids": ["windows-x86"],
                     "arches": ["x86"],
                     "asset_patterns": [
-                        "remote-ops-workspace-v1.2.3-windows-<x86>-native-manifest.json"
+                        "remote-ops-workspace-v1.2.3-windows-<x86>-native-manifest.json",
+                        artifact_name,
                     ],
                 },
             ]
@@ -326,6 +320,31 @@ def _positive_fixture(tmp_path: Path, checker, *, different_runtime_report: bool
         for component in components
         for license_file in component["license_files"]
     ]
+    components[0]["license_files"][0]["path"] = "docs/licenses/runtime/cpython/LICENSE.txt"
+    components[2]["license_files"][0]["path"] = "docs/licenses/runtime/pyinstaller/COPYING.txt"
+    common = _write_record(
+        evidence_root, "licenses/THIRD_PARTY_NOTICES.md",
+        (checker.ROOT / "redistribution-evidence/THIRD_PARTY_NOTICES.md").read_bytes(),
+        path="docs/THIRD_PARTY_NOTICES.md",
+    )
+    with zipfile.ZipFile(artifact, "w") as archive:
+        for license_file in [*all_licenses, common]:
+            payload = (evidence_root / license_file["file"]).read_bytes()
+            if notice_fault == "different-runtime-bytes" and license_file is all_licenses[0]:
+                payload = payload.replace(b"license", b"licence")
+            archive.writestr(license_file["path"], payload)
+    manifest_path.write_text(json.dumps([
+        {
+            "file": f"native-dist/windows/{artifact_name}",
+            "size_bytes": artifact.stat().st_size,
+            "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
+        }
+    ]), encoding="utf-8")
+    signed_scans = [*all_licenses]
+    if notice_fault != "missing-general-notice":
+        signed_scans.append(common)
+    if notice_fault == "duplicate-general-notice":
+        signed_scans.append(common)
     inventory = {
         "schema_version": 1,
         "profile": "minimal-cli",
@@ -336,7 +355,7 @@ def _positive_fixture(tmp_path: Path, checker, *, different_runtime_report: bool
         "resolver_lock": lock,
         "realized_environment": realized,
         "components": components,
-        "artifact_license_files": {artifact_name: all_licenses},
+        "artifact_license_files": {artifact_name: signed_scans},
     }
     protected_registry = _write_record(
         evidence_root,
@@ -509,6 +528,15 @@ def test_complete_signed_release_compliance_fixture_passes(tmp_path: Path) -> No
     checker = _load_checker()
 
     assert checker.main(_positive_fixture(tmp_path, checker)) == 0
+
+
+@pytest.mark.parametrize("fault", ["different-runtime-bytes", "missing-general-notice", "duplicate-general-notice"])
+def test_signed_approval_must_match_notices_read_from_the_package(tmp_path: Path, capsys, fault: str) -> None:
+    checker = _load_checker()
+    args = _positive_fixture(tmp_path, checker, notice_fault=fault)
+
+    assert checker.main(args) == 1
+    assert "signed license scan differs from the required packaged notices" in capsys.readouterr().err
 
 
 def test_published_compliance_passes_the_authenticated_bundle_to_provenance(tmp_path, monkeypatch) -> None:

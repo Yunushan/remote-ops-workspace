@@ -19,6 +19,7 @@ import json
 import os
 import re
 import sys
+import tarfile
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -706,6 +707,10 @@ def check_evidence(
     if path_is_reparse(evidence_root) or not evidence_root.is_dir():
         return [*errors, f"compliance evidence root must be a real directory: {evidence_root}"]
 
+    from check_packaged_release_notices import expected_production_packages
+
+    expected_packages = expected_production_packages(tag, matrix=matrix)
+    approved_package_scans: dict[str, tuple[dict[str, Any], list[dict[str, Any]]]] = {}
     candidate_record = evidence.get("candidate_inventory")
     runtime_reports: dict[str, Any] = {}
     if not isinstance(candidate_record, dict) or not valid_evidence_record(candidate_record):
@@ -912,6 +917,43 @@ def check_evidence(
                 debian_notices=debian_notices,
             )
         )
+        scans = inventory.get("artifact_license_files")
+        if isinstance(scans, dict):
+            for artifact in sorted(expected_packages & entries.keys()):
+                if artifact in approved_package_scans:
+                    errors.append(f"{artifact} is named by multiple signed native manifests")
+                approved_package_scans[artifact] = (entries[artifact], scans.get(artifact, []))
+    if not errors:
+        errors.extend(check_packaged_notice_scans(assets_dir, expected_packages, approved_package_scans))
+    return errors
+
+
+def check_packaged_notice_scans(
+    assets_dir: Path,
+    expected_packages: set[str],
+    approved: dict[str, tuple[dict[str, Any], list[dict[str, Any]]]],
+) -> list[str]:
+    from check_packaged_release_notices import observe_notices
+
+    missing = expected_packages - approved.keys()
+    if missing:
+        return [f"signed native manifests are missing package notice scans for {sorted(missing)}"]
+    errors: list[str] = []
+    try:
+        for package in observe_notices(assets_dir, expected_packages):
+            entry, scans = approved[package.name]
+            if package.sha256 != entry.get("sha256") or package.size_bytes != entry.get("size_bytes"):
+                errors.append(f"{package.name} inspected package differs from the signed native manifest")
+                continue
+            observed = {
+                (item.path, hashlib.sha256(item.data).hexdigest(), len(item.data)) for item in package.files
+            }
+            required_paths = {path for path, _, _ in observed}
+            declared = [license_record_key(item) for item in scans if item["path"] in required_paths]
+            if len(declared) != len(observed) or set(declared) != observed:
+                errors.append(f"{package.name} signed license scan differs from the required packaged notices")
+    except (OSError, ValueError, tarfile.TarError, zipfile.BadZipFile) as exc:
+        errors.append(f"exact native package notices: {exc}")
     return errors
 
 

@@ -11,9 +11,10 @@ import sys
 import tarfile
 import tempfile
 import zipfile
+from collections.abc import Iterator
 from contextlib import suppress
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from check_preview_redistribution import (
     GUI_TARGET,
@@ -21,6 +22,7 @@ from check_preview_redistribution import (
     NATIVE_PACKAGE,
     ROOT,
     TAG,
+    EmbeddedFile,
     check_packaged_legal_material,
     expected_native_assets,
     file_hash,
@@ -36,12 +38,20 @@ PROTECTED_LINUX_PACKAGE = re.compile(
 )
 
 
-def expected_production_packages(tag: str) -> set[str]:
-    matrix = json.loads(MATRIX_PATH.read_bytes())
-    standard = {name for name in expected_native_assets(tag) if NATIVE_PACKAGE.fullmatch(name)}
+class PackageNotices(NamedTuple):
+    name: str
+    sha256: str
+    size_bytes: int
+    files: list[EmbeddedFile]
+
+
+def expected_production_packages(tag: str, *, matrix: dict[str, Any] | None = None) -> set[str]:
+    if matrix is None:
+        matrix = json.loads(MATRIX_PATH.read_bytes())
+    standard = {name for name in expected_native_assets(tag, matrix=matrix) if NATIVE_PACKAGE.fullmatch(name)}
     protected = {
         name
-        for target in matrix["script_supported_native"]
+        for target in matrix.get("script_supported_native", ())
         for pattern in target["asset_patterns"]
         if PROTECTED_LINUX_PACKAGE.fullmatch(name := re.sub(r"v\d+\.\d+\.\d+", tag, pattern))
     }
@@ -76,19 +86,7 @@ def publish_notice_capture(
                 raise
 
 
-def verify_notices(assets_dir: Path, tag: str, *, evidence_root: Path | None = None) -> int:
-    if not TAG.fullmatch(tag):
-        raise ValueError("release tag must be an exact vX.Y.Z tag")
-    capture = None
-    if evidence_root is not None:
-        evidence_root = evidence_root.absolute()
-        capture = evidence_root / "packaged-notices"
-        if (
-            not evidence_root.is_dir() or any(path_is_reparse(path) for path in (*evidence_root.parents, evidence_root))
-            or capture.resolve().is_relative_to(assets_dir.resolve()) or os.path.lexists(capture)
-        ):
-            raise ValueError("--evidence-root must be a real directory outside the assets with no packaged-notices output")
-    expected = expected_production_packages(tag)
+def observe_notices(assets_dir: Path, expected: set[str]) -> Iterator[PackageNotices]:
     actual = {
         path.name for path in assets_dir.iterdir()
         if NATIVE_PACKAGE.fullmatch(path.name) or PROTECTED_LINUX_PACKAGE.fullmatch(path.name)
@@ -111,11 +109,10 @@ def verify_notices(assets_dir: Path, tag: str, *, evidence_root: Path | None = N
             for filename in ("PyQt6-GPL-3.0.txt", "Qt-LGPL-3.0.txt", "Qt-Relinking.md")
         },
     }
-    packages = {}
-    blobs = {}
     for name in sorted(expected):
         package = regular_child(assets_dir, name, "native package")
-        package_sha = file_hash(package) if capture is not None else None
+        package_sha = file_hash(package)
+        package_size = package.stat().st_size
         embedded = check_packaged_legal_material(package, gui if GUI_TARGET.search(name) else notices)
         if "-linux-" in name:
             embedded.extend(read_runtime_licenses(package))
@@ -123,13 +120,32 @@ def verify_notices(assets_dir: Path, tag: str, *, evidence_root: Path | None = N
             target = NATIVE_PACKAGE.fullmatch(name)
             assert target is not None
             embedded.extend(read_desktop_runtime_licenses(package, target[2]))
+        if package.stat().st_size != package_size or file_hash(package) != package_sha:
+            raise ValueError(f"{name} changed during notice extraction")
+        if any(not safe_relative_path(member.path) for member in embedded):
+            raise ValueError(f"{name} has an invalid packaged notice path")
+        yield PackageNotices(name, package_sha, package_size, embedded)
+
+
+def verify_notices(assets_dir: Path, tag: str, *, evidence_root: Path | None = None) -> int:
+    if not TAG.fullmatch(tag):
+        raise ValueError("release tag must be an exact vX.Y.Z tag")
+    capture = None
+    if evidence_root is not None:
+        evidence_root = evidence_root.absolute()
+        capture = evidence_root / "packaged-notices"
+        if (
+            not evidence_root.is_dir() or any(path_is_reparse(path) for path in (*evidence_root.parents, evidence_root))
+            or capture.resolve().is_relative_to(assets_dir.resolve()) or os.path.lexists(capture)
+        ):
+            raise ValueError("--evidence-root must be a real directory outside the assets with no packaged-notices output")
+    expected = expected_production_packages(tag)
+    packages = {}
+    blobs = {}
+    for package in observe_notices(assets_dir, expected):
         if capture is not None:
-            if file_hash(package) != package_sha:
-                raise ValueError(f"{name} changed during notice extraction")
             records = []
-            for member in embedded:
-                if not safe_relative_path(member.path):
-                    raise ValueError(f"{name} has an invalid packaged notice path")
+            for member in package.files:
                 digest = hashlib.sha256(member.data).hexdigest()
                 blobs.setdefault(digest, member.data)
                 records.append({
@@ -138,8 +154,8 @@ def verify_notices(assets_dir: Path, tag: str, *, evidence_root: Path | None = N
                     "sha256": digest,
                     "size_bytes": len(member.data),
                 })
-            packages[name] = {
-                "sha256": package_sha, "size_bytes": package.stat().st_size, "notice_files": records,
+            packages[package.name] = {
+                "sha256": package.sha256, "size_bytes": package.size_bytes, "notice_files": records,
             }
     if capture is not None:
         publish_notice_capture(capture, tag, packages, blobs)

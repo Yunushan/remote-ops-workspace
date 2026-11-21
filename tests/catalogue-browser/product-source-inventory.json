@@ -33,8 +33,8 @@
     },
     {
       "path": "src/remote_ops_workspace/cli.py",
-      "sha256": "341e1bb812291ce1c0ed469cc49651d106a8ab31309a1aa357da6a468c9fddd6",
-      "size": 86937
+      "sha256": "e907d58126caf25b3cda20325c27bb7b2b38904c061c81f5caca04395466c139",
+      "size": 74615
     },
     {
       "path": "src/remote_ops_workspace/cli_customizer.py",
@@ -55,6 +55,11 @@
       "path": "src/remote_ops_workspace/cli_reports.py",
       "sha256": "42cbc8d8fd1d12f19143db5125e2d1fc4380e6ccc6702c030df7753e915d853c",
       "size": 11499
+    },
+    {
+      "path": "src/remote_ops_workspace/cli_text.py",
+      "sha256": "e44b349c60d69ea60252776677f70e76915deee11a4602e35621b72b700615fa",
+      "size": 13225
     },
     {
       "path": "src/remote_ops_workspace/cli_transfers.py",

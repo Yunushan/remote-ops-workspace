@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from remote_ops_workspace import cli, cli_managed_runtime, cli_transfers, cli_workspace
+from remote_ops_workspace import cli, cli_managed_runtime, cli_text, cli_transfers, cli_workspace
 from remote_ops_workspace.models import Profile
 
 
@@ -373,20 +373,19 @@ def test_smartcard_handlers_cover_plans_reviews_and_evidence(monkeypatch) -> Non
 
 
 @pytest.mark.parametrize(
-    ("handler_name", "dependency_name"),
+    ("owner", "handler_name", "dependency_name"),
     [
-        ("cmd_smartcard_evidence_verify", "validate_smartcard_release_evidence"),
-        ("cmd_text_evidence_verify", "validate_moba_text_release_evidence"),
-        ("cmd_mobapt_cache_verify", "validate_mobapt_cache_evidence"),
-        ("cmd_servers_evidence_verify", "validate_moba_server_release_evidence"),
-        ("cmd_x11_evidence_verify", "validate_moba_x_server_release_evidence"),
+        (cli, "cmd_smartcard_evidence_verify", "validate_smartcard_release_evidence"),
+        (cli_text, "cmd_text_evidence_verify", "validate_moba_text_release_evidence"),
+        (cli, "cmd_mobapt_cache_verify", "validate_mobapt_cache_evidence"),
+        (cli_managed_runtime, "cmd_servers_evidence_verify", "validate_moba_server_release_evidence"),
+        (cli_managed_runtime, "cmd_x11_evidence_verify", "validate_moba_x_server_release_evidence"),
     ],
 )
 def test_operational_evidence_verifiers_cover_output_and_failures(
-    monkeypatch, handler_name: str, dependency_name: str
+    monkeypatch, owner, handler_name: str, dependency_name: str
 ) -> None:
     result = _validation(passed=True, summary=True)
-    owner = cli_managed_runtime if handler_name.startswith(("cmd_servers_", "cmd_x11_")) else cli
     monkeypatch.setattr(owner, dependency_name, lambda *_args, **_kwargs: result)
     handler = getattr(cli, handler_name)
     args = _ns(evidence=Path("evidence.json"), assets_dir=Path("assets"), json=True)
@@ -403,7 +402,7 @@ def test_text_handlers_cover_preview_write_diff_remote_and_evidence(
     monkeypatch, tmp_path: Path
 ) -> None:
     profile = Profile(name="edge", protocol="ssh", host="192.0.2.10")
-    monkeypatch.setattr(cli, "ProfileStore", lambda: _ProfileStore(profile))
+    monkeypatch.setattr(cli_text, "ProfileStore", lambda: _ProfileStore(profile))
     preview = _Record(
         path=Path("note.txt"),
         exists=True,
@@ -414,7 +413,7 @@ def test_text_handlers_cover_preview_write_diff_remote_and_evidence(
         notes=["preview note"],
         text="hello\n",
     )
-    monkeypatch.setattr(cli, "preview_text_document", lambda *_args, **_kwargs: preview)
+    monkeypatch.setattr(cli_text, "preview_text_document", lambda *_args, **_kwargs: preview)
     preview_args = _ns(path=Path("note.txt"), bytes=100, lines=10, encoding="utf-8", json=True)
     assert cli.cmd_text_preview(preview_args) == 0
     preview_args.json = False
@@ -431,7 +430,7 @@ def test_text_handlers_cover_preview_write_diff_remote_and_evidence(
         backup_path=Path("note.txt.bak"),
         notes=["write note"],
     )
-    monkeypatch.setattr(cli, "write_text_document", lambda *_args, **_kwargs: write_result)
+    monkeypatch.setattr(cli_text, "write_text_document", lambda *_args, **_kwargs: write_result)
     write_args = _ns(
         path=Path("note.txt"),
         text="hello",
@@ -456,7 +455,7 @@ def test_text_handlers_cover_preview_write_diff_remote_and_evidence(
     assert cli.cmd_text_write(write_args) == 0
 
     diff = _Record(equal=True, added_lines=0, removed_lines=0, hunk_count=0, unified_diff="")
-    monkeypatch.setattr(cli, "diff_text_documents", lambda *_args, **_kwargs: diff)
+    monkeypatch.setattr(cli_text, "diff_text_documents", lambda *_args, **_kwargs: diff)
     diff_args = _ns(left=Path("a"), right=Path("b"), context=3, encoding="utf-8", json=True)
     assert cli.cmd_text_diff(diff_args) == 0
     diff_args.json = False
@@ -473,7 +472,7 @@ def test_text_handlers_cover_preview_write_diff_remote_and_evidence(
         upload_plan=sftp,
         notes=["remote note"],
     )
-    monkeypatch.setattr(cli, "build_remote_text_edit_plan", lambda *_args, **_kwargs: remote_plan)
+    monkeypatch.setattr(cli_text, "build_remote_text_edit_plan", lambda *_args, **_kwargs: remote_plan)
     remote_args = _ns(profile="edge", remote="/etc/app.conf", local=Path("app.conf"), json=True)
     assert cli.cmd_text_remote_plan(remote_args) == 0
     remote_args.json = False
@@ -490,7 +489,7 @@ def test_text_handlers_cover_preview_write_diff_remote_and_evidence(
         conflict_policy="compare-before-save",
         notes=["tab note"],
     )
-    monkeypatch.setattr(cli, "build_moba_text_editor_tab_plan", lambda *_args, **_kwargs: tab_plan)
+    monkeypatch.setattr(cli_text, "build_moba_text_editor_tab_plan", lambda *_args, **_kwargs: tab_plan)
     open_args = _ns(
         profile="edge",
         remote="/etc/app.conf",
@@ -516,7 +515,7 @@ def test_text_handlers_cover_preview_write_diff_remote_and_evidence(
         upload_plan=sftp,
         notes=["save note"],
     )
-    monkeypatch.setattr(cli, "review_moba_remote_text_save", lambda *_args, **_kwargs: review)
+    monkeypatch.setattr(cli_text, "review_moba_remote_text_save", lambda *_args, **_kwargs: review)
     review_args = _ns(
         profile="edge",
         remote="/etc/app.conf",
@@ -541,8 +540,8 @@ def test_text_handlers_cover_preview_write_diff_remote_and_evidence(
         evidence_path=Path("text.json"),
         notes=["bundle note"],
     )
-    monkeypatch.setattr(cli, "build_moba_text_release_evidence_bundle_plan", lambda *_args, **_kwargs: _Record())
-    monkeypatch.setattr(cli, "write_moba_text_release_evidence_bundle", lambda *_args, **_kwargs: bundle)
+    monkeypatch.setattr(cli_text, "build_moba_text_release_evidence_bundle_plan", lambda *_args, **_kwargs: _Record())
+    monkeypatch.setattr(cli_text, "write_moba_text_release_evidence_bundle", lambda *_args, **_kwargs: bundle)
     evidence_args = _ns(
         profile="edge",
         remote="/etc/app.conf",

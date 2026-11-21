@@ -203,6 +203,8 @@ Rules:
   including the hidden HTTP and FTP runtime entry points used by packaged builds.
   `cli_workspace.py` registers encrypted workspace backup and restore, profile
   import and export, and both directory sync commands.
+  `cli_text.py` registers local text preview, guarded writes, and diffs,
+  along with SFTP edit planning, save review, and evidence commands.
 
 ## Phase 6 - Internal certification gates (about +3)
 

@@ -436,7 +436,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
             "remote_ops_workspace.moba_text:MobaRemoteTextEditPlan",
         ],
         "source_tokens": {
-            "src/remote_ops_workspace/cli.py": [
+            "src/remote_ops_workspace/cli_text.py": [
                 "cmd_text_preview",
                 "cmd_text_write",
                 "cmd_text_diff",

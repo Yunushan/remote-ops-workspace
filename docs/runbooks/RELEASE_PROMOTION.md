@@ -133,6 +133,12 @@ its extracted path to `artifact_paths` on the component's license record.
 The signed audit matches the package scan and component license record
 against the extracted path, size, and digest.
 
+If a Debian package contains the reviewed server bundle, the extraction also
+retains each distro copyright file and records its package name, version, and
+`native-component` origin. Use these rows for the corresponding components and
+the Debian artifact scan. Keep their recorded paths. The signed audit scopes
+these files to the Debian packages that actually ship them.
+
 Windows packages ship their frozen runtime license files under
 `docs/licenses/runtime/`. Native smoke checks compare the installed bytes
 with the build staging files after portable extraction, EXE installation and

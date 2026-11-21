@@ -960,7 +960,7 @@ def check_packaged_notice_scans(
                 key = (item.path, hashlib.sha256(item.data).hexdigest(), len(item.data))
                 observed.add(key)
                 if isinstance(item, ComponentLicense):
-                    component_licenses.setdefault(item.component, set()).add(key)
+                    component_licenses.setdefault(normalize_component_name(item.component), set()).add(key)
             required_paths = {path for path, _, _ in observed}
             declared = [license_record_key(item) for item in scans if item["path"] in required_paths]
             if len(declared) != len(observed) or set(declared) != observed:

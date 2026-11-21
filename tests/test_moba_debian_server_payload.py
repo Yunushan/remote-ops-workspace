@@ -428,6 +428,60 @@ def test_redistribution_reads_exact_installed_notice_bytes(
         read_verified_debian_notices(archive, target=TARGET)
 
 
+def test_review_capture_retains_exact_debian_server_notices(
+    staged_debian: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.syspath_prepend(str(payload.ROOT / "scripts"))
+    import check_packaged_release_notices as capture
+    from packaged_linux_licenses import APPLICATION_LICENSE_PATH, REQUIRED_LICENSE_PATHS
+    from stage_linux_runtime_licenses import LICENSE_COMPONENTS, LICENSE_ROOT
+
+    for path in REQUIRED_LICENSE_PATHS | {
+        LICENSE_ROOT / name / "LICENSE" for name in LICENSE_COMPONENTS - {"cpython", "cryptography"}
+    }:
+        file = staged_debian / path
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_bytes(path.as_posix().encode())
+    (staged_debian / APPLICATION_LICENSE_PATH).write_bytes((payload.ROOT / "LICENSE").read_bytes())
+    (staged_debian / LICENSE_ROOT.parent / "THIRD_PARTY_NOTICES.md").write_bytes(
+        (payload.ROOT / "redistribution-evidence/THIRD_PARTY_NOTICES.md").read_bytes(),
+    )
+    assets, evidence, rejected = tmp_path / "assets", tmp_path / "review", tmp_path / "rejected"
+    for directory in (assets, evidence, rejected):
+        directory.mkdir()
+    tag = "v1.0.28"
+    package = assets / f"remote-ops-workspace-{tag}-linux-amd64.deb"
+    package.write_bytes(b"Debian fixture")
+    monkeypatch.setattr(capture, "expected_production_packages", lambda _tag: {package.name})
+    contents = make_tar(staged_debian)
+    monkeypatch.setattr(payload.subprocess, "run", lambda command, **_: subprocess.CompletedProcess(
+        command, 0, stdout=contents, stderr=b"",
+    ))
+
+    assert capture.verify_notices(assets, tag, evidence_root=evidence) == 1
+    observed = json.loads((evidence / "packaged-notices/notice-extraction.json").read_bytes())
+    expected = json.loads((staged_debian / payload.PAYLOAD / payload.MANIFEST).read_bytes())["debian_notices"]
+    captured = {
+        row["component"]: row for row in observed["packages"][package.name]["notice_files"]
+        if row.get("origin") == "native-component"
+    }
+    assert captured.keys() == expected.keys()
+    for name, record in captured.items():
+        assert record["version"] == expected[name]["version"]
+        assert record["path"] == notice_path(name).as_posix()
+        assert record["sha256"] == expected[name]["sha256"]
+        assert record["size_bytes"] == expected[name]["size_bytes"]
+        assert (evidence / record["file"]).read_bytes() == (staged_debian / notice_path(name)).read_bytes()
+
+    notice = "nfs-daemon"
+    path = staged_debian / notice_path(notice)
+    path.write_bytes(b"B" + path.read_bytes()[1:])
+    contents = make_tar(staged_debian)
+    with pytest.raises(ValueError, match="notice differs from reviewed evidence"):
+        capture.verify_notices(assets, tag, evidence_root=rejected)
+    assert not list(rejected.iterdir())
+
+
 @pytest.mark.parametrize(("change", "error"), [
     ("none", ""),
     ("changed-daemon", "daemon or manifest differs from reviewed evidence"),

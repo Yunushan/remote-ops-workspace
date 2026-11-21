@@ -80,6 +80,7 @@ class ComponentLicense(NamedTuple):
     path: str
     data: bytes
     component: str
+    version: str | None = None
 
 
 def check_packaged_legal_material(package: Path, expected: dict[str, str]) -> list[EmbeddedFile]:

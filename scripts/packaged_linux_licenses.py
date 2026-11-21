@@ -18,6 +18,7 @@ from check_preview_redistribution import (
 )
 from check_release_license_compliance import path_is_reparse
 from collect_unsigned_runtime import DEFAULT_LIMITS, Observations, cpio_members
+from debian_server_notices import notice_path, observe_debian_notices
 from stage_linux_runtime_licenses import LICENSE_COMPONENTS, LICENSE_ROOT, is_runtime_license_member
 
 APPLICATION_LICENSE_PATH = LICENSE_ROOT.parent / "LICENSE"
@@ -92,9 +93,6 @@ def license_members(archive: Path) -> Iterator[tuple[PurePosixPath, bytes]]:
             path = PurePosixPath(name)
             if path == APPLICATION_LICENSE_PATH or path.is_relative_to(LICENSE_ROOT):
                 yield path, data
-    elif suffix == ".deb":
-        with tarfile.open(fileobj=io.BytesIO(deb_tar_payload(archive)), mode="r:") as payload:
-            yield from tar_license_members(payload)
     elif suffix == ".appimage":
         yield from appimage_license_members(archive)
     elif archive.name.endswith(".tar.gz"):
@@ -105,8 +103,25 @@ def license_members(archive: Path) -> Iterator[tuple[PurePosixPath, bytes]]:
 
 
 def read_linux_component_licenses(archive: Path) -> list[ComponentLicense]:
+    if archive.suffix.lower() != ".deb":
+        return read_frozen_licenses(archive, license_members(archive))
+    architecture = archive.stem.rsplit("-linux-", 1)[-1]
+    target = "linux-x86_64" if architecture == "amd64" else f"linux-{architecture}"
+    with tarfile.open(fileobj=io.BytesIO(deb_tar_payload(archive)), mode="r:") as payload:
+        licenses = read_frozen_licenses(archive, tar_license_members(payload))
+        notices = observe_debian_notices(payload, target=target)
+    licenses.extend(
+        ComponentLicense(notice_path(name).as_posix(), notice.data, name, notice.record["version"])
+        for name, notice in sorted(notices.items())
+    )
+    return licenses
+
+
+def read_frozen_licenses(
+    archive: Path, members: Iterator[tuple[PurePosixPath, bytes]],
+) -> list[ComponentLicense]:
     records = {}
-    for path, data in license_members(archive):
+    for path, data in members:
         if (
             path in records or not 0 < len(data) <= MAX_LICENSE_BYTES
             or (path != APPLICATION_LICENSE_PATH and not is_runtime_license_member(path))

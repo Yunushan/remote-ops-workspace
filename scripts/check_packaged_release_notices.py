@@ -172,6 +172,9 @@ def verify_notices(assets_dir: Path, tag: str, *, evidence_root: Path | None = N
                 }
                 if isinstance(member, ComponentLicense):
                     record["component"] = member.component
+                    if member.version is not None:
+                        record["origin"] = "native-component"
+                        record["version"] = member.version
                 records.append(record)
             packages[package.name] = {
                 "sha256": package.sha256, "size_bytes": package.size_bytes, "notice_files": records,

@@ -27,6 +27,7 @@ from check_preview_redistribution import (
     regular_child,
 )
 from check_release_license_compliance import path_is_reparse, safe_relative_path
+from packaged_linux_licenses import read_runtime_licenses
 
 PROTECTED_LINUX_PACKAGE = re.compile(
     r"remote-ops-workspace-v\d+\.\d+\.\d+-linux-(?:i386|i686|armhf|armv7hl)"
@@ -115,6 +116,8 @@ def verify_notices(assets_dir: Path, tag: str, *, evidence_root: Path | None = N
         package = regular_child(assets_dir, name, "native package")
         package_sha = file_hash(package) if capture is not None else None
         embedded = check_packaged_legal_material(package, gui if GUI_TARGET.search(name) else notices)
+        if "-linux-" in name:
+            embedded.extend(read_runtime_licenses(package))
         if capture is not None:
             if file_hash(package) != package_sha:
                 raise ValueError(f"{name} changed during notice extraction")

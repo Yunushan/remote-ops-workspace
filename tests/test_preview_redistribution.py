@@ -130,6 +130,59 @@ def test_notice_capture_refuses_package_changed_after_extraction(
     assert not list(bundle.iterdir())
 
 
+@pytest.mark.parametrize("fault", ["", "missing-license", "duplicate-license", "linked-license"])
+def test_production_captures_runtime_licenses_by_installed_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str,
+) -> None:
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    import check_packaged_release_notices as notices
+    from packaged_linux_licenses import REQUIRED_LICENSE_PATHS
+    from stage_linux_runtime_licenses import LICENSE_COMPONENTS, LICENSE_ROOT
+
+    tag = "v2.3.4"
+    assets, bundle = tmp_path / "assets", tmp_path / "bundle"
+    assets.mkdir()
+    bundle.mkdir()
+    package = assets / f"remote-ops-workspace-{tag}-linux-armhf-native.tar.gz"
+    monkeypatch.setattr(notices, "expected_production_packages", lambda _tag: {package.name})
+    paths = REQUIRED_LICENSE_PATHS | {
+        LICENSE_ROOT / component / "LICENSE"
+        for component in LICENSE_COMPONENTS - {"cpython", "cryptography"}
+    }
+    contents = {path.as_posix(): path.as_posix().encode() for path in paths}
+    affected = (LICENSE_ROOT / "cryptography/LICENSE.APACHE").as_posix()
+    with tarfile.open(package, "w:gz") as archive:
+        archive.add(ROOT / "redistribution-evidence/THIRD_PARTY_NOTICES.md", arcname="docs/THIRD_PARTY_NOTICES.md")
+        for path, data in contents.items():
+            if path == affected and fault == "missing-license":
+                continue
+            member = tarfile.TarInfo(path)
+            if path == affected and fault == "linked-license":
+                member.type = tarfile.SYMTYPE
+                member.linkname = "LICENSE"
+                archive.addfile(member)
+                continue
+            member.size = len(data)
+            archive.addfile(member, io.BytesIO(data))
+            if path == affected and fault == "duplicate-license":
+                archive.addfile(member, io.BytesIO(data))
+
+    if fault:
+        with pytest.raises(ValueError, match="runtime license"):
+            notices.verify_notices(assets, tag, evidence_root=bundle)
+        assert not list(bundle.iterdir())
+        return
+
+    assert notices.verify_notices(assets, tag, evidence_root=bundle) == 1
+    report = json.loads((bundle / "packaged-notices/notice-extraction.json").read_bytes())
+    records = {
+        record["path"]: (bundle / record["file"]).read_bytes()
+        for record in report["packages"][package.name]["notice_files"]
+        if record["path"].startswith(LICENSE_ROOT.as_posix() + "/")
+    }
+    assert records == contents
+
+
 def test_missing_evidence_fails_before_native_publication(tmp_path: Path) -> None:
     module = checker()
     with pytest.raises(ValueError, match="preview evidence manifest.*missing"):

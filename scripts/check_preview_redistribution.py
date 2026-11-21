@@ -553,8 +553,7 @@ def cpio_embedded_file(payload: bytes, archive: Path, wanted: str) -> EmbeddedFi
     return EmbeddedFile(member_path.as_posix(), extracted.stdout)
 
 
-def rpm_embedded_file(archive: Path, wanted: str) -> EmbeddedFile | None:
-    """Read a file from an RPM's CPIO payload without writing package paths."""
+def rpm_cpio_payload(archive: Path) -> bytes:
     try:
         converted = subprocess.run(
             ["rpm2cpio", str(archive)],
@@ -570,7 +569,12 @@ def rpm_embedded_file(archive: Path, wanted: str) -> EmbeddedFile | None:
             f"cannot convert {archive.name} to CPIO (exit {converted.returncode})"
             + (f": {detail}" if detail else "")
         )
-    return cpio_embedded_file(converted.stdout, archive, wanted)
+    return converted.stdout
+
+
+def rpm_embedded_file(archive: Path, wanted: str) -> EmbeddedFile | None:
+    """Read a file from an RPM's CPIO payload without writing package paths."""
+    return cpio_embedded_file(rpm_cpio_payload(archive), archive, wanted)
 
 
 def pkg_embedded_file(archive: Path, wanted: str) -> EmbeddedFile | None:
@@ -699,8 +703,7 @@ def windows_installer_file(archive: Path, wanted: str) -> EmbeddedFile | None:
         return extracted_file(destination, wanted)
 
 
-def deb_embedded_file(archive: Path, wanted: str) -> EmbeddedFile | None:
-    """Read a packaged file from a Debian filesystem tar stream."""
+def deb_tar_payload(archive: Path) -> bytes:
     try:
         result = subprocess.run(
             ["dpkg-deb", "--fsys-tarfile", str(archive)],
@@ -716,8 +719,13 @@ def deb_embedded_file(archive: Path, wanted: str) -> EmbeddedFile | None:
             f"cannot read {archive.name} filesystem tar stream (exit {result.returncode})"
             + (f": {detail}" if detail else "")
         )
+    return result.stdout
+
+
+def deb_embedded_file(archive: Path, wanted: str) -> EmbeddedFile | None:
+    """Read a packaged file from a Debian filesystem tar stream."""
     try:
-        with tarfile.open(fileobj=io.BytesIO(result.stdout), mode="r:*") as package:
+        with tarfile.open(fileobj=io.BytesIO(deb_tar_payload(archive)), mode="r:*") as package:
             return tar_notice(package, wanted)
     except tarfile.TarError as exc:
         raise ValueError(f"cannot read {archive.name} filesystem tar stream: {exc}") from exc

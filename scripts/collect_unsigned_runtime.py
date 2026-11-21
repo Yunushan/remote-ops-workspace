@@ -371,6 +371,7 @@ def scan_carchive(raw: bytes, label: str, observations: Observations, depth: int
     ):
         raise Refusal("carchive-cookie-invalid")
     cursor, seen = toc_start, set()
+    runtime_options = []
     while cursor < toc_start + toc_len:
         observations.node()
         if cursor + 18 > toc_start + toc_len:
@@ -380,7 +381,8 @@ def scan_carchive(raw: bytes, label: str, observations: Observations, depth: int
         )
         if length < 19 or cursor + length > toc_start + toc_len or compression not in (0, 1):
             raise Refusal("carchive-toc-invalid")
-        encoded = raw[cursor + 18 : cursor + length].rstrip(b"\0")
+        name_field = raw[cursor + 18 : cursor + length]
+        encoded = name_field.rstrip(b"\0")
         if b"\0" in encoded:
             raise Refusal("carchive-name-invalid")
         try:
@@ -389,7 +391,14 @@ def scan_carchive(raw: bytes, label: str, observations: Observations, depth: int
             raise Refusal("carchive-name-invalid") from exc
         cursor += length
         if kind == b"o":
-            observations.gap("carchive-runtime-option-unclassified", label)
+            # PyInstaller writes options as empty, uncompressed TOC entries.
+            # Retain only the reviewed default; other values can be private.
+            if stored or size or compression or position > toc_offset or not name_field.endswith(b"\0"):
+                raise Refusal("carchive-runtime-option-invalid")
+            if name == "pyi-contents-directory _internal":
+                runtime_options.append(name)
+            else:
+                observations.gap("carchive-runtime-option-unclassified", label)
             continue
         if (
             size > observations.limits.member_bytes
@@ -418,6 +427,7 @@ def scan_carchive(raw: bytes, label: str, observations: Observations, depth: int
             observations.gap("pyz-module-ownership-unclassified", f"{label}::{name}")
     observations.gap("bootloader-version-and-runtime-closure-unverified", label)
     return {
+        "runtime_options_observed": runtime_options,
         "python_cookie_code_observed": python_code,
         "python_library_name_observed": library.split(b"\0", 1)[0].decode(
             "utf-8", errors="replace"
@@ -820,9 +830,11 @@ def scan_package(raw: bytes, name: str, observations: Observations):
         return {"backend": None, "all_regular_payload_files_observed": False, "license_records": []}
     start = len(observations.files)
     for member, data in entries:
-        observations.observe(member, data, f"{name}::{member}", package=name)
+        row = observations.observe(member, data, f"{name}::{member}", package=name)
         if native_kind(data):
-            scan_carchive(data, f"{name}::{member}", observations)
+            hints = scan_carchive(data, row["reference"], observations)
+            if hints:
+                row["runtime_options_observed"] = hints["runtime_options_observed"]
     return {
         "backend": backend,
         "all_regular_payload_files_observed": True,

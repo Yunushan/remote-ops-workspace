@@ -810,6 +810,30 @@ def test_wrong_lock_argument_fails_the_native_python_check() -> None:
     assert any("dependency-resolving pip install outside" in error for error in errors)
 
 
+def test_i386_projected_lock_requires_the_ordered_source_wheel_build() -> None:
+    checker = _load_checker()
+    bootstrap = "requirements-locks/protected-linux/linux-i386-bootstrap.txt"
+    source_build = checker.I386_BUILD_WHEELS_COMMAND
+    install = f"python -m pip install --require-hashes --requirement {checker.I386_PROJECTED_LOCK}"
+    project = 'python -m pip install --no-deps --no-build-isolation ".[security,package,servers]"'
+    bootstrap_install = f"python -m pip install --require-hashes --requirement {bootstrap}"
+
+    for commands in (
+        [bootstrap_install, install, project],
+        [bootstrap_install, install, source_build, project],
+        [source_build, bootstrap_install, install, project],
+    ):
+        errors = checker.check_native_job_lock_usage(
+            "\n".join(commands),
+            "linux-i386-native-evidence",
+            "linux-i386",
+            "requirements-locks/protected-linux/linux-i386.txt",
+            bootstrap_lock_path=bootstrap,
+            direct_script=True,
+        )
+        assert any("does not consume" in error or "must install" in error for error in errors)
+
+
 def test_wrong_verifier_bootstrap_lock_fails_the_compliance_gate(tmp_path: Path) -> None:
     checker = _load_checker()
     args = _positive_fixture(tmp_path, checker)

@@ -31,6 +31,10 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import check_platform_release_evidence_remote as platform_evidence  # noqa: E402
+from check_extended_platform_evidence import (  # noqa: E402
+    I386_BUILD_WHEELS_COMMAND,
+    I386_PROJECTED_LOCK,
+)
 from check_platform_verified_evidence import LINUX_TARGETS  # noqa: E402
 from check_release_publish_assets import normalize_version  # noqa: E402
 from debian_server_notices import VERSION_RE as DEBIAN_VERSION_RE  # noqa: E402
@@ -475,7 +479,8 @@ def check_policy(
             if raw_path != expected_lock:
                 errors.append(f"{target} must consume the tracked protected Linux lock {expected_lock}")
             native_bootstrap_lock = f"{PROTECTED_LINUX_LOCK_DIR}/{target}-bootstrap.txt"
-            source_bootstrap_lock = PROTECTED_LINUX_CFFI_LOCK
+            if target == "linux-armhf":
+                source_bootstrap_lock = PROTECTED_LINUX_CFFI_LOCK
         if matrix_arch is not None and not matrix_row_binds_lock(
             job_block,
             matrix_arch,
@@ -1974,6 +1979,8 @@ def installs_hashed_requirements(command: str, lock_paths: tuple[str, ...]) -> b
     for path in lock_paths:
         if path in ("${{ matrix.lock }}", "${{ matrix.bootstrap_lock }}"):
             paths.append(re.escape(f'"{path}"'))
+        elif path == I386_PROJECTED_LOCK:
+            paths.append(re.escape(path))
         elif re.fullmatch(r"[A-Za-z0-9_./-]+", path) is not None:
             escaped = re.escape(path)
             paths.extend((escaped, f'"{escaped}"', f"'{escaped}'"))
@@ -2010,13 +2017,26 @@ def check_native_job_lock_usage(
         for index, command in enumerate(commands)
         if re.match(r"^(?:python|python3)\s+-m\s+pip\s+install(?:\s|$)", command)
     ]
+    builds_i386_source_wheels = direct_script and target == "linux-i386"
     lock_tokens = (lock_path, "${{ matrix.lock }}") if allow_matrix_lock else (lock_path,)
+    if builds_i386_source_wheels:
+        lock_tokens = (I386_PROJECTED_LOCK,)
     bootstrap_tokens: tuple[str, ...] = ()
     lock_indexes = [
         index
         for index, command in pip_commands
         if installs_hashed_requirements(command, lock_tokens)
     ]
+    first_runtime_install = min(lock_indexes, default=len(commands))
+    lock_consumed = lock_path in job_block and bool(lock_indexes)
+    if builds_i386_source_wheels:
+        wheel_builds = [index for index, command in enumerate(commands) if command == I386_BUILD_WHEELS_COMMAND]
+        lock_consumed = (
+            lock_path == f"{PROTECTED_LINUX_LOCK_DIR}/linux-i386.txt"
+            and len(wheel_builds) == 1 and len(lock_indexes) == 1 and wheel_builds[0] < lock_indexes[0]
+        )
+        if wheel_builds:
+            first_runtime_install = min(first_runtime_install, wheel_builds[0])
     for bootstrap, matrix_token in (
         (bootstrap_lock_path, "${{ matrix.bootstrap_lock }}" if allow_matrix_lock else None),
         (source_bootstrap_lock_path, None),
@@ -2028,14 +2048,14 @@ def check_native_job_lock_usage(
         if not bootstrap_errors:
             allowed = (bootstrap, matrix_token) if matrix_token else (bootstrap,)
             bootstrap_tokens += allowed
-            if source_bootstrap_lock_path is not None and (
-                not lock_indexes or not any(
-                    index < lock_indexes[0] and installs_hashed_requirements(command, allowed)
+            if (direct_script or source_bootstrap_lock_path is not None) and (
+                not lock_consumed or not any(
+                    index < first_runtime_install and installs_hashed_requirements(command, allowed)
                     for index, command in pip_commands
                 )
             ):
                 errors.append(f"{target} must install {bootstrap} before its final hashed lock")
-    if lock_path not in job_block or not lock_indexes:
+    if not lock_consumed:
         errors.append(
             f"release workflow {job} job does not consume {target} lock {lock_path} "
             "with executable pip --require-hashes"

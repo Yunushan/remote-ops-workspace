@@ -96,10 +96,17 @@ if [[ "$TARGET" == linux-i386 ]]; then
   cd -- "$WORKSPACE"
 fi
 
-bash scripts/smoke_linux_native.sh --arch "$ARCH" --dist native-dist/linux --target "$TARGET" \
-  --workflow-run-url "$WORKFLOW_RUN_URL" --workflow-run-attempt "$SOURCE_RUN_ATTEMPT" \
-  --source-head-sha "$SOURCE_HEAD_SHA" --builder-evidence "$EVIDENCE_DIR/builder-identity-$TARGET.json" \
-  2>&1 | tee "$EVIDENCE_DIR/native-smoke-$TARGET.log"
+if [[ "$TARGET" == linux-i386 ]]; then
+  i386_source_wheel_inventory="$(tr -d '\r\n' < "$EVIDENCE_DIR/i386-source-wheel-inventory.json")"
+fi
+{
+  if [[ "$TARGET" == linux-i386 ]]; then
+    printf 'native installer smoke i386 source-wheel inventory: %s\n' "$i386_source_wheel_inventory"
+  fi
+  bash scripts/smoke_linux_native.sh --arch "$ARCH" --dist native-dist/linux --target "$TARGET" \
+    --workflow-run-url "$WORKFLOW_RUN_URL" --workflow-run-attempt "$SOURCE_RUN_ATTEMPT" \
+    --source-head-sha "$SOURCE_HEAD_SHA" --builder-evidence "$EVIDENCE_DIR/builder-identity-$TARGET.json"
+} 2>&1 | tee "$EVIDENCE_DIR/native-smoke-$TARGET.log"
 
 mkdir -- "$EVIDENCE_DIR/artifacts"
 cp -- "native-dist/linux/remote-ops-workspace-$RELEASE_TAG-linux-$ARCH.deb" \

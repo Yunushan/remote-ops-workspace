@@ -95,11 +95,25 @@ def test_extended_platform_evidence_requires_locked_offline_cargo_builds() -> No
         ("export CARGO_NET_OFFLINE=true", "locked offline Cargo configuration"),
         ("python3 scripts/prepare_protected_linux_cargo.py", "locked Cargo prefetch"),
         ("python scripts/build_protected_i386_wheels.py", "locked source-wheel build"),
+        ("printf 'native installer smoke i386 source-wheel inventory:", "source-wheel inventory in the native smoke log"),
     ):
         changed = capture.replace(required, f"# {required}", 1)
         assert f"native i386 capture missing {message}" in checker.check_extended_platform_evidence(
             native_capture=changed,
         )
+
+
+def test_i386_collector_requires_source_wheel_inventory_in_package_step() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = checker.WORKFLOW_PATH.read_text(encoding="utf-8")
+    changed = workflow.replace("--require-i386-source-wheel-inventory", "--unrelated-option", 1)
+
+    errors = checker.check_extended_platform_evidence(changed)
+
+    assert (
+        "linux-i386-native-evidence must require the source-wheel inventory when packaging the review bundle"
+        in errors
+    )
 
 
 def test_protected_linux_source_extraction_rejects_unlocked_bytes(

@@ -9,6 +9,11 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "extended-platform-evidence.yml"
 LINUX_CAPTURE_PATH = Path("scripts") / "capture_linux_platform_evidence.sh"
 NATIVE_LOCK_DIR = "requirements-locks/protected-linux"
+I386_PROJECTED_LOCK = '"$I386_BUILD_ROOT/remaining-i386-requirements.txt"'
+I386_BUILD_WHEELS_COMMAND = (
+    'python scripts/build_protected_i386_wheels.py --workspace "$I386_BUILD_ROOT" '
+    '--inventory "$WORKSPACE/$EVIDENCE_DIR/i386-source-wheel-inventory.json"'
+)
 NATIVE_LINUX_ARCHES = {
     "linux-i386": ("i386", "i686", "i686"),
     "linux-armhf": ("armhf", "armv7hl", "armhf"),
@@ -366,6 +371,10 @@ def check_linux_job(workflow: str, *, target: str) -> list[str]:
     )
     if workflow_step_block(block, f"name: Wait for completed {step_prefix} evidence") != wait_step:
         errors.append(f"{job} must wait for staged native evidence before collector validation")
+    if target == "linux-i386":
+        package_step = workflow_step_block(block, f"name: Package {step_prefix} review evidence bundle")
+        if "            --require-i386-source-wheel-inventory \\\n" not in package_step:
+            errors.append(f"{job} must require the source-wheel inventory when packaging the review bundle")
     for snippet, label in required_snippets.items():
         if snippet not in block:
             errors.append(f"{job} missing {label}: {snippet}")
@@ -471,16 +480,21 @@ def check_native_capture(shell: str, target: str) -> list[str]:
         ("exact tagged source archive", 'git archive --format=tar "$SOURCE_HEAD_SHA" | tar -xf - -C "$I386_BUILD_ROOT/source"'),
     ) if target == "linux-i386" else ()
     runtime = (
-        ("locked source-wheel build", 'python scripts/build_protected_i386_wheels.py --workspace "$I386_BUILD_ROOT" '
-         '--inventory "$WORKSPACE/$EVIDENCE_DIR/i386-source-wheel-inventory.json"'),
+        ("locked source-wheel build", I386_BUILD_WHEELS_COMMAND),
         ("remaining protected runtime lock", "pip install --require-hashes --no-cache-dir --no-build-isolation "
-         '--only-binary=:all: --no-binary=pyftpdlib --requirement "$I386_BUILD_ROOT/remaining-i386-requirements.txt"'),
+         f"--only-binary=:all: --no-binary=pyftpdlib --requirement {I386_PROJECTED_LOCK}"),
     ) if target == "linux-i386" else (
         ("protected CFFI lock", "pip install --require-hashes --no-cache-dir --no-build-isolation "
          f"--only-binary=:all: --no-binary=cffi --requirement {NATIVE_LOCK_DIR}/linux-32bit-cffi.txt"),
         ("protected runtime lock", "pip install --require-hashes --no-cache-dir --no-build-isolation "
          f"--only-binary=:all: --no-binary=cffi,pyftpdlib,pyinstaller --requirement {NATIVE_LOCK_DIR}/{target}.txt"),
     )
+    inventory = (
+        ("generated source-wheel inventory input",
+         r'''i386_source_wheel_inventory="$(tr -d '\r\n' < "$EVIDENCE_DIR/i386-source-wheel-inventory.json")"'''),
+        ("source-wheel inventory in the native smoke log",
+         r'''printf 'native installer smoke i386 source-wheel inventory: %s\n' "$i386_source_wheel_inventory"'''),
+    ) if target == "linux-i386" else ()
     required = (
         ("strict shell safety", "#!/usr/bin/env bash\nset -euo pipefail\numask 077"),
         ("dispatch input preflight", 'python3 scripts/check_extended_platform_dispatch_inputs.py --target "$TARGET"'),
@@ -501,10 +515,11 @@ def check_native_capture(shell: str, target: str) -> list[str]:
          '--runtime-report "$WORKSPACE/$EVIDENCE_DIR/candidate-pip-inspect.json" '
          f'--lock "{NATIVE_LOCK_DIR}/$TARGET.txt"'),
         ("native artifact build", 'TARGET_ARCH="$ARCH" PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh'),
+        *inventory,
         ("native smoke run identity", 'bash scripts/smoke_linux_native.sh --arch "$ARCH" --dist native-dist/linux --target "$TARGET" '
          '--workflow-run-url "$WORKFLOW_RUN_URL" --workflow-run-attempt "$SOURCE_RUN_ATTEMPT" '
-         '--source-head-sha "$SOURCE_HEAD_SHA" --builder-evidence "$EVIDENCE_DIR/builder-identity-$TARGET.json" '
-         '2>&1 | tee "$EVIDENCE_DIR/native-smoke-$TARGET.log"'),
+         '--source-head-sha "$SOURCE_HEAD_SHA" --builder-evidence "$EVIDENCE_DIR/builder-identity-$TARGET.json"'),
+        ("native smoke log capture", '} 2>&1 | tee "$EVIDENCE_DIR/native-smoke-$TARGET.log"'),
         ("staging after native smoke", 'mkdir -- "$EVIDENCE_DIR/artifacts"'),
         ("strict promotion artifact validation", 'python scripts/check_platform_promotion_artifacts.py --target "$TARGET" '
          '--assets-dir "$EVIDENCE_DIR/artifacts" --tag "$RELEASE_TAG" --strict'),

@@ -54,8 +54,10 @@ from check_release_publish_assets import (  # noqa: E402
 from check_release_tag_governance import check_redistribution_approval  # noqa: E402
 from fetch_release_tag_governance import promotion_transaction, require_transaction  # noqa: E402
 from release_candidate_inventory import (  # noqa: E402
+    ARCHIVE_FILE_SCOPE_SCHEMA_VERSION,
     MAX_JSON_BYTES,
     candidate_file_identities,
+    require_candidate_archive_indexes,
     validate_managed_release_qualification,
     verify_retained_qualification_archives,
 )
@@ -279,14 +281,14 @@ def main(
             if release_digests.get(name) != digest:
                 raise ValueError(f"published asset {name} does not match the independently reviewed SHA-256")
         if args.candidate_inventory is not None:
-            assert approval is not None and audited_inputs is not None
+            assert approval is not None and audited_inputs is not None and args.assets_dir is not None
             published_files = {
                 item["name"]: (item["size"], release_digests[item["name"]])
                 for item in release["assets"] if item["name"] in standard_assets
             }
             digest = check_approved_candidate_inventory(
                 args.candidate_inventory, approval[1], repository=repository, tag=tag,
-                sha=sha, published_files=published_files,
+                sha=sha, published_files=published_files, assets_dir=args.assets_dir,
                 deb_package=local_assets.get(f"remote-ops-workspace-{tag}-linux-amd64.deb"),
                 archive_root=args.candidate_qualification_archives,
                 require_retained_archives=not current_transaction,
@@ -471,7 +473,7 @@ def main(
 
 def check_approved_candidate_inventory(
     path: Path, approval: dict[str, Any], *, repository: str, tag: str, sha: str,
-    published_files: Mapping[str, tuple[int, str]], deb_package: Path | None,
+    published_files: Mapping[str, tuple[int, str]], assets_dir: Path, deb_package: Path | None,
     archive_root: Path | None, require_retained_archives: bool,
 ) -> str:
     digest, value = read_approved_json(path, approval, "candidate_inventory", "candidate inventory")
@@ -483,6 +485,8 @@ def check_approved_candidate_inventory(
         deb_sha256=published_files[deb_name][1], deb_package=deb_package,
     )
     check_published_candidate_files(records, published_files)
+    if value["schema_version"] >= ARCHIVE_FILE_SCOPE_SCHEMA_VERSION:
+        require_candidate_archive_indexes(assets_dir, records)
     if archive_root is not None:
         verify_retained_qualification_archives(archive_root, value)
     elif require_retained_archives and "linux_smoke" in value:

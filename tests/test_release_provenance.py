@@ -148,6 +148,57 @@ def test_certification_requires_every_standard_file_from_the_reviewed_inventory(
             checker.check_published_candidate_files(reviewed, published)
 
 
+@pytest.mark.parametrize("stale_manifest", [False, True])
+def test_certification_reopens_published_archive_indexes_when_file_hashes_match(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stale_manifest: bool,
+) -> None:
+    checker = _load_checker()
+    tag = "v1.0.28"
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    base = f"remote-ops-workspace-{tag}-linux"
+    package = assets / f"{base}-amd64.deb"
+    manifest = assets / f"{base}-x86_64-native-manifest.json"
+    checksum = assets / f"{base}-x86_64-native-SHA256SUMS.txt"
+    payload = b"release installer"
+    package.write_bytes(payload)
+    manifest.write_text(json.dumps([{
+        "file": package.name, "sha256": hashlib.sha256(payload).hexdigest(),
+        "size_bytes": len(payload) + int(stale_manifest),
+    }]), encoding="utf-8")
+    checksum.write_text("".join(
+        f"{hashlib.sha256(file.read_bytes()).hexdigest()}  {file.name}\n" for file in (package, manifest)
+    ), encoding="utf-8")
+    published = {
+        file.name: (file.stat().st_size, hashlib.sha256(file.read_bytes()).hexdigest()) for file in assets.iterdir()
+    }
+    records = [{"name": "release-linux-native-x86_64", "files": [
+        {"path": name, "size": size, "sha256": digest} for name, (size, digest) in published.items()
+    ]}]
+
+    candidate = tmp_path / "release-candidate-inventory.json"
+    raw = json.dumps({"schema_version": checker.ARCHIVE_FILE_SCOPE_SCHEMA_VERSION}).encode()
+    candidate.write_bytes(raw)
+    digest = hashlib.sha256(raw).hexdigest()
+    approval = {"candidate_inventory": {
+        "file": candidate.name, "sha256": digest, "size_bytes": len(raw), "reference": "candidate fixture",
+    }}
+    monkeypatch.setattr(checker, "validate_managed_release_qualification", lambda *_args, **_kwargs: records)
+
+    def verify() -> str:
+        return checker.check_approved_candidate_inventory(
+            candidate, approval, repository="example/project", tag=tag, sha="a" * 40,
+            published_files=published, assets_dir=assets, deb_package=package,
+            archive_root=None, require_retained_archives=False,
+        )
+
+    if stale_manifest:
+        with pytest.raises(ValueError, match="size or digest differs from extracted archive file"):
+            verify()
+    else:
+        assert verify() == digest
+
+
 def test_release_asset_bytes_reject_remote_digest_drift_and_inventory_gap(
     tmp_path: Path,
 ) -> None:
@@ -1135,12 +1186,13 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
         debian_policy = {**json.loads(prior_policy), "production_targets": ["linux-x86_64"]}
         policy.write_text(json.dumps(debian_policy), encoding="utf-8")
         candidate = tmp_path / "release-candidate-inventory.json"
-        candidate.write_text('{"sealed_candidate_fixture": true}', encoding="utf-8")
+        legacy_inventory = {"schema_version": 12, "sealed_candidate_fixture": True}
+        candidate.write_text(json.dumps(legacy_inventory), encoding="utf-8")
         write_approval("2026-11-01T12:02:30Z", candidate)
         qualified = []
 
         def verify_exact_deb(value, **kwargs):
-            assert value == {"sealed_candidate_fixture": True}
+            assert value == legacy_inventory
             qualified.append(kwargs)
             return [{"files": [{"path": asset.name, "size": asset.stat().st_size, "sha256": checker.sha256_file(asset)}]}]
 
@@ -1155,12 +1207,12 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
         }]
 
         with monkeypatch.context() as current_schema:
-            current_inventory = {"linux_smoke": "fixture"}
+            current_inventory = {"schema_version": 12, "linux_smoke": "fixture"}
             candidate.write_text(json.dumps(current_inventory), encoding="utf-8")
             write_approval("2026-11-01T12:02:30Z", candidate)
             current_schema.setattr(
                 checker, "validate_managed_release_qualification",
-                lambda value, **kwargs: verify_exact_deb({"sealed_candidate_fixture": True}, **kwargs),
+                lambda value, **kwargs: verify_exact_deb(legacy_inventory, **kwargs),
             )
             assert checker.main(candidate_args) == 1
             assert "published audit requires --candidate-qualification-archives" in capsys.readouterr().err
@@ -1173,7 +1225,7 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
             )
             assert checker.main([*candidate_args, "--candidate-qualification-archives", str(archive_root)]) == 0
             assert replays == [(archive_root, current_inventory)]
-        candidate.write_text('{"sealed_candidate_fixture": true}', encoding="utf-8")
+        candidate.write_text(json.dumps(legacy_inventory), encoding="utf-8")
         write_approval("2026-11-01T12:02:30Z", candidate)
 
         package = root / f"remote-ops-workspace-{tag}-macos-arm64.pkg"

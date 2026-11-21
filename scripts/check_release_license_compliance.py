@@ -45,6 +45,9 @@ from release_candidate_inventory import (  # noqa: E402
     MAX_JSON_BYTES,
     RUNTIME_REPORT_ARTIFACT_NAMES,
     RUNTIME_REPORT_NAME,
+    candidate_file_identities,
+    positive_int,
+    validate_inventory,
     validate_managed_release_qualification,
     validate_runtime_report,
 )
@@ -721,6 +724,7 @@ def check_evidence(
     approved_package_scans: dict[str, ApprovedPackageNotices] = {}
     candidate_record = evidence.get("candidate_inventory")
     runtime_reports: dict[str, Any] = {}
+    candidate_files: dict[str, dict[str, tuple[int, str]]] = {}
     if not isinstance(candidate_record, dict) or not valid_evidence_record(candidate_record):
         errors.append("compliance evidence candidate_inventory record is invalid")
     else:
@@ -747,10 +751,28 @@ def check_evidence(
                 "compliance candidate inventory input must be the signed bundle file"
             )
         else:
-            _, sealed_candidate = read_json_object(bound_candidate, "sealed release candidate inventory")
-            reports = sealed_candidate.get("runtime_reports")
-            if isinstance(reports, dict):
-                runtime_reports = reports
+            raw_candidate, sealed_candidate = read_json_object(bound_candidate, "sealed release candidate inventory")
+            if (
+                len(raw_candidate) != candidate_record["size_bytes"]
+                or hashlib.sha256(raw_candidate).hexdigest() != candidate_record["sha256"]
+            ):
+                errors.append("sealed release candidate inventory differs from its signed bytes")
+            else:
+                try:
+                    archives = validate_inventory(
+                        sealed_candidate, repository=repository, release_tag=tag, release_sha=sha,
+                        run_id=positive_int(sealed_candidate.get("build_run_id"), "candidate build run ID"),
+                        run_attempt=1,
+                    )
+                    identities = candidate_file_identities(file for archive in archives for file in archive["files"])
+                except ValueError as exc:
+                    errors.append(f"sealed release candidate inventory: {exc}")
+                else:
+                    runtime_reports = sealed_candidate["runtime_reports"]
+                    candidate_files = {
+                        archive["name"]: {file["path"]: identities[file["path"]] for file in archive["files"]}
+                        for archive in archives
+                    }
             if "linux-x86_64" in policy["production_targets"]:
                 name = f"remote-ops-workspace-{tag}-linux-amd64.deb"
                 deb, deb_error = secure_regular_file(assets_dir, name, "managed Debian release installer")
@@ -889,6 +911,16 @@ def check_evidence(
                 or any(realized[key] != sealed.get(key) for key in ("sha256", "size_bytes"))
             ):
                 errors.append(f"{target} pip inspect evidence must match the exact sealed build report")
+            if candidate_files:
+                _, job, arch = producer_for_target(target, release_workflow="", extended_workflow="")
+                archive_name = f"release-{job}-{arch}"
+                release_files = {
+                    name: (path.stat().st_size, manifest_hash),
+                    **{asset: (entry.get("size_bytes"), entry.get("sha256")) for asset, entry in entries.items()},
+                }
+                for asset, identity in release_files.items():
+                    if candidate_files.get(archive_name, {}).get(asset) != identity:
+                        errors.append(f"{asset} does not match the sealed {archive_name} candidate archive")
         elif target in LINUX_TARGETS:
             errors.extend(check_protected_linux_runtime_report(
                 target, tag, protected_records.get(target), assets_dir, inventory.get("realized_environment"),
@@ -1184,7 +1216,7 @@ def check_xp_inventory(
 ) -> list[str]:
     """Bind the independent XP decision to the .NET build and release bytes."""
     from check_xp_candidate_run import verify_candidate, verify_candidate_bytes
-    from release_candidate_inventory import GitHubClient, positive_int
+    from release_candidate_inventory import GitHubClient
 
     required = {
         "profile", "run_id", "run_attempt", "candidate_artifact", "receipt_artifact",

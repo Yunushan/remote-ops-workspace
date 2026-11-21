@@ -115,6 +115,7 @@ def test_release_asset_bytes_match_every_local_and_remote_file(tmp_path: Path) -
     ("missing", "file sets differ"),
     ("extra", "file sets differ"),
     ("duplicate", "duplicated file record"),
+    ("case-duplicate", "duplicated file record"),
     ("unsafe", "invalid or duplicated file record"),
 ])
 def test_certification_requires_every_standard_file_from_the_reviewed_inventory(change, error) -> None:
@@ -136,6 +137,8 @@ def test_certification_requires_every_standard_file_from_the_reviewed_inventory(
         reviewed.append({"files": [{"path": "unreviewed.bin", "size": 30, "sha256": "d" * 64}]})
     elif change == "duplicate":
         reviewed.append(reviewed[0])
+    elif change == "case-duplicate":
+        reviewed.append({"files": [{**reviewed[0]["files"][0], "path": deb.upper()}]})
     elif change == "unsafe":
         reviewed[1]["files"][0]["path"] = "../" + manifest
     if error is None:

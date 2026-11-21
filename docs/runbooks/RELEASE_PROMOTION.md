@@ -157,6 +157,9 @@ package.
 The signed compliance audit extracts the required notices again from the local
 release assets. Their installed paths, sizes, and digests must match the signed
 artifact scans, and the packages must match the signed native manifest hashes.
+For each standard platform, the audit checks the native manifest and packages
+against their file records in the same sealed build inventory that supplies
+the runtime report.
 
 The signed Windows x64, Windows ARM64, and macOS build jobs retain
 `gui-archive-proof.json` alongside the installed GUI smoke reports and

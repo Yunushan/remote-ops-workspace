@@ -55,6 +55,7 @@ from check_release_tag_governance import check_redistribution_approval  # noqa: 
 from fetch_release_tag_governance import promotion_transaction, require_transaction  # noqa: E402
 from release_candidate_inventory import (  # noqa: E402
     MAX_JSON_BYTES,
+    candidate_file_identities,
     validate_managed_release_qualification,
     verify_retained_qualification_archives,
 )
@@ -526,18 +527,7 @@ def check_approved_protected_platform_assets(
 def check_published_candidate_files(
     records: list[dict[str, Any]], published_files: Mapping[str, tuple[int, str]],
 ) -> None:
-    reviewed: dict[str, tuple[int, str]] = {}
-    for record in records:
-        for item in record["files"]:
-            if not isinstance(item, dict) or item.keys() != {"path", "size", "sha256"}:
-                raise ValueError("approved candidate inventory contains an invalid file record")
-            name, size, digest = item["path"], item["size"], item["sha256"]
-            if (
-                not safe_asset_name(name) or name in reviewed or type(size) is not int or size < 1
-                or not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None
-            ):
-                raise ValueError("approved candidate inventory contains an invalid or duplicated file record")
-            reviewed[name] = (size, digest)
+    reviewed = candidate_file_identities(item for record in records for item in record["files"])
     if reviewed.keys() != published_files.keys():
         raise ValueError(
             "approved candidate and published standard file sets differ: "

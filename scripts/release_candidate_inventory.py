@@ -26,6 +26,7 @@ import tempfile
 import urllib.error
 import urllib.request
 import zipfile
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlsplit
@@ -1420,6 +1421,24 @@ def validate_inventory(
         validate_smoke_records(value.get("linux_smoke"), ids, LINUX_SMOKE_ARTIFACT_NAMES, "Linux native")
         require_smoked_installer_assets(records, release_tag, value["linux_smoke"])
     return sorted(records, key=lambda item: item["name"])
+
+
+def candidate_file_identities(files: Iterable[Any]) -> dict[str, tuple[int, str]]:
+    """Validate sealed file records and index their size and digest by archive member name."""
+    identities = {}
+    folded_names: set[str] = set()
+    for item in files:
+        if not isinstance(item, dict) or item.keys() != {"path", "size", "sha256"}:
+            raise ValueError("approved candidate inventory contains an invalid file record")
+        name, size, digest = item["path"], item["size"], item["sha256"]
+        if (
+            not safe_name(name) or name.casefold() in folded_names or type(size) is not int or size < 1
+            or not isinstance(digest, str) or HASH.fullmatch(digest) is None
+        ):
+            raise ValueError("approved candidate inventory contains an invalid or duplicated file record")
+        folded_names.add(name.casefold())
+        identities[name] = (size, digest)
+    return identities
 
 
 def check_artifact_metadata(

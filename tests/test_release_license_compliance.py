@@ -168,6 +168,7 @@ def test_debian_server_notice_scope_comes_from_exact_package_evidence(tmp_path: 
 
 def _positive_fixture(
     tmp_path: Path, checker, *, different_runtime_report: bool = False, notice_fault: str = "",
+    candidate_fault: str = "",
 ) -> list[str]:
     assets = tmp_path / "assets"
     evidence_root = tmp_path / "evidence"
@@ -391,17 +392,43 @@ def _positive_fixture(
         b'{"accepted_evidence":[]}',
         reference="signed protected platform registry",
     )
+    from scripts.release_candidate_inventory import BUILD_WORKFLOW, EXPECTED_ARTIFACT_NAMES
+
+    native_records = [
+        {"path": path.name, "size": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+        for path in (manifest_path, artifact)
+    ]
+    if candidate_fault == "different-manifest":
+        native_records[0]["sha256"] = "e" * 64
+    if candidate_fault == "different-package":
+        native_records[1]["sha256"] = "e" * 64
+    native_owner = "release-windows-native-arm64" if candidate_fault == "other-native-archive" else "release-windows-native-x86"
+    build_archives = [
+        {
+            "name": name, "id": index, "archive_digest": f"sha256:{'f' * 64}", "size_in_bytes": 100,
+            "files": native_records if name == native_owner else [
+                {"path": f"{name}.txt", "size": len(name), "sha256": hashlib.sha256(name.encode()).hexdigest()},
+            ],
+        }
+        for index, name in enumerate(EXPECTED_ARTIFACT_NAMES, start=1)
+    ]
+    runtime_reports = {
+        target: {"artifact_id": index, "archive_digest": f"sha256:{'f' * 64}", "sha256": "b" * 64, "size_bytes": 10}
+        for index, target in enumerate(checker.RUNTIME_REPORT_ARTIFACT_NAMES, start=100)
+    }
+    runtime_reports["windows-x86"].update({
+        "sha256": "f" * 64 if different_runtime_report else realized["sha256"],
+        "size_bytes": realized["size_bytes"],
+    })
     candidate_inventory = _write_record(
         evidence_root,
         "release-candidate-inventory.json",
         json.dumps({
             "schema_version": 2,
-            "runtime_reports": {
-                "windows-x86": {
-                    "sha256": "f" * 64 if different_runtime_report else realized["sha256"],
-                    "size_bytes": realized["size_bytes"],
-                },
-            },
+            "repository": repository, "release_tag": tag, "release_sha": sha,
+            "source_ref": f"refs/tags/{tag}", "workflow": BUILD_WORKFLOW,
+            "build_run_id": 17, "build_run_attempt": 1,
+            "artifacts": build_archives, "runtime_reports": runtime_reports,
         }).encode(),
         reference="attested exact-tag candidate inventory",
     )
@@ -532,6 +559,8 @@ def test_compliance_policy_with_tracked_workflows(approved: bool) -> None:
 
 def test_compliance_maps_all_native_manifests_for_a_future_release_tag() -> None:
     checker = _load_checker()
+    from scripts.release_candidate_inventory import EXPECTED_ARTIFACT_NAMES
+
     matrix = json.loads(Path("configs/release_matrix.json").read_bytes())
     policy = json.loads(Path("configs/release_compliance_policy.json").read_bytes())
     tag = "v2.3.4"
@@ -547,8 +576,12 @@ def test_compliance_maps_all_native_manifests_for_a_future_release_tag() -> None
         for target in job["platform_target_ids"]
     }
     assert standard_targets == checker.RUNTIME_REPORT_ARTIFACT_NAMES.keys()
+    archives = set()
     for target in targets:
-        checker.producer_for_target(target, release_workflow="", extended_workflow="")
+        _, job, arch = checker.producer_for_target(target, release_workflow="", extended_workflow="")
+        if arch is not None:
+            archives.add(f"release-{job}-{arch}")
+    assert archives == set(EXPECTED_ARTIFACT_NAMES) - {"release-source-python"}
     assert checker.RUNTIME_REPORT_ARTIFACT_NAMES["linux-arm64"] == "release-runtime-linux-aarch64"
 
 
@@ -564,6 +597,24 @@ def test_signed_approval_requires_exact_manifest_package_membership(tmp_path: Pa
 
     assert checker.main(args) == 1
     assert "package inventory differs from its release matrix target" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(("fault", "asset_suffix"), [
+    ("different-manifest", "native-manifest.json"),
+    ("different-package", "native.zip"),
+    ("other-native-archive", "native.zip"),
+])
+def test_signed_approval_binds_manifest_and_package_to_the_sealed_build(
+    tmp_path: Path, capsys, fault: str, asset_suffix: str,
+) -> None:
+    checker = _load_checker()
+    args = _positive_fixture(tmp_path, checker, candidate_fault=fault)
+
+    assert checker.main(args) == 1
+    assert (
+        f"windows-x86-{asset_suffix} does not match the sealed release-windows-native-x86 candidate archive"
+        in capsys.readouterr().err
+    )
 
 
 @pytest.mark.parametrize("fault", ["different-runtime-bytes", "missing-general-notice", "duplicate-general-notice"])

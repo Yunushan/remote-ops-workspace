@@ -752,10 +752,12 @@ class RuntimeStartupDiagnosticTests(unittest.TestCase):
             owners.append(owner)
             entered('initial-fixture-startup' if frames else 'driver-service-birth')
             if frames:
+                case.assertEqual(env['LD_LIBRARY_PATH'], str(PurePosixPath(argv[0]).parent.parent / 'lib'))
                 count = 0 if failure_stage == 'initial-fixture-inventory' else 1
                 owner.receive.return_value = {'ready': True, 'nonce': 'a' * 64, 'port': 12345,
                     'inventory': {'count': count, 'profiles': [{}] * count, 'digest': '1' * 64}}
             else:
+                case.assertNotIn('LD_LIBRARY_PATH', env)
                 case.assertEqual(argv, ['/synthetic/driver', '--port=0', '--enable-chrome-logs'])
                 port = 0 if failure_stage == 'driver-port-validation' else 12346
                 owner.output.extend(('ChromeDriver was started successfully on port ' + str(port)).encode())

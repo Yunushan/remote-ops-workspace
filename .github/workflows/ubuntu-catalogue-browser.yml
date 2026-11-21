@@ -39,10 +39,32 @@ jobs:
         run: |
           test "$QUALIFICATION_SOURCE_SHA" != ""
           /usr/bin/git -c core.hooksPath=/dev/null checkout --detach "$QUALIFICATION_SOURCE_SHA"
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
-        with:
-          python-version: '3.14.10'
-          architecture: x64
+      - name: Install verified CPython in a private directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          runtime="$RUNNER_TEMP/catalogue-cpython"
+          mkdir "$runtime"
+          cd "$runtime"
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+            --max-time 90 --retry 2 --output python.tar.gz \
+            https://github.com/actions/python-versions/releases/download/3.14.10-40336797752/python-3.14.10-linux-24.04-x64.tar.gz
+          echo 'd67d217db8480fd474bac19db80f6b956362432cca30ed6ac6fbe5a2bba6b4cd  python.tar.gz' | sha256sum --check --strict
+          tar --no-same-owner --no-same-permissions -xzf python.tar.gz
+          export LD_LIBRARY_PATH="$runtime/lib"
+          "$runtime/bin/python3.14" -I -S -B - "$runtime" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          root = Path(sys.argv[1]).resolve(strict=True)
+          assert sys.version_info[:3] == (3, 14, 10)
+          assert Path(sys.executable).resolve(strict=True) == root / 'bin/python3.14'
+          assert Path(sys.prefix) == root and Path(json.__file__).is_relative_to(root / 'lib/python3.14')
+          mapped = {line.split(maxsplit=5)[5] for line in Path('/proc/self/maps').read_text().splitlines()
+                    if '/libpython' in line}
+          assert mapped == {str(root / 'lib/libpython3.14.so.1.0')}
+          PY
       - name: Prepare exact pinned browser pair on this disposable host
         shell: bash
         run: |
@@ -77,7 +99,7 @@ jobs:
           import time
           from pathlib import Path
 
-          PINS = {'browser_probe.py': {'bytes': 27474, 'sha256': '94fa7d8928aa02a5c4b080e47a81b79bd3d1df1ffeb12753fdd19d82ba9fc401'}, 'cft_bundle.py': {'bytes': 53930, 'sha256': 'f8cf90a63132888858c5e5a9a75f5152bfb29c408c168e69155352b95271ea00'}, 'cft_git_config.py': {'bytes': 13913, 'sha256': '413442e672b0e76ebaa29e5b60628473a0f0f815b23d28d96b46ad771811da7d'}, 'cft_git_owner.py': {'bytes': 8735, 'sha256': '197fd07633249a9020695db9563a930b266fd3713510f0919ba80b454099351d'}, 'cft_runtime.py': {'bytes': 42279, 'sha256': 'dee7fd5248851c7192c130252166d16c7da9f508546bd0416db99bef2066e5a9'}, 'gate_contract.py': {'bytes': 20045, 'sha256': 'e9686b54fd3c4901583ae4ffd69bc533adf90be0e633b60a717cb2d5d7ae9eef'}, 'host_controller.py': {'bytes': 59795, 'sha256': 'a882e318c6d203190a43bfd9ab43694a5ca0bdba141eeebebabfa17a9a81a73a'}, 'cft-runtime-policy.json': {'bytes': 1400, 'sha256': '1ca6ac144a8b45673cb1630e782a60ec7e396122db2c2c63a82118952cb0108f'}}
+          PINS = {'browser_probe.py': {'bytes': 27474, 'sha256': '94fa7d8928aa02a5c4b080e47a81b79bd3d1df1ffeb12753fdd19d82ba9fc401'}, 'cft_bundle.py': {'bytes': 53930, 'sha256': 'f8cf90a63132888858c5e5a9a75f5152bfb29c408c168e69155352b95271ea00'}, 'cft_git_config.py': {'bytes': 13913, 'sha256': '413442e672b0e76ebaa29e5b60628473a0f0f815b23d28d96b46ad771811da7d'}, 'cft_git_owner.py': {'bytes': 8735, 'sha256': '197fd07633249a9020695db9563a930b266fd3713510f0919ba80b454099351d'}, 'cft_runtime.py': {'bytes': 42279, 'sha256': 'dee7fd5248851c7192c130252166d16c7da9f508546bd0416db99bef2066e5a9'}, 'gate_contract.py': {'bytes': 20045, 'sha256': 'e9686b54fd3c4901583ae4ffd69bc533adf90be0e633b60a717cb2d5d7ae9eef'}, 'host_controller.py': {'bytes': 60081, 'sha256': '88931a1efd631d6ff245a6292100d0feb9c3b0ce7d7d31e4e1b8cab61d98e9c4'}, 'cft-runtime-policy.json': {'bytes': 1400, 'sha256': '1ca6ac144a8b45673cb1630e782a60ec7e396122db2c2c63a82118952cb0108f'}}
           started = time.monotonic()
           deadline = started + 150
           phase = 'bootstrap'
@@ -317,7 +339,9 @@ jobs:
           ROW_CFT_ROOT_PY
       - name: Observe actual browser and catalogue cases
         shell: bash
-        run: python -I -S -B tests/catalogue-browser/entry.py run
+        run: |
+          export LD_LIBRARY_PATH="$RUNNER_TEMP/catalogue-cpython/lib"
+          "$RUNNER_TEMP/catalogue-cpython/bin/python3.14" -I -S -B tests/catalogue-browser/entry.py run
       - name: Remove the exact same-run host userns profile
         id: host-policy-cleanup
         if: always()
@@ -354,7 +378,7 @@ jobs:
           import time
           from pathlib import Path
 
-          PINS = {'browser_probe.py': {'bytes': 27474, 'sha256': '94fa7d8928aa02a5c4b080e47a81b79bd3d1df1ffeb12753fdd19d82ba9fc401'}, 'cft_bundle.py': {'bytes': 53930, 'sha256': 'f8cf90a63132888858c5e5a9a75f5152bfb29c408c168e69155352b95271ea00'}, 'cft_git_config.py': {'bytes': 13913, 'sha256': '413442e672b0e76ebaa29e5b60628473a0f0f815b23d28d96b46ad771811da7d'}, 'cft_git_owner.py': {'bytes': 8735, 'sha256': '197fd07633249a9020695db9563a930b266fd3713510f0919ba80b454099351d'}, 'cft_runtime.py': {'bytes': 42279, 'sha256': 'dee7fd5248851c7192c130252166d16c7da9f508546bd0416db99bef2066e5a9'}, 'gate_contract.py': {'bytes': 20045, 'sha256': 'e9686b54fd3c4901583ae4ffd69bc533adf90be0e633b60a717cb2d5d7ae9eef'}, 'host_controller.py': {'bytes': 59795, 'sha256': 'a882e318c6d203190a43bfd9ab43694a5ca0bdba141eeebebabfa17a9a81a73a'}, 'cft-runtime-policy.json': {'bytes': 1400, 'sha256': '1ca6ac144a8b45673cb1630e782a60ec7e396122db2c2c63a82118952cb0108f'}}
+          PINS = {'browser_probe.py': {'bytes': 27474, 'sha256': '94fa7d8928aa02a5c4b080e47a81b79bd3d1df1ffeb12753fdd19d82ba9fc401'}, 'cft_bundle.py': {'bytes': 53930, 'sha256': 'f8cf90a63132888858c5e5a9a75f5152bfb29c408c168e69155352b95271ea00'}, 'cft_git_config.py': {'bytes': 13913, 'sha256': '413442e672b0e76ebaa29e5b60628473a0f0f815b23d28d96b46ad771811da7d'}, 'cft_git_owner.py': {'bytes': 8735, 'sha256': '197fd07633249a9020695db9563a930b266fd3713510f0919ba80b454099351d'}, 'cft_runtime.py': {'bytes': 42279, 'sha256': 'dee7fd5248851c7192c130252166d16c7da9f508546bd0416db99bef2066e5a9'}, 'gate_contract.py': {'bytes': 20045, 'sha256': 'e9686b54fd3c4901583ae4ffd69bc533adf90be0e633b60a717cb2d5d7ae9eef'}, 'host_controller.py': {'bytes': 60081, 'sha256': '88931a1efd631d6ff245a6292100d0feb9c3b0ce7d7d31e4e1b8cab61d98e9c4'}, 'cft-runtime-policy.json': {'bytes': 1400, 'sha256': '1ca6ac144a8b45673cb1630e782a60ec7e396122db2c2c63a82118952cb0108f'}}
           started = time.monotonic()
           deadline = started + 30
           phase = 'bootstrap'
@@ -599,7 +623,8 @@ jobs:
         env:
           ROW_CFT_CLEANUP_OUTCOME: ${{ steps.host-policy-cleanup.outcome }}
         run: |
-          python -I -S -B - <<'ROW_CFT_POLICY_PUBLISH'
+          export LD_LIBRARY_PATH="$RUNNER_TEMP/catalogue-cpython/lib"
+          "$RUNNER_TEMP/catalogue-cpython/bin/python3.14" -I -S -B - <<'ROW_CFT_POLICY_PUBLISH'
           import sys
           from pathlib import Path
           try:
@@ -614,7 +639,7 @@ jobs:
                   pass
               raise SystemExit(1) from None
           ROW_CFT_POLICY_PUBLISH
-          python -I -S -B tests/catalogue-browser/entry.py publish
+          "$RUNNER_TEMP/catalogue-cpython/bin/python3.14" -I -S -B tests/catalogue-browser/entry.py publish
       - name: Save bounded public receipt only
         if: always() && steps.public-receipt.outcome == 'success'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9

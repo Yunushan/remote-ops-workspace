@@ -1,6 +1,10 @@
 import json
 import zipfile
+from datetime import datetime
 
+import pytest
+
+from remote_ops_workspace import launcher
 from scripts import support_bundle
 
 
@@ -83,3 +87,94 @@ def test_support_bundle_writes_sanitized_profiles_summary(monkeypatch, tmp_path)
     assert doctor["raw_profiles_included"] is False
     assert "10.0.0.5" not in summary_text
     assert "edge" not in summary_text
+
+
+def test_support_bundle_excludes_unreviewed_labels_and_keeps_builtin_diagnostics(monkeypatch, tmp_path) -> None:
+    private = "fixture-customer.example"
+    (tmp_path / "profiles.json").write_text(json.dumps({
+        "version": private,
+        "group_defaults": {private: {"options": {private: "fixture"}}},
+        "profiles": [
+            {"protocol": f"plugin-{private}", "options": {"proxy_jump": private, private: "fixture"},
+             "url": "fixture-customer:opaque", "tunnels": [{"mode": private}, {"mode": "dynamic"}]},
+            {"protocol": "ssh", "url": f"https://[{private}"},
+        ],
+    }), encoding="utf-8")
+    monkeypatch.setenv("ROW_HOME", str(tmp_path))
+    monkeypatch.setenv("ROW_ENABLE_PLUGINS", "1")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(launcher, "load_plugin_registry", lambda: pytest.fail("support bundle loaded plugins"))
+
+    assert support_bundle.main() == 0
+
+    bundle, = tmp_path.glob("support-bundle-*.zip")
+    with zipfile.ZipFile(bundle) as archive:
+        report, summary = (
+            json.loads(archive.read(name)) for name in ("doctor.json", "profiles.summary.json")
+        )
+    assert private not in json.dumps((report, summary))
+    assert "fixture-customer" not in json.dumps(summary)
+    assert "ssh" in report["executables"]
+    assert summary["version"] is None
+    assert summary["protocol_counts"] == {"<other>": 1, "ssh": 1}
+    assert summary["profiles"][0]["option_keys"] == ["proxy_jump"]
+    assert summary["profiles"][0]["unrecognized_option_key_count"] == 1
+    assert summary["profiles"][0]["url_scheme"] == "<other>"
+    assert summary["profiles"][0]["tunnel_modes"] == ["<other>", "dynamic"]
+    assert summary["profiles"][1]["url_scheme"] == "https"
+    assert summary["group_defaults"]["groups"][0]["unrecognized_option_key_count"] == 1
+
+
+@pytest.mark.parametrize("profile_store", [None, "{broken-fixture", '["invalid-fixture"]'])
+def test_support_bundle_keeps_doctor_available_without_a_readable_profile_store(
+    monkeypatch, tmp_path, profile_store,
+) -> None:
+    if profile_store is not None:
+        (tmp_path / "profiles.json").write_text(profile_store, encoding="utf-8")
+    monkeypatch.setenv("ROW_HOME", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+
+    assert support_bundle.main() == 0
+
+    bundle, = tmp_path.glob("support-bundle-*.zip")
+    with zipfile.ZipFile(bundle) as archive:
+        assert "doctor.json" in archive.namelist()
+        if profile_store is not None:
+            assert json.loads(archive.read("profiles.summary.json")) == {
+                "status": "unavailable", "raw_profiles_included": False,
+            }
+        else:
+            assert archive.namelist() == ["doctor.json"]
+
+
+def test_support_bundle_retries_use_distinct_files(monkeypatch, tmp_path, capsys) -> None:
+    class FixedClock:
+        @staticmethod
+        def now(tz):
+            return datetime(2026, 1, 1, tzinfo=tz)
+
+    monkeypatch.setattr(support_bundle, "datetime", FixedClock)
+    monkeypatch.setenv("ROW_HOME", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    assert support_bundle.main() == 0
+    assert support_bundle.main() == 0
+
+    paths = sorted(tmp_path.glob("support-bundle-20260101-000000-*.zip"))
+    assert len(paths) == 2
+    assert set(capsys.readouterr().out.splitlines()) == {str(path) for path in paths}
+    for path in paths:
+        with zipfile.ZipFile(path) as archive:
+            assert archive.namelist() == ["doctor.json"]
+
+
+def test_support_bundle_removes_a_failed_archive(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("ROW_HOME", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+
+    def fail_write(*_args, **_kwargs):
+        raise OSError("fixture write failed")
+
+    monkeypatch.setattr(zipfile.ZipFile, "writestr", fail_write)
+    with pytest.raises(OSError, match="fixture write failed"):
+        support_bundle.main()
+    assert list(tmp_path.glob("support-bundle-*.zip")) == []

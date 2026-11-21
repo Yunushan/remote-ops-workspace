@@ -3,8 +3,110 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+import zipfile
 from pathlib import Path
 from typing import Any
+
+import pytest
+
+from scripts import prepare_protected_platform_review as prepare
+
+
+@pytest.mark.parametrize(("fault", "detail"), [
+    ("none", ""),
+    ("missing-record", "finalized platform record evidence file is missing"),
+    ("wrong-sha", "must match the selected repository, tag and SHA"),
+    ("noncanonical-record", "must match the canonical workflow JSON bytes"),
+    ("moved-tag", "live release tag does not resolve"),
+    ("tag-changed-during-capture", "live release tag does not resolve"),
+    ("archive-rejected", "fixture source ZIP rejected"),
+    ("invalid-inner-bundle", "review_bundle sha256s.sha256 does not match"),
+    ("competing-output", "protected-platform review preparation:"),
+])
+def test_prepare_protected_review_rebuilds_all_four_original_bundles(tmp_path, monkeypatch, capsys, fault, detail):
+    records_dir = tmp_path / "records"
+    records_dir.mkdir()
+    output = tmp_path / "approval"
+    records = []
+    archives = {}
+    tag, sha = "v1.0.2", "a" * 40
+    repository = "example/remote-ops-workspace"
+    for target in prepare.PROTECTED_GOAL_TARGETS:
+        bundle = tmp_path / target
+        bundle.mkdir()
+        generate = _finalized_linux_record if target.startswith("linux-") else _finalized_xp_record
+        record = generate(bundle, target=target)
+        records.append(record)
+        finalized = _write_final_record_asset(record, records_dir)
+        outer = tmp_path / f"{target}.zip"
+        archives[target] = outer
+        with zipfile.ZipFile(outer, "w") as archive:
+            archive.write(finalized, finalized.name)
+            for role in ("manifest", "archive", "sha256s"):
+                name = record["review_bundle"][role]["file"]
+                raw = (bundle / name).read_bytes()
+                if target == "linux-i386" and role == "sha256s" and fault == "invalid-inner-bundle":
+                    raw = b"x" + raw[1:]
+                archive.writestr(name, raw)
+    selected = records_dir / "platform-verified-evidence-linux-i386-final.json"
+    if fault == "missing-record":
+        selected.unlink()
+    if fault == "wrong-sha":
+        parsed = json.loads(selected.read_bytes())
+        parsed["release_asset_source"]["head_sha"] = "b" * 40
+        _write_final_record_asset(parsed, records_dir)
+    if fault == "noncanonical-record":
+        selected.write_bytes(selected.read_bytes() + b"\n")
+
+    calls = []
+    tags = []
+    monkeypatch.setattr(prepare, "GitHubApiFetcher", lambda **_kwargs: "fixture")
+
+    def resolve(fetcher, selected_tag):
+        assert (fetcher, selected_tag) == ("fixture", tag)
+        tags.append(tag)
+        if fault == "moved-tag" or (fault == "tag-changed-during-capture" and len(tags) == 2):
+            return "b" * 40, []
+        return sha, []
+
+    def capture(selected_repo, selected_tag, registry, packet):
+        assert (selected_repo, selected_tag, registry["accepted_evidence"]) == (repository, tag, records)
+        assert not output.exists()
+        calls.append(packet)
+        if fault == "archive-rejected":
+            return ["fixture source ZIP rejected"]
+        (packet / "archives").mkdir(parents=True)
+        for target, archive in archives.items():
+            (packet / "archives" / f"{target}.zip").write_bytes(archive.read_bytes())
+        (packet / "protected-platform-sources").mkdir()
+        (packet / "protected-platform-sources.json").write_text('{"fixture":true}\n', encoding="utf-8")
+        if fault == "competing-output":
+            output.mkdir()
+            (output / "keep").write_bytes(b"existing directory contents")
+        return []
+
+    monkeypatch.setattr(prepare, "resolve_tag_commit", resolve)
+    monkeypatch.setattr(prepare, "capture_live_source_evidence", capture)
+    before = {path.name: path.read_bytes() for path in records_dir.iterdir()}
+    status = prepare.main([
+        "--repository", repository, "--release-tag", tag, "--release-sha", sha,
+        "--records-dir", str(records_dir), "--out", str(output),
+    ])
+    result = capsys.readouterr()
+    assert {path.name: path.read_bytes() for path in records_dir.iterdir()} == before
+    if detail:
+        assert status == 1 and detail in result.err
+        if fault == "competing-output":
+            assert [path.name for path in output.iterdir()] == ["keep"]
+        else:
+            assert not output.exists()
+    else:
+        assert status == 0 and "Prepared 4 verified source archives" in result.out, result.err
+        assert tags == [tag, tag]
+        assert len(calls) == 1 and not calls[0].exists()
+        assert json.loads((output / prepare.EVIDENCE_PATH.name).read_bytes())["accepted_evidence"] == records
+        for target, archive in archives.items():
+            assert (output / "archives" / f"{target}.zip").read_bytes() == archive.read_bytes()
 
 
 def test_platform_review_bundle_artifacts_validates_finalized_xp_bundle(tmp_path: Path) -> None:
@@ -703,11 +805,10 @@ def test_prefinalized_candidate_record_removes_finalization_only_source_files(tm
     )
 
 
-def _finalized_xp_record(tmp_path: Path) -> dict[str, Any]:
+def _finalized_xp_record(tmp_path: Path, *, target: str = "windows-xp-native-x86") -> dict[str, Any]:
     finalizer = _load_script("finalize_platform_verified_evidence_record")
     helpers = _load_platform_verified_evidence_tests()
     bundle_helpers = _load_finalize_tests()
-    target = "windows-xp-native-x86"
     release_tag = "v1.0.2"
     candidate = _prefinalized_candidate(helpers._xp_record(target))
     candidate_path, manifest, archive, sidecar = bundle_helpers._write_xp_candidate_and_bundle(
@@ -728,18 +829,17 @@ def _finalized_xp_record(tmp_path: Path) -> dict[str, Any]:
     return record
 
 
-def _finalized_linux_record(tmp_path: Path) -> dict[str, Any]:
+def _finalized_linux_record(tmp_path: Path, *, target: str = "linux-i386") -> dict[str, Any]:
     finalizer = _load_script("finalize_platform_verified_evidence_record")
     helpers = _load_platform_verified_evidence_tests()
     bundle_helpers = _load_finalize_tests()
-    target = "linux-i386"
     release_tag = "v1.0.2"
     candidate = _prefinalized_candidate(helpers._linux_record(target))
     artifact_archive_files = bundle_helpers._attach_artifact_files(candidate)
 
-    candidate_path = tmp_path / "platform-verified-evidence-linux-i386.json"
-    builder_path = tmp_path / "builder-identity-linux-i386.json"
-    smoke_path = tmp_path / "native-smoke-linux-i386.log"
+    candidate_path = tmp_path / f"platform-verified-evidence-{target}.json"
+    builder_path = tmp_path / f"builder-identity-{target}.json"
+    smoke_path = tmp_path / f"native-smoke-{target}.log"
     builder_path.write_text(json.dumps(candidate["builder_identity"], indent=2) + "\n", encoding="utf-8")
     bundle_helpers._write_linux_smoke_evidence(
         smoke_path,

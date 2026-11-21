@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import platform
+import sys
 from importlib.resources import files
 from pathlib import Path
 
@@ -48,9 +49,10 @@ def repo_root() -> Path:
 
 
 def runtime_config_path(name: str) -> Path:
-    repository_path = repo_root() / "configs" / name
-    if repository_path.is_file():
-        return repository_path
+    if not getattr(sys, "frozen", False):
+        repository_path = repo_root() / "configs" / name
+        if repository_path.is_file():
+            return repository_path
     packaged_path = Path(str(files("remote_ops_workspace").joinpath("configs").joinpath(name)))
     if packaged_path.is_file():
         return packaged_path
@@ -58,9 +60,10 @@ def runtime_config_path(name: str) -> Path:
 
 
 def runtime_web_dir() -> Path:
-    repository_path = repo_root() / "apps" / "web"
-    if repository_path.is_dir():
-        return repository_path
+    if not getattr(sys, "frozen", False):
+        repository_path = repo_root() / "apps" / "web"
+        if repository_path.is_dir():
+            return repository_path
     packaged_path = Path(str(files("remote_ops_workspace").joinpath("web")))
     if packaged_path.is_dir():
         return packaged_path

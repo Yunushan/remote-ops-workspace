@@ -37,6 +37,146 @@ def gui_window(monkeypatch, tmp_path):
     app.processEvents()
 
 
+def test_tools_opens_live_inventory_for_default_and_configured_provider(gui_window, monkeypatch):
+    _app, window = gui_window
+    dialogs = []
+    deleted = []
+    actions = {}
+
+    def open_dialog(_parent, provider, agent, **kwargs):
+        return SimpleNamespace(exec=lambda: dialogs.append((provider, agent, kwargs)), deleteLater=lambda: deleted.append(True))
+
+    _set_closure_value(monkeypatch, window.open_moba_pkcs11_inventory, "SmartCardDialog", open_dialog)
+    monkeypatch.setattr(window, "show_workflow_dialog", lambda *_args, **kwargs: actions.update(kwargs["actions"]))
+    monkeypatch.setattr(window, "selected_profile_for_workflow", lambda: None)
+    window.show_moba_smartcards_status()
+    actions["PKCS#11 inventory"]()
+    selected = Profile(name="live-card", protocol="ssh", host="example.invalid", options={
+        "smartcard_provider": "pkcs11:/opt/Card Middleware/provider.so", "mobagent_socket": "agent-socket",
+    })
+    monkeypatch.setattr(window, "selected_profile_for_workflow", lambda: selected)
+    window.show_moba_smartcards_status()
+    actions["PKCS#11 inventory"]()
+    assert [(provider, agent) for provider, agent, _ in dialogs] == [("", None), ("pkcs11:/opt/Card Middleware/provider.so", "agent-socket")]
+    assert dialogs[0][2] == {}
+    assert dialogs[1][2]["profile_name"] == "live-card"
+    assert dialogs[1][2]["pinned_key"] == ""
+    assert deleted == [True, True]
+
+
+def test_inventory_saves_against_current_profile_and_rejects_stale_selection(gui_window, monkeypatch):
+    from base64 import b64encode
+    from dataclasses import replace
+
+    from remote_ops_workspace.smartcard_keys import PINNED_SMARTCARD_KEY
+
+    _app, window = gui_window
+    dialogs = []
+    key = "ssh-ed25519 " + b64encode(b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20" + b"q" * 32).decode()
+    observed = Profile(name="card", protocol="ssh", host="example.invalid", username="operator", identity_file="existing")
+    other = Profile(name="other", protocol="ssh", host="other.invalid")
+    window.store.save([other, observed])
+
+    def open_dialog(_parent, _provider, _agent, **kwargs):
+        dialogs.append(kwargs)
+        return SimpleNamespace(exec=lambda: None, deleteLater=lambda: None)
+
+    _set_closure_value(monkeypatch, window.open_moba_pkcs11_inventory, "SmartCardDialog", open_dialog)
+    window.open_moba_pkcs11_inventory("/opt/vendor.so", observed)
+    save = dialogs[-1]["save_profile_key"]
+    window.store.replace_named(observed.name, replace(observed, description="changed concurrently"))
+    save("/opt/vendor.so", key)
+    reloaded = window.store.get(observed.name)
+    assert reloaded.options[PINNED_SMARTCARD_KEY] == key
+    assert reloaded.description == "changed concurrently" and reloaded.identity_file == "existing"
+    window.open_moba_pkcs11_inventory("/opt/vendor.so", reloaded)
+    assert dialogs[-1]["pinned_key"] == key
+    save("", None)
+    assert PINNED_SMARTCARD_KEY not in window.store.get(observed.name).options
+    with pytest.raises(ValueError, match="SSH profile changed"):
+        dialogs[-1]["save_profile_key"]("", None)
+    window.store.replace_named(observed.name, replace(observed, host="new.invalid"))
+    with pytest.raises(ValueError, match="SSH profile changed"):
+        save("/opt/vendor.so", key)
+    window.store.remove(observed.name, surface="profile-editor")
+    with pytest.raises(KeyError, match="no longer exists"):
+        save("/opt/vendor.so", key)
+
+
+def test_saved_search_recents_and_terminal_use_the_real_profile(gui_window, monkeypatch):
+    from dataclasses import replace
+
+    from PyQt6.QtWidgets import QLabel, QPushButton
+
+    from remote_ops_workspace.gui_designs import gui_design_preset_reference_tab_route
+    from remote_ops_workspace.gui_terminal import TerminalPane
+
+    _app, window = gui_window
+    first = Profile(name="edge & files", protocol="ssh", host="files.invalid", tags=["Straße"])
+    second = Profile(name="edge-backup", protocol="ssh", host="backup.invalid")
+    window.store.save([first, second])
+    window.set_design_preset("mobaxterm")
+    window.refresh_profiles()
+    assert window.welcome_panel.findChildren(QLabel, "mobaRecentSession") == []
+    assert [label.text() for label in window.status_segment_labels] == ["Saved profiles: 2", "Open workspace tabs: 0", ""]
+    buttons = window.welcome_panel.findChildren(QPushButton, "recentSavedSession")
+    assert buttons and all(button.isHidden() for button in buttons)
+    window.filter_profile_tree("STRASSE")
+    window.select_profile(first.name)
+    assert window.selected_profile_name() == first.name
+    window.filter_profile_tree("<qt>")
+    assert window.selected_profile_name() is None
+    window.filter_profile_tree("")
+
+    loads = []
+    load = window.store.load
+
+    def tracked_load(*args, **kwargs):
+        loads.append(True)
+        return load(*args, **kwargs)
+
+    monkeypatch.setattr(window.store, "load", tracked_load)
+    for query in ("e", "ed", "edge"):
+        window.quick_connect.setText(query)
+    assert len(loads) == 1
+    assert window.quick_connect_suggestions.topLevelItemCount() >= 2
+    window.store.save([first])
+    window.quick_connect.setText("edge-")
+    assert all(candidate.profile_name != second.name for candidate in window._find_quick_connect_candidates("edge", limit=6))
+    assert len(loads) == 2
+
+    launched = []
+    messages = []
+    monkeypatch.setattr(window, "launch_profile", lambda profile, **kwargs: launched.append(profile.host))
+    monkeypatch.setattr(window, "show_message", lambda _icon, _title, detail: messages.append(detail))
+    suggestion = window._find_quick_connect_candidates(first.name, limit=1)[0]
+    window.store.save([replace(first, host="different.invalid")])
+    window.run_quick_connect_candidate_value(suggestion)
+    assert not launched and "changed" in messages[-1]
+    window.store.save([first])
+    window.remember_terminal_plan(TerminalPanePlan(title="real", command=[], source="test"), profile=first)
+    button = next(button for button in buttons if not button.isHidden())
+    assert button.accessibleName() == first.name
+    window.filter_profile_tree("edge-backup")
+    button.click()
+    assert launched == [first.host]
+    window.store.remove(first.name)
+    button.click()
+    assert launched == [first.host] and first.name in messages[-1]
+    window.refresh_profiles()
+    assert button.isHidden()
+    window.store.path.unlink()
+    assert window._find_quick_connect_candidates("edge files", limit=1) == []
+
+    window.set_design_preset("mremoteng")
+    route = gui_design_preset_reference_tab_route("mremoteng")
+    window.open_terminal_tab(TerminalPanePlan(title=route.active_tab_label, command=[], source="test"))
+    assert isinstance(window.tabs.currentWidget(), TerminalPane)
+    assert window.status_segment_labels[1].text() == "Open workspace tabs: 1"
+    assert window.reference_session_action_route_for_tab(window.tabs.currentIndex()) is None
+    assert window.tabs.currentWidget().property("presetReferenceTabRouteKey") is None
+
+
 def test_quick_connect_suggestions_execution_and_status_surfaces(
     gui_window,
     monkeypatch,
@@ -55,18 +195,7 @@ def test_quick_connect_suggestions_execution_and_status_surfaces(
         username="operator",
     )
 
-    class _Store:
-        profiles = [saved]
-
-        def load(self, *_args, **_kwargs):
-            return list(self.profiles)
-
-        def get(self, name: str):
-            if name == saved.name:
-                return saved
-            raise KeyError(name)
-
-    window.store = _Store()
+    window.store.save([saved])
     monkeypatch.setattr(window, "current_design_is_moba", lambda: False)
     window.quick_connect.setText("saved-edge")
     window.update_quick_connect_suggestions()
@@ -97,7 +226,6 @@ def test_quick_connect_suggestions_execution_and_status_surfaces(
     )
     launched: list[tuple[str, str]] = []
     selected: list[str] = []
-    connected: list[bool] = []
     monkeypatch.setattr(
         window,
         "launch_profile",
@@ -106,7 +234,6 @@ def test_quick_connect_suggestions_execution_and_status_surfaces(
         ),
     )
     monkeypatch.setattr(window, "select_profile", selected.append)
-    monkeypatch.setattr(window, "connect_selected", connected.append)
 
     window.quick_connect.setText("ssh operator@direct.example.invalid:2222")
     window.update_quick_connect_suggestions()
@@ -120,11 +247,15 @@ def test_quick_connect_suggestions_execution_and_status_surfaces(
     window.update_quick_connect_suggestions()
     window.run_quick_connect()
     assert selected == ["saved-edge"]
-    assert connected == [False]
+    assert launched[-1] == ("saved-edge", "QUICK CONNECT")
 
     invalid_item = QTreeWidgetItem(["invalid"])
     invalid_item.setData(0, Qt.ItemDataRole.UserRole, "not-a-candidate")
     window.run_quick_connect_candidate(invalid_item)
+    window.quick_connect_suggestions.addTopLevelItem(invalid_item)
+    window.quick_connect_suggestions.setCurrentItem(invalid_item)
+    window.run_quick_connect()
+    assert selected == ["saved-edge", "saved-edge"]
     inert = QuickConnectCandidate("other", "Other", "No launch target")
     window.run_quick_connect_candidate_value(inert)
 
@@ -173,17 +304,19 @@ def test_quick_connect_suggestions_execution_and_status_surfaces(
     assert window.property("mobaSmartcardGuiCertificateCount") == 1
     assert window.property("mobaSmartcardGuiProvider") == "microsoft-capi"
 
-    window.store.profiles = []
+    window.store.save([])
     window.show_moba_multiexec_status()
-    window.store.profiles = [
+    assert "No SSH profiles are available" in workflows[-1][2]
+    window.store.save([
         Profile(
             name=f"ssh-{index}",
             protocol="ssh",
             host=f"ssh-{index}.example.invalid",
         )
         for index in range(5)
-    ]
+    ])
     window.show_moba_multiexec_status()
+    assert "1 more broadcast target" in workflows[-1][2]
     assert {title for title, _rows, _detail in workflows} >= {
         "Servers",
         "Smart cards",
@@ -196,7 +329,7 @@ def test_tab_context_securecrt_product_host_and_toolbar_edges(
     monkeypatch,
 ) -> None:
     from PyQt6.QtCore import QPoint, Qt
-    from PyQt6.QtWidgets import QFrame, QLineEdit, QMenu, QTreeWidgetItem
+    from PyQt6.QtWidgets import QFrame, QLineEdit, QMenu
 
     from remote_ops_workspace.gui_designs import (
         gui_design_preset_reference_session_action_route,
@@ -210,6 +343,7 @@ def test_tab_context_securecrt_product_host_and_toolbar_edges(
     assert plain_menu.objectName() == "sessionTabContextMenu"
 
     route = gui_design_preset_reference_session_action_route("securecrt")
+    window.setProperty("guiPreviewSamples", True)
     monkeypatch.setattr(window, "current_design_id", lambda: "securecrt")
     monkeypatch.setattr(window, "current_design_is_moba", lambda: False)
     reference = QFrame()
@@ -258,27 +392,22 @@ def test_tab_context_securecrt_product_host_and_toolbar_edges(
         protocol="ssh",
         host="product.example.invalid",
     )
-    visible = QTreeWidgetItem(["Product edge product.example.invalid"])
-    visible.setData(0, Qt.ItemDataRole.UserRole, profile.name)
-    hidden = QTreeWidgetItem(["Hidden edge"])
-    hidden.setData(0, Qt.ItemDataRole.UserRole, "hidden")
-    hidden.setHidden(True)
-    monkeypatch.setattr(
-        window,
-        "iter_profile_tree_items",
-        lambda: iter([hidden, visible]),
-    )
-    monkeypatch.setattr(
-        window,
-        "profile_by_name",
-        lambda name: profile if name == profile.name else None,
-    )
+    other = Profile(name="another-product-edge", protocol="rdp", host=profile.host)
+    window.store.save([other, profile])
+    window.refresh_profiles()
+    launches = []
+    monkeypatch.setattr(window, "launch_profile", lambda selected, **_kwargs: launches.append(selected.name))
     connect_calls: list[bool] = []
     monkeypatch.setattr(window, "connect_selected", connect_calls.append)
     window.connect_from_product_host("")
     window.connect_from_product_host("product.example")
+    assert launches == [] and "2 saved sessions match" in window.statusBar().currentMessage()
+    window.connect_from_product_host("product-edge")
+    window.filter_profile_tree("another-product-edge")
+    window.connect_from_product_host(profile.host)
+    window.connect_from_product_host("product.example")
     window.connect_from_product_host("missing-host")
-    assert connect_calls == [False, False]
+    assert connect_calls == [False] and launches == [profile.name, other.name, other.name]
     assert "PRODUCT HOST MISS" in window.log.toPlainText()
 
     window.securecrt_host_input = QLineEdit("host")
@@ -359,6 +488,32 @@ def test_style_selector_stays_in_shared_toolbar_for_every_preset(gui_window) -> 
     assert window.view_label.isVisibleTo(window) is True
 
 
+def test_toolbar_actions_stay_connected_once_across_presets_and_sizes(gui_window, monkeypatch) -> None:
+    app, window = gui_window
+    refresh = window.refresh_button
+    new_layout = window.new_layout_button
+    refresh_action = window.toolbar_widget_action(refresh)
+    layout_action = window.toolbar_widget_action(new_layout)
+    calls: list[str] = []
+    monkeypatch.setitem(window.product_toolbar_callbacks, "refresh", lambda: calls.append("refresh"))
+    monkeypatch.setitem(window.layout_toolbar_callbacks, "new-layout", lambda: calls.append("layout"))
+
+    for width, intermediate in ((1024, "mobaxterm"), (1440, "mremoteng")):
+        window.set_design_preset(intermediate)
+        window.resize(width, 760)
+        app.processEvents()
+        window.set_design_preset("native")
+        app.processEvents()
+
+        assert window.toolbar_widget_action(refresh) is refresh_action
+        assert window.toolbar_widget_action(new_layout) is layout_action
+        assert refresh.isVisibleTo(window) and new_layout.isVisibleTo(window)
+        refresh.click()
+        new_layout.click()
+
+    assert calls == ["refresh", "layout", "refresh", "layout"]
+
+
 def test_design_transition_depth_and_empty_workspace_are_safe(gui_window) -> None:
     _app, window = gui_window
 
@@ -384,16 +539,11 @@ def test_launch_files_find_and_recover_session_edges(gui_window, monkeypatch) ->
     _app, window = gui_window
     messages: list[str] = []
 
-    def fake_message_box(_parent, _icon, _title, text, **_kwargs):
+    def fake_message_box(_icon, _title, text, **_kwargs):
         messages.append(str(text))
         return QMessageBox.StandardButton.Ok
 
-    _set_closure_value(
-        monkeypatch,
-        type(window).connect_selected,
-        "_literal_message_box",
-        fake_message_box,
-    )
+    monkeypatch.setattr(window, "show_message", fake_message_box)
 
     custom = Profile(
         name="custom-edge",
@@ -675,7 +825,7 @@ def test_welcome_resize_guards_and_toolbar_action_contracts(
     gui_window,
     monkeypatch,
 ) -> None:
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_toolbars
     from remote_ops_workspace.gui_designs import get_gui_design_preset
 
     _app, window = gui_window
@@ -702,7 +852,7 @@ def test_welcome_resize_guards_and_toolbar_action_contracts(
 
     preset = get_gui_design_preset("mobaxterm")
     monkeypatch.setattr(
-        gui,
+        gui_toolbars,
         "gui_design_toolbar_actions",
         lambda _preset_id: [
             ("refresh", "Refresh", "Refresh"),
@@ -713,7 +863,7 @@ def test_welcome_resize_guards_and_toolbar_action_contracts(
         window.configure_toolbar_copy_for_design(preset)
 
     monkeypatch.setattr(
-        gui,
+        gui_toolbars,
         "gui_design_toolbar_actions",
         lambda _preset_id: [("unexpected", "Unexpected", "Unexpected")],
     )
@@ -1244,6 +1394,7 @@ def test_navigation_dialog_search_and_connected_chrome_edges(
     assert sidebar_widths[-1] == (300, False)
 
     reference_owner = SimpleNamespace(
+        property=lambda _name: True,
         current_design_id=lambda: "termius",
         tabs=SimpleNamespace(tabText=lambda _index: "Wrong title"),
         tab_role=lambda _index: termius_route.reference_tab_role,
@@ -1448,7 +1599,7 @@ def test_toolbar_shortcut_profile_and_context_contract_edges(
 def test_menu_bar_rejects_unregistered_product_items(gui_window, monkeypatch) -> None:
     from dataclasses import replace
 
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_menus
     from remote_ops_workspace.gui_designs import (
         gui_design_moba_top_menu_geometry_for,
         gui_design_moba_top_menu_items,
@@ -1465,23 +1616,23 @@ def test_menu_bar_rejects_unregistered_product_items(gui_window, monkeypatch) ->
     moba_item = original_moba_items()[0]
     moba_geometry = original_moba_geometry(moba_item.key)
     monkeypatch.setattr(
-        gui,
+        gui_menus,
         "gui_design_moba_top_menu_items",
         lambda: (replace(moba_item, key="unregistered-moba"),),
     )
     monkeypatch.setattr(
-        gui,
+        gui_menus,
         "gui_design_moba_top_menu_geometry_for",
         lambda _key: moba_geometry,
     )
     with pytest.raises(RuntimeError, match="missing Moba top-menu handler"):
         window.build_menu_bar()
 
-    monkeypatch.setattr(gui, "gui_design_moba_top_menu_items", original_moba_items)
-    monkeypatch.setattr(gui, "gui_design_moba_top_menu_geometry_for", original_moba_geometry)
+    monkeypatch.setattr(gui_menus, "gui_design_moba_top_menu_items", original_moba_items)
+    monkeypatch.setattr(gui_menus, "gui_design_moba_top_menu_geometry_for", original_moba_geometry)
     securecrt = original_securecrt()
     monkeypatch.setattr(
-        gui,
+        gui_menus,
         "gui_design_securecrt_top_chrome",
         lambda: replace(
             securecrt,
@@ -1491,10 +1642,10 @@ def test_menu_bar_rejects_unregistered_product_items(gui_window, monkeypatch) ->
     with pytest.raises(RuntimeError, match="missing SecureCRT top-menu handler"):
         window.build_menu_bar()
 
-    monkeypatch.setattr(gui, "gui_design_securecrt_top_chrome", original_securecrt)
+    monkeypatch.setattr(gui_menus, "gui_design_securecrt_top_chrome", original_securecrt)
     mremoteng = original_mremoteng()
     monkeypatch.setattr(
-        gui,
+        gui_menus,
         "gui_design_mremoteng_top_chrome",
         lambda: replace(
             mremoteng,
@@ -1563,19 +1714,13 @@ def test_remaining_operator_tab_and_reference_route_guards(
     type(window).configure_product_reference_terminal_pane(pane, "native")
     original_current_design_id = window.current_design_id
     original_current_design_is_moba = window.current_design_is_moba
-    monkeypatch.setattr(window, "current_design_id", lambda: "securecrt")
-    window.apply_reference_tab_route_to_terminal_tab(pane, "wrong-title")
-    window.apply_reference_tab_chrome_route_to_terminal_tab(
-        pane,
-        "wrong-title",
-        -1,
-    )
-    window.apply_reference_status_bar_route_to_terminal_tab(pane, "wrong-title")
-    window.apply_reference_session_action_route_to_terminal_tab(
-        pane,
-        "wrong-title",
-        -1,
-    )
+    for preset in ("native", "securecrt"):
+        monkeypatch.setattr(window, "current_design_id", lambda preset=preset: preset)
+        window.apply_reference_tab_route_to_terminal_tab(pane, "wrong-title")
+        window.apply_reference_tab_chrome_route_to_terminal_tab(pane, "wrong-title", -1)
+        window.apply_reference_status_bar_route_to_terminal_tab(pane, "wrong-title")
+        window.apply_reference_session_action_route_to_terminal_tab(pane, "wrong-title", -1)
+        assert pane.property("presetReferenceTabRouteKey") is None
     window.apply_moba_connected_session_action_route_to_tab(
         pane,
         state,
@@ -1691,12 +1836,7 @@ def test_remaining_optional_design_surface_branches(
         def initialize_background_state(self) -> None:
             self.initialized = True
 
-    _set_closure_value(
-        monkeypatch,
-        type(window).show_moba_connected_dock,
-        "MobaSftpDock",
-        _Dock,
-    )
+    monkeypatch.setattr(window, "_connected_sftp_dock_type", _Dock)
     window.show_moba_connected_dock(state)
     assert isinstance(window.moba_connected_dock, _Dock)
     assert window.moba_connected_dock.initialized is True
@@ -1908,13 +2048,13 @@ def test_securecrt_empty_metadata_without_command_input_is_safe(
 ) -> None:
     from dataclasses import replace
 
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_securecrt
     from remote_ops_workspace.gui_designs import gui_design_securecrt_command_window_chrome
 
     _app, window = gui_window
     chrome = gui_design_securecrt_command_window_chrome()
     monkeypatch.setattr(
-        gui,
+        gui_securecrt,
         "gui_design_securecrt_command_window_chrome",
         lambda: replace(chrome, command=""),
     )

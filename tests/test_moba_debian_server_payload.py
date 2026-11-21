@@ -1,0 +1,550 @@
+from __future__ import annotations
+
+import gzip
+import io
+import json
+import shutil
+import struct
+import subprocess
+import tarfile
+import zipfile
+from pathlib import Path, PurePosixPath
+from unittest.mock import Mock
+
+import pytest
+
+from scripts import moba_debian_server_payload as payload
+from scripts import prepare_debian_server_bundle as preparation
+from scripts import release_candidate_inventory as inventory
+from scripts import stage_debian_server_bundle as staging
+from scripts.debian_server_notices import NOTICE_DIR, notice_path, read_verified_debian_notices
+
+TARGET = "linux-x86_64"
+
+
+def make_elf(contents: bytes) -> bytes:
+    header = bytearray(64)
+    header[:7] = b"\x7fELF\x02\x01\x01"
+    struct.pack_into("<HHI", header, 16, 3, 62, 1)
+    struct.pack_into("<H", header, 52, 64)
+    return bytes(header) + contents
+
+
+@pytest.fixture
+def approved_bundle(tmp_path: Path) -> Path:
+    root = tmp_path / "runtime"
+    document = {
+        "schema": payload.SCHEMA, "release_target": TARGET, "system": "linux",
+        "services": [], "debian_notices": {},
+    }
+    for service in sorted(payload.EXTERNAL_SERVICES):
+        relative = f"linux/{service}/bin/{service}d"
+        executable = root / relative
+        executable.parent.mkdir(parents=True)
+        executable.write_bytes(make_elf(service.encode()))
+        document["services"].append({
+            "service": service,
+            "runtime": {
+                "source": "packaged", "bundled": True, "placeholder": False, "key": f"{service}d",
+                "executable": relative, "sha256": payload.sha256_file(executable),
+            },
+        })
+        notice = root / "notices" / f"{service}-daemon.copyright"
+        notice.parent.mkdir(exist_ok=True)
+        notice.write_bytes(f"distro notice for {service}\n".encode())
+        document["debian_notices"][f"{service}-daemon"] = {
+            "version": "1:2.4.0-1~deb13u1", "services": [service],
+            "sha256": payload.sha256_file(notice), "size_bytes": notice.stat().st_size,
+        }
+    (root / payload.MANIFEST).write_text(json.dumps(document), encoding="utf-8")
+    return root
+
+
+@pytest.fixture
+def staged_debian(tmp_path: Path, approved_bundle: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    package = tmp_path / "debian"
+    launcher = package / payload.LAUNCHER
+    launcher.parent.mkdir(parents=True)
+    launcher.write_bytes(make_elf(b"the actual ROW launcher"))
+    monkeypatch.setattr(payload, "debian_dependencies", lambda *_: ["libc6 (>= 2.38)", "libpam0g"])
+    assert payload.stage_payload(approved_bundle, package, TARGET) == "libc6 (>= 2.38), libpam0g"
+    return package
+
+
+def make_tar(root: Path, *, substitute: str | None = None, link: Path | None = None) -> bytes:
+    data = io.BytesIO()
+    with tarfile.open(fileobj=data, mode="w") as archive:
+        for path in sorted(root.rglob("*")):
+            relative = PurePosixPath(path.relative_to(root).as_posix())
+            info = tarfile.TarInfo("./" + relative.as_posix())
+            if path == link:
+                info.type, info.linkname = tarfile.SYMTYPE, "/tmp"
+                archive.addfile(info)
+            elif path.is_dir():
+                info.type, info.mode = tarfile.DIRTYPE, 0o755
+                archive.addfile(info)
+            else:
+                content = path.read_bytes() + (b"changed" if relative.as_posix() == substitute else b"")
+                info.mode = 0o644 if relative.is_relative_to(NOTICE_DIR) else 0o755
+                info.size = len(content)
+                archive.addfile(info, io.BytesIO(content))
+    return data.getvalue()
+
+
+@pytest.fixture
+def bundle_archive(tmp_path: Path, approved_bundle: Path) -> Path:
+    archive = tmp_path / staging.ARCHIVE_NAME
+    archive.write_bytes(gzip.compress(make_tar(approved_bundle)))
+    return archive
+
+
+def test_portable_bundle_stages_only_the_reviewed_bytes(
+    approved_bundle: Path, bundle_archive: Path, tmp_path: Path,
+) -> None:
+    output = tmp_path / "staged"
+    staging.stage_bundle(bundle_archive, payload.sha256_file(bundle_archive), TARGET, output)
+    assert {
+        file.relative_to(output): file.read_bytes() for file in output.rglob("*") if file.is_file()
+    } == {
+        file.relative_to(approved_bundle): file.read_bytes()
+        for file in approved_bundle.rglob("*") if file.is_file()
+    }
+    with pytest.raises(ValueError, match="output already exists"):
+        staging.stage_bundle(bundle_archive, payload.sha256_file(bundle_archive), TARGET, output)
+
+
+@pytest.mark.parametrize(
+    ("damage", "reason"),
+    [
+        (None, None),
+        ("unreviewed-commit", "must be on the fetched"),
+        ("wrong-tag", "must contain the archive as a regular data file"),
+        ("digest", "does not match the approved archive"),
+    ],
+)
+def test_prepare_upload_from_the_exact_evidence_commit(
+    bundle_archive: Path, tmp_path: Path, damage: str | None, reason: str | None,
+) -> None:
+    repo = tmp_path / "evidence"
+    repo.mkdir()
+    output = tmp_path / "upload"
+    tag = "v2.3.4"
+    source = repo / "server-bundles" / tag / staging.ARCHIVE_NAME
+    source.parent.mkdir(parents=True)
+    shutil.copyfile(bundle_archive, source)
+
+    def git(*args: str) -> str:
+        return subprocess.check_output(
+            ["git", "-C", str(repo), "-c", "user.name=Readiness tests", "-c", "user.email=test@example.org", *args],
+            encoding="utf-8",
+        ).strip()
+
+    git("init", "--quiet")
+    git("commit", "--quiet", "--allow-empty", "-m", "Base")
+    base = git("rev-parse", "HEAD")
+    git("add", "--", source.relative_to(repo).as_posix())
+    git("commit", "--quiet", "-m", "Reviewed release archive")
+    commit = git("rev-parse", "HEAD")
+    git("update-ref", preparation.EVIDENCE_REF, base if damage == "unreviewed-commit" else commit)
+    digest = "0" * 64 if damage == "digest" else payload.sha256_file(bundle_archive)
+    if damage == "wrong-tag":
+        tag = "v2.3.5"
+    # A worktree file under the approved path cannot substitute for the Git blob.
+    source.write_bytes(b"uncommitted file")
+    if reason:
+        with pytest.raises(ValueError, match=reason):
+            preparation.prepare_bundle(repo, commit, tag, digest, output)
+        assert not output.exists()
+    else:
+        preparation.prepare_bundle(repo, commit, tag, digest, output)
+        assert list(output.iterdir()) == [output / staging.ARCHIVE_NAME]
+        assert (output / staging.ARCHIVE_NAME).read_bytes() == bundle_archive.read_bytes()
+
+
+@pytest.mark.parametrize(
+    ("damage", "reason"),
+    [
+        ("digest", "does not match the approved archive"),
+        ("link", "must be a regular file"),
+        ("extra", "outside the reviewed manifest"),
+        ("notice", "differs from reviewed evidence"),
+        ("architecture", "exact Linux target"),
+    ],
+)
+def test_portable_bundle_rejects_unreviewed_content(
+    approved_bundle: Path, bundle_archive: Path, tmp_path: Path, damage: str, reason: str,
+) -> None:
+    target = TARGET
+    if damage == "link":
+        linked = next((approved_bundle / "notices").iterdir())
+        bundle_archive.write_bytes(gzip.compress(make_tar(approved_bundle, link=linked)))
+    elif damage == "extra":
+        (approved_bundle / "notices" / "extra.copyright").write_bytes(b"extra")
+        bundle_archive.write_bytes(gzip.compress(make_tar(approved_bundle)))
+    elif damage == "notice":
+        notice = next((approved_bundle / "notices").iterdir())
+        bundle_archive.write_bytes(gzip.compress(make_tar(approved_bundle, substitute=f"notices/{notice.name}")))
+    elif damage == "architecture":
+        target = "linux-arm64"
+    digest = "0" * 64 if damage == "digest" else payload.sha256_file(bundle_archive)
+    output = tmp_path / "stage"
+    with pytest.raises(ValueError, match=reason):
+        staging.stage_bundle(bundle_archive, digest, target, output)
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("damage", [None, "expired", "digest", "entry", "inner-digest"])
+def test_actions_bundle_download_binds_zip_metadata_and_its_only_file(
+    approved_bundle: Path, bundle_archive: Path, tmp_path: Path, damage: str | None,
+) -> None:
+    zipped = tmp_path / "source.zip"
+    with zipfile.ZipFile(zipped, mode="w") as archive:
+        archive.write(bundle_archive, "unexpected.tar.gz" if damage == "entry" else staging.ARCHIVE_NAME)
+    digest = f"sha256:{payload.sha256_file(zipped)}"
+    client = Mock(spec=staging.GitHubClient)
+    client.json.return_value = {
+        "id": 123, "expired": damage == "expired", "size_in_bytes": zipped.stat().st_size,
+        "digest": "sha256:" + "0" * 64 if damage == "digest" else digest,
+    }
+
+    def download(endpoint: str, destination: Path, *, max_bytes: int) -> str:
+        assert endpoint == "actions/artifacts/123/zip"
+        assert max_bytes == zipped.stat().st_size
+        shutil.copyfile(zipped, destination)
+        return digest
+
+    client.download.side_effect = download
+    if damage is None:
+        pinned = payload.sha256_file(bundle_archive)
+        reviewed = json.loads((approved_bundle / payload.MANIFEST).read_bytes())
+        assert inventory.seal_debian_server_bundle(client, 123, pinned) == {
+            "artifact_id": 123, "archive_sha256": pinned, "runtime_sha256": payload.reviewed_runtime_sha256(reviewed),
+        }
+    elif damage == "inner-digest":
+        with pytest.raises(ValueError, match="does not match the approved archive"):
+            inventory.seal_debian_server_bundle(client, 123, "0" * 64)
+    else:
+        with pytest.raises(ValueError, match={
+            "expired": "expired", "digest": "do not match GitHub", "entry": "contain only",
+        }[damage]):
+            staging.download_bundle(client, 123, tmp_path)
+    client.json.assert_called_once_with("actions/artifacts/123")
+    if damage == "expired":
+        client.download.assert_not_called()
+
+
+def test_debian_staging_includes_six_approved_daemons_and_both_row_runtime_roles(staged_debian: Path) -> None:
+    document, digests = payload.server_payload(staged_debian / payload.PAYLOAD, TARGET)
+    assert document["debian_depends"] == ["libc6 (>= 2.38)", "libpam0g"]
+    assert {service["service"] for service in document["services"]} == payload.SERVICES
+    launcher = payload.sha256_file(staged_debian / payload.LAUNCHER)
+    assert digests["linux/http/bin/python"] == digests["linux/ftp/bin/pyftpdlib"] == launcher
+    with tarfile.open(fileobj=io.BytesIO(make_tar(staged_debian))) as archive:
+        payload.compare_payload_tar(archive, digests)
+
+
+@pytest.mark.parametrize(
+    ("relative", "detail"),
+    [
+        ("usr/bin/row", "must match the Debian ROW launcher"),
+        ("usr/lib/remote-ops-workspace/servers/linux/tftp/bin/tftpd", "differs from reviewed evidence"),
+    ],
+)
+def test_debian_audit_rejects_substituted_shipped_bytes(staged_debian: Path, relative: str, detail: str) -> None:
+    _, digests = payload.server_payload(staged_debian / payload.PAYLOAD, TARGET)
+    with tarfile.open(fileobj=io.BytesIO(make_tar(staged_debian, substitute=relative))) as archive:
+        with pytest.raises(ValueError, match=detail):
+            payload.compare_payload_tar(archive, digests)
+
+
+def test_debian_audit_rejects_redirected_runtime_ancestors(staged_debian: Path) -> None:
+    _, digests = payload.server_payload(staged_debian / payload.PAYLOAD, TARGET)
+    linked = staged_debian / payload.PAYLOAD.parent
+    with tarfile.open(fileobj=io.BytesIO(make_tar(staged_debian, link=linked))) as archive:
+        with pytest.raises(ValueError, match="untrusted directory"):
+            payload.compare_payload_tar(archive, digests)
+
+
+def test_staging_refuses_wrong_architecture_and_tampered_daemons(approved_bundle: Path) -> None:
+    with pytest.raises(ValueError, match="exact Linux target"):
+        payload.server_payload(approved_bundle, "linux-arm64", payload.EXTERNAL_SERVICES)
+    (approved_bundle / "linux/tftp/bin/tftpd").write_bytes(make_elf(b"wrong binary"))
+    with pytest.raises(ValueError, match="differs from its manifest digest"):
+        payload.server_payload(approved_bundle, TARGET, payload.EXTERNAL_SERVICES)
+
+
+@pytest.fixture
+def private_openssh_bundle(approved_bundle: Path) -> Path:
+    manifest = approved_bundle / payload.MANIFEST
+    record = json.loads(manifest.read_bytes())
+    helpers = approved_bundle / payload.SERVER_OPENSSH_HELPER_DIR
+    helpers.mkdir(parents=True)
+    helper_reference = f"/{payload.PAYLOAD}/{payload.SERVER_OPENSSH_HELPER_DIR}/".encode()
+    daemon = make_elf(helper_reference + b"sshd-session\0")
+    for row in record["services"]:
+        service = row["service"]
+        if service in payload.OPENSSH_DAEMON_KEYS:
+            runtime = row["runtime"]
+            executable = f"linux/{service}/bin/sshd"
+            installed = approved_bundle / executable
+            installed.write_bytes(daemon)
+            runtime.update(key=payload.OPENSSH_DAEMON_KEYS[service], executable=executable,
+                           sha256=payload.sha256_file(installed))
+    (helpers / "sshd-session").write_bytes(make_elf(helper_reference + b"sshd-auth\0"))
+    (helpers / "sshd-auth").write_bytes(make_elf(b"package-owned auth"))
+    record["openssh_helpers"] = {path.name: payload.sha256_file(path) for path in helpers.iterdir()}
+    manifest.write_text(json.dumps(record), encoding="utf-8")
+    return approved_bundle
+
+
+def test_debian_stages_and_audits_both_private_openssh_helpers(
+    private_openssh_bundle: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package = tmp_path / "debian"
+    launcher = package / payload.LAUNCHER
+    launcher.parent.mkdir(parents=True)
+    launcher.write_bytes(make_elf(b"launcher"))
+    monkeypatch.setattr(payload, "debian_dependencies", lambda *_: ["libc6 (>= 2.38)", "libpam0g"])
+    payload.stage_payload(private_openssh_bundle, package, TARGET)
+    _, expected = payload.server_payload(package / payload.PAYLOAD, TARGET)
+    helpers = {f"{payload.SERVER_OPENSSH_HELPER_DIR}/{name}" for name in ("sshd-session", "sshd-auth")}
+    assert helpers <= expected.keys()
+    with tarfile.open(fileobj=io.BytesIO(make_tar(package))) as archive:
+        payload.compare_payload_tar(archive, expected)
+
+    changed = (payload.PAYLOAD / payload.SERVER_OPENSSH_HELPER_DIR / "sshd-auth").as_posix()
+    with tarfile.open(fileobj=io.BytesIO(make_tar(package, substitute=changed))) as archive:
+        with pytest.raises(ValueError, match="differs from reviewed evidence"):
+            payload.compare_payload_tar(archive, expected)
+    (package / changed).unlink()
+    contents = make_tar(package)
+    with tarfile.open(fileobj=io.BytesIO(contents)) as archive:
+        with pytest.raises(ValueError, match="missing the reviewed server payload members"):
+            payload.compare_payload_tar(archive, expected)
+    monkeypatch.setattr(payload.subprocess, "run", lambda *_, stdout, **__: stdout.write(contents))
+    with pytest.raises(ValueError, match="missing the reviewed server payload members.*sshd-auth"):
+        read_verified_debian_notices(tmp_path / "candidate.deb", target=TARGET, verify_runtime=True)
+
+
+@pytest.mark.parametrize(
+    ("damage", "reason"),
+    [
+        ("unrecorded", "helper files must be recorded"),
+        ("differing-daemons", "SSH and SFTP must use the same OpenSSH daemon"),
+        ("external-session", "sshd-session must reference the package-owned sshd-auth"),
+        ("foreign-elf", "machine does not match"),
+    ],
+)
+def test_debian_rejects_unbound_openssh_helpers(private_openssh_bundle: Path, damage: str, reason: str) -> None:
+    root = private_openssh_bundle
+    manifest = root / payload.MANIFEST
+    record = json.loads(manifest.read_bytes())
+    if damage == "unrecorded":
+        del record["openssh_helpers"]
+    elif damage == "differing-daemons":
+        runtime = next(row["runtime"] for row in record["services"] if row["service"] == "sftp")
+        path = root / runtime["executable"]
+        path.write_bytes(path.read_bytes() + b"other build")
+        runtime["sha256"] = payload.sha256_file(path)
+    else:
+        path = root / payload.SERVER_OPENSSH_HELPER_DIR / "sshd-session"
+        changed = bytearray(path.read_bytes())
+        if damage == "external-session":
+            changed = bytearray(make_elf(b"/usr/lib/openssh/sshd-auth\0"))
+        else:
+            struct.pack_into("<H", changed, 18, 183)
+        path.write_bytes(changed)
+        record["openssh_helpers"][path.name] = payload.sha256_file(path)
+    manifest.write_text(json.dumps(record), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=reason):
+        payload.server_payload(root, TARGET, payload.EXTERNAL_SERVICES)
+
+
+def test_debian_archive_audit_checks_the_control_dependency_field(
+    staged_debian: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package = tmp_path / "remote-ops-workspace-v1.0.28-linux-amd64.deb"
+    manifest = staged_debian / payload.PAYLOAD / payload.MANIFEST
+    contents = make_tar(staged_debian)
+    monkeypatch.setattr(payload.subprocess, "run", lambda *_, stdout, **__: stdout.write(contents))
+    monkeypatch.setattr(payload.subprocess, "check_output", lambda *_args, **_kwargs: "libc6 (>= 2.38),\n libpam0g\n")
+    payload.verify_debian_payload(package, manifest, TARGET)
+
+    monkeypatch.setattr(payload.subprocess, "check_output", lambda *_args, **_kwargs: "libc6 (>= 2.38)\n")
+    with pytest.raises(ValueError, match="Depends differs from the reviewed server runtime dependencies"):
+        payload.verify_debian_payload(package, manifest, TARGET)
+
+
+def test_staging_refuses_changed_notice_attachments(approved_bundle: Path, tmp_path: Path) -> None:
+    target = tmp_path / "unstaged"
+    (approved_bundle / "notices/nfs-daemon.copyright").write_bytes(b"changed")
+    with pytest.raises(ValueError, match="notice attachment differs from reviewed evidence"):
+        payload.stage_payload(approved_bundle, target, TARGET)
+    assert not target.exists()
+
+
+@pytest.mark.parametrize(("change", "error"), [
+    ("omitted", "missing services"),
+    ("extra-service", "unique and external"),
+    ("bad-name", "invalid Debian server notice record"),
+])
+def test_staging_requires_a_notice_for_each_external_service(
+    approved_bundle: Path, tmp_path: Path, change: str, error: str,
+) -> None:
+    manifest = approved_bundle / payload.MANIFEST
+    document = json.loads(manifest.read_bytes())
+    records = document["debian_notices"]
+    if change == "omitted":
+        del records["nfs-daemon"]
+    elif change == "extra-service":
+        records["nfs-daemon"]["services"].append("http")
+    else:
+        records["../nfs-daemon"] = records.pop("nfs-daemon")
+    manifest.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(ValueError, match=error):
+        payload.stage_payload(approved_bundle, tmp_path / "unstaged", TARGET)
+
+
+def test_redistribution_reads_exact_installed_notice_bytes(
+    staged_debian: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    archive = tmp_path / "remote-ops-workspace-v1.0.28-linux-amd64.deb"
+    manifest = staged_debian / payload.PAYLOAD / payload.MANIFEST
+    contents = make_tar(staged_debian)
+    monkeypatch.setattr(payload.subprocess, "run", lambda *_, stdout, **__: stdout.write(contents))
+    assert read_verified_debian_notices(archive, target=TARGET) == json.loads(manifest.read_bytes())["debian_notices"]
+
+    path = staged_debian / notice_path("nfs-daemon")
+    old = path.read_bytes()
+    path.write_bytes(b"B" + old[1:])
+    contents = make_tar(staged_debian)
+    with pytest.raises(ValueError, match="notice differs from reviewed evidence"):
+        read_verified_debian_notices(archive, target=TARGET)
+
+    path.unlink()
+    contents = make_tar(staged_debian)
+    with pytest.raises(ValueError, match="missing reviewed server notices"):
+        read_verified_debian_notices(archive, target=TARGET)
+
+
+def test_review_capture_retains_exact_debian_server_notices(
+    staged_debian: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.syspath_prepend(str(payload.ROOT / "scripts"))
+    import check_packaged_release_notices as capture
+    from packaged_linux_licenses import APPLICATION_LICENSE_PATH, REQUIRED_LICENSE_PATHS
+    from stage_linux_runtime_licenses import LICENSE_COMPONENTS, LICENSE_ROOT
+
+    for path in REQUIRED_LICENSE_PATHS | {
+        LICENSE_ROOT / name / "LICENSE" for name in LICENSE_COMPONENTS - {"cpython", "cryptography"}
+    }:
+        file = staged_debian / path
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_bytes(path.as_posix().encode())
+    (staged_debian / APPLICATION_LICENSE_PATH).write_bytes((payload.ROOT / "LICENSE").read_bytes())
+    (staged_debian / LICENSE_ROOT.parent / "THIRD_PARTY_NOTICES.md").write_bytes(
+        (payload.ROOT / "redistribution-evidence/THIRD_PARTY_NOTICES.md").read_bytes(),
+    )
+    assets, evidence, rejected = tmp_path / "assets", tmp_path / "review", tmp_path / "rejected"
+    for directory in (assets, evidence, rejected):
+        directory.mkdir()
+    tag = "v1.0.28"
+    package = assets / f"remote-ops-workspace-{tag}-linux-amd64.deb"
+    package.write_bytes(b"Debian fixture")
+    monkeypatch.setattr(capture, "expected_production_packages", lambda _tag: {package.name})
+    contents = make_tar(staged_debian)
+    monkeypatch.setattr(payload.subprocess, "run", lambda command, **_: subprocess.CompletedProcess(
+        command, 0, stdout=contents, stderr=b"",
+    ))
+
+    assert capture.verify_notices(assets, tag, evidence_root=evidence) == 1
+    observed = json.loads((evidence / "packaged-notices/notice-extraction.json").read_bytes())
+    expected = json.loads((staged_debian / payload.PAYLOAD / payload.MANIFEST).read_bytes())["debian_notices"]
+    captured = {
+        row["component"]: row for row in observed["packages"][package.name]["notice_files"]
+        if row.get("origin") == "native-component"
+    }
+    assert captured.keys() == expected.keys()
+    for name, record in captured.items():
+        assert record["version"] == expected[name]["version"]
+        assert record["path"] == notice_path(name).as_posix()
+        assert record["sha256"] == expected[name]["sha256"]
+        assert record["size_bytes"] == expected[name]["size_bytes"]
+        assert (evidence / record["file"]).read_bytes() == (staged_debian / notice_path(name)).read_bytes()
+
+    notice = "nfs-daemon"
+    path = staged_debian / notice_path(notice)
+    path.write_bytes(b"B" + path.read_bytes()[1:])
+    contents = make_tar(staged_debian)
+    with pytest.raises(ValueError, match="notice differs from reviewed evidence"):
+        capture.verify_notices(assets, tag, evidence_root=rejected)
+    assert not list(rejected.iterdir())
+
+
+@pytest.mark.parametrize(("change", "error"), [
+    ("none", ""),
+    ("changed-daemon", "daemon or manifest differs from reviewed evidence"),
+    ("missing-daemon", "missing the reviewed server payload members"),
+    ("different-launcher", "HTTP and FTP runtime bytes must match the Debian ROW launcher"),
+])
+def test_candidate_receipt_metadata_checks_the_packaged_runtime(
+    staged_debian: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str, error: str,
+) -> None:
+    package = tmp_path / "remote-ops-workspace-v1.0.28-linux-amd64.deb"
+    daemon = payload.PAYLOAD / "linux/tftp/bin/tftpd"
+    if change == "missing-daemon":
+        (staged_debian / daemon).unlink()
+    substitute = {
+        "changed-daemon": daemon.as_posix(),
+        "different-launcher": payload.LAUNCHER.as_posix(),
+    }.get(change)
+    contents = make_tar(staged_debian, substitute=substitute)
+    depends = "libc6 (>= 2.38), libpam0g"
+    monkeypatch.setattr(payload.subprocess, "run", lambda *_, stdout, **__: stdout.write(contents))
+    monkeypatch.setattr(payload.subprocess, "check_output", lambda *_args, **_kwargs: depends)
+    if error:
+        with pytest.raises(ValueError, match=error):
+            inventory.read_candidate_deb_metadata(package)
+    else:
+        assert inventory.read_candidate_deb_metadata(package) == (depends, True)
+
+
+def test_matching_package_file_hashes_do_not_replace_reviewed_archive_binding(
+    approved_bundle: Path, staged_debian: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package = tmp_path / "remote-ops-workspace-v1.0.28-linux-amd64.deb"
+    manifest = staged_debian / payload.PAYLOAD / payload.MANIFEST
+    document = json.loads(manifest.read_bytes())
+    reviewed = json.loads((approved_bundle / payload.MANIFEST).read_bytes())
+    expected_runtime_sha256 = payload.reviewed_runtime_sha256(reviewed)
+    depends = "libc6 (>= 2.38), libpam0g"
+    contents = make_tar(staged_debian)
+    monkeypatch.setattr(payload.subprocess, "run", lambda *_, stdout, **__: stdout.write(contents))
+    monkeypatch.setattr(payload.subprocess, "check_output", lambda *_args, **_kwargs: depends)
+    assert inventory.read_candidate_deb_metadata(package, expected_runtime_sha256=expected_runtime_sha256) == (depends, True)
+
+    runtime = next(row["runtime"] for row in document["services"] if row["service"] == "tftp")
+    daemon = staged_debian / payload.PAYLOAD / runtime["executable"]
+    daemon.write_bytes(make_elf(b"different local fixture"))
+    runtime["sha256"] = payload.sha256_file(daemon)
+    manifest.write_text(json.dumps(document), encoding="utf-8")
+    contents = make_tar(staged_debian)
+    assert inventory.read_candidate_deb_metadata(package) == (depends, True)
+    with pytest.raises(ValueError, match="server payload differs from the reviewed archive"):
+        inventory.read_candidate_deb_metadata(package, expected_runtime_sha256=expected_runtime_sha256)
+
+
+def test_legacy_archive_without_an_embedded_server_bundle_requires_no_daemon_notices(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stage = tmp_path / "plain"
+    launcher = stage / payload.LAUNCHER
+    launcher.parent.mkdir(parents=True)
+    launcher.write_bytes(b"fixture")
+    contents = make_tar(stage)
+    monkeypatch.setattr(payload.subprocess, "run", lambda *_, stdout, **__: stdout.write(contents))
+    plain = tmp_path / "plain.deb"
+    assert read_verified_debian_notices(plain, target=TARGET) == {}
+    with pytest.raises(ValueError, match="missing the reviewed server payload"):
+        read_verified_debian_notices(plain, target=TARGET, expected_runtime_sha256="0" * 64)

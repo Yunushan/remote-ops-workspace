@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from remote_ops_workspace import cli
+from remote_ops_workspace import cli, cli_customizer
 from remote_ops_workspace import update_channel as channel
 
 
@@ -15,7 +15,7 @@ from remote_ops_workspace import update_channel as channel
 def test_authenticated_stage_commands_route_selected_operation_and_report_no_install(monkeypatch, capsys, recover, as_json):
     marker, calls = object(), []
     monkeypatch.setattr(channel, "load_update_policy", lambda path: calls.append(("policy", path)) or marker)
-    monkeypatch.setattr(cli, "data_dir", lambda: "synthetic-current-home")
+    monkeypatch.setattr(cli_customizer, "data_dir", lambda: "synthetic-current-home")
 
     def operation(policy, root, *, current_home):
         calls.append(("operation", policy, root, current_home))
@@ -47,7 +47,7 @@ def test_authenticated_stage_policy_refusal_does_not_start_operation(monkeypatch
 
     monkeypatch.setattr(channel, "load_update_policy", refuse)
     monkeypatch.setattr(channel, "stage_update", lambda *_args, **_kwargs: pytest.fail("refused policy started staging"))
-    monkeypatch.setattr(cli, "data_dir", lambda: pytest.fail("refused policy inspected current home"))
+    monkeypatch.setattr(cli_customizer, "data_dir", lambda: pytest.fail("refused policy inspected current home"))
     assert cli.cmd_customizer_update_stage(argparse.Namespace(policy="policy", stage="stage", json=as_json)) == 1
     output = capsys.readouterr()
     if as_json:
@@ -62,7 +62,7 @@ def test_authenticated_stage_policy_refusal_does_not_start_operation(monkeypatch
 def test_authenticated_stage_cli_hides_input_or_operation_exception_details(monkeypatch, capsys, error_type, recover):
     marker = object()
     monkeypatch.setattr(channel, "load_update_policy", lambda _path: marker)
-    monkeypatch.setattr(cli, "data_dir", lambda: "synthetic-home")
+    monkeypatch.setattr(cli_customizer, "data_dir", lambda: "synthetic-home")
 
     def refuse(_policy, _root, *, current_home):
         assert current_home == "synthetic-home"

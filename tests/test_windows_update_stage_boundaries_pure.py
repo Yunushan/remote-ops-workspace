@@ -81,7 +81,7 @@ class MockNative:
         self.events.append(("snapshot", self.handles[handle]))
         return self.observations[self.handles[handle]]
 
-    def open_file(self, path):
+    def open_file(self, path, *, read_only=False):
         self.events.append(("open-file", path))
         handle = len(self.handles) + 1
         self.handles[handle] = path
@@ -324,9 +324,11 @@ class RecordingGuard:
             self.scene.events.append(("private-close", name))
 
     @contextmanager
-    def named_file(self, path, *, expected_identity=None):
+    def named_file(self, path, *, expected_identity=None, read_only=False):
         name = str(path)
         self.scene.events.append(("named-enter", name, expected_identity))
+        if read_only:
+            self.scene.events.append(("write-sharing-denied", name))
         if self.wrong_final or expected_identity is not None and expected_identity != (1, 0, self.scene.ids[name]):
             raise storage.PrivateStorageError("private-final-identity-mismatch")
         try:
@@ -629,9 +631,12 @@ def test_complete_validator_is_called_with_all_final_names_retained(monkeypatch)
     for index, name in enumerate(names):
         scene.data[STAGE + "\\" + name], scene.ids[STAGE + "\\" + name] = b"x", index + 1
 
-    def verify_held(*_args):
+    def verify_held(*_args, **_kwargs):
         scene.events.append(("full-validator",))
         assert len([row for row in scene.events if row[0] == "named-enter"]) == 3
+        assert [row[1] for row in scene.events if row[0] == "write-sharing-denied"] == [
+            STAGE + "\\" + name for name in names
+        ]
         assert not any(row[0] == "named-close" for row in scene.events)
         return {"install_permitted": False}
 

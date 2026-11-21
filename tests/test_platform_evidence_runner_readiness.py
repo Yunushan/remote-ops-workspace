@@ -75,8 +75,8 @@ def test_runner_readiness_accepts_all_goal_targets_with_idle_runners() -> None:
         fetcher=FakeFetcher(
             {
                 "actions/runners?per_page=100&page=1": _runner_page(
-                    _runner("online", False, "self-hosted", "Linux", "i386"),
-                    _runner("online", False, "self-hosted", "linux", "armhf"),
+                    _runner("online", False, "self-hosted", "Linux", "i386", "X64"),
+                    _runner("online", False, "self-hosted", "linux", "armhf", "x64"),
                     _runner("online", False, "self-hosted", "Windows", "XP-Evidence"),
                     _runner("online", False, "self-hosted", "linux", "xp-evidence"),
                 )
@@ -100,15 +100,15 @@ def test_runner_readiness_rejects_missing_or_offline_target_runners() -> None:
         fetcher=FakeFetcher(
             {
                 "actions/runners?per_page=100&page=1": _runner_page(
-                    _runner("offline", False, "self-hosted", "linux", "i386"),
+                    _runner("offline", False, "self-hosted", "linux", "i386", "x64"),
                 )
             }
         ),
     )
 
     assert report["ready"] is False
-    assert "linux-i386 has matching self-hosted runner labels ['i386', 'linux', 'self-hosted'] but none are online" in errors
-    assert "linux-armhf requires a self-hosted runner with labels ['armhf', 'linux', 'self-hosted']; none found" in errors
+    assert "linux-i386 has matching self-hosted runner labels ['i386', 'linux', 'self-hosted', 'x64'] but none are online" in errors
+    assert "linux-armhf requires a self-hosted runner with labels ['armhf', 'linux', 'self-hosted', 'x64']; none found" in errors
 
 
 def test_runner_readiness_allows_verified_unavailability_only_for_non_promotional_skip() -> None:
@@ -195,11 +195,11 @@ def test_runner_readiness_fetches_all_pages_without_exposing_runner_names() -> N
         {
             "actions/runners?per_page=100&page=1": {
                 "total_count": 2,
-                "runners": [_runner("online", False, "self-hosted", "linux", "i386")],
+                "runners": [_runner("online", False, "self-hosted", "linux", "i386", "x64")],
             },
             "actions/runners?per_page=100&page=2": {
                 "total_count": 2,
-                "runners": [_runner("online", False, "self-hosted", "linux", "armhf")],
+                "runners": [_runner("online", False, "self-hosted", "linux", "armhf", "x64")],
             },
         }
     )
@@ -229,7 +229,7 @@ def test_runner_readiness_rejects_incomplete_or_inconsistent_pagination() -> Non
             {
                 "actions/runners?per_page=100&page=1": {
                     "total_count": 2,
-                    "runners": [_runner("online", False, "self-hosted", "linux", "i386")],
+                    "runners": [_runner("online", False, "self-hosted", "linux", "i386", "x64")],
                 },
                 "actions/runners?per_page=100&page=2": {"total_count": 2, "runners": []},
             }
@@ -243,7 +243,7 @@ def test_runner_readiness_rejects_incomplete_or_inconsistent_pagination() -> Non
             {
                 "actions/runners?per_page=100&page=1": {
                     "total_count": 2,
-                    "runners": [_runner("online", False, "self-hosted", "linux", "i386")],
+                    "runners": [_runner("online", False, "self-hosted", "linux", "i386", "x64")],
                 },
                 "actions/runners?per_page=100&page=2": {"total_count": 3, "runners": []},
             }

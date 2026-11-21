@@ -1,0 +1,82 @@
+name: Packaged X11 forwarding release evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_inventory:
+        description: Optional sealed candidate coordinates as RUN_ID ARTIFACT_ID sha256:DIGEST
+        required: false
+        type: string
+
+permissions:
+  actions: read
+  attestations: read
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  X11_IMAGE: row-x11-evidence:local
+
+jobs:
+  qualify-x11-forwarding:
+    name: Qualify packaged X11 forwarding
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Require an exact release tag
+        shell: bash
+        run: |
+          test "$GITHUB_REF_TYPE" = tag
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$GITHUB_REF" = "refs/tags/$GITHUB_REF_NAME"
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          printf 'X11_WORK=%s/x11-forwarding-evidence\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify the exact Debian package from the release or sealed inventory
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROW_QUALIFICATION_CANDIDATE_INVENTORY: ${{ inputs.candidate_inventory }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          mkdir -p "$X11_WORK/release" "$X11_WORK/review"
+          python3 -I scripts/fetch_qualification_release_asset.py --kind debian-amd64 --directory "$X11_WORK/release" \
+            --repository "$GITHUB_REPOSITORY" --tag "$GITHUB_REF_NAME" --sha "$GITHUB_SHA"
+      - name: Prepare the X11 fixture from signed Debian package metadata
+        shell: bash
+        run: |
+          asset="remote-ops-workspace-$GITHUB_REF_NAME-linux-amd64.deb"
+          digest="$(sha256sum -- "$X11_WORK/release/$asset")"
+          docker build --platform linux/amd64 --pull --target x11 \
+            --build-arg "ROW_DEB=$asset" --build-arg "ROW_DEB_SHA256=${digest%% *}" \
+            --file docker/Dockerfile.debian-parity-evidence --tag "$X11_IMAGE" "$X11_WORK/release"
+      - name: Capture packaged X11 forwarding in isolation
+        shell: bash
+        run: |
+          asset="remote-ops-workspace-${GITHUB_REF_NAME}-linux-amd64.deb"
+          docker run --rm --pull never --platform linux/amd64 --network none \
+            --cap-drop NET_ADMIN --cap-drop NET_RAW --cap-drop SYS_ADMIN \
+            --security-opt no-new-privileges \
+            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/src,readonly" \
+            --mount "type=bind,source=$X11_WORK/release,target=/release,readonly" \
+            --mount "type=bind,source=$X11_WORK/review,target=/proof" \
+            --env GITHUB_ACTIONS --env GITHUB_REF --env GITHUB_SHA --env GITHUB_REPOSITORY \
+            --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT --env PYTHONDONTWRITEBYTECODE=1 \
+            "$X11_IMAGE" python /src/scripts/capture_moba_xserver_forwarding.py \
+            --out /proof/embedded-x-server --release-deb "/release/$asset"
+          evidence="$X11_WORK/review/embedded-x-server"
+          python3 scripts/make_mobaxterm_parity_evidence_record.py \
+            --article-id embedded-x-server --release-tag "$GITHUB_REF_NAME" --release-target linux-x86_64 \
+            --evidence "$evidence/evidence.json" --assets-dir "$evidence" \
+            --release-asset-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$asset" \
+            --artifact "$asset=$X11_WORK/release/$asset" --out "$X11_WORK/review/candidate.json"
+      - name: Retain the candidate and its exact forwarding evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: x11-forwarding-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/x11-forwarding-evidence/review/
+          if-no-files-found: error
+          retention-days: 30

@@ -4,6 +4,8 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
 from remote_ops_workspace.cli import build_parser
 from remote_ops_workspace.x11 import (
     build_moba_x_server_package_status,
@@ -21,6 +23,9 @@ from remote_ops_workspace.x11 import (
     write_moba_x_server_smoke_evidence,
     x_server_extension_inventory,
 )
+from scripts import check_moba_xserver_release_evidence as release_x11
+from scripts.check_gui_visual_metrics import PngImage
+from scripts.check_moba_xserver_release_evidence import validate_moba_x_server_live_release_evidence
 
 
 def test_moba_x_server_plan_discovers_windows_runtime_and_extensions() -> None:
@@ -139,13 +144,15 @@ def test_x11_status_cli_command_is_registered() -> None:
     assert args.func.__name__ == "cmd_x11_status"
 
 
-def test_moba_x_server_lifecycle_writes_and_stops_state(tmp_path) -> None:
+def test_moba_x_server_lifecycle_writes_and_stops_state(tmp_path: Path) -> None:
     state_path = tmp_path / "xserver-state.json"
+    authority_path = tmp_path / "Xauthority"
     plan = build_moba_x_server_plan(
         display=":10",
         system="linux",
         which=lambda name: "/usr/bin/Xvfb" if name == "Xvfb" else None,
         display_probe=lambda display: False,
+        authority_path=authority_path,
     )
     started = start_moba_x_server(
         plan,
@@ -163,6 +170,7 @@ def test_moba_x_server_lifecycle_writes_and_stops_state(tmp_path) -> None:
 
     assert started.pid == 4242
     assert started.state == "started"
+    assert authority_path.stat().st_size > 0
     assert loaded is not None
     assert loaded.running is True
     assert stopped.state == "stopped"
@@ -171,28 +179,32 @@ def test_moba_x_server_lifecycle_writes_and_stops_state(tmp_path) -> None:
     assert terminated == [4242]
 
 
-def test_moba_x_server_lifecycle_dry_run_does_not_write_state(tmp_path) -> None:
+def test_moba_x_server_lifecycle_dry_run_does_not_write_state(tmp_path: Path) -> None:
     state_path = tmp_path / "xserver-state.json"
+    authority_path = tmp_path / "Xauthority"
     plan = build_moba_x_server_plan(
         display=":11",
         system="linux",
         which=lambda name: "/usr/bin/Xorg" if name == "Xorg" else None,
         display_probe=lambda display: False,
+        authority_path=authority_path,
     )
     record = start_moba_x_server(plan, dry_run=True, state_path=state_path)
 
     assert record.state == "dry-run"
     assert record.pid is None
     assert not state_path.exists()
+    assert not authority_path.exists()
 
 
-def test_moba_x_server_status_includes_lifecycle_record(tmp_path) -> None:
+def test_moba_x_server_status_includes_lifecycle_record(tmp_path: Path) -> None:
     state_path = tmp_path / "xserver-state.json"
     plan = build_moba_x_server_plan(
         display=":12",
         system="linux",
         which=lambda name: "/usr/bin/Xvfb" if name == "Xvfb" else None,
         display_probe=lambda display: False,
+        authority_path=tmp_path / "Xauthority",
     )
     start_moba_x_server(
         plan,
@@ -324,6 +336,9 @@ def test_moba_x_server_release_evidence_requires_packaged_runtime_and_forwarded_
     assert result.errors == []
     assert result.summary["runtime_key"] == "xvfb"
     assert result.summary["forwarded_gui_command"] == "xclock"
+    production_result = validate_moba_x_server_live_release_evidence(evidence)
+    assert production_result.passed is False
+    assert production_result.errors == ["runtime manifest file path is invalid"]
 
 
 def test_moba_x_server_release_evidence_rejects_host_only_runtime(tmp_path: Path) -> None:
@@ -368,6 +383,48 @@ def test_moba_x_server_release_evidence_rejects_host_only_runtime(tmp_path: Path
     assert result.passed is False
     assert "runtime.source must be bundled or packaged" in result.errors
     assert "runtime.bundled must be true" in "\n".join(result.errors)
+
+
+@pytest.mark.parametrize("change", [None, "missing-control", "different-endpoint", "forwarded-control", "extra-command"])
+def test_forwarding_receipt_requires_a_matched_no_forwarding_control(tmp_path, monkeypatch, change):
+    window = tmp_path / "window.txt"
+    window.write_text('xwininfo: Window id: 0x12 "Clock"\nMap State: IsViewable\n', encoding="utf-8")
+    screenshot = tmp_path / "window.png"
+    screenshot.write_bytes(b"screenshot fixture")
+    monkeypatch.setattr(release_x11, "read_png_rgb", lambda *args, **kwargs: PngImage(2, 1, [(0, 0, 0), (255, 255, 255)]))
+    probe = release_x11.REMOTE_DISPLAY_PROBE
+    command = "xclock"
+    receipt = {
+        "schema": release_x11.FORWARDING_SCHEMA, "display": ":16", "remote_display": "localhost:10.0",
+        "ssh_argv": ["ssh", "-p", "22222", "-Y", "user@fixture", f"{probe}; exec {command}"],
+        "control_argv": ["ssh", "-p", "22222", "-x", "user@fixture", probe], "control_stdout": "remote_display=\n",
+        "window_info": window.name, "window_info_sha256": _sha256(window), "window_id": "0x12", "window_title": "Clock",
+        "screenshot_sha256": _sha256(screenshot), "command": command,
+        "runtime_sha256": "a" * 64, "start_sha256": "b" * 64, "smoke_sha256": "c" * 64,
+    }
+    if change == "missing-control":
+        receipt.pop("control_argv")
+    if change == "different-endpoint":
+        receipt["control_argv"][4] = "user@other-fixture"
+    if change == "forwarded-control":
+        receipt["control_stdout"] = "remote_display=localhost:10.0\n"
+    if change == "extra-command":
+        receipt["ssh_argv"][-1] = f"printf unrelated; exec {command}"
+    receipt_file = tmp_path / "forwarding.json"
+    receipt_file.write_text(json.dumps(receipt), encoding="utf-8")
+    evidence = {
+        "display": ":16", "runtime": {"sha256": "a" * 64, "start_sha256": "b" * 64},
+        "smoke": {"evidence_sha256": "c" * 64},
+        "forwarded_gui_app": {
+            "receipt": receipt_file.name, "receipt_sha256": _sha256(receipt_file),
+            "screenshot_sha256": _sha256(screenshot), "x11_forwarding": "trusted", "command": command,
+        },
+    }
+    if change is None:
+        release_x11.check_forwarded_window(tmp_path, evidence, screenshot)
+    else:
+        with pytest.raises(ValueError, match="matched session with forwarding disabled"):
+            release_x11.check_forwarded_window(tmp_path, evidence, screenshot)
 
 
 class _FakeProcess:

@@ -870,7 +870,7 @@ def build_moba_connected_session_state(
 ) -> MobaConnectedSessionState:
     _require_ssh_browser_profile(profile)
     selected_path = normalise_remote_path(terminal_cwd if follow_terminal_folder and terminal_cwd else remote_path)
-    parsed_entries = tuple(parse_sftp_ls_output(sftp_listing))
+    parsed_entries = tuple(parse_sftp_ls_output(sftp_listing, directory=selected_path))
     parsed_monitoring = parse_remote_monitoring_output(monitoring_output)
     if preview_sample_data:
         entries = parsed_entries or tuple(default_remote_file_entries(selected_path))
@@ -1676,8 +1676,9 @@ def _connected_text_editor_preview(syntax: str, remote_path: str) -> str:
     return ""
 
 
-def parse_sftp_ls_output(text: str) -> list[RemoteFileEntry]:
+def parse_sftp_ls_output(text: str, *, directory: str | None = None) -> list[RemoteFileEntry]:
     rows: list[RemoteFileEntry] = []
+    prefix = f"{directory.rstrip('/')}/" if directory is not None else ""
     for raw in text.splitlines():
         line = raw.strip()
         if not line or line.startswith("total "):
@@ -1688,11 +1689,14 @@ def parse_sftp_ls_output(text: str) -> list[RemoteFileEntry]:
         permissions = parts[0]
         size = int(parts[4]) if parts[4].isdigit() else 0
         modified = " ".join(parts[5:8])
-        if parts[8] in {".", ".."}:
+        name = parts[8].removeprefix(prefix)
+        # OpenSSH can prefix every row with the requested directory. The
+        # browser joins the row name to that directory when opening a file.
+        if name in {"", ".", ".."} or (directory is not None and "/" in name):
             continue
         rows.append(
             RemoteFileEntry(
-                name=parts[8],
+                name=name,
                 kind="dir" if permissions.startswith("d") else "file",
                 size_kb=max(1, size // 1024) if size else 0,
                 modified=modified,

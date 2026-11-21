@@ -437,6 +437,37 @@ def test_machine_policy_cannot_be_shadowed_by_portable_root(
     assert enterprise_policy_path(portable) == machine
 
 
+def test_open_profile_store_applies_machine_policy_installed_after_startup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    machine_dir = tmp_path / "machine"
+    machine_dir.mkdir()
+    machine = machine_dir / "policy.json"
+    local = tmp_path / "workspace"
+    local.mkdir()
+    portable = _write_policy(local, locked_settings=[])
+    monkeypatch.setattr(policy_module, "machine_enterprise_policy_path", lambda: machine)
+    monkeypatch.setattr(policy_module, "_require_machine_policy_permissions", lambda _path: True)
+    store = ProfileStore(local / "profiles.json")
+    explicit = ProfileStore(local / "explicit.json", policy_path=portable)
+    allowed = Profile(name="allowed", protocol="ssh", host="edge.example.invalid")
+    denied = Profile(name="denied", protocol="telnet", host="edge.example.invalid")
+    store.add(allowed)
+    original = store.path.read_bytes()
+
+    _write_policy(machine_dir, locked_settings=[{"key": "protocol", "value": "ssh"}])
+
+    with pytest.raises(ValueError, match="enterprise policy blocked web add"):
+        store.add(denied, surface="web")
+    with pytest.raises(ValueError, match="enterprise policy blocked profile-editor add"):
+        store.add(denied, surface="profile-editor")
+    assert store.path.read_bytes() == original
+    explicit.add(denied)
+    assert explicit.load()[0].protocol == "telnet"
+    explicit.policy_path = None
+    assert explicit.policy_path == machine
+
+
 def test_non_regular_machine_policy_path_fails_closed_instead_of_using_portable_policy(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

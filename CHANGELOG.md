@@ -19,6 +19,17 @@ For the change classes used below, see [Keep a Changelog](https://keepachangelog
 - `docs/PRODUCTION_READINESS_SCORECARD.md` and
   `docs/PRODUCTION_READINESS_BACKLOG.md` tracking the weighted readiness score and
   the itemized backlog to close each gap.
+- A pre-tag audit for the exact release source, signing prerequisites and
+  release namespace.
+- Update trust policy v2 adds an operator-set minimum release version and
+  requires signed manifests to include every configured target.
+
+### Changed
+
+- Consolidated desktop icon painters and preset property routing into dedicated
+  modules.
+- Windows native and XP build scripts accept a certificate-store thumbprint for
+  signing.
 
 ## [1.0.27]
 

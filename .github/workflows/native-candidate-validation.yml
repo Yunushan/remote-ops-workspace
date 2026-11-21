@@ -51,6 +51,7 @@ jobs:
       candidate_sha: ${{ steps.bind.outputs.sha }}
       candidate_tree: ${{ steps.bind.outputs.tree }}
       version_tag: ${{ steps.bind.outputs.version_tag }}
+      python_version: ${{ steps.bind.outputs.python_version }}
       windows_matrix: ${{ steps.bind.outputs.windows_matrix }}
       scope: ${{ steps.bind.outputs.scope }}
     steps:
@@ -61,7 +62,7 @@ jobs:
           clean: true
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.14.7"
+          python-version: "3.14.10"
       - name: Bind candidate head and tree without creating a tag
         id: bind
         env:
@@ -79,13 +80,15 @@ jobs:
           assert subprocess.run(['git','diff','--quiet','HEAD','--']).returncode==0
           version=tomllib.loads(Path('pyproject.toml').read_text())['project']['version']
           assert isinstance(version,str) and re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+',version), 'project.version must be canonical numeric X.Y.Z'
+          python_version=json.loads(Path('configs/release_toolchain.json').read_text(encoding='utf-8'))['python']['version']
+          assert isinstance(python_version,str) and re.fullmatch(r'3\.[0-9]+\.[0-9]+',python_version), 'release Python must be a canonical CPython version'
           scope=os.environ['CANDIDATE_SCOPE']
           assert scope in ('windows-x64','all-modern'), 'unsupported candidate scope'
           rows=[{'arch':'x64','python-architecture':'x64','runner':'windows-latest','lock':'requirements-locks/windows-x64.txt','bootstrap_lock':'requirements-locks/windows-x64-bootstrap.txt'}]
           if scope=='all-modern':
               rows.extend([{'arch':'x86','python-architecture':'x86','runner':'windows-latest','lock':'requirements-locks/windows-x86.txt','bootstrap_lock':'requirements-locks/windows-x86.txt'}, {'arch':'arm64','python-architecture':'arm64','runner':'windows-11-arm','lock':'requirements-locks/windows-arm64.txt','bootstrap_lock':'requirements-locks/windows-arm64-bootstrap.txt'}])
           with open(os.environ['GITHUB_OUTPUT'],'a') as out:
-              out.write(f'sha={head}\ntree={tree}\nversion_tag=v{version}\nwindows_matrix={json.dumps({"include":rows})}\nscope={scope}\n')
+              out.write(f'sha={head}\ntree={tree}\nversion_tag=v{version}\npython_version={python_version}\nwindows_matrix={json.dumps({"include":rows})}\nscope={scope}\n')
           print(json.dumps({'scope':'unreleased candidate','native_scope':scope,'candidate_head':head,'candidate_tree':tree,'event_sha':os.environ['GITHUB_SHA'],'windows_matrix':rows},indent=2))
           PY
   windows-native:
@@ -111,7 +114,7 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.14.7"
+          python-version: ${{ needs.candidate-source.outputs.python_version }}
           architecture: ${{ matrix.python-architecture }}
       - name: Isolate candidate Python environment
         shell: powershell
@@ -340,7 +343,7 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.14.7"
+          python-version: ${{ needs.candidate-source.outputs.python_version }}
       - name: Isolate candidate Python environment
         shell: bash
         run: |
@@ -463,7 +466,7 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.14.7"
+          python-version: ${{ needs.candidate-source.outputs.python_version }}
       - name: Isolate candidate Python environment
         shell: bash
         run: |
@@ -547,9 +550,29 @@ jobs:
         timeout-minutes: 35
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: >-
-          python scripts/native_linux_installer_recovery.py run
-          --candidate-source-sha "${{ needs.candidate-source.outputs.candidate_sha }}"
+        run: |
+          options=()
+          if [[ -f scripts/qualify_managed_debian_update.py ]]; then
+            options+=(--qualify-managed-update)
+          fi
+          python scripts/native_linux_installer_recovery.py run \
+            --candidate-source-sha "${{ needs.candidate-source.outputs.candidate_sha }}" "${options[@]}"
+      - name: Qualify x86-64 RPM upgrade and rollback in Fedora
+        if: ${{ matrix.arch == 'x86_64' && steps.candidate-proof.outcome == 'success' }}
+        timeout-minutes: 25
+        env:
+          CANDIDATE_SOURCE_SHA: ${{ needs.candidate-source.outputs.candidate_sha }}
+          REQUESTED_SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          if [[ -n "$REQUESTED_SOURCE_SHA" && ! -f scripts/qualify_rpm_candidate.py ]]; then
+            echo 'This historical checkout predates the RPM recovery drill.'
+            exit 0
+          fi
+          receipt="$(mktemp build/candidate-proof/linux-x86_64/.rpm-recovery.XXXXXXXX)"
+          trap 'rm -f -- "$receipt"' EXIT
+          python -m scripts.qualify_rpm_candidate --candidate-tag "$RELEASE_TAG" \
+            --candidate-source-sha "$CANDIDATE_SOURCE_SHA" > "$receipt"
+          mv -- "$receipt" build/candidate-proof/linux-x86_64/rpm-recovery.json
       - name: Retain unreleased candidate proof and artifacts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

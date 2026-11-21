@@ -1,16 +1,26 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import datetime as dt
 import hashlib
+import ipaddress
 import json
+import math
 import re
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-SCHEMA = "row.moba-transport-terminal.release-evidence.v1"
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.check_release_license_compliance import secure_regular_file  # noqa: E402
+
+SCHEMA = "row.moba-transport-terminal.release-evidence.v2"
+MAX_CAPTURE_BYTES = 8 * 1024 * 1024
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 GIT_SHA_RE = re.compile(r"[0-9a-f]{40}")
 RUN_URL_RE = re.compile(
@@ -22,13 +32,40 @@ RELEASE_TAG_RE = re.compile(r"v\d+\.\d+\.\d+")
 UTC_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 
 PROOF_SCHEMAS = {
-    "shared_transport": "row.moba-transport-terminal.shared-transport-proof.v1",
-    "connection_state": "row.moba-transport-terminal.connection-state-proof.v1",
-    "terminal_grid": "row.moba-transport-terminal.terminal-grid-proof.v1",
-    "alternate_screen": "row.moba-transport-terminal.alternate-screen-proof.v1",
-    "terminal_modes": "row.moba-transport-terminal.terminal-modes-proof.v1",
-    "connected_session": "row.moba-transport-terminal.connected-session-proof.v1",
+    "shared_transport": "row.moba-transport-terminal.shared-transport-proof.v2",
+    "connection_state": "row.moba-transport-terminal.connection-state-proof.v2",
+    "terminal_grid": "row.moba-transport-terminal.terminal-grid-proof.v2",
+    "alternate_screen": "row.moba-transport-terminal.alternate-screen-proof.v2",
+    "terminal_modes": "row.moba-transport-terminal.terminal-modes-proof.v2",
+    "connected_session": "row.moba-transport-terminal.connected-session-proof.v2",
 }
+
+CAPTURE_ROLES = {
+    "shared_transport": ("sshd_log", "ssh_client_log"),
+    "connection_state": ("state_log",),
+    "terminal_grid": ("initial_screen", "updated_screen"),
+    "alternate_screen": ("primary_before", "alternate_screen", "primary_restored"),
+    "terminal_modes": ("mode_capture",),
+    "connected_session": ("transcript", "sftp_capture", "monitoring_capture"),
+}
+LINUX_PACKAGES = {
+    "linux-x86_64": ("amd64", "x86_64"),
+    "linux-arm64": ("arm64", "aarch64"),
+    "linux-i386": ("i386", "i686"),
+    "linux-armhf": ("armhf", "armhf"),
+}
+MACOS_TARGETS = {"macos-x64", "macos-arm64"}
+SERVER_CONNECT = re.compile(r"^Connection from (\S+) port (\d+) on (\S+) port (\d+)(?: .*)?$")
+SERVER_AUTH = re.compile(r"^Accepted publickey for (\S+) from (\S+) port (\d+) ssh2: .+$")
+SERVER_SESSION = re.compile(
+    r"^Starting session: (shell on pts/\d+|subsystem 'sftp'|command) for (\S+) from (\S+) port (\d+) id (\d+)$"
+)
+CLIENT_HOST_KEY = re.compile(r"^debug1: Server host key: \S+ SHA256:([A-Za-z0-9+/]{43})$")
+CLIENT_AUTH = re.compile(r'^Authenticated to \S+ \(\[([^\]]+)\]:(\d+)\) using "publickey"\.$')
+TERMINAL_SOCKET = re.compile(r"^ROW_SHARED_(\S+) (\d+) (\S+) (\d+)[ \t]*$", re.MULTILINE)
+TERMINAL_SFTP_SHA = re.compile(r"^ROW_SFTP_SHA256_([0-9a-f]{64})[ \t]*$", re.MULTILINE)
+SSH_PHASES = ["connecting", "authenticating", "connected", "closing", "closed"]
+SSH_VIEWS = ("terminal", "sftp", "monitoring")
 
 
 @dataclass(frozen=True)
@@ -85,6 +122,9 @@ def validate_moba_transport_terminal_evidence(
         "workflow_run_url": "",
         "run_attempt": 0,
         "proof_count": 0,
+        "verified_capture_count": 0,
+        "verified_ssh_channel_count": 0,
+        "verified_screen_proof_count": 0,
     }
     if not isinstance(data, dict):
         data = {}
@@ -92,6 +132,12 @@ def validate_moba_transport_terminal_evidence(
         errors.append(f"schema must be {SCHEMA}")
     release_target = _required_text(data, "release_target", errors)
     summary["release_target"] = release_target
+    asset = _required_mapping(data, "release_asset", errors)
+    name = _required_text(asset, "name", errors, "release_asset.")
+    digest = asset.get("sha256")
+    _required_sha(digest, "release_asset.sha256", errors)
+    tested_asset = {"name": name, "sha256": digest}
+    summary["tested_release_asset"] = tested_asset
 
     source = _required_mapping(data, "source", errors)
     repository = _required_text(source, "repository", errors, "source.")
@@ -100,6 +146,8 @@ def validate_moba_transport_terminal_evidence(
     release_tag = _required_text(source, "release_tag", errors, "source.")
     if release_tag and not RELEASE_TAG_RE.fullmatch(release_tag):
         errors.append("source.release_tag must look like vX.Y.Z")
+    if not _desktop_package(name, release_tag, release_target):
+        errors.append("release_asset.name must identify a published desktop package for the exact tag and target")
     source_head_sha = _required_text(source, "head_sha", errors, "source.")
     if source_head_sha and not GIT_SHA_RE.fullmatch(source_head_sha):
         errors.append("source.head_sha must be a 40-character lowercase Git SHA")
@@ -137,7 +185,8 @@ def validate_moba_transport_terminal_evidence(
     summary["transport_id"] = transport_id
     if session.get("protocol") != "ssh":
         errors.append("session.protocol must be ssh")
-    _required_sha(session.get("host_key_sha256"), "session.host_key_sha256", errors)
+    host_key = session.get("host_key_sha256")
+    _required_sha(host_key, "session.host_key_sha256", errors)
     if session.get("loopback") is not False:
         errors.append("session.loopback must be false for strict remote connected evidence")
 
@@ -148,7 +197,20 @@ def validate_moba_transport_terminal_evidence(
         errors.append(f"proofs missing required proof records: {missing}")
     if extra:
         errors.append(f"proofs contain unknown proof records: {extra}")
+    identity = {
+        "release_target": release_target,
+        "session_id": session_id,
+        "transport_id": transport_id,
+        "repository": repository,
+        "release_tag": release_tag,
+        "source_head_sha": source_head_sha,
+        "workflow_run_url": workflow_run_url,
+        "run_attempt": run_attempt,
+        "release_asset": tested_asset,
+        "host_key_sha256": host_key,
+    }
     loaded: dict[str, dict[str, Any]] = {}
+    capture_paths: set[Path] = set()
     for proof_name, proof_schema in PROOF_SCHEMAS.items():
         reference = proofs.get(proof_name)
         proof = _load_proof(
@@ -156,19 +218,26 @@ def validate_moba_transport_terminal_evidence(
             root=root,
             label=f"proofs.{proof_name}",
             expected_schema=proof_schema,
-            release_target=release_target,
-            session_id=session_id,
-            transport_id=transport_id,
-            repository=repository,
-            release_tag=release_tag,
-            source_head_sha=source_head_sha,
-            workflow_run_url=workflow_run_url,
-            run_attempt=run_attempt,
+            identity=identity,
             errors=errors,
         )
         if proof:
             loaded[proof_name] = proof
+            captures = _load_captures(root, proof_name, proof, capture_paths, errors)
+            if proof_name == "shared_transport" and len(captures) == len(CAPTURE_ROLES[proof_name]):
+                observed = verify_ssh_channels(proof, captures, host_key, errors)
+                summary["verified_ssh_channel_count"] = observed
+            if proof_name == "connection_state" and "state_log" in captures:
+                verify_connection_states(captures["state_log"], proof.get("terminal_exit_status"), errors)
+            if proof_name == "connected_session" and len(captures) == len(CAPTURE_ROLES[proof_name]):
+                verify_connected_captures(captures, loaded.get("shared_transport", {}), errors)
+            if proof_name in SCREEN_VALIDATORS and len(captures) == len(CAPTURE_ROLES[proof_name]):
+                previous_errors = len(errors)
+                verify_screen_captures(proof_name, captures, proof, loaded.get("shared_transport", {}), errors)
+                if len(errors) == previous_errors:
+                    summary["verified_screen_proof_count"] += 1
     summary["proof_count"] = len(loaded)
+    summary["verified_capture_count"] = len(capture_paths)
     if "shared_transport" in loaded:
         _check_shared_transport(loaded["shared_transport"], transport_id, errors)
     if "connection_state" in loaded:
@@ -192,66 +261,315 @@ def validate_moba_transport_terminal_evidence(
     )
 
 
+def _desktop_package(name: str, tag: str, target: str) -> bool:
+    if not RELEASE_TAG_RE.fullmatch(tag):
+        return False
+    wheel = f"remote_ops_workspace-{tag[1:]}-py3-none-any.whl"
+    if target in MACOS_TARGETS:
+        native = f"remote-ops-workspace-{tag}-{target}"
+        return name in {wheel, f"{native}.dmg", f"{native}.pkg"}
+    if target not in LINUX_PACKAGES:
+        return False
+    debian, linux = LINUX_PACKAGES[target]
+    prefix = f"remote-ops-workspace-{tag}-linux-"
+    return name in {wheel, f"{prefix}{debian}.deb", f"{prefix}{linux}.AppImage", f"{prefix}{linux}-native.tar.gz"}
+
+
 def _load_proof(
     reference: Any,
     *,
     root: Path,
     label: str,
     expected_schema: str,
-    release_target: str,
-    session_id: str,
-    transport_id: str,
-    repository: str,
-    release_tag: str,
-    source_head_sha: str,
-    workflow_run_url: str,
-    run_attempt: Any,
+    identity: dict[str, Any],
     errors: list[str],
 ) -> dict[str, Any]:
     if not isinstance(reference, dict):
         errors.append(f"{label} must be an object")
         return {}
-    relative = _required_text(reference, "file", errors, f"{label}.")
-    expected_hash = reference.get("sha256")
-    _required_sha(expected_hash, f"{label}.sha256", errors)
-    if not relative or not isinstance(expected_hash, str) or not SHA256_RE.fullmatch(expected_hash):
-        return {}
-    path = _resolve_asset(root, relative, label, errors)
+    path, raw = _read_bound_file(root, reference, label, errors)
     if path is None:
         return {}
-    actual_hash = _sha256_file(path)
-    if actual_hash != expected_hash:
-        errors.append(f"{label}.sha256 does not match {relative}")
-        return {}
-    proof = _read_json_file(path, label, errors)
-    if not isinstance(proof, dict):
-        return {}
+    proof = _decode_object(raw, label, errors)
     if proof.get("schema") != expected_schema:
         errors.append(f"{label} schema must be {expected_schema}")
-    expected = {
-        "release_target": release_target,
-        "session_id": session_id,
-        "transport_id": transport_id,
-        "repository": repository,
-        "release_tag": release_tag,
-        "source_head_sha": source_head_sha,
-        "workflow_run_url": workflow_run_url,
-        "run_attempt": run_attempt,
-    }
-    for key, value in expected.items():
-        if proof.get(key) != value:
+    for key, value in identity.items():
+        if proof.get(key) != value or type(proof.get(key)) is not type(value):
             errors.append(f"{label}.{key} must match the top-level evidence identity")
     if not _valid_utc(proof.get("captured_at_utc")):
         errors.append(f"{label}.captured_at_utc must be an exact UTC RFC3339 timestamp")
     return proof
 
 
+def _load_captures(
+    root: Path, proof_name: str, proof: dict[str, Any], used: set[Path], errors: list[str],
+) -> dict[str, bytes]:
+    label = f"proofs.{proof_name}.captures"
+    attachments = proof.get("captures")
+    required = CAPTURE_ROLES[proof_name]
+    if not isinstance(attachments, dict) or set(attachments) != set(required):
+        errors.append(f"{label} must contain exactly {list(required)}")
+        return {}
+    loaded = {}
+    for role in required:
+        reference = attachments[role]
+        role_label = f"{label}.{role}"
+        if not isinstance(reference, dict):
+            errors.append(f"{role_label} must be an object")
+            continue
+        path, raw = _read_bound_file(root, reference, role_label, errors)
+        if path is None:
+            continue
+        if path in used:
+            errors.append(f"{role_label} reuses another capture path")
+            continue
+        used.add(path)
+        loaded[role] = raw
+    return loaded
+
+
+def _read_bound_file(
+    root: Path, reference: dict[str, Any], label: str, errors: list[str],
+) -> tuple[Path | None, bytes]:
+    relative = reference.get("file")
+    expected_hash = reference.get("sha256")
+    if not isinstance(expected_hash, str) or not SHA256_RE.fullmatch(expected_hash):
+        _required_sha(expected_hash, f"{label}.sha256", errors)
+        return None, b""
+    path, error = secure_regular_file(root, relative, label)
+    if path is None:
+        errors.append(error or f"{label} evidence file is missing")
+        return None, b""
+    raw = _read_capture_bytes(path, label, errors)
+    if not raw:
+        return None, b""
+    if hashlib.sha256(raw).hexdigest() != expected_hash:
+        errors.append(f"{label}.sha256 does not match {relative}")
+        return None, b""
+    return path, raw
+
+
+def verify_ssh_channels(
+    proof: dict[str, Any], captures: dict[str, bytes], host_key: Any, errors: list[str],
+) -> int:
+    label = "proofs.shared_transport"
+    try:
+        client_log = captures["ssh_client_log"].decode("utf-8").splitlines()
+        server_log = captures["sshd_log"].decode("utf-8").splitlines()
+        user = proof["ssh_user"]
+        peer, endpoint = proof["client_endpoint"], proof["server_endpoint"]
+        if not isinstance(user, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]{0,63}", user):
+            raise ValueError("a valid SSH login is required")
+        client_ip, client_port = _endpoint(peer)
+        server_ip, server_port = _endpoint(endpoint)
+        if client_ip == server_ip:
+            raise ValueError("client and server must have different addresses")
+    except (KeyError, UnicodeError, ValueError) as exc:
+        errors.append(f"{label} cannot identify a remote SSH connection: {exc}")
+        return 0
+    fingerprints = {
+        base64.b64decode(match[1] + "=").hex()
+        for line in client_log if (match := CLIENT_HOST_KEY.fullmatch(line))
+    }
+    if not isinstance(host_key, str) or fingerprints != {host_key}:
+        errors.append(f"{label} SSH client host key does not match the session")
+        return 0
+    client_auth = [match.groups() for line in client_log if (match := CLIENT_AUTH.fullmatch(line))]
+    if client_auth != [(server_ip, server_port)]:
+        errors.append(f"{label} SSH client must authenticate by public key to the observed server socket")
+        return 0
+    connection = (client_ip, client_port, server_ip, server_port)
+    login = (user, client_ip, client_port)
+    connected_at = [index for index, line in enumerate(server_log)
+                    if (match := SERVER_CONNECT.fullmatch(line)) and match.groups() == connection]
+    authenticated_at = [index for index, line in enumerate(server_log)
+                        if (match := SERVER_AUTH.fullmatch(line)) and match.groups() == login]
+    if len(connected_at) != 1 or len(authenticated_at) != 1 or connected_at[0] >= authenticated_at[0]:
+        errors.append(f"{label} SSH server must observe one connection and one authentication on the same socket")
+        return 0
+    channels = {
+        match[1].split()[0]
+        for line in server_log[authenticated_at[0] + 1:]
+        if (match := SERVER_SESSION.fullmatch(line)) and match.groups()[1:4] == login
+    }
+    if channels != {"shell", "subsystem", "command"}:
+        errors.append(f"{label} SSH server must observe a PTY, SFTP and command channels on the authenticated socket")
+        return 0
+    return 3
+
+
+def verify_connection_states(raw: bytes, exit_code: Any, errors: list[str]) -> None:
+    label = "proofs.connection_state.captures.state_log"
+    state_log = _decode_object(raw, label, errors)
+    events, views = state_log.get("events"), state_log.get("connected_views")
+    expected = [(1, phase) for phase in SSH_PHASES] + [(2, phase) for phase in SSH_PHASES[:3]]
+    if (
+        not isinstance(events, list) or len(events) != len(expected)
+        or any(
+            not isinstance(row, dict) or type(row.get("attempt")) is not int
+            or (row["attempt"], row.get("phase")) != identity
+            for row, identity in zip(events, expected, strict=True)
+        )
+    ):
+        errors.append(f"{label} must record connect, authenticate, close and reconnect in order")
+        return
+    _, _, connected, closing, closed, *_ = events
+    reason = closed.get("disconnect_reason")
+    if (
+        not isinstance(reason, str) or not reason.strip() or reason != closing.get("disconnect_reason")
+        or type(closed.get("exit_code")) is not int or closed["exit_code"] != exit_code
+        or closed.get("exit_status") != "NormalExit"
+    ):
+        errors.append(f"{label} must record the disconnect reason and terminal exit status")
+    if (
+        not isinstance(views, dict) or set(views) != set(SSH_VIEWS)
+        or any(state != connected for state in views.values())
+    ):
+        errors.append(f"{label} must show the same authenticated state on terminal, SFTP and monitoring")
+
+
+def _endpoint(value: Any) -> tuple[str, str]:
+    if not isinstance(value, dict) or type(value.get("port")) is not int or not 0 < value["port"] < 65536:
+        raise ValueError("an SSH endpoint must have an address and TCP port")
+    if not isinstance(address := value.get("address"), str):
+        raise ValueError("an SSH endpoint must have an IP address")
+    ip = ipaddress.ip_address(address)
+    if ip.is_loopback or ip.is_unspecified or ip.is_multicast or ip.is_link_local:
+        raise ValueError("an SSH endpoint must be a non-loopback unicast address")
+    return address, str(value["port"])
+
+
+def verify_connected_captures(
+    captures: dict[str, bytes], transport: dict[str, Any], errors: list[str],
+) -> None:
+    from remote_ops_workspace.moba_connected import parse_remote_monitoring_output
+
+    label = "proofs.connected_session.captures"
+    try:
+        transcript = captures["transcript"].decode("utf-8")
+        client = _endpoint(transport.get("client_endpoint"))
+        server = _endpoint(transport.get("server_endpoint"))
+        monitoring = parse_remote_monitoring_output(captures["monitoring_capture"].decode("utf-8"))
+    except (UnicodeError, ValueError) as exc:
+        errors.append(f"{label} cannot read the terminal or monitoring observations: {exc}")
+        return
+    if TERMINAL_SOCKET.findall(transcript) != [(*client, *server)]:
+        errors.append(f"{label} terminal did not report the same observed SSH socket")
+    if TERMINAL_SFTP_SHA.findall(transcript) != [hashlib.sha256(captures["sftp_capture"]).hexdigest()]:
+        errors.append(f"{label} SFTP bytes differ from the independent digest observed in the terminal")
+    if monitoring is None or monitoring.cpu_percent is None or monitoring.process_count is None:
+        errors.append(f"{label} monitoring capture does not contain an observed CPU and process sample")
+
+
+def verify_screen_captures(
+    name: str, raw: dict[str, bytes], proof: dict[str, Any], transport: dict[str, Any], errors: list[str],
+) -> None:
+    label = f"proofs.{name}.captures"
+    try:
+        socket = " ".join((*_endpoint(transport.get("client_endpoint")), *_endpoint(transport.get("server_endpoint"))))
+    except ValueError as exc:
+        errors.append(f"{label} cannot identify the observed SSH connection: {exc}")
+        return
+    captures = {key: _decode_object(value, f"{label}.{key}", errors) for key, value in raw.items()}
+    main_capture, validator = SCREEN_VALIDATORS[name]
+    if captures[main_capture].get("ssh_connection") != socket:
+        errors.append(f"{label} screen observations must come from the verified SSH socket")
+    validator(captures, proof, label, errors)
+
+
+def _geometry(value: Any) -> bool:
+    return (
+        isinstance(value, list) and len(value) == 2
+        and all(type(dimension) is int and dimension > 0 for dimension in value)
+    )
+
+
+def _verify_grid_captures(captures: dict, proof: dict, label: str, errors: list[str]) -> None:
+    before, after = captures["initial_screen"], captures["updated_screen"]
+    initial, resized = before.get("geometry"), after.get("geometry")
+    if (
+        not _geometry(initial) or not _geometry(resized)
+        or initial != [proof.get("columns"), proof.get("rows")]
+        or not 80 <= initial[0] <= 4096 or initial[1] < 24
+        or resized[0] <= initial[0] or resized[1] != initial[1]
+        or after.get("remote") != {"initial": initial, "resized": resized, "cursor_reply": "1b5b323b3452"}
+    ):
+        errors.append(f"{label} must record the desktop and remote PTY resize and cursor reply")
+        return
+    prefix = "a" * (initial[0] - 1 - len("ROW_GRID_"))
+    if before.get("line") != prefix + "\u2028界\u0301z" or after.get("line") != prefix + "界\u0301z":
+        errors.append(f"{label} must show the same wide and combining cells across reflow")
+    if before.get("cell_cursor") != [1, 3]:
+        errors.append(f"{label} must show the cursor at the expected cell after wrapping")
+    if after.get("scroll_region") != ["outside-top", "three", "four", "", "outside-bottom"]:
+        errors.append(f"{label} must show both boundaries of the scrolled region")
+    if after.get("dirty_update") != [18, 4, 4]:
+        errors.append(f"{label} must show one style-only Qt row update")
+
+
+def _verify_alternate_captures(captures: dict, proof: dict, label: str, errors: list[str]) -> None:
+    before, after = captures["primary_before"], captures["primary_restored"]
+    alternate = captures["alternate_screen"]
+    geometry, resized = before.get("geometry"), alternate.get("resized")
+    primary, displayed, resized_text = before.get("text"), alternate.get("text"), alternate.get("resized_text")
+    if (
+        not _geometry(geometry) or not _geometry(resized) or resized == geometry
+        or alternate.get("geometry") != geometry
+        or before != after or not isinstance(primary, str) or "ROW_PRIMARY_界_e\u0301" not in primary
+        or not isinstance(displayed, str) or not displayed.strip() or displayed == primary
+        or not isinstance(resized_text, str) or not resized_text.strip()
+        or displayed.splitlines()[0] != resized_text.splitlines()[0]
+    ):
+        errors.append(f"{label} must show the resized alternate screen and exact primary restoration")
+    if (
+        alternate.get("application") != proof.get("application")
+        or alternate.get("cursor_modes") != ["bar", "block"]
+        or alternate.get("remote") != {"shell_input": "62"}
+    ):
+        errors.append(f"{label} must record the full-screen application's cursor transitions and resumed shell input")
+    if proof.get("application") == "vim":
+        insert = alternate.get("insert_text")
+        if not isinstance(insert, str) or "-- INSERT --" not in insert:
+            errors.append(f"{label} must retain Vim's insert-mode screen")
+
+
+def _verify_mode_capture(captures: dict, _proof: dict, label: str, errors: list[str]) -> None:
+    mode = captures["mode_capture"]
+    expected = {
+        "cursor_position": b"\x1b[7;4R",
+        "cursor_shape_report": b"\x1bP1$r6 q\x1b\\",
+        "application_up": b"\x1bOA",
+        "bracketed_paste": b"\x1b[200~paste-from-desktop\x1b[201~",
+        "mouse_press_release_wheel": b"\x1b[<0;1;1M\x1b[<0;1;1m\x1b[<64;1;1M",
+        "unwrapped_input_after_mouse_off": b"x",
+    }
+    if mode.get("remote") != {key: value.hex() for key, value in expected.items()}:
+        errors.append(f"{label} must contain the observed cursor, key, paste and mouse bytes")
+    visibility = mode.get("cursor_visibility")
+    if not isinstance(visibility, list) or len(visibility) != 2 or visibility[0] is not False or visibility[1] is not True:
+        errors.append(f"{label} must show the cursor becoming visible again")
+    styles = mode.get("styles")
+    if (
+        not isinstance(styles, list) or len(styles) != 3 or not all(isinstance(style, dict) for style in styles)
+        or [style.get("foreground") for style in styles] != ["#cd3131", "#ff0000", "#0c2238"]
+        or styles[0].get("bold") is not True or styles[0].get("underline") is not True
+    ):
+        errors.append(f"{label} must show ANSI, indexed and truecolor styles and SGR attributes")
+
+
+SCREEN_VALIDATORS = {
+    "terminal_grid": ("updated_screen", _verify_grid_captures),
+    "alternate_screen": ("alternate_screen", _verify_alternate_captures),
+    "terminal_modes": ("mode_capture", _verify_mode_capture),
+}
+
+
 def _check_shared_transport(proof: dict[str, Any], transport_id: str, errors: list[str]) -> None:
     label = "proofs.shared_transport"
-    if proof.get("transport_mode") not in {
+    if proof.get("transport_mode") not in (
         "shared-authenticated-transport",
         "controlled-multiplexing",
-    }:
+    ):
         errors.append(f"{label}.transport_mode must prove shared transport or controlled multiplexing")
     for key in (
         "authenticated_transport_established",
@@ -261,9 +579,9 @@ def _check_shared_transport(proof: dict[str, Any], transport_id: str, errors: li
         "credential_reuse_without_reprompt",
     ):
         _require_true(proof, key, label, errors)
-    if proof.get("authentication_event_count") != 1:
+    if type(proof.get("authentication_event_count")) is not int or proof["authentication_event_count"] != 1:
         errors.append(f"{label}.authentication_event_count must be 1")
-    if proof.get("credential_reprompt_count") != 0:
+    if type(proof.get("credential_reprompt_count")) is not int or proof["credential_reprompt_count"] != 0:
         errors.append(f"{label}.credential_reprompt_count must be 0")
     for key in (
         "terminal_channel_transport_id",
@@ -276,9 +594,8 @@ def _check_shared_transport(proof: dict[str, Any], transport_id: str, errors: li
 
 def _check_connection_state(proof: dict[str, Any], errors: list[str]) -> None:
     label = "proofs.connection_state"
-    expected = ["connecting", "authenticating", "connected", "closing", "closed"]
-    if proof.get("transition_sequence") != expected:
-        errors.append(f"{label}.transition_sequence must be {expected}")
+    if proof.get("transition_sequence") != SSH_PHASES:
+        errors.append(f"{label}.transition_sequence must be {SSH_PHASES}")
     for key in (
         "disconnect_reason_recorded",
         "terminal_exit_status_recorded",
@@ -310,8 +627,10 @@ def _check_terminal_grid(proof: dict[str, Any], errors: list[str]) -> None:
         "no_transcript_fallback",
     ):
         _require_true(proof, key, label, errors)
-    _required_sha(proof.get("initial_screen_sha256"), f"{label}.initial_screen_sha256", errors)
-    _required_sha(proof.get("updated_screen_sha256"), f"{label}.updated_screen_sha256", errors)
+    initial = _capture_digest(proof, "initial_screen")
+    updated = _capture_digest(proof, "updated_screen")
+    if initial is not None and updated is not None and initial == updated:
+        errors.append(f"{label} initial and updated captures must differ")
 
 
 def _check_alternate_screen(proof: dict[str, Any], errors: list[str]) -> None:
@@ -326,21 +645,15 @@ def _check_alternate_screen(proof: dict[str, Any], errors: list[str]) -> None:
         "shell_input_resumed",
     ):
         _require_true(proof, key, label, errors)
-    if proof.get("application") not in {"vim", "htop", "less", "tmux"}:
+    if proof.get("application") not in ("vim", "htop", "less", "tmux"):
         errors.append(f"{label}.application must identify a real full-screen terminal application")
-    before = proof.get("primary_before_sha256")
-    alternate = proof.get("alternate_screen_sha256")
-    restored = proof.get("primary_restored_sha256")
-    for key, value in (
-        ("primary_before_sha256", before),
-        ("alternate_screen_sha256", alternate),
-        ("primary_restored_sha256", restored),
-    ):
-        _required_sha(value, f"{label}.{key}", errors)
-    if isinstance(before, str) and isinstance(restored, str) and before != restored:
-        errors.append(f"{label}.primary_restored_sha256 must match primary_before_sha256")
-    if isinstance(before, str) and isinstance(alternate, str) and before == alternate:
-        errors.append(f"{label}.alternate_screen_sha256 must differ from the primary screen")
+    before = _capture_digest(proof, "primary_before")
+    alternate = _capture_digest(proof, "alternate_screen")
+    restored = _capture_digest(proof, "primary_restored")
+    if before is not None and restored is not None and before != restored:
+        errors.append(f"{label} primary restored capture must match the primary before capture")
+    if before is not None and alternate is not None and before == alternate:
+        errors.append(f"{label} alternate screen capture must differ from the primary screen")
 
 
 def _check_terminal_modes(proof: dict[str, Any], errors: list[str]) -> None:
@@ -360,7 +673,6 @@ def _check_terminal_modes(proof: dict[str, Any], errors: list[str]) -> None:
         "mouse_press_release_wheel",
     ):
         _require_true(proof, key, label, errors)
-    _required_sha(proof.get("mode_capture_sha256"), f"{label}.mode_capture_sha256", errors)
 
 
 def _check_connected_session(proof: dict[str, Any], transport_id: str, errors: list[str]) -> None:
@@ -381,9 +693,15 @@ def _check_connected_session(proof: dict[str, Any], transport_id: str, errors: l
     if proof.get("observed_transport_id") != transport_id:
         errors.append(f"{label}.observed_transport_id must match the authenticated transport id")
     duration = proof.get("session_duration_seconds")
-    if not isinstance(duration, (int, float)) or isinstance(duration, bool) or duration <= 0:
+    if type(duration) not in {int, float} or not 0 < duration or (isinstance(duration, float) and not math.isfinite(duration)):
         errors.append(f"{label}.session_duration_seconds must be positive")
-    _required_sha(proof.get("transcript_sha256"), f"{label}.transcript_sha256", errors)
+
+
+def _capture_digest(proof: dict[str, Any], role: str) -> str | None:
+    captures = proof.get("captures")
+    entry = captures.get(role) if isinstance(captures, dict) else None
+    digest = entry.get("sha256") if isinstance(entry, dict) else None
+    return digest if isinstance(digest, str) else None
 
 
 def _require_true(data: dict[str, Any], key: str, prefix: str, errors: list[str]) -> None:
@@ -426,46 +744,28 @@ def _valid_utc(value: Any) -> bool:
     return True
 
 
-def _resolve_asset(root: Path, relative: str, label: str, errors: list[str]) -> Path | None:
-    path = Path(relative)
-    if path.is_absolute() or ".." in path.parts:
-        errors.append(f"{label}.file must stay inside assets_dir")
-        return None
-    try:
-        resolved_root = root.resolve(strict=True)
-    except OSError as exc:
-        errors.append(f"assets_dir cannot be resolved: {exc}")
-        return None
-    candidate = root / path
-    try:
-        resolved = candidate.resolve(strict=True)
-    except OSError as exc:
-        errors.append(f"{label}.file cannot be resolved: {exc}")
-        return None
-    if resolved_root != resolved and resolved_root not in resolved.parents:
-        errors.append(f"{label}.file must stay inside assets_dir")
-        return None
-    current = candidate
-    while current != root.parent:
-        if current.is_symlink():
-            errors.append(f"{label}.file must not traverse symlinks")
-            return None
-        if current == root:
-            break
-        current = current.parent
-    if not resolved.is_file():
-        errors.append(f"{label}.file must be a regular file")
-        return None
-    return resolved
-
-
 def _read_json_file(path: Path, label: str, errors: list[str]) -> dict[str, Any]:
+    raw = _read_capture_bytes(path, label, errors)
+    return _decode_object(raw, label, errors) if raw else {}
+
+
+def _read_capture_bytes(path: Path, label: str, errors: list[str]) -> bytes:
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        with path.open("rb") as stream:
+            raw = stream.read(MAX_CAPTURE_BYTES + 1)
     except OSError as exc:
         errors.append(f"{label} file cannot be read: {exc}")
-        return {}
-    except json.JSONDecodeError as exc:
+        return b""
+    if not 0 < len(raw) <= MAX_CAPTURE_BYTES:
+        errors.append(f"{label} file must contain between 1 byte and 8 MiB")
+        return b""
+    return raw
+
+
+def _decode_object(raw: bytes, label: str, errors: list[str]) -> dict[str, Any]:
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, ValueError, RecursionError) as exc:
         errors.append(f"{label} file is not valid JSON: {exc}")
         return {}
     if not isinstance(data, dict):
@@ -474,13 +774,6 @@ def _read_json_file(path: Path, label: str, errors: list[str]) -> dict[str, Any]
     return data
 
 
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 if __name__ == "__main__":
+    sys.path.insert(0, str(ROOT / "src"))
     raise SystemExit(main())

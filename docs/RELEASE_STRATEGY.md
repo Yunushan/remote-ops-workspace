@@ -10,7 +10,7 @@ Release integrity rules:
   initialize an empty private workspace; users must add their own SSH/RDP
   connections.
 
-- Release tags must match `pyproject.toml` exactly, for example `v1.0.27`.
+- Release tags must match `pyproject.toml` exactly, for example `v1.0.28`.
 - Pushing a `vX.Y.Z` tag starts `release.yml`. With protected Windows and macOS
   signing material, that workflow builds and seals the standard native candidate
   inventory. It never publishes a GitHub Release. `release-promotion.yml`
@@ -255,7 +255,7 @@ The default GitHub release workflow publishes:
 
 - Python wheel, Python sdist, a source/Python-environment CycloneDX SBOM,
   target source/install bundles, the release manifest and
-  `remote-ops-workspace-v1.0.27-SHA256SUMS.txt`;
+  `remote-ops-workspace-v1.0.28-SHA256SUMS.txt`;
 - Windows native `x86`, `x64` and `arm64` artifacts;
 - macOS native `x64` and `arm64` artifacts;
 - Linux native `x86_64`/`amd64` and `aarch64`/`arm64` artifacts.
@@ -303,9 +303,10 @@ member names, link/device entries inside native archives and path-qualified
 checksum/native-manifest references. Accepted Linux evidence command paths must
 include the Linux target id and release tag as path segments.
 `.github/workflows/extended-platform-evidence.yml` is the dispatch-only
-self-hosted collection path for that evidence; it uses `[self-hosted, linux,
-i386]` and `[self-hosted, linux, armhf]` runners and uploads evidence artifacts
-without publishing a GitHub release. Before artifact upload it runs
+self-hosted collection path for that evidence. The
+Linux x64 collector jobs use the custom `i386` and `armhf` labels. They validate
+staged captures from the corresponding native builders and upload review
+artifacts without publishing a GitHub release. Before artifact upload each job runs
 `python scripts/stage_extended_linux_evidence_upload.py`, stages the exact
 release-importable file set in a plain non-symlink
 `platform-evidence-upload/<target>/<release_tag>` tree,
@@ -632,12 +633,12 @@ Status: active.
 
 Release assets:
 
-- `remote_ops_workspace-1.0.27-py3-none-any.whl`
-- `remote_ops_workspace-1.0.27.tar.gz`
+- `remote_ops_workspace-1.0.28-py3-none-any.whl`
+- `remote_ops_workspace-1.0.28.tar.gz`
 - target source/install bundles for Windows, Linux, macOS, BSD, Solaris,
   Android/Termux, and Web/PWA
-- `remote-ops-workspace-v1.0.27-release-manifest.json`
-- `remote-ops-workspace-v1.0.27-SHA256SUMS.txt`
+- `remote-ops-workspace-v1.0.28-release-manifest.json`
+- `remote-ops-workspace-v1.0.28-SHA256SUMS.txt`
 
 Purpose:
 
@@ -653,11 +654,11 @@ Status: active.
 
 Release assets:
 
-- `remote-ops-workspace-v1.0.27-windows-<x86|x64|arm64>-setup.exe`
-- `remote-ops-workspace-v1.0.27-windows-<x86|x64|arm64>.msi`
-- `remote-ops-workspace-v1.0.27-windows-<x86|x64|arm64>-native.zip`
-- `remote-ops-workspace-v1.0.27-windows-<x86|x64|arm64>-native-manifest.json`
-- `remote-ops-workspace-v1.0.27-windows-<x86|x64|arm64>-native-SHA256SUMS.txt`
+- `remote-ops-workspace-v1.0.28-windows-<x86|x64|arm64>-setup.exe`
+- `remote-ops-workspace-v1.0.28-windows-<x86|x64|arm64>.msi`
+- `remote-ops-workspace-v1.0.28-windows-<x86|x64|arm64>-native.zip`
+- `remote-ops-workspace-v1.0.28-windows-<x86|x64|arm64>-native-manifest.json`
+- `remote-ops-workspace-v1.0.28-windows-<x86|x64|arm64>-native-SHA256SUMS.txt`
 
 Implementation:
 
@@ -669,6 +670,17 @@ Implementation:
   portable users can start the desktop UI without opening a terminal.
 - Builds an interactive installer with Inno Setup.
 - Builds an MSI installer with WiX.
+- For an enterprise build, generate a bundle with `row customizer build
+  --out <bundle> --brand-name <name> --organization <publisher>
+  --logo <logo.ico>`. Then run
+  `scripts/make_windows_native.ps1 -Arch x64 -EnterpriseBundle <bundle>
+  -EnterpriseDeploymentId <guid>` with the standard x64 build toolchain.
+  Keep the deployment GUID for subsequent versions. The build writes the
+  branded EXE, MSI and their SHA-256 manifest under
+  `native-dist/windows/enterprise/<guid>/x64/v<version>/`. The EXE shows the welcome
+  message during setup, and both packages include it in `docs/welcome.txt`.
+  Deploy any policy and seed profiles with the customizer bundle's documented
+  apply workflow.
 - Runs `scripts/smoke_windows_native.ps1` to smoke install, verify, upgrade and
   uninstall the native portable `.zip`, `.exe` and `.msi` artifacts before
   upload, including `Remote Ops Workspace GUI.exe` in portable zips and
@@ -690,10 +702,10 @@ Status: active.
 
 Release assets:
 
-- `remote-ops-workspace-v1.0.27-macos-<x64|arm64>.dmg`
-- `remote-ops-workspace-v1.0.27-macos-<x64|arm64>.pkg`
-- `remote-ops-workspace-v1.0.27-macos-<x64|arm64>-native-manifest.json`
-- `remote-ops-workspace-v1.0.27-macos-<x64|arm64>-native-SHA256SUMS.txt`
+- `remote-ops-workspace-v1.0.28-macos-<x64|arm64>.dmg`
+- `remote-ops-workspace-v1.0.28-macos-<x64|arm64>.pkg`
+- `remote-ops-workspace-v1.0.28-macos-<x64|arm64>-native-manifest.json`
+- `remote-ops-workspace-v1.0.28-macos-<x64|arm64>-native-SHA256SUMS.txt`
 
 Implementation:
 
@@ -728,12 +740,12 @@ Status: active.
 
 Release assets:
 
-- `remote-ops-workspace-v1.0.27-linux-<amd64|arm64>.deb`
-- `remote-ops-workspace-v1.0.27-linux-<x86_64|aarch64>.rpm`
-- `remote-ops-workspace-v1.0.27-linux-<x86_64|aarch64>.AppImage`
-- `remote-ops-workspace-v1.0.27-linux-<x86_64|aarch64>-native.tar.gz`
-- `remote-ops-workspace-v1.0.27-linux-<x86_64|aarch64>-native-manifest.json`
-- `remote-ops-workspace-v1.0.27-linux-<x86_64|aarch64>-native-SHA256SUMS.txt`
+- `remote-ops-workspace-v1.0.28-linux-<amd64|arm64>.deb`
+- `remote-ops-workspace-v1.0.28-linux-<x86_64|aarch64>.rpm`
+- `remote-ops-workspace-v1.0.28-linux-<x86_64|aarch64>.AppImage`
+- `remote-ops-workspace-v1.0.28-linux-<x86_64|aarch64>-native.tar.gz`
+- `remote-ops-workspace-v1.0.28-linux-<x86_64|aarch64>-native-manifest.json`
+- `remote-ops-workspace-v1.0.28-linux-<x86_64|aarch64>-native-SHA256SUMS.txt`
 
 Implementation:
 

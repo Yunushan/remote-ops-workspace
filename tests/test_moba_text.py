@@ -4,6 +4,9 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
+from remote_ops_workspace import file_safety
 from remote_ops_workspace.cli import build_parser
 from remote_ops_workspace.moba_text import (
     build_moba_text_editor_tab_plan,
@@ -60,12 +63,28 @@ def test_moba_text_write_requires_force_or_expected_hash_for_existing_file(tmp_p
         raise AssertionError("existing text modifications must be guarded")
 
 
-def test_moba_text_write_with_expected_hash_creates_backup(tmp_path: Path) -> None:
+@pytest.mark.parametrize("temporary_denial", [False, True])
+def test_moba_text_write_with_expected_hash_creates_backup(tmp_path: Path, monkeypatch, temporary_denial: bool) -> None:
     document = tmp_path / "notes.txt"
     document.write_text("old\n", encoding="utf-8")
     expected = preview_text_document(document).sha256
+    delays = []
+    if temporary_denial:
+        replace = file_safety.os.replace
+
+        def replace_after_denial(source, destination):
+            if destination == document and not delays:
+                error = PermissionError("temporary Windows file lock")
+                error.winerror = 5
+                raise error
+            replace(source, destination)
+
+        monkeypatch.setattr(file_safety.os, "replace", replace_after_denial)
+        monkeypatch.setattr(file_safety, "sleep", delays.append)
 
     result = write_text_document(document, "new\n", expected_sha256=expected)
+    assert delays == ([0.01] if temporary_denial else [])
+    assert not list(tmp_path.glob(".*.tmp"))
 
     assert result.changed is True
     assert result.previous_sha256 == expected

@@ -13,23 +13,73 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import os
 import re
 import shutil
 import stat
 import subprocess
+import sys
+import tarfile
 import tempfile
 import urllib.error
 import urllib.request
 import zipfile
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
-SCHEMA_VERSION = 2
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts import managed_rpm_qualification  # noqa: E402
+from scripts import qualify_rpm_candidate as rpm_qualification  # noqa: E402
+from scripts.candidate_native_proof import (  # noqa: E402
+    GUI_PYZ_ARCHIVE_PATHS,
+    GUI_PYZ_REQUIRED_MODULES,
+)
+from scripts.candidate_posix_byte_binding import binding_schema, target_contract  # noqa: E402
+from scripts.check_preview_redistribution import BUILD_TARGETS  # noqa: E402
+from scripts.check_release_publish_assets import (  # noqa: E402
+    MATRIX_PATH,
+    expand_asset_pattern,
+    expected_release_assets,
+    expected_source_release_assets,
+    normalize_version,
+)
+from scripts.debian_server_notices import read_verified_debian_notices  # noqa: E402
+from scripts.managed_debian_qualification import (  # noqa: E402
+    HASH,
+    MANAGED_IMAGE,
+    REPORT_NAME,
+    validate_receipt,
+)
+from scripts.release_evidence_file import retry_evidence_operation, stream_sha256  # noqa: E402
+
+GUI_MODULE_PROOF_SCHEMA_VERSION = 12
+ARCHIVE_FILE_SCOPE_SCHEMA_VERSION = 13
+FEDORA_RELEASE_IMAGE_SCHEMA_VERSION = 14
+SCHEMA_VERSION = FEDORA_RELEASE_IMAGE_SCHEMA_VERSION
+REVIEWED_SERVER_BUNDLE_SCHEMA_VERSION = 11
+SERVER_BUNDLE_SCHEMA_VERSION = 10
+LINUX_INSTALLER_SCHEMA_VERSION = 9
+GUI_INSTALLER_SCHEMA_VERSION = 8
+GUI_SMOKE_SCHEMA_VERSION = 7
+MANAGED_RPM_SCHEMA_VERSION = 6
+RPM_SMOKE_SCHEMA_VERSION = 5
+RPM_SCHEMA_VERSION = 4
+MANAGED_SCHEMA_VERSION = 3
+LEGACY_SCHEMA_VERSION = 2
 BUILD_WORKFLOW = ".github/workflows/release.yml"
 CANDIDATE_INVENTORY_ARTIFACT = "release-candidate-inventory"
+MANAGED_DEBIAN_ARTIFACT = "release-managed-debian-update"
+MANAGED_DEBIAN_CONTROLLER = Path("scripts/managed_linux_update.py")
+RPM_ARTIFACT = "release-linux-rpm-recovery"
+RPM_REPORT_NAME = rpm_qualification.REPORT_NAME
+RPM_SMOKE_FILES = (rpm_qualification.PROOF.name, rpm_qualification.SMOKE_BINDING.name)
 EXPECTED_ARTIFACT_NAMES = (
     "release-source-python",
     "release-windows-native-x64",
@@ -45,6 +95,10 @@ GUI_SMOKE_ARTIFACT_NAMES = (
     "release-windows-gui-smoke-arm64",
     "release-macos-gui-smoke-x64",
     "release-macos-gui-smoke-arm64",
+)
+LINUX_SMOKE_ARTIFACT_NAMES = (
+    "release-linux-native-smoke-x86_64",
+    "release-linux-native-smoke-aarch64",
 )
 RUNTIME_REPORT_ARTIFACT_NAMES = {
     "windows-x86": "release-runtime-windows-x86",
@@ -69,6 +123,10 @@ MAX_ARCHIVE_BYTES = 8 * 1024 * 1024 * 1024
 MAX_EXPANDED_BYTES = 24 * 1024 * 1024 * 1024
 MAX_MEMBERS = 20_000
 MAX_JSON_BYTES = 10 * 1024 * 1024
+MAX_SMOKE_ARCHIVE_BYTES = 64 * 1024 * 1024
+LINUX_SMOKE_PROOF_FILE = "finish.json"
+GUI_ARCHIVE_PROOF_FILE = "gui-archive-proof.json"
+NATIVE_BYTE_BINDING_FILE = "candidate-runtime-byte-binding.json"
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -111,6 +169,8 @@ def main(argv: list[str] | None = None) -> int:
                 run_attempt=run_attempt,
                 assets_root=args.assets_root,
                 output=args.output,
+                server_bundle_artifact_id=positive_int(args.server_bundle_artifact_id, "Debian server bundle artifact id"),
+                server_bundle_sha256=args.server_bundle_sha256,
             )
         else:
             inventory_artifact_id = positive_int(
@@ -130,8 +190,9 @@ def main(argv: list[str] | None = None) -> int:
                 inventory_archive_digest=inventory_archive_digest,
                 approved_inventory=args.approved_inventory,
                 assets_root=args.assets_root,
+                qualification_archives=args.qualification_archives,
             )
-    except (OSError, ValueError, RuntimeError, json.JSONDecodeError, zipfile.BadZipFile) as exc:
+    except (EOFError, OSError, ValueError, RuntimeError, tarfile.TarError, zipfile.BadZipFile) as exc:
         print(f"release candidate inventory: {exc}", file=os.sys.stderr)
         return 1
     print(f"release candidate inventory {args.command} passed")
@@ -151,16 +212,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         child.add_argument("--assets-root", required=True, type=Path)
         if command == "stage":
             child.add_argument("--output", required=True, type=Path)
+            child.add_argument("--server-bundle-artifact-id", required=True)
+            child.add_argument("--server-bundle-sha256", required=True)
         else:
             child.add_argument("--inventory-artifact-id", required=True)
             child.add_argument("--inventory-archive-digest", required=True)
             child.add_argument("--approved-inventory", required=True, type=Path)
+            child.add_argument("--qualification-archives", type=Path, help="retain the verified original qualification ZIPs")
     return parser.parse_args(argv)
 
 
 class GitHubClient:
-    def __init__(self, repository: str, token: str) -> None:
-        api_root = os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
+    def __init__(self, repository: str, token: str, *, api_url: str | None = None) -> None:
+        api_root = (api_url or os.environ.get("GITHUB_API_URL", "https://api.github.com")).rstrip("/")
         self.base = f"{api_root}/repos/{repository}"
         self.api_origin = origin(self.base)
         self.headers = {
@@ -261,6 +325,8 @@ def stage(
     run_attempt: int,
     assets_root: Path,
     output: Path,
+    server_bundle_artifact_id: int,
+    server_bundle_sha256: str,
 ) -> None:
     run = client.json(f"actions/runs/{run_id}")
     check_build_run(
@@ -281,8 +347,8 @@ def stage(
     by_name = unique_artifacts(raw_artifacts)
     actual_names = set(by_name)
     expected_names = (
-        set(EXPECTED_ARTIFACT_NAMES) | set(GUI_SMOKE_ARTIFACT_NAMES)
-        | set(RUNTIME_REPORT_ARTIFACT_NAMES.values())
+        set(EXPECTED_ARTIFACT_NAMES) | set(GUI_SMOKE_ARTIFACT_NAMES) | set(LINUX_SMOKE_ARTIFACT_NAMES)
+        | set(RUNTIME_REPORT_ARTIFACT_NAMES.values()) | {MANAGED_DEBIAN_ARTIFACT, RPM_ARTIFACT}
     )
     if actual_names != expected_names:
         raise ValueError(
@@ -306,16 +372,55 @@ def stage(
         )
         positive_int(artifact.get("size_in_bytes"), f"artifact {name} size")
 
-    # GUI smoke archives must belong to this build, but are not release assets.
     build_artifacts = {name: by_name[name] for name in EXPECTED_ARTIFACT_NAMES}
     runtime_reports = {
         target: seal_runtime_report(client, by_name[name], name, run_id, release_sha)
         for target, name in sorted(RUNTIME_REPORT_ARTIFACT_NAMES.items())
     }
-    records = materialize_records(client, build_artifacts, assets_root)
+    report, managed = sealed_json_artifact(
+        client, by_name[MANAGED_DEBIAN_ARTIFACT], MANAGED_DEBIAN_ARTIFACT, run_id, release_sha, REPORT_NAME,
+    )
+    managed["receipt"] = json.loads(report)
+    validate_managed_report(
+        managed, release_tag, release_sha, run_id, run_attempt,
+        require_current=True, require_server_bundle=True, source_root=ROOT,
+    )
+    if qualification_receipt_bytes(managed["receipt"]) != report:
+        raise ValueError("managed Debian receipt must use the canonical JSON format")
+    repository = normalize_repository_from_api(run)
+    rpm_files, rpm_archive, rpm_records = sealed_json_members(
+        client, by_name[RPM_ARTIFACT], RPM_ARTIFACT, run_id, release_sha, (RPM_REPORT_NAME, *RPM_SMOKE_FILES),
+    )
+    rpm = {**rpm_archive, **rpm_records[RPM_REPORT_NAME], "receipt": json.loads(rpm_files[RPM_REPORT_NAME])}
+    _, rpm_sha = validate_rpm_report(
+        rpm, repository, release_tag, release_sha, run_id, run_attempt, require_managed=True, source_root=ROOT,
+        require_current_managed=True, expected_image=rpm_qualification.IMAGE,
+    )
+    rpm_smoke = {name: rpm_records[name] for name in RPM_SMOKE_FILES}
+    validate_rpm_smoke_files(rpm_files, rpm["receipt"], rpm_smoke)
+    smoke = {
+        name: {
+            "artifact_id": by_name[name]["id"],
+            "archive_digest": by_name[name]["digest"],
+            "size_in_bytes": by_name[name]["size_in_bytes"],
+        }
+        for name in (*GUI_SMOKE_ARTIFACT_NAMES, *LINUX_SMOKE_ARTIFACT_NAMES)
+    }
+    observed_installers = verify_sealed_smoke(client, smoke, run_id, release_sha)
+    for name, record in smoke.items():
+        record["installer_sha256"] = observed_installers[name]
+    server_bundle = seal_debian_server_bundle(client, server_bundle_artifact_id, server_bundle_sha256)
+    records = materialize_records(
+        client, build_artifacts, assets_root,
+        expected_archive_files=expected_candidate_archive_files(release_tag),
+        managed_deb=(release_tag, managed["receipt"]),
+        expected_runtime_sha256=server_bundle["runtime_sha256"],
+        release_rpm=(release_tag, rpm_sha),
+        smoked_installers=(release_tag, smoke),
+    )
     inventory = {
         "schema_version": SCHEMA_VERSION,
-        "repository": normalize_repository_from_api(run),
+        "repository": repository,
         "release_tag": release_tag,
         "release_sha": release_sha,
         "source_ref": f"refs/tags/{release_tag}",
@@ -324,14 +429,58 @@ def stage(
         "build_run_attempt": run_attempt,
         "artifacts": records,
         "runtime_reports": runtime_reports,
+        "managed_debian_update": managed,
+        "debian_server_bundle": server_bundle,
+        "rpm_recovery": rpm,
+        "rpm_smoke": rpm_smoke,
+        "gui_smoke": {name: smoke[name] for name in GUI_SMOKE_ARTIFACT_NAMES},
+        "linux_smoke": {name: smoke[name] for name in LINUX_SMOKE_ARTIFACT_NAMES},
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(canonical_json(inventory), encoding="utf-8")
 
 
+def seal_debian_server_bundle(client: GitHubClient, artifact_id: int, archive_sha256: str) -> dict[str, Any]:
+    from scripts.moba_debian_server_payload import MANIFEST, reviewed_runtime_sha256
+    from scripts.stage_debian_server_bundle import download_bundle, stage_bundle
+
+    if not isinstance(archive_sha256, str) or HASH.fullmatch(archive_sha256) is None:
+        raise ValueError("server bundle SHA-256 must be 64 lowercase hexadecimal characters")
+    with tempfile.TemporaryDirectory(prefix="row-candidate-server-bundle-") as work:
+        root = Path(work)
+        archive = download_bundle(client, artifact_id, root)
+        verified = root / "verified"
+        stage_bundle(archive, archive_sha256, "linux-x86_64", verified)
+        runtime = json.loads((verified / MANIFEST).read_bytes())
+    return {
+        "artifact_id": artifact_id,
+        "archive_sha256": archive_sha256,
+        "runtime_sha256": reviewed_runtime_sha256(runtime),
+    }
+
+
 def seal_runtime_report(
     client: GitHubClient, artifact: dict[str, Any], name: str, run_id: int, release_sha: str,
 ) -> dict[str, Any]:
+    report, metadata = sealed_json_artifact(client, artifact, name, run_id, release_sha, RUNTIME_REPORT_NAME)
+    validate_runtime_report(report, name)
+    return metadata
+
+
+def sealed_json_artifact(
+    client: GitHubClient, artifact: dict[str, Any], name: str, run_id: int, release_sha: str, filename: str,
+    *, archive_output: Path | None = None,
+) -> tuple[bytes, dict[str, Any]]:
+    files, archive, records = sealed_json_members(
+        client, artifact, name, run_id, release_sha, (filename,), archive_output=archive_output,
+    )
+    return files[filename], {**archive, **records[filename]}
+
+
+def sealed_json_members(
+    client: GitHubClient, artifact: dict[str, Any], name: str, run_id: int, release_sha: str,
+    filenames: tuple[str, ...], *, archive_output: Path | None = None,
+) -> tuple[dict[str, bytes], dict[str, Any], dict[str, dict[str, Any]]]:
     artifact_id = positive_int(artifact.get("id"), f"artifact {name} id")
     digest = normalize_digest(artifact.get("digest"), f"artifact {name} archive digest")
     size = positive_int(artifact.get("size_in_bytes"), f"artifact {name} size")
@@ -341,7 +490,7 @@ def seal_runtime_report(
         artifact, artifact_id=artifact_id, name=name, digest=digest,
         run_id=run_id, release_sha=release_sha,
     )
-    with tempfile.TemporaryDirectory(prefix="row-runtime-report-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="row-release-report-") as temporary:
         archive = Path(temporary) / "report.zip"
         downloaded_digest = client.download(
             f"actions/artifacts/{artifact_id}/zip", archive, max_bytes=MAX_JSON_BYTES,
@@ -349,17 +498,520 @@ def seal_runtime_report(
         if downloaded_digest != digest or archive.stat().st_size != size:
             raise ValueError(f"{name} archive does not match GitHub")
         unpacked = Path(temporary) / "unpacked"
-        extract_archive(
-            archive, unpacked, max_expanded_bytes=MAX_JSON_BYTES, only_name=RUNTIME_REPORT_NAME,
+        rows = extract_archive(
+            archive, unpacked, max_expanded_bytes=MAX_JSON_BYTES,
+            only_name=filenames[0] if len(filenames) == 1 else None,
         )
-        report = (unpacked / RUNTIME_REPORT_NAME).read_bytes()
-    validate_runtime_report(report, name)
-    return {
-        "artifact_id": artifact_id,
-        "archive_digest": digest,
-        "sha256": hashlib.sha256(report).hexdigest(),
-        "size_bytes": len(report),
+        if {row["path"] for row in rows} != set(filenames):
+            raise ValueError(f"{name} archive must contain the exact evidence files")
+        files = {filename: (unpacked / filename).read_bytes() for filename in filenames}
+        if archive_output is not None:
+            with archive.open("rb") as source, archive_output.open("xb") as output:
+                shutil.copyfileobj(source, output)
+    return files, {"artifact_id": artifact_id, "archive_digest": digest}, {
+        row["path"]: {"sha256": row["sha256"], "size_bytes": row["size"]} for row in rows
     }
+
+
+def qualification_receipt_bytes(receipt: Any) -> bytes:
+    return (json.dumps(receipt, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def validate_qualification_archive(record: Any, label: str) -> int:
+    if not isinstance(record, dict) or record.keys() != {"artifact_id", "archive_digest", "sha256", "size_bytes", "receipt"}:
+        raise ValueError(f"{label} receipt is missing or invalid")
+    artifact_id = positive_int(record["artifact_id"], f"{label} artifact id")
+    normalize_digest(record["archive_digest"], f"{label} archive digest")
+    raw = qualification_receipt_bytes(record["receipt"])
+    if (
+        positive_int(record["size_bytes"], f"{label} report size") != len(raw)
+        or len(raw) > MAX_JSON_BYTES or record["sha256"] != hashlib.sha256(raw).hexdigest()
+    ):
+        raise ValueError(f"{label} receipt bytes do not match the recorded digest and size")
+    return artifact_id
+
+
+def validate_managed_report(
+    record: Any, release_tag: str, release_sha: str, run_id: int, run_attempt: int, *, require_current: bool = False,
+    require_server_bundle: bool = False, source_root: Path | None = None,
+) -> int:
+    artifact_id = validate_qualification_archive(record, "managed Debian")
+    receipt = record["receipt"]
+    if (
+        not isinstance(receipt, dict)
+        or receipt.get("source_sha") != release_sha
+        or receipt.get("run_id") != str(run_id) or receipt.get("run_attempt") != str(run_attempt)
+        or receipt.get("container_image") != MANAGED_IMAGE
+        or not isinstance(receipt.get("debian_depends"), str)
+        or any(not isinstance(receipt.get(key), str) or HASH.fullmatch(receipt[key]) is None
+               for key in ("candidate_sha256", "controller_sha256", "source_archive_sha256"))
+    ):
+        raise ValueError("managed Debian receipt does not match the release source and Actions attempt")
+    if source_root is not None and receipt["controller_sha256"] != hashlib.sha256(
+        (source_root / MANAGED_DEBIAN_CONTROLLER).read_bytes(),
+    ).hexdigest():
+        raise ValueError("managed Debian controller digest differs from the release checkout")
+    image = receipt.get("drill_image")
+    if receipt["debian_depends"]:
+        normalize_digest(image, "managed Debian dependency image")
+    elif image != MANAGED_IMAGE:
+        raise ValueError("managed Debian drill must use the pinned image")
+    pins = json.loads((ROOT / "configs/native_linux_previous_release_pins.json").read_bytes())
+    previous_name = f'remote-ops-workspace-{pins["tag"]}-linux-amd64.deb'
+    previous = next(row["digest"].removeprefix("sha256:") for row in pins["assets"] if row["name"] == previous_name)
+    validate_receipt(
+        receipt, previous_sha=previous, candidate_sha=receipt["candidate_sha256"], require_current=require_current,
+    )
+    if require_server_bundle and receipt["candidate_has_server_bundle"] is not True:
+        raise ValueError("the production Debian candidate requires the embedded server bundle")
+    applied = receipt["receipts"]["candidate-apply"]
+    if (
+        applied.get("candidate_sha256") != receipt["candidate_sha256"]
+        or applied.get("previous_sha256") != previous or applied.get("architecture") != "amd64"
+        or applied.get("candidate_version") != release_tag.removeprefix("v")
+        or applied.get("previous_version") != pins["tag"].removeprefix("v")
+    ):
+        raise ValueError("managed Debian apply journal does not match the release installers")
+    return artifact_id
+
+
+def validate_rpm_report(
+    record: Any, repository: str, release_tag: str, release_sha: str, run_id: int, run_attempt: int,
+    *, require_managed: bool = False, source_root: Path | None = None, require_current_managed: bool = False,
+    expected_image: str | None = None,
+) -> tuple[int, str]:
+    artifact_id = validate_qualification_archive(record, "RPM recovery")
+    receipt = record["receipt"]
+    expected = {
+        "target": rpm_qualification.TARGET,
+        "source_commit": release_sha,
+        "workflow_ref": f"{repository}/{BUILD_WORKFLOW}@refs/tags/{release_tag}",
+        "previous_release_asset_id": rpm_qualification.PREVIOUS_ASSET,
+        "previous_release_url": rpm_qualification.PREVIOUS_URL,
+    }
+    if (
+        not isinstance(receipt, dict)
+        or receipt.get("schema") not in (rpm_qualification.SCHEMA, rpm_qualification.NATIVE_ONLY_SCHEMA)
+        or any(receipt.get(key) != value for key, value in expected.items())
+        or type(receipt.get("run_id")) is not int or receipt["run_id"] != run_id
+        or type(receipt.get("run_attempt")) is not int or receipt["run_attempt"] != run_attempt
+        or not isinstance(receipt.get("candidate_native_proof_sha256"), str)
+        or HASH.fullmatch(receipt["candidate_native_proof_sha256"]) is None
+    ):
+        raise ValueError("RPM recovery receipt does not match the release source and Actions attempt")
+    allowed_images = (expected_image,) if expected_image is not None else (
+        rpm_qualification.IMAGE, rpm_qualification.LEGACY_IMAGE,
+    )
+    if receipt.get("container_image") not in allowed_images:
+        raise ValueError("RPM recovery receipt does not match the pinned Fedora qualification image")
+    try:
+        native = receipt["receipt"]
+        candidate_sha = native["candidate"]["package_sha256"]
+        if not HASH.fullmatch(candidate_sha):
+            raise ValueError("invalid candidate RPM digest")
+        rpm_qualification.verify_receipt(native, release_tag.removeprefix("v"), candidate_sha)
+    except (ValueError, KeyError, TypeError, AttributeError):
+        raise ValueError("RPM recovery receipt has invalid package identities or rollback results") from None
+    if (require_managed or require_current_managed) and receipt["schema"] != rpm_qualification.SCHEMA:
+        raise ValueError("The current RPM recovery receipt requires the managed-update qualification")
+    if receipt["schema"] == rpm_qualification.SCHEMA:
+        managed_rpm_qualification.verify_receipt(
+            receipt.get("managed_update"), native,
+            controller_sha256=None if source_root is None else rpm_qualification.sha256(
+                source_root / managed_rpm_qualification.CONTROLLER,
+            ),
+            requirements_sha256=None if source_root is None else hashlib.sha256(
+                managed_rpm_qualification.locked_crypto_requirements(source_root),
+            ).hexdigest(),
+            require_current=require_current_managed,
+        )
+    return artifact_id, candidate_sha
+
+
+def validate_rpm_smoke_metadata(records: Any, receipt: dict[str, Any]) -> None:
+    if not isinstance(records, dict) or records.keys() != set(RPM_SMOKE_FILES):
+        raise ValueError("RPM native smoke evidence is missing or invalid")
+    for record in records.values():
+        if (
+            not isinstance(record, dict) or record.keys() != {"sha256", "size_bytes"}
+            or not isinstance(record["sha256"], str) or HASH.fullmatch(record["sha256"]) is None
+            or type(record["size_bytes"]) is not int or not 0 < record["size_bytes"] <= MAX_JSON_BYTES
+        ):
+            raise ValueError("RPM native smoke evidence metadata is invalid")
+    if records[RPM_SMOKE_FILES[0]]["sha256"] != receipt["candidate_native_proof_sha256"]:
+        raise ValueError("RPM native proof digest differs from the recovery receipt")
+
+
+def validate_rpm_smoke_files(
+    files: dict[str, bytes], receipt: dict[str, Any], records: dict[str, Any],
+) -> None:
+    validate_rpm_smoke_metadata(records, receipt)
+    if files[RPM_REPORT_NAME] != qualification_receipt_bytes(receipt):
+        raise ValueError("RPM recovery receipt differs from the sealed evidence")
+    for name, record in records.items():
+        if len(files[name]) != record["size_bytes"] or hashlib.sha256(files[name]).hexdigest() != record["sha256"]:
+            raise ValueError(f"RPM native smoke file differs from the sealed evidence: {name}")
+
+    try:
+        proof, binding = (json.loads(files[name]) for name in RPM_SMOKE_FILES)
+        candidate = receipt["receipt"]["candidate"]
+        asset = rpm_qualification.rpm_proof_asset(
+            proof, candidate["version"], receipt["source_commit"], str(receipt["run_id"]), str(receipt["run_attempt"]),
+        )
+        link = proof["native_executable_byte_binding"]
+        if (
+            proof.get("workflow_ref") != receipt["workflow_ref"]
+            or asset["sha256"] != candidate["package_sha256"]
+            or link.get("report_path") != rpm_qualification.SMOKE_BINDING.as_posix()
+            or link.get("report_sha256") != records[RPM_SMOKE_FILES[1]]["sha256"]
+        ):
+            raise ValueError("RPM native proof refers to different workflow, package or smoke bytes")
+
+        target = rpm_qualification.TARGET
+        outputs, _, probes = target_contract(target)
+        launcher = candidate["launcher_sha256"]
+        required = {(phase, probe) for path, phase, probe in probes if path == "rpm/usr/bin/row"}
+        rows = [row for row in binding["observations"] if row.get("path") == "rpm/usr/bin/row"]
+        if (
+            binding.get("target") != target
+            or type(binding.get("schema_version")) is not int or binding["schema_version"] != binding_schema(target)
+            or binding.get("status") != "bound" or binding.get("smoke_complete") is not True
+            or binding.get("expected_executables") != [{"path": outputs["cli"], "role": "cli", "sha256": launcher}]
+            or len(rows) != len(required)
+            or {(row.get("phase"), row.get("probe")) for row in rows} != required
+            or any(
+                row.get("role") != "cli" or row.get("matched") is not True
+                or row.get("expected_sha256") != launcher or row.get("observed_sha256") != launcher
+                for row in rows
+            )
+        ):
+            raise ValueError("RPM smoke did not observe the recovered candidate launcher before every probe")
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise ValueError("RPM native smoke evidence has an invalid shape") from exc
+
+
+def verify_sealed_rpm_smoke(
+    client: GitHubClient, inventory: dict[str, Any], run_id: int, release_sha: str,
+    *, archive_output: Path | None = None,
+) -> None:
+    rpm = inventory["rpm_recovery"]
+    metadata = client.json(f'actions/artifacts/{rpm["artifact_id"]}')
+    check_artifact_metadata(
+        metadata, artifact_id=rpm["artifact_id"], name=RPM_ARTIFACT, digest=rpm["archive_digest"],
+        run_id=run_id, release_sha=release_sha,
+    )
+    files, _, _ = sealed_json_members(
+        client, metadata, RPM_ARTIFACT, run_id, release_sha, (RPM_REPORT_NAME, *RPM_SMOKE_FILES),
+        archive_output=archive_output,
+    )
+    validate_rpm_smoke_files(files, rpm["receipt"], inventory["rpm_smoke"])
+
+
+def verify_sealed_debian_update(
+    client: GitHubClient, record: dict[str, Any], run_id: int, release_sha: str, *,
+    archive_output: Path | None = None,
+) -> None:
+    artifact_id = record["artifact_id"]
+    metadata = client.json(f"actions/artifacts/{artifact_id}")
+    check_artifact_metadata(
+        metadata, artifact_id=artifact_id, name=MANAGED_DEBIAN_ARTIFACT, digest=record["archive_digest"],
+        run_id=run_id, release_sha=release_sha,
+    )
+    raw, _ = sealed_json_artifact(
+        client, metadata, MANAGED_DEBIAN_ARTIFACT, run_id, release_sha, REPORT_NAME, archive_output=archive_output,
+    )
+    if raw != qualification_receipt_bytes(record["receipt"]):
+        raise ValueError("managed Debian archive receipt does not match the sealed inventory")
+
+
+def validate_smoke_records(value: Any, ids: set[int], names: tuple[str, ...], label: str) -> None:
+    if not isinstance(value, dict) or value.keys() != set(names):
+        raise ValueError(f"approved candidate inventory must contain all {label} smoke archives")
+    for name, record in value.items():
+        fields = {"artifact_id", "archive_digest", "size_in_bytes"}
+        if not isinstance(record, dict) or record.keys() not in (fields, fields | {"installer_sha256"}):
+            raise ValueError(f"{name} sealed archive identity is invalid")
+        artifact_id = positive_int(record["artifact_id"], f"{name} artifact id")
+        if artifact_id in ids:
+            raise ValueError(f"{name} artifact id is duplicated")
+        ids.add(artifact_id)
+        normalize_digest(record["archive_digest"], f"{name} archive digest")
+        size = positive_int(record["size_in_bytes"], f"{name} archive size")
+        if size > MAX_SMOKE_ARCHIVE_BYTES:
+            raise ValueError(f"{name} archive exceeds the smoke evidence size limit")
+
+
+def read_archive_reports(path: Path | io.BytesIO, name: str, filenames: tuple[str, ...]) -> dict[str, bytes]:
+    reports = {}
+    with zipfile.ZipFile(path) as archive:
+        members = archive.infolist()
+        if len(members) > MAX_MEMBERS:
+            raise ValueError(f"{name} archive exceeds {MAX_MEMBERS} members")
+        for filename in filenames:
+            matches = [member for member in members if member.orig_filename.casefold() == filename.casefold()]
+            if len(matches) != 1 or matches[0].orig_filename != filename:
+                raise ValueError(f"{name} archive must contain one root {filename}")
+            member = matches[0]
+            mode = (member.external_attr >> 16) & 0xFFFF
+            if (
+                stat.S_IFMT(mode) not in (0, stat.S_IFREG) or member.external_attr & 0x10
+                or member.flag_bits & 1 or not 0 < member.file_size <= MAX_JSON_BYTES
+            ):
+                raise ValueError(f"{name} archive has an invalid {filename}")
+            reports[filename] = archive.read(member)
+    return reports
+
+
+def validate_gui_smoke_archive(path: Path | io.BytesIO, name: str, *, require_modules: bool) -> Any:
+    reports = read_archive_reports(path, name, (GUI_ARCHIVE_PROOF_FILE, NATIVE_BYTE_BINDING_FILE))
+    proof = json.loads(reports[GUI_ARCHIVE_PROOF_FILE])
+    binding_bytes = reports[NATIVE_BYTE_BINDING_FILE]
+    binding = json.loads(binding_bytes)
+    target = name.removeprefix("release-").replace("-gui-smoke-", "-", 1)
+    if (
+        not isinstance(proof, dict) or proof.get("target") != target or proof.get("status") != "passed"
+        or proof.get("smoke_binding_sha256") != hashlib.sha256(binding_bytes).hexdigest()
+        or DIGEST_RE.fullmatch(f'sha256:{proof.get("artifact_sha256")}') is None
+        or not isinstance(binding, dict) or binding.get("target") != target
+        or binding.get("status") != "bound" or binding.get("smoke_complete") is not True
+    ):
+        raise ValueError(f"{name} GUI archive proof does not bind the completed smoke receipt")
+    if require_modules:
+        observed_modules = proof.get("observed_presence")
+        if (
+            type(proof.get("schema_version")) is not int or proof["schema_version"] != 1
+            or proof.get("role") != "gui" or proof.get("path") != GUI_PYZ_ARCHIVE_PATHS.get(target)
+            or proof.get("required_modules") != list(GUI_PYZ_REQUIRED_MODULES)
+            or not isinstance(observed_modules, dict)
+            or set(observed_modules) != set(GUI_PYZ_REQUIRED_MODULES)
+            or any(present is not True for present in observed_modules.values())
+            or proof.get("errors") != []
+        ):
+            raise ValueError(f"{name} GUI archive proof must attest every required frozen GUI module")
+    outputs = binding.get("expected_executables")
+    if not isinstance(outputs, list) or [
+        (output.get("path"), output.get("sha256"))
+        for output in outputs if isinstance(output, dict) and output.get("role") == "gui"
+    ] != [(proof.get("path"), proof["artifact_sha256"])] or not isinstance(proof.get("path"), str):
+        raise ValueError(f"{name} GUI archive proof refers to different executable bytes")
+
+    observations = binding.get("observations")
+    gui_observations = [
+        row for row in observations if isinstance(row, dict) and row.get("role") == "gui"
+    ] if isinstance(observations, list) else []
+    if not gui_observations or any(
+        row.get("matched") is not True or row.get("expected_sha256") != proof["artifact_sha256"]
+        or row.get("observed_sha256") != proof["artifact_sha256"]
+        for row in gui_observations
+    ):
+        raise ValueError(f"{name} installer smoke did not observe the verified GUI executable bytes")
+    return binding.get("installer_sha256")
+
+
+def validate_linux_smoke_archive(path: Path | io.BytesIO, name: str, run_id: int, release_sha: str) -> Any:
+    reports = read_archive_reports(path, name, (LINUX_SMOKE_PROOF_FILE, NATIVE_BYTE_BINDING_FILE))
+    proof = json.loads(reports[LINUX_SMOKE_PROOF_FILE])
+    raw = reports[NATIVE_BYTE_BINDING_FILE]
+    binding = json.loads(raw)
+    target = name.replace("release-linux-native-smoke-", "linux-", 1)
+    source = proof.get("source") if isinstance(proof, dict) else None
+    link = proof.get("native_executable_byte_binding") if isinstance(proof, dict) else None
+    if (
+        not isinstance(source, dict) or source.get("head") != release_sha
+        or proof.get("target") != target or proof.get("event_sha") != release_sha
+        or proof.get("run_id") != str(run_id) or proof.get("run_attempt") != "1"
+        or proof.get("native_build_outcome") != "success" or proof.get("native_smoke_outcome") != "success"
+        or proof.get("source_unchanged") is not True or proof.get("native_pyinstaller_inventory_complete") is not True
+        or not isinstance(link, dict) or link.get("status") != "bound"
+        or link.get("report_path") != f"build/native-smoke/{target}/{NATIVE_BYTE_BINDING_FILE}"
+        or link.get("report_sha256") != hashlib.sha256(raw).hexdigest()
+        or not isinstance(binding, dict) or binding.get("target") != target
+        or binding.get("status") != "bound" or binding.get("smoke_complete") is not True
+    ):
+        raise ValueError(f"{name} native proof does not bind the completed exact-run installer smoke receipt")
+    return binding.get("installer_sha256")
+
+
+def verify_sealed_smoke(
+    client: GitHubClient, records: dict[str, Any], run_id: int, release_sha: str,
+    *, archive_root: Path | None = None, inventory_schema: int = SCHEMA_VERSION,
+) -> dict[str, Any]:
+    installers = {}
+    with tempfile.TemporaryDirectory(prefix="row-release-native-smoke-") as temporary:
+        for name, record in records.items():
+            artifact_id = record["artifact_id"]
+            metadata = client.json(f"actions/artifacts/{artifact_id}")
+            check_artifact_metadata(
+                metadata, artifact_id=artifact_id, name=name, digest=record["archive_digest"],
+                run_id=run_id, release_sha=release_sha,
+            )
+            archive = Path(temporary) / f"{name}.zip"
+            downloaded = client.download(
+                f"actions/artifacts/{artifact_id}/zip", archive, max_bytes=MAX_SMOKE_ARCHIVE_BYTES,
+            )
+            if (
+                downloaded != record["archive_digest"]
+                or archive.stat().st_size != record["size_in_bytes"]
+                or metadata.get("size_in_bytes") != record["size_in_bytes"]
+            ):
+                raise ValueError(f"{name} archive digest or size differs from the sealed inventory")
+            installers[name] = check_smoke_archive(archive, name, record, run_id, release_sha, inventory_schema)
+            if archive_root is not None:
+                with archive.open("rb") as source, (archive_root / archive.name).open("xb") as output:
+                    shutil.copyfileobj(source, output)
+    return installers
+
+
+def check_smoke_archive(
+    archive: Path | io.BytesIO, name: str, record: dict[str, Any], run_id: int, release_sha: str, inventory_schema: int,
+) -> Any:
+    observed = (
+        validate_linux_smoke_archive(archive, name, run_id, release_sha)
+        if name in LINUX_SMOKE_ARTIFACT_NAMES
+        else validate_gui_smoke_archive(archive, name, require_modules=inventory_schema >= GUI_MODULE_PROOF_SCHEMA_VERSION)
+    )
+    if "installer_sha256" in record and observed != record["installer_sha256"]:
+        raise ValueError(f"{name} installer smoke hashes differ from the sealed inventory")
+    return observed
+
+
+def verify_retained_qualification_archives(archive_root: Path, inventory: dict[str, Any]) -> None:
+    """Replay the qualification archives from an already validated, signed inventory."""
+    if archive_root.is_symlink() or not archive_root.is_dir():
+        raise ValueError("candidate qualification archives must be in a regular directory")
+
+    managed = inventory.get("managed_debian_update")
+    if managed is not None:
+        with retained_archive(archive_root, MANAGED_DEBIAN_ARTIFACT, managed, MAX_JSON_BYTES) as archive:
+            files = read_archive_reports(archive, MANAGED_DEBIAN_ARTIFACT, (REPORT_NAME,))
+        if files[REPORT_NAME] != qualification_receipt_bytes(managed["receipt"]):
+            raise ValueError("managed Debian archive receipt does not match the sealed inventory")
+
+    if "rpm_smoke" in inventory:
+        rpm = inventory["rpm_recovery"]
+        with retained_archive(archive_root, RPM_ARTIFACT, rpm, MAX_JSON_BYTES) as archive:
+            files = read_archive_reports(archive, RPM_ARTIFACT, (RPM_REPORT_NAME, *RPM_SMOKE_FILES))
+        validate_rpm_smoke_files(files, rpm["receipt"], inventory["rpm_smoke"])
+
+    smoke = {**inventory.get("gui_smoke", {}), **inventory.get("linux_smoke", {})}
+    for name, record in smoke.items():
+        with retained_archive(archive_root, name, record, record["size_in_bytes"]) as archive:
+            check_smoke_archive(
+                archive, name, record, inventory["build_run_id"], inventory["release_sha"], inventory["schema_version"],
+            )
+
+
+def retained_archive(root: Path, name: str, record: dict[str, Any], limit: int) -> io.BytesIO:
+    path = root / f"{name}.zip"
+    if not path.exists() or not stat.S_ISREG(path.lstat().st_mode):
+        raise ValueError(f"missing or invalid retained candidate qualification archive: {path.name}")
+    with path.open("rb") as source:
+        raw = source.read(limit + 1)
+    if (
+        not 0 < len(raw) <= limit or len(raw) != record.get("size_in_bytes", len(raw))
+        or f"sha256:{hashlib.sha256(raw).hexdigest()}" != record["archive_digest"]
+    ):
+        raise ValueError(f"{name} retained archive digest or size differs from the sealed inventory")
+    return io.BytesIO(raw)
+
+
+def require_smoked_installer_assets(
+    records: list[dict[str, Any]], release_tag: str, smoke: dict[str, Any],
+) -> None:
+    by_name = {record["name"]: record["files"] for record in records}
+    for name, receipt in smoke.items():
+        target = name.removeprefix("release-").replace("-gui-smoke-", "-", 1).replace("-native-smoke-", "-", 1)
+        platform, arch = target.split("-", 1)
+        base = f"remote-ops-workspace-{release_tag}-{target}"
+        if platform == "linux":
+            deb_arch = {"x86_64": "amd64", "aarch64": "arm64"}[arch]
+            expected_names = {f"remote-ops-workspace-{release_tag}-linux-{deb_arch}.deb", base + ".rpm", base + ".AppImage"}
+        else:
+            suffixes = ("-native.zip", "-setup.exe", ".msi") if platform == "windows" else (".dmg", ".pkg")
+            expected_names = {base + suffix for suffix in suffixes}
+        hashes = receipt.get("installer_sha256")
+        if (
+            not isinstance(hashes, dict) or hashes.keys() != expected_names
+            or any(not isinstance(digest, str) or DIGEST_RE.fullmatch(f"sha256:{digest}") is None
+                   for digest in hashes.values())
+        ):
+            raise ValueError(f"{name} receipt must bind the complete installer digest set")
+        files = by_name.get(f"release-{platform}-native-{arch}", [])
+        for asset, sha256 in hashes.items():
+            if [row.get("sha256") for row in files if isinstance(row, dict) and row.get("path") == asset] != [sha256]:
+                raise ValueError(f"{name} smoke receipt differs from the candidate installer {asset}")
+
+
+def require_linux_installer(records: list[dict[str, Any]], name: str, sha256: str, label: str) -> None:
+    matches = [
+        file.get("sha256")
+        for record in records if record["name"] == "release-linux-native-x86_64"
+        for file in record["files"] if isinstance(file, dict) and file.get("path") == name
+    ]
+    if matches != [sha256]:
+        raise ValueError(f"{label} receipt must bind the exact candidate {name.rsplit('.', 1)[1].upper()}")
+
+
+def require_managed_deb(records: list[dict[str, Any]], release_tag: str, sha256: str) -> None:
+    require_linux_installer(records, f"remote-ops-workspace-{release_tag}-linux-amd64.deb", sha256, "managed Debian")
+
+
+def read_candidate_deb_metadata(
+    package: Path, *, expected_runtime_sha256: str | None = None,
+) -> tuple[str, bool]:
+    try:
+        depends = subprocess.check_output(
+            ["dpkg-deb", "--field", str(package), "Depends"], encoding="utf-8", timeout=30,
+        ).strip()
+    except (OSError, subprocess.SubprocessError) as error:
+        raise ValueError("could not read the candidate Debian Depends field") from error
+    notices = read_verified_debian_notices(
+        package, target="linux-x86_64", verify_runtime=True, expected_runtime_sha256=expected_runtime_sha256,
+    )
+    return depends, bool(notices)
+
+
+def verify_candidate_deb_metadata(
+    package: Path, receipt: dict[str, Any], *, expected_runtime_sha256: str | None = None,
+) -> None:
+    depends, bundled = read_candidate_deb_metadata(package, expected_runtime_sha256=expected_runtime_sha256)
+    if depends != receipt["debian_depends"]:
+        raise ValueError("managed Debian receipt Depends field differs from the candidate DEB")
+    if bundled != receipt["candidate_has_server_bundle"]:
+        raise ValueError("managed Debian receipt server bundle claim differs from the candidate DEB")
+
+
+def require_release_rpm(records: list[dict[str, Any]], release_tag: str, sha256: str) -> None:
+    name = rpm_qualification.rpm_name(release_tag.removeprefix("v"))
+    require_linux_installer(records, name, sha256, "RPM recovery")
+
+
+def validate_managed_release_qualification(
+    inventory: dict[str, Any], *, repository: str, release_tag: str, release_sha: str, deb_sha256: str,
+    deb_package: Path | None = None,
+) -> list[dict[str, Any]]:
+    if (type(inventory.get("schema_version")) is not int
+            or not MANAGED_SCHEMA_VERSION <= inventory["schema_version"] <= SCHEMA_VERSION):
+        raise ValueError("production Debian qualification requires the current sealed candidate inventory")
+    run_id = inventory.get("build_run_id")
+    if type(run_id) is not int or run_id < 1:
+        raise ValueError("production Debian qualification requires a numeric candidate build run")
+    records = validate_inventory(
+        inventory, repository=repository, release_tag=release_tag, release_sha=release_sha,
+        run_id=run_id, run_attempt=1,
+    )
+    require_managed_deb(records, release_tag, deb_sha256)
+    if inventory["schema_version"] >= SERVER_BUNDLE_SCHEMA_VERSION:
+        if deb_package is None:
+            raise ValueError("production Debian qualification requires the exact package for server bundle verification")
+        with deb_package.open("rb") as stream:
+            if stream_sha256(stream) != deb_sha256:
+                raise ValueError("Debian package differs from the qualified release installer")
+        verify_candidate_deb_metadata(
+            deb_package, inventory["managed_debian_update"]["receipt"],
+            expected_runtime_sha256=inventory.get("debian_server_bundle", {}).get("runtime_sha256"),
+        )
+    return records
 
 
 def validate_runtime_report(report: bytes, label: str) -> None:
@@ -384,6 +1036,7 @@ def promote(
     inventory_archive_digest: str,
     approved_inventory: Path,
     assets_root: Path,
+    qualification_archives: Path | None = None,
 ) -> None:
     run = client.json(f"actions/runs/{run_id}")
     check_build_run(
@@ -446,6 +1099,45 @@ def promote(
         run_id=run_id,
         run_attempt=run_attempt,
     )
+    if qualification_archives is not None:
+        resolved = qualification_archives.resolve()
+        assets = assets_root.resolve()
+        if os.path.lexists(qualification_archives) or resolved.is_relative_to(assets) or assets.is_relative_to(resolved):
+            raise ValueError("qualification archive output must be an unused path separate from the release assets")
+    directory = None if qualification_archives is None else qualification_archives.parent
+    with tempfile.TemporaryDirectory(prefix="row-promotion-qualifications-", dir=directory) as temporary:
+        retained = Path(temporary) / "archives"
+        retained.mkdir()
+        download_qualification_archives(client, inventory, run_id, release_sha, retained)
+        materialize_sealed_records(
+            client, records, assets_root, inventory=inventory, run_id=run_id, release_sha=release_sha,
+        )
+        if qualification_archives is not None:
+            retained.rename(qualification_archives)
+
+
+def download_qualification_archives(
+    client: GitHubClient, inventory: dict[str, Any], run_id: int, release_sha: str, archive_root: Path,
+) -> None:
+    if "managed_debian_update" in inventory:
+        verify_sealed_debian_update(
+            client, inventory["managed_debian_update"], run_id, release_sha,
+            archive_output=archive_root / f"{MANAGED_DEBIAN_ARTIFACT}.zip",
+        )
+    if "rpm_smoke" in inventory:
+        verify_sealed_rpm_smoke(
+            client, inventory, run_id, release_sha, archive_output=archive_root / f"{RPM_ARTIFACT}.zip",
+        )
+    smoke = {**inventory.get("gui_smoke", {}), **inventory.get("linux_smoke", {})}
+    verify_sealed_smoke(
+        client, smoke, run_id, release_sha, archive_root=archive_root, inventory_schema=inventory["schema_version"],
+    )
+
+
+def materialize_sealed_records(
+    client: GitHubClient, records: list[dict[str, Any]], assets_root: Path, *,
+    inventory: dict[str, Any], run_id: int, release_sha: str,
+) -> None:
     live: dict[str, dict[str, Any]] = {}
     for record in records:
         artifact_id = record["id"]
@@ -459,7 +1151,17 @@ def promote(
             release_sha=release_sha,
         )
         live[record["name"]] = metadata
-    materialize_records(client, live, assets_root, expected_records=records)
+    managed_deb = None
+    if inventory["schema_version"] >= SERVER_BUNDLE_SCHEMA_VERSION:
+        managed_deb = (inventory["release_tag"], inventory["managed_debian_update"]["receipt"])
+    materialize_records(
+        client, live, assets_root, expected_records=records, managed_deb=managed_deb,
+        expected_archive_files=(
+            expected_candidate_archive_files(inventory["release_tag"])
+            if inventory["schema_version"] >= ARCHIVE_FILE_SCOPE_SCHEMA_VERSION else None
+        ),
+        expected_runtime_sha256=inventory.get("debian_server_bundle", {}).get("runtime_sha256"),
+    )
 
 
 def check_build_run(
@@ -526,6 +1228,11 @@ def materialize_records(
     assets_root: Path,
     *,
     expected_records: list[dict[str, Any]] | None = None,
+    expected_archive_files: dict[str, set[str]] | None = None,
+    managed_deb: tuple[str, dict[str, Any]] | None = None,
+    expected_runtime_sha256: str | None = None,
+    release_rpm: tuple[str, str] | None = None,
+    smoked_installers: tuple[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     if assets_root.is_symlink() or (
         assets_root.exists() and (not assets_root.is_dir() or any(assets_root.iterdir()))
@@ -544,12 +1251,42 @@ def materialize_records(
         staged_root = Path(temporary) / "assets"
         staged_root.mkdir()
         records = materialize_candidate_files(client, artifacts, staged_root, expected_by_name)
+        if expected_archive_files is not None:
+            require_candidate_archive_files(records, expected_archive_files)
+            require_candidate_archive_indexes(staged_root, records)
+        if managed_deb is not None:
+            release_tag, receipt = managed_deb
+            require_managed_deb(records, release_tag, receipt["candidate_sha256"])
+            package = staged_root / f"remote-ops-workspace-{release_tag}-linux-amd64.deb"
+            verify_candidate_deb_metadata(package, receipt, expected_runtime_sha256=expected_runtime_sha256)
+        if release_rpm is not None:
+            require_release_rpm(records, *release_rpm)
+        if smoked_installers is not None:
+            require_smoked_installer_assets(records, *smoked_installers)
         if assets_root.is_symlink():
             raise ValueError("assets root became a symlink during staging")
         if assets_root.exists():
             assets_root.rmdir()
-        staged_root.rename(assets_root)
+        publish_candidate_directory(staged_root, assets_root)
     return records
+
+
+def publish_candidate_directory(staged_root: Path, assets_root: Path) -> None:
+    expected = staged_root.lstat()
+
+    def publish() -> None:
+        current = staged_root.lstat()
+        if (
+            not stat.S_ISDIR(current.st_mode)
+            or getattr(current, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+            or (current.st_dev, current.st_ino) != (expected.st_dev, expected.st_ino)
+        ):
+            raise ValueError("verified candidate staging directory changed before publication")
+        if assets_root.is_symlink() or assets_root.exists():
+            raise ValueError("candidate assets root appeared before publication")
+        staged_root.rename(assets_root)
+
+    retry_evidence_operation(publish)
 
 
 def materialize_candidate_files(
@@ -613,8 +1350,10 @@ def validate_inventory(
 ) -> list[dict[str, Any]]:
     if not isinstance(value, dict):
         raise ValueError("approved candidate inventory must be an object")
+    schema = value.get("schema_version")
+    if type(schema) is not int or not LEGACY_SCHEMA_VERSION <= schema <= SCHEMA_VERSION:
+        raise ValueError("approved candidate inventory schema version is unsupported")
     expected = {
-        "schema_version": SCHEMA_VERSION,
         "repository": repository,
         "release_tag": release_tag,
         "release_sha": release_sha,
@@ -668,7 +1407,178 @@ def validate_inventory(
         normalize_digest(report["archive_digest"], f"runtime report {target} archive digest")
         if positive_int(report["size_bytes"], f"runtime report {target} size") > MAX_JSON_BYTES:
             raise ValueError(f"runtime report {target} exceeds the size limit")
+    if schema >= MANAGED_SCHEMA_VERSION or "managed_debian_update" in value:
+        managed = value.get("managed_debian_update")
+        artifact_id = validate_managed_report(
+            managed, release_tag, release_sha, run_id, run_attempt,
+            require_server_bundle=schema >= SERVER_BUNDLE_SCHEMA_VERSION,
+        )
+        if artifact_id in ids:
+            raise ValueError(f"managed Debian report artifact id is duplicated: {artifact_id}")
+        ids.add(artifact_id)
+        require_managed_deb(records, release_tag, managed["receipt"]["candidate_sha256"])
+    if schema >= REVIEWED_SERVER_BUNDLE_SCHEMA_VERSION or "debian_server_bundle" in value:
+        bundle = value.get("debian_server_bundle")
+        if (
+            not isinstance(bundle, dict) or set(bundle) != {"artifact_id", "archive_sha256", "runtime_sha256"}
+            or type(bundle["artifact_id"]) is not int or bundle["artifact_id"] < 1
+            or any(not isinstance(bundle[key], str) or HASH.fullmatch(bundle[key]) is None
+                   for key in ("archive_sha256", "runtime_sha256"))
+        ):
+            raise ValueError("approved candidate inventory is missing verified Debian server archive coordinates")
+    if schema >= RPM_SCHEMA_VERSION or "rpm_recovery" in value or "rpm_smoke" in value:
+        artifact_id, rpm_sha = validate_rpm_report(
+            value.get("rpm_recovery"), repository, release_tag, release_sha, run_id, run_attempt,
+            require_managed=schema >= MANAGED_RPM_SCHEMA_VERSION,
+            require_current_managed=schema >= FEDORA_RELEASE_IMAGE_SCHEMA_VERSION,
+            expected_image=(rpm_qualification.IMAGE if schema >= FEDORA_RELEASE_IMAGE_SCHEMA_VERSION
+                            else rpm_qualification.LEGACY_IMAGE),
+        )
+        if artifact_id in ids:
+            raise ValueError(f"RPM recovery report artifact id is duplicated: {artifact_id}")
+        ids.add(artifact_id)
+        require_release_rpm(records, release_tag, rpm_sha)
+        if schema >= RPM_SMOKE_SCHEMA_VERSION or "rpm_smoke" in value:
+            validate_rpm_smoke_metadata(value.get("rpm_smoke"), value["rpm_recovery"]["receipt"])
+    if schema >= GUI_SMOKE_SCHEMA_VERSION or "gui_smoke" in value:
+        validate_smoke_records(value.get("gui_smoke"), ids, GUI_SMOKE_ARTIFACT_NAMES, "desktop GUI")
+    if schema >= GUI_INSTALLER_SCHEMA_VERSION:
+        require_smoked_installer_assets(records, release_tag, value["gui_smoke"])
+    if schema >= LINUX_INSTALLER_SCHEMA_VERSION or "linux_smoke" in value:
+        validate_smoke_records(value.get("linux_smoke"), ids, LINUX_SMOKE_ARTIFACT_NAMES, "Linux native")
+        require_smoked_installer_assets(records, release_tag, value["linux_smoke"])
+    if schema >= ARCHIVE_FILE_SCOPE_SCHEMA_VERSION:
+        require_candidate_archive_files(records, expected_candidate_archive_files(release_tag))
     return sorted(records, key=lambda item: item["name"])
+
+
+def expected_candidate_archive_files(tag: str) -> dict[str, set[str]]:
+    """Resolve the exact standard files each build archive must own."""
+    matrix = json.loads(MATRIX_PATH.read_bytes())
+    groups = {"release-source-python": expected_source_release_assets(matrix, tag=tag)}
+    for job in matrix["default_github_release"]["native_jobs"]:
+        variants = {
+            normalize_version(asset, tag[1:])
+            for pattern in job["asset_patterns"] for asset in expand_asset_pattern(pattern)
+        }
+        for arch in job["arches"]:
+            target = f"{job['platform']}-{arch}"
+            if target not in BUILD_TARGETS:
+                raise ValueError(f"release matrix has an unsupported native build archive target: {target}")
+            prefixes = tuple(
+                f"remote-ops-workspace-{tag}-{label}{suffix}"
+                for label in BUILD_TARGETS[target] for suffix in ("-", ".")
+            )
+            archive = f"{job['upload_artifact_prefix']}{arch}"
+            if archive in groups:
+                raise ValueError(f"release matrix has a duplicated build archive: {archive}")
+            groups[archive] = {asset for asset in variants if asset.startswith(prefixes)}
+    expected = expected_release_assets(matrix, tag=tag)
+    if (
+        groups.keys() != set(EXPECTED_ARTIFACT_NAMES)
+        or any(not assets for assets in groups.values())
+        or sum(map(len, groups.values())) != len(expected)
+        or set().union(*groups.values()) != expected
+    ):
+        raise ValueError("release matrix must assign every standard file to exactly one build archive")
+    return groups
+
+
+def require_candidate_archive_files(
+    records: list[dict[str, Any]], expected: dict[str, set[str]],
+) -> None:
+    owners = {record["name"]: record["files"] for record in records}
+    if len(owners) != len(records) or owners.keys() != expected.keys():
+        raise ValueError("candidate archive owners must match the standard release matrix")
+    candidate_file_identities(file for files in owners.values() for file in files)
+    for archive, files in sorted(owners.items()):
+        actual = {file["path"] for file in files}
+        wanted = expected[archive]
+        if actual != wanted:
+            raise ValueError(
+                f"{archive} files differ from its release matrix assignment "
+                f"(missing {sorted(wanted - actual)}, unexpected {sorted(actual - wanted)})"
+            )
+
+
+def require_candidate_archive_indexes(assets: Path, records: list[dict[str, Any]]) -> None:
+    """Verify each build's manifest and checksums against its extracted file records."""
+    for archive in records:
+        members = candidate_file_identities(archive["files"])
+        checksums = [name for name in members if name.endswith("-SHA256SUMS.txt")]
+        manifests = [name for name in members if name.endswith(("-native-manifest.json", "-release-manifest.json"))]
+        if len(checksums) != 1 or len(manifests) != 1:
+            raise ValueError(f"{archive['name']} requires one checksum sidecar and one release manifest")
+        checksum, manifest = checksums[0], manifests[0]
+        digests = {name: digest for name, (_, digest) in members.items() if name != checksum}
+        checked = set()
+        for line in read_candidate_index(assets / checksum, members[checksum]).splitlines():
+            if not line.strip():
+                continue
+            match = re.fullmatch(r"([0-9a-f]{64})\s+(.+)", line.strip())
+            if match is None:
+                raise ValueError(f"{checksum} contains an invalid checksum line")
+            digest, filename = match.groups()
+            if filename not in digests or filename in checked or digest != digests[filename]:
+                raise ValueError(f"{checksum} has a foreign, repeated or mismatched checksum for {filename}")
+            checked.add(filename)
+        if checked != digests.keys():
+            raise ValueError(f"{checksum} is missing checksums for {sorted(digests.keys() - checked)}")
+
+        try:
+            payload = json.loads(read_candidate_index(assets / manifest, members[manifest]))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{manifest} is not valid JSON") from exc
+        rows = payload
+        if manifest.endswith("-release-manifest.json"):
+            rows = payload.get("artifacts") if isinstance(payload, dict) else None
+        expected = members.keys() - {checksum, manifest}
+        seen = set()
+        if not isinstance(rows, list):
+            raise ValueError(f"{manifest} must list its archive's release files")
+        for row in rows:
+            path = row.get("file") if isinstance(row, dict) else None
+            if not isinstance(path, str) or not all(safe_name(part) for part in path.split("/")):
+                raise ValueError(f"{manifest} contains an invalid release file path")
+            filename = path.rsplit("/", 1)[-1]
+            if filename not in expected or filename in seen:
+                raise ValueError(f"{manifest} has a foreign or repeated release file: {filename}")
+            if type(row.get("size_bytes")) is not int or (row["size_bytes"], row.get("sha256")) != members[filename]:
+                raise ValueError(f"{manifest} size or digest differs from extracted archive file {filename}")
+            seen.add(filename)
+        if seen != expected:
+            raise ValueError(f"{manifest} is missing release file records for {sorted(expected - seen)}")
+
+
+def read_candidate_index(path: Path, identity: tuple[int, str]) -> str:
+    if identity[0] > MAX_JSON_BYTES:
+        raise ValueError(f"{path.name} exceeds the release index size limit")
+    with path.open("rb") as stream:
+        raw = stream.read(MAX_JSON_BYTES + 1)
+    if (len(raw), hashlib.sha256(raw).hexdigest()) != identity:
+        raise ValueError(f"{path.name} differs from the extracted build archive")
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"{path.name} must contain UTF-8 text") from exc
+
+
+def candidate_file_identities(files: Iterable[Any]) -> dict[str, tuple[int, str]]:
+    """Validate sealed file records and index their size and digest by archive member name."""
+    identities = {}
+    folded_names: set[str] = set()
+    for item in files:
+        if not isinstance(item, dict) or item.keys() != {"path", "size", "sha256"}:
+            raise ValueError("approved candidate inventory contains an invalid file record")
+        name, size, digest = item["path"], item["size"], item["sha256"]
+        if (
+            not safe_name(name) or name.casefold() in folded_names or type(size) is not int or size < 1
+            or not isinstance(digest, str) or HASH.fullmatch(digest) is None
+        ):
+            raise ValueError("approved candidate inventory contains an invalid or duplicated file record")
+        folded_names.add(name.casefold())
+        identities[name] = (size, digest)
+    return identities
 
 
 def check_artifact_metadata(

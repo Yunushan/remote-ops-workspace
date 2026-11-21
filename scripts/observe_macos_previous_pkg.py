@@ -1521,7 +1521,7 @@ def hosted_gate(root):
         or platform.system() != "Darwin"
         or platform.machine() != "x86_64"
         or platform.mac_ver()[0].split(".")[0] != "15"
-        or platform.python_version() != "3.14.7"
+        or platform.python_version() != "3.14.10"
         or platform.python_implementation() != "CPython"
         or struct.calcsize("P") != 8
         or not root.is_absolute()

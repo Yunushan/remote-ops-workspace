@@ -36,7 +36,7 @@ def event_guard(root):
             or root.is_symlink() or root.resolve() != root or Path(os.environ.get("GITHUB_WORKSPACE", "")).resolve() != root
             or any(re.fullmatch(r"[0-9a-f]{40}", value or "") is None for value in (H.SOURCE, os.environ.get("GITHUB_SHA"), os.environ.get("GITHUB_WORKFLOW_SHA")))
             or any(re.fullmatch(r"[1-9][0-9]{0,19}", os.environ.get(key, "")) is None for key in ("GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT"))
-            or platform.python_version() != "3.14.7" or platform.python_implementation() != "CPython"):
+            or platform.python_version() != "3.14.10" or platform.python_implementation() != "CPython"):
         raise H.Refusal("actual-public-current-qualification-workflow-required")
     def unique(pairs):
         value = {}

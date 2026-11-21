@@ -7,16 +7,50 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urljoin, urlsplit
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 REPOSITORY_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 TAG_RE = re.compile(r"v\d+\.\d+\.\d+")
+PRODUCTION_BRANCH = "main"
 MAX_JSON_BYTES = 20 * 1024 * 1024
 MAX_RELEASE_PAGES = 1000
+MAX_ENVIRONMENT_SECRETS = 100
+DEPLOYMENT_ENVIRONMENTS = ("release", "release-compliance-review", "platform-evidence")
+NATIVE_PARITY_ENVIRONMENTS = ("smartcard-evidence", "transport-evidence")
+PROFESSIONAL_REVIEW_ENVIRONMENT = "professional-update-review"
+PROFESSIONAL_ENVIRONMENT_VARIABLES = {
+    "release": (
+        "ROW_PROFESSIONAL_BRAND", "ROW_PROFESSIONAL_ORGANIZATION", "ROW_PROFESSIONAL_LOGO_BASE64",
+        "ROW_PROFESSIONAL_DEPLOYMENT_ID",
+    ),
+    PROFESSIONAL_REVIEW_ENVIRONMENT: (
+        "RELEASE_PROFESSIONAL_UPDATE_URL", "RELEASE_PROFESSIONAL_UPDATE_ORIGINS", "RELEASE_PROFESSIONAL_UPDATE_PUBLIC_KEY",
+    ),
+}
+DEBIAN_SERVER_BUNDLE_VARIABLE = "ROW_DEBIAN_AMD64_SERVER_BUNDLE"
+RELEASE_SIGNING_SECRETS = frozenset({
+    "ROW_WINDOWS_CERTIFICATE_BASE64",
+    "ROW_WINDOWS_CERTIFICATE_PASSWORD",
+    "ROW_WINDOWS_TIMESTAMP_URL",
+    "ROW_MACOS_CERTIFICATE_BASE64",
+    "ROW_MACOS_CERTIFICATE_PASSWORD",
+    "ROW_MACOS_SIGN_IDENTITY",
+    "ROW_MACOS_INSTALLER_SIGN_IDENTITY",
+    "ROW_MACOS_NOTARY_KEY_BASE64",
+    "ROW_MACOS_NOTARY_KEY_ID",
+    "ROW_MACOS_NOTARY_ISSUER",
+})
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -35,26 +69,176 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for command in ("immutable", "namespace"):
+    for command in ("immutable", "namespace", "environments"):
         child = subparsers.add_parser(command)
         child.add_argument("--repository", required=True)
         child.add_argument("--tag", required=True)
+    signing = subparsers.add_parser("signing", help="check required secret names in the release environment")
+    signing.add_argument("--repository", required=True)
+    parity = subparsers.add_parser("parity", help="check strict parity review environments and Professional settings")
+    parity.add_argument("--repository", required=True)
+    parity.add_argument("--tag", required=True)
+    parity.add_argument(
+        "--deployment-only", action="store_true",
+        help="check reviewer and tag policies without reading Professional variables",
+    )
+    pre_tag = subparsers.add_parser("pre-tag", help="check the exact production source before creating a tag")
+    pre_tag.add_argument("--repository", required=True)
+    pre_tag.add_argument("--tag", required=True)
+    pre_tag.add_argument("--sha", required=True, help="full commit SHA selected for production")
     args = parser.parse_args(argv)
     try:
         repository = normalize_repository(args.repository)
-        tag = normalize_tag(args.tag)
+        tag = normalize_tag(args.tag) if args.command != "signing" else ""
         api_root = normalize_api_root(os.environ.get("GITHUB_API_URL", "https://api.github.com"))
         if args.command == "immutable":
             token = require_token("ROW_RELEASE_IMMUTABILITY_TOKEN")
             require_immutable_enabled(api_root, repository, token)
-        else:
+        elif args.command == "namespace":
             token = require_token("GITHUB_TOKEN")
             require_unused_namespace(api_root, repository, tag, token)
-    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
+        elif args.command == "environments":
+            token = require_token("GITHUB_TOKEN") if os.environ.get("GITHUB_TOKEN") else None
+            require_deployment_environment_policies(api_root, repository, token)
+        elif args.command == "signing":
+            require_signing_secret_inventory(api_root, repository, signing_inventory_token())
+        elif args.command == "parity":
+            token = require_token("GITHUB_TOKEN") if os.environ.get("GITHUB_TOKEN") else None
+            if args.deployment_only:
+                require_parity_deployments(api_root, repository, tag, token)
+            else:
+                require_parity_environment_readiness(api_root, repository, tag, token, variable_token=signing_inventory_token())
+        else:
+            if re.fullmatch(r"[0-9a-fA-F]{40}", args.sha) is None:
+                raise ValueError("--sha must be a full 40-character commit SHA")
+            require_pre_tag(api_root, repository, tag, args.sha.lower())
+    except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as exc:
         print(f"release remote precondition: {exc}", file=sys.stderr)
         return 1
-    print(f"release remote precondition {args.command} passed")
+    scope = f" for {repository}@{args.sha.lower()} and {tag}" if args.command == "pre-tag" else ""
+    if args.command in ("environments", "parity"):
+        scope = f" for {repository} and {tag}"
+    check = "parity deployment policies" if args.command == "parity" and args.deployment_only else args.command
+    print(f"release remote precondition {check} passed{scope}")
     return 0
+
+
+def require_pre_tag(api_root: str, repository: str, tag: str, sha: str) -> None:
+    if api_root != "https://api.github.com":
+        raise ValueError("pre-tag checks require the GitHub.com API used by the governance and CI verifiers")
+    check_local_pre_tag_refs(tag, sha)
+    run_release_check("check_repository_cleanup.py", "--require-clean")
+    run_release_check("check_release_version.py", "--release-tag", tag)
+    run_release_check("check_release_maturity.py", "--release-tag", tag)
+    run_release_check("check_release_license_compliance.py", "--check-policy-only")
+
+    check_remote_pre_tag_refs(repository, tag, sha)
+    require_immutable_enabled(api_root, repository, require_token("ROW_RELEASE_IMMUTABILITY_TOKEN"))
+    namespace_token = require_token("GITHUB_TOKEN")
+    require_deployment_environment_policies(api_root, repository, namespace_token)
+    inventory_token = signing_inventory_token()
+    require_signing_secret_inventory(api_root, repository, inventory_token)
+    require_environment_secret_inventory(
+        api_root, repository, "release-compliance-review", {"ROW_RELEASE_IMMUTABILITY_TOKEN"}, inventory_token,
+    )
+    require_environment_secret_inventory(
+        api_root, repository, "platform-evidence", {"ROW_PLATFORM_RUNNER_INVENTORY_TOKEN"}, inventory_token,
+    )
+    require_parity_environment_readiness(api_root, repository, tag, namespace_token, variable_token=inventory_token)
+    server_bundle = read_debian_server_bundle_selection(api_root, repository, tag, inventory_token)
+    artifact_id, sha256 = server_bundle
+    with tempfile.TemporaryDirectory(prefix="row-pre-tag-server-") as scratch:
+        run_release_check(
+            "stage_debian_server_bundle.py", "--repository", repository, "--artifact-id", artifact_id,
+            "--sha256", sha256, "--target", "linux-x86_64", "--out", str(Path(scratch) / "verified"),
+        )
+    coordinates = ("--repository", repository, "--branch", PRODUCTION_BRANCH)
+    run_release_check("check_python315_ci_evidence.py", *coordinates, "--sha", sha)
+    run_release_check("check_repository_governance.py", *coordinates, "--sha", sha)
+    # This policy-only tag check works before the tag exists. The signed
+    # release audit still uses both the tag and its exact SHA together.
+    run_release_check("check_repository_governance.py", *coordinates, "--release-tag", tag)
+    runner_token = require_token("ROW_PLATFORM_RUNNER_INVENTORY_TOKEN")
+    run_release_check(
+        "check_platform_evidence_runner_readiness.py", "--repository", repository,
+        "--require-goal-targets", "--require-idle", env={**os.environ, "GH_TOKEN": runner_token},
+    )
+    require_unused_namespace(api_root, repository, tag, namespace_token, require_push=True)
+    check_remote_pre_tag_refs(repository, tag, sha)
+    if read_debian_server_bundle_selection(api_root, repository, tag, inventory_token) != server_bundle:
+        raise RuntimeError(f"{DEBIAN_SERVER_BUNDLE_VARIABLE} changed during the pre-tag check")
+    run_release_check("check_repository_cleanup.py", "--require-clean")
+    check_local_pre_tag_refs(tag, sha)
+
+
+def run_release_check(script: str, *args: str, env: dict[str, str] | None = None) -> None:
+    result = subprocess.run([sys.executable, str(ROOT / "scripts" / script), *args], cwd=ROOT, env=env, check=False)
+    if result.returncode != 0:
+        raise RuntimeError(f"{script} failed with exit code {result.returncode}")
+
+
+def run_git(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args], cwd=ROOT, capture_output=True, text=True, timeout=60, check=False,
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+    )
+
+
+def check_local_pre_tag_refs(tag: str, sha: str) -> None:
+    head = run_git("rev-parse", "--verify", "HEAD^{commit}")
+    if head.returncode != 0 or head.stdout.strip() != sha:
+        raise RuntimeError("the release checkout HEAD must match the selected SHA")
+    tag_ref = f"refs/tags/{tag}"
+    lookup_error = f"could not establish whether local tag {tag} exists"
+    exact = run_git("show-ref", "--exists", tag_ref)
+    if exact.returncode == 129:
+        # Git before 2.43 lacks --exists. Read symbolic refs separately because
+        # for-each-ref omits symbolic refs whose targets are missing.
+        exact = run_git("symbolic-ref", "--quiet", "--no-recurse", tag_ref)
+        if exact.returncode not in (0, 1):
+            raise RuntimeError(lookup_error)
+    elif exact.returncode not in (0, 2):
+        raise RuntimeError(lookup_error)
+    if exact.returncode == 0:
+        raise RuntimeError(f"the local tag {tag} already exists")
+
+    inventory = run_git("for-each-ref", "--format=%(refname)", "--", tag_ref)
+    if inventory.returncode != 0 or inventory.stderr:
+        raise RuntimeError(lookup_error)
+    refs = inventory.stdout.splitlines()
+    if tag_ref in refs:
+        raise RuntimeError(f"the local tag {tag} already exists")
+    if refs:
+        if refs[0].startswith(tag_ref + "/"):
+            raise RuntimeError(f"the local tag namespace for {tag} is occupied by {refs[0]}")
+        raise RuntimeError(lookup_error)
+
+
+def check_remote_pre_tag_refs(repository: str, tag: str, sha: str) -> None:
+    branch_ref = f"refs/heads/{PRODUCTION_BRANCH}"
+    tag_ref = f"refs/tags/{tag}"
+    refs = run_git(
+        "ls-remote", "--exit-code", "--refs", "--", f"https://github.com/{repository}.git",
+        branch_ref, tag_ref, f"{tag_ref}/*",
+    )
+    if refs.returncode != 0:
+        raise RuntimeError("could not verify the remote branch and release tag refs")
+    lines = refs.stdout.splitlines()
+    for line in lines:
+        _, _, ref = line.partition("\t")
+        if ref == tag_ref:
+            raise RuntimeError(f"the remote tag {tag} already exists")
+        if ref.startswith(tag_ref + "/"):
+            raise RuntimeError(f"the remote tag namespace for {tag} is occupied by {ref}")
+    head = re.fullmatch(rf"([0-9a-f]{{40}})\t{branch_ref}", lines[0]) if len(lines) == 1 else None
+    if head is None:
+        raise RuntimeError(f"could not identify the live {PRODUCTION_BRANCH} commit")
+    if head[1] != sha:
+        ancestry = run_git("merge-base", "--is-ancestor", sha, head[1])
+        if ancestry.returncode == 1:
+            raise RuntimeError(f"the selected release SHA must be on remote {PRODUCTION_BRANCH}")
+        if ancestry.returncode != 0:
+            raise RuntimeError(f"could not verify remote {PRODUCTION_BRANCH} ancestry from the local checkout")
 
 
 def normalize_repository(value: str) -> str:
@@ -90,16 +274,20 @@ def require_token(name: str) -> str:
     return token
 
 
-def get_json(url: str, token: str, *, api_version: str) -> tuple[Any, Any]:
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {token}",
-            "User-Agent": "remote-ops-release-preconditions/1",
-            "X-GitHub-Api-Version": api_version,
-        },
-    )
+def signing_inventory_token() -> str:
+    dedicated = "ROW_RELEASE_SIGNING_INVENTORY_TOKEN"
+    return require_token(dedicated if dedicated in os.environ else "GITHUB_TOKEN")
+
+
+def get_json(url: str, token: str | None, *, api_version: str) -> tuple[Any, Any]:
+    request_headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "remote-ops-release-preconditions/1",
+        "X-GitHub-Api-Version": api_version,
+    }
+    if token is not None:
+        request_headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(url, headers=request_headers)
     opener = urllib.request.build_opener(NoRedirect())
     try:
         response = opener.open(request, timeout=60)
@@ -131,11 +319,168 @@ def require_immutable_enabled(api_root: str, repository: str, token: str) -> Non
         raise RuntimeError("repository immutable releases setting is not enabled")
 
 
+def require_signing_secret_inventory(api_root: str, repository: str, token: str) -> None:
+    require_environment_secret_inventory(api_root, repository, "release", RELEASE_SIGNING_SECRETS, token)
+
+
+def read_debian_server_bundle_selection(api_root: str, repository: str, tag: str, token: str) -> tuple[str, str]:
+    name = DEBIAN_SERVER_BUNDLE_VARIABLE
+    value = read_environment_variable(api_root, repository, "release", name, token)
+    match = re.fullmatch(rf"{re.escape(tag)} ([1-9][0-9]*) ([0-9a-f]{{64}})", value) if value is not None else None
+    if match is None:
+        raise RuntimeError(f"{name} must contain {tag}, a positive artifact ID and the reviewed SHA-256")
+    return match[1], match[2]
+
+
+def read_environment_variable(api_root: str, repository: str, environment: str, name: str, token: str) -> str | None:
+    url = f"{api_root}/repos/{repository}/environments/{environment}/variables/{name}"
+    try:
+        payload, _ = get_json(url, token, api_version="2026-03-10")
+    except (RuntimeError, ValueError) as exc:
+        raise RuntimeError(f"could not read {name} in the {environment} environment with Environments read access") from exc
+    value = payload.get("value") if isinstance(payload, dict) and payload.get("name") == name else None
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def require_environment_secret_inventory(
+    api_root: str, repository: str, environment: str, required: set[str] | frozenset[str], token: str,
+) -> None:
+    url = f"{api_root}/repos/{repository}/environments/{environment}/secrets?per_page={MAX_ENVIRONMENT_SECRETS}"
+    try:
+        payload, _ = get_json(url, token, api_version="2026-03-10")
+    except (RuntimeError, ValueError) as exc:
+        raise RuntimeError(f"could not read {environment} secret names with Environments read access") from exc
+    rows = payload.get("secrets") if isinstance(payload, dict) else None
+    count = payload.get("total_count") if isinstance(payload, dict) else None
+    if type(count) is not int or not isinstance(rows, list) or not 0 <= count == len(rows) <= MAX_ENVIRONMENT_SECRETS:
+        raise RuntimeError(f"GitHub returned an incomplete {environment} secret inventory")
+    names = set()
+    for row in rows:
+        name = row.get("name") if isinstance(row, dict) else None
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Z_][A-Z0-9_]*", name):
+            raise RuntimeError(f"GitHub returned malformed {environment} secret metadata")
+        if name in names:
+            raise RuntimeError(f"GitHub returned duplicate {environment} secret names")
+        names.add(name)
+    missing = required - names
+    if missing:
+        label = "missing signing secrets" if environment == "release" else "missing required secrets"
+        raise RuntimeError(f"{label} in the {environment} environment: " + ", ".join(sorted(missing)))
+
+
+def read_deployment_policies(base_url: str, token: str | None) -> set[tuple[str, str]]:
+    policies: set[tuple[str, str]] = set()
+    total = None
+    for page in range(1, MAX_RELEASE_PAGES + 1):
+        payload, _ = get_json(f"{base_url}/deployment-branch-policies?per_page=100&page={page}", token,
+                              api_version="2026-03-10")
+        count = payload.get("total_count") if isinstance(payload, dict) else None
+        rows = payload.get("branch_policies") if isinstance(payload, dict) else None
+        if type(count) is not int or count < 0 or not isinstance(rows, list):
+            raise RuntimeError("GitHub returned malformed deployment policy metadata")
+        if total is None:
+            total = count
+        if count != total or len(rows) != min(100, total - len(policies)):
+            raise RuntimeError("GitHub returned an incomplete deployment policy inventory")
+        for row in rows:
+            kind = row.get("type") if isinstance(row, dict) else None
+            name = row.get("name") if isinstance(row, dict) else None
+            if kind not in ("branch", "tag") or not isinstance(name, str) or not name:
+                raise RuntimeError("GitHub did not identify a deployment policy's ref type and name")
+            policy = (kind, name)
+            if policy in policies:
+                raise RuntimeError("GitHub returned duplicate deployment policies")
+            policies.add(policy)
+        if len(policies) == total:
+            return policies
+    raise RuntimeError("GitHub deployment policy pagination exceeded the safety limit")
+
+
+def require_deployment_environment_policies(api_root: str, repository: str, token: str | None) -> None:
+    required = ("tag", "v*")
+    for environment in DEPLOYMENT_ENVIRONMENTS:
+        base_url = f"{api_root}/repos/{repository}/environments/{environment}"
+        metadata = read_deployment_environment(base_url, environment, token)
+        require_selected_deployment_refs(metadata, environment)
+        policies = read_deployment_policies(base_url, token)
+        if required not in policies:
+            raise RuntimeError(f"the {environment} environment is missing the v* deployment tag policy")
+        if environment == "platform-evidence" and policies != {required}:
+            raise RuntimeError("the platform-evidence environment must allow only the v* deployment tag policy")
+
+
+def read_deployment_environment(base_url: str, environment: str, token: str | None) -> dict[str, Any]:
+    metadata, _ = get_json(base_url, token, api_version="2026-03-10")
+    if not isinstance(metadata, dict) or metadata.get("name") != environment:
+        raise RuntimeError(f"GitHub did not identify the {environment} deployment environment")
+    return metadata
+
+
+def require_selected_deployment_refs(metadata: dict[str, Any], environment: str) -> None:
+    policy = metadata.get("deployment_branch_policy")
+    if (not isinstance(policy, dict) or policy.get("custom_branch_policies") is not True
+            or policy.get("protected_branches") is not False):
+        raise RuntimeError(f"the {environment} environment must use selected deployment branches and tags")
+
+
+def require_parity_environment_readiness(
+    api_root: str, repository: str, tag: str, token: str | None, *, variable_token: str,
+) -> None:
+    require_parity_deployments(api_root, repository, tag, token)
+    variables = {}
+    for environment, names in PROFESSIONAL_ENVIRONMENT_VARIABLES.items():
+        for name in names:
+            value = read_environment_variable(api_root, repository, environment, name, variable_token)
+            if value is None:
+                raise RuntimeError(f"{name} in the {environment} environment must have a nonempty value")
+            variables[name] = value
+
+    from scripts.check_moba_professional_deployment_evidence import validate_professional_variables
+
+    validate_professional_variables(variables)
+
+
+def require_parity_deployments(api_root: str, repository: str, tag: str, token: str | None) -> None:
+    errors = []
+    for environment in (*NATIVE_PARITY_ENVIRONMENTS, PROFESSIONAL_REVIEW_ENVIRONMENT):
+        base_url = f"{api_root}/repos/{repository}/environments/{environment}"
+        try:
+            check_parity_deployment(base_url, environment, tag, token)
+        except (RuntimeError, ValueError) as exc:
+            errors.append(f"{environment}: {exc}")
+    if errors:
+        raise RuntimeError("\n".join(errors))
+
+
+def check_parity_deployment(base_url: str, environment: str, tag: str, token: str | None) -> None:
+    metadata = read_deployment_environment(base_url, environment, token)
+    rules = metadata.get("protection_rules")
+    review_rules = [
+        rule for rule in (rules if isinstance(rules, list) else [])
+        if isinstance(rule, dict) and rule.get("type") == "required_reviewers"
+    ]
+    reviewers = review_rules[0].get("reviewers") if len(review_rules) == 1 else None
+    if not isinstance(reviewers, list) or not reviewers:
+        raise RuntimeError(f"the {environment} environment must require deployment reviewers")
+    for row in reviewers:
+        identity = row.get("reviewer") if isinstance(row, dict) and row.get("type") in ("User", "Team") else None
+        identifier = identity.get("id") if isinstance(identity, dict) else None
+        if type(identifier) is not int or identifier < 1:
+            raise RuntimeError(f"GitHub returned malformed required reviewer metadata for {environment}")
+    if environment in NATIVE_PARITY_ENVIRONMENTS:
+        require_selected_deployment_refs(metadata, environment)
+        policies = read_deployment_policies(base_url, token)
+        if not ({("tag", "v*"), ("tag", tag)} & policies) or any(kind != "tag" for kind, _ in policies):
+            raise RuntimeError(f"the {environment} environment must allow {tag} through a tag-only deployment policy")
+
+
 def require_unused_namespace(
     api_root: str,
     repository: str,
     tag: str,
     token: str,
+    *,
+    require_push: bool = False,
 ) -> None:
     repository_url = f"{api_root}/repos/{repository}"
     metadata, _ = get_json(repository_url, token, api_version="2022-11-28")
@@ -151,6 +496,9 @@ def require_unused_namespace(
         or repository_id < 1
     ):
         raise RuntimeError("GitHub repository API did not identify the requested repository")
+    permissions = metadata.get("permissions")
+    if require_push and (not isinstance(permissions, dict) or permissions.get("push") is not True):
+        raise RuntimeError("GITHUB_TOKEN must demonstrate repository push access so draft releases are visible")
 
     base_url = f"{repository_url}/releases"
     # GitHub can return numeric repository paths in pagination links.

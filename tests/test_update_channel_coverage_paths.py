@@ -77,6 +77,7 @@ def _manifest_document():
 
 
 def test_optional_signature_key_id_is_validated_and_original_document_retained(monkeypatch):
+    monkeypatch.setattr(channel, "__version__", "1.0.27")
     document = _manifest_document()
     document["signature"]["key_id"] = "synthetic-rotation-key"
     payload = channel.canonical_update_manifest_payload(document)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from remote_ops_workspace import cli
+from remote_ops_workspace import cli, cli_managed_runtime
 from remote_ops_workspace.process_status import ProcessIdentityError, ProcessStatusError
 
 
@@ -22,7 +22,7 @@ def test_verified_shutdown_failure_is_reported_at_cli_boundary(command, handler,
         calls.append((args, kwargs))
         raise error
 
-    monkeypatch.setattr(cli, handler, refuse)
+    monkeypatch.setattr(cli_managed_runtime, handler, refuse)
     assert cli.main(command) == 1
     assert len(calls) == 1
     output = capsys.readouterr()

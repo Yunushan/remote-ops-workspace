@@ -1,5 +1,6 @@
 import os
 import stat
+from pathlib import Path
 
 import pytest
 
@@ -12,6 +13,7 @@ from remote_ops_workspace.file_safety import (
     write_json_atomic,
     write_text_atomic,
 )
+from scripts.release_evidence_file import replace_evidence_file
 
 
 def test_write_json_atomic_replaces_content_and_cleans_temporary_files(tmp_path) -> None:
@@ -157,6 +159,134 @@ def test_private_write_retains_secure_recovery_copy_when_restore_is_denied(tmp_p
         assert stat.S_IMODE(recovery[0].stat().st_mode) == PRIVATE_FILE_MODE
 
 
+@pytest.mark.parametrize("outcome", ["restored", "persistent-denial", "changed-destination"])
+def test_private_rollback_rechecks_identity_after_windows_permission_error(tmp_path, monkeypatch, outcome):
+    path = tmp_path / "profiles.json"
+    write_bytes_atomic(path, b"old-private-state", private=True)
+    original_chmod = file_safety._chmod_required
+    original_replace = file_safety.os.replace
+    attempts = []
+    delays = []
+
+    def denied_final_permissions(target, mode):
+        if target == path:
+            raise PermissionError("final permissions denied")
+        original_chmod(target, mode)
+
+    def delayed_restore(source, destination):
+        if ".rollback." in Path(source).name:
+            attempts.append(source)
+            if len(attempts) == 1 or outcome == "persistent-denial":
+                error = PermissionError("rollback rename denied")
+                error.winerror = 5
+                raise error
+        original_replace(source, destination)
+
+    def wait_for_retry(delay):
+        delays.append(delay)
+        if outcome == "changed-destination":
+            replacement = tmp_path / "independent"
+            replacement.write_bytes(b"independent-state")
+            original_replace(replacement, path)
+
+    monkeypatch.setattr(file_safety, "_chmod_required", denied_final_permissions)
+    monkeypatch.setattr(file_safety.os, "replace", delayed_restore)
+    monkeypatch.setattr(file_safety, "sleep", wait_for_retry)
+    error = {
+        "restored": "final permissions denied",
+        "persistent-denial": "rollback rename denied",
+        "changed-destination": "private artifact changed before rollback",
+    }
+    with pytest.raises(OSError, match=error[outcome]):
+        write_bytes_atomic(path, b"new-private-state", private=True)
+
+    recovery = list(tmp_path.glob(".*.rollback.*.tmp"))
+    if outcome == "restored":
+        assert path.read_bytes() == b"old-private-state"
+        assert len(attempts) == 2 and len(delays) == 1
+        assert not recovery
+    else:
+        assert len(recovery) == 1 and recovery[0].read_bytes() == b"old-private-state"
+        if outcome == "changed-destination":
+            assert path.read_bytes() == b"independent-state"
+            assert len(attempts) == 1 and len(delays) == 1
+        else:
+            assert len(attempts) == len(delays) + 1 == 6
+
+
+@pytest.mark.parametrize("outcome", ["installed", "persistent-denial", "changed-destination", "claimed-destination", "changed-staged"])
+def test_private_installation_rechecks_files_after_windows_permission_error(tmp_path, monkeypatch, outcome):
+    path = tmp_path / "profiles.json"
+    if outcome != "claimed-destination":
+        write_bytes_atomic(path, b"old-private-state", private=True)
+    original_replace = file_safety.os.replace
+    attempts = []
+
+    def delayed_install(source, destination):
+        attempts.append(Path(source))
+        if len(attempts) == 1 or outcome == "persistent-denial":
+            error = PermissionError("rename denied")
+            error.winerror = 5
+            raise error
+        original_replace(source, destination)
+
+    def wait_for_retry(_delay):
+        if outcome in {"changed-destination", "claimed-destination", "changed-staged"}:
+            replacement = tmp_path / "independent"
+            replacement.write_bytes(b"independent-state")
+            original_replace(replacement, attempts[0] if outcome == "changed-staged" else path)
+
+    monkeypatch.setattr(file_safety.os, "replace", delayed_install)
+    monkeypatch.setattr(file_safety, "sleep", wait_for_retry)
+    errors = {
+        "persistent-denial": "rename denied",
+        "changed-destination": "private destination changed",
+        "claimed-destination": "private destination changed",
+        "changed-staged": "staged private file changed",
+    }
+    if outcome == "installed":
+        write_bytes_atomic(path, b"new-private-state", private=True)
+        assert path.read_bytes() == b"new-private-state"
+        assert len(attempts) == 2
+    else:
+        with pytest.raises(OSError, match=errors[outcome]):
+            write_bytes_atomic(path, b"new-private-state", private=True)
+        expected = b"independent-state" if outcome in {"changed-destination", "claimed-destination"} else b"old-private-state"
+        assert path.read_bytes() == expected
+        assert len(attempts) == (6 if outcome == "persistent-denial" else 1)
+    assert list(tmp_path.glob(".*.rollback.*.tmp")) == []
+    if outcome == "changed-staged":
+        assert attempts[0].read_bytes() == b"independent-state"
+    else:
+        assert not list(tmp_path.glob(".*.tmp"))
+
+
+def test_private_installation_preserves_primary_error_when_own_staging_cleanup_fails(tmp_path, monkeypatch):
+    path = tmp_path / "profiles.json"
+    write_bytes_atomic(path, b"old-private-state", private=True)
+    original_unlink = file_safety.Path.unlink
+    refused = []
+
+    def reject_install(source, destination):
+        assert destination == path
+        refused.append(Path(source))
+        raise PermissionError("replace denied")
+
+    def reject_staging_cleanup(target, *args, **kwargs):
+        if refused and target == refused[0]:
+            raise OSError("staging cleanup denied")
+        return original_unlink(target, *args, **kwargs)
+
+    monkeypatch.setattr(file_safety.os, "replace", reject_install)
+    monkeypatch.setattr(file_safety.Path, "unlink", reject_staging_cleanup)
+    with pytest.raises(PermissionError, match="replace denied"):
+        write_bytes_atomic(path, b"new-private-state", private=True)
+    assert path.read_bytes() == b"old-private-state"
+    assert len(refused) == 1
+    assert refused[0].read_bytes() == b"new-private-state"
+    assert not list(tmp_path.glob(".*.rollback.*.tmp"))
+
+
 def test_private_write_rejects_recovery_after_destination_identity_changes(tmp_path, monkeypatch) -> None:
     path = tmp_path / "profiles.json"
     replacement = tmp_path / "other.json"
@@ -190,7 +320,7 @@ def test_private_write_rejects_changed_recovery_copy(tmp_path, monkeypatch) -> N
             recovery = next(tmp_path.glob(".*.rollback.*.tmp"))
             replacement = tmp_path / "replacement"
             replacement.write_bytes(b"foreign-state")
-            file_safety.os.replace(replacement, recovery)
+            replace_evidence_file(replacement, recovery)
             raise PermissionError("final permissions denied")
         original_chmod(target, mode)
 

@@ -12,30 +12,76 @@ from pathlib import Path
 from . import __version__
 from .audit import append_event
 from .broadcast import BroadcastResult, build_broadcast_plans, run_broadcast
-from .doctor import run_doctor
-from .enterprise_policy import assert_profile_launch_allowed
-from .features import coverage_report, feature_summary, load_feature_manifest
-from .file_safety import write_text_atomic
-from .file_transfer import (
-    SftpBatchPlan,
-    SftpQueuePlan,
-    SftpQueueResult,
-    build_sftp_get_plan,
-    build_sftp_interactive_plan,
-    build_sftp_list_plan,
-    build_sftp_mkdir_plan,
-    build_sftp_put_plan,
-    build_sftp_queue_plan,
-    build_sftp_remote_preview_plan,
-    build_sftp_rename_plan,
-    build_sftp_rm_plan,
-    build_sftp_rmdir_plan,
-    parse_transfer_item_spec,
-    preview_local_path,
-    run_sftp_batch,
-    run_sftp_interactive,
-    run_sftp_queue,
+from .cli_customizer import add_customizer_commands
+from .cli_customizer import cmd_customizer_build as cmd_customizer_build
+from .cli_customizer import cmd_customizer_deployment_plan as cmd_customizer_deployment_plan
+from .cli_customizer import cmd_customizer_evidence_bundle as cmd_customizer_evidence_bundle
+from .cli_customizer import cmd_customizer_evidence_verify as cmd_customizer_evidence_verify
+from .cli_customizer import cmd_customizer_update_stage as cmd_customizer_update_stage
+from .cli_customizer import (
+    cmd_customizer_update_stage_recover as cmd_customizer_update_stage_recover,
 )
+from .cli_customizer import cmd_customizer_update_verify as cmd_customizer_update_verify
+from .cli_input import secret_from_env as _secret_from_env
+from .cli_managed_runtime import add_managed_runtime_commands
+from .cli_managed_runtime import cmd_servers_bundle_runtime as cmd_servers_bundle_runtime
+from .cli_managed_runtime import cmd_servers_config_plan as cmd_servers_config_plan
+from .cli_managed_runtime import cmd_servers_evidence_verify as cmd_servers_evidence_verify
+from .cli_managed_runtime import cmd_servers_ftp_runtime as cmd_servers_ftp_runtime
+from .cli_managed_runtime import cmd_servers_http_runtime as cmd_servers_http_runtime
+from .cli_managed_runtime import cmd_servers_runtime_status as cmd_servers_runtime_status
+from .cli_managed_runtime import cmd_servers_start as cmd_servers_start
+from .cli_managed_runtime import cmd_servers_status as cmd_servers_status
+from .cli_managed_runtime import cmd_servers_stop as cmd_servers_stop
+from .cli_managed_runtime import cmd_x11_bundle_runtime as cmd_x11_bundle_runtime
+from .cli_managed_runtime import cmd_x11_evidence_verify as cmd_x11_evidence_verify
+from .cli_managed_runtime import cmd_x11_package_status as cmd_x11_package_status
+from .cli_managed_runtime import cmd_x11_smoke as cmd_x11_smoke
+from .cli_managed_runtime import cmd_x11_start as cmd_x11_start
+from .cli_managed_runtime import cmd_x11_status as cmd_x11_status
+from .cli_managed_runtime import cmd_x11_stop as cmd_x11_stop
+from .cli_reports import cmd_doctor, cmd_features, cmd_platforms
+from .cli_text import add_text_commands
+from .cli_text import cmd_text_diff as cmd_text_diff
+from .cli_text import cmd_text_evidence_bundle as cmd_text_evidence_bundle
+from .cli_text import cmd_text_evidence_verify as cmd_text_evidence_verify
+from .cli_text import cmd_text_open_remote as cmd_text_open_remote
+from .cli_text import cmd_text_preview as cmd_text_preview
+from .cli_text import cmd_text_remote_plan as cmd_text_remote_plan
+from .cli_text import cmd_text_save_review as cmd_text_save_review
+from .cli_text import cmd_text_write as cmd_text_write
+from .cli_transfers import add_transfer_commands
+from .cli_transfers import cmd_files_get as cmd_files_get
+from .cli_transfers import cmd_files_ls as cmd_files_ls
+from .cli_transfers import cmd_files_mkdir as cmd_files_mkdir
+from .cli_transfers import cmd_files_open as cmd_files_open
+from .cli_transfers import cmd_files_preview_local as cmd_files_preview_local
+from .cli_transfers import cmd_files_preview_remote as cmd_files_preview_remote
+from .cli_transfers import cmd_files_put as cmd_files_put
+from .cli_transfers import cmd_files_queue as cmd_files_queue
+from .cli_transfers import cmd_files_rename as cmd_files_rename
+from .cli_transfers import cmd_files_rm as cmd_files_rm
+from .cli_transfers import cmd_files_rmdir as cmd_files_rmdir
+from .cli_transfers import cmd_ssh_browser_columns as cmd_ssh_browser_columns
+from .cli_transfers import cmd_ssh_browser_location as cmd_ssh_browser_location
+from .cli_transfers import cmd_ssh_browser_open_plan as cmd_ssh_browser_open_plan
+from .cli_transfers import cmd_ssh_browser_overwrite as cmd_ssh_browser_overwrite
+from .cli_transfers import cmd_ssh_browser_status as cmd_ssh_browser_status
+from .cli_workspace import _print_team_sync_snapshot as _print_team_sync_snapshot
+from .cli_workspace import _team_sync_client as _team_sync_client
+from .cli_workspace import _workspace_backup_passphrase as _workspace_backup_passphrase
+from .cli_workspace import add_workspace_commands
+from .cli_workspace import cmd_export as cmd_export
+from .cli_workspace import cmd_import as cmd_import
+from .cli_workspace import cmd_sync_pull as cmd_sync_pull
+from .cli_workspace import cmd_sync_push as cmd_sync_push
+from .cli_workspace import cmd_team_sync_pull as cmd_team_sync_pull
+from .cli_workspace import cmd_team_sync_push as cmd_team_sync_push
+from .cli_workspace import cmd_team_sync_status as cmd_team_sync_status
+from .cli_workspace import cmd_workspace_backup as cmd_workspace_backup
+from .cli_workspace import cmd_workspace_restore as cmd_workspace_restore
+from .enterprise_policy import assert_profile_launch_allowed
+from .file_safety import write_text_atomic
 from .first_run import first_run_json, first_run_payload, format_first_run
 from .keys import build_keygen_plan, run_keygen
 from .launcher import LauncherError, launch
@@ -48,16 +94,6 @@ from .layouts import (
     run_layout_terminal_plans,
 )
 from .logging_setup import configure_logging
-from .moba_customizer import (
-    REQUIRED_POLICY_SURFACES,
-    build_moba_professional_customizer_plan,
-    build_professional_deployment_evidence_bundle_plan,
-    build_professional_deployment_plan,
-    validate_professional_deployment_evidence,
-    validate_professional_update_manifest,
-    write_moba_professional_customizer_bundle,
-    write_professional_deployment_evidence_bundle,
-)
 from .moba_macros import (
     MobaMacroStore,
     build_macro_gui_capture_plan,
@@ -79,18 +115,6 @@ from .moba_mobapt import (
     validate_mobapt_cache_evidence,
     write_mobapt_runtime_bundle,
 )
-from .moba_servers import (
-    SERVER_DEFAULT_PORTS,
-    build_moba_server_config_plan,
-    build_moba_server_plan,
-    build_moba_server_runtime_bundle_plan,
-    build_moba_server_runtime_status,
-    build_moba_server_suite_status,
-    start_moba_server,
-    stop_moba_server,
-    validate_moba_server_release_evidence,
-    write_moba_server_runtime_bundle,
-)
 from .moba_smartcards import (
     MobaSmartCardCertificate,
     build_mobagent_smartcard_plan,
@@ -101,28 +125,9 @@ from .moba_smartcards import (
     validate_smartcard_release_evidence,
     write_smartcard_release_evidence_bundle,
 )
-from .moba_ssh_browser import (
-    build_moba_ssh_browser_open_plan,
-    load_moba_ssh_browser_preferences,
-    review_moba_ssh_browser_overwrite,
-    update_moba_ssh_browser_columns,
-    update_moba_ssh_browser_location,
-)
-from .moba_text import (
-    build_moba_text_editor_tab_plan,
-    build_moba_text_release_evidence_bundle_plan,
-    build_remote_text_edit_plan,
-    diff_text_documents,
-    preview_text_document,
-    review_moba_remote_text_save,
-    validate_moba_text_release_evidence,
-    write_moba_text_release_evidence_bundle,
-    write_text_document,
-)
 from .models import Profile, Tunnel
 from .network_tools import build_network_tool_plan, check_tcp_port, run_network_tool
-from .paths import data_dir, ensure_data_dir
-from .platform_targets import load_platform_targets
+from .paths import ensure_data_dir
 from .plugin_dev import (
     DEFAULT_PLUGIN_CHECK_HOST,
     DEFAULT_PLUGIN_CHECK_USERNAME,
@@ -133,25 +138,10 @@ from .plugin_dev import (
 )
 from .plugins import load_plugin_registry
 from .process_status import ProcessStatusError
-from .profile_importers import SUPPORTED_IMPORT_FORMATS, import_profiles_into_store
 from .snippets import Snippet, SnippetStore, run_snippet
 from .storage import ProfileStore
-from .sync import BackupService, DirectorySyncProvider
-from .team_sync import TeamSyncBackend, TeamSyncClient
 from .vault import LocalVault, VaultBackendUnavailable, VaultError, prompt_passphrase
 from .web_server import serve_web
-from .x11 import (
-    build_moba_x_server_package_status,
-    build_moba_x_server_plan,
-    build_moba_x_server_runtime_bundle_plan,
-    build_moba_x_server_status,
-    run_moba_x_server_smoke,
-    start_moba_x_server,
-    stop_moba_x_server,
-    validate_moba_x_server_release_evidence,
-    write_moba_x_server_runtime_bundle,
-    write_moba_x_server_smoke_evidence,
-)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -277,143 +267,7 @@ def build_parser() -> argparse.ArgumentParser:
     plugins_scaffold.add_argument("--json", action="store_true")
     plugins_scaffold.set_defaults(func=cmd_plugins_scaffold)
 
-    customizer = sub.add_parser("customizer", help="build enterprise customization bundles")
-    customizer_sub = customizer.add_subparsers(required=True)
-    customizer_build = customizer_sub.add_parser(
-        "build",
-        help="build a MobaXterm Professional Customizer-style ROW enterprise bundle",
-    )
-    customizer_build.add_argument("--out", required=True, type=Path)
-    customizer_build.add_argument("--brand-name", required=True)
-    customizer_build.add_argument("--organization", default="")
-    welcome_source = customizer_build.add_mutually_exclusive_group()
-    welcome_source.add_argument("--welcome-message")
-    welcome_source.add_argument("--welcome-file", type=Path)
-    customizer_build.add_argument("--logo", type=Path)
-    customizer_build.add_argument("--settings", type=Path)
-    customizer_build.add_argument("--profiles", type=Path)
-    customizer_build.add_argument("--policy", type=Path)
-    customizer_build.add_argument(
-        "--lock-setting",
-        action="append",
-        default=[],
-        help="force an enterprise setting value as key=value",
-    )
-    customizer_build.add_argument("--force", action="store_true")
-    customizer_build.add_argument("--json", action="store_true")
-    customizer_build.set_defaults(func=cmd_customizer_build)
-    customizer_deployment = customizer_sub.add_parser(
-        "deployment-plan",
-        help="plan Professional-style installer branding, policy locks and update channels",
-    )
-    customizer_deployment.add_argument("--brand-name", required=True)
-    customizer_deployment.add_argument("--organization", default="")
-    customizer_deployment.add_argument("--version", default=__version__)
-    customizer_deployment.add_argument("--logo", type=Path)
-    customizer_deployment.add_argument("--policy", type=Path)
-    customizer_deployment.add_argument(
-        "--lock-setting",
-        action="append",
-        default=[],
-        help="force an enterprise setting value as key=value",
-    )
-    customizer_deployment.add_argument("--update-url", required=True)
-    customizer_deployment.add_argument("--update-public-key", required=True)
-    customizer_deployment.add_argument("--update-channel", default="stable")
-    customizer_deployment.add_argument("--update-interval-hours", type=int, default=24)
-    customizer_deployment.add_argument("--rollout-ring", default="enterprise")
-    customizer_deployment.add_argument(
-        "--surface",
-        action="append",
-        default=[],
-        help="policy enforcement surface; defaults to CLI, GUI, Web, profile editor, quick connect and launcher",
-    )
-    customizer_deployment.add_argument("--json", action="store_true")
-    customizer_deployment.set_defaults(func=cmd_customizer_deployment_plan)
-    customizer_evidence_bundle = customizer_sub.add_parser(
-        "evidence-bundle",
-        help="assemble Professional-style deployment release evidence",
-    )
-    customizer_evidence_bundle.add_argument("--brand-name", required=True)
-    customizer_evidence_bundle.add_argument("--organization", default="")
-    customizer_evidence_bundle.add_argument("--version", default=__version__)
-    customizer_evidence_bundle.add_argument("--logo", type=Path)
-    customizer_evidence_bundle.add_argument("--policy", type=Path)
-    customizer_evidence_bundle.add_argument(
-        "--lock-setting",
-        action="append",
-        default=[],
-        help="force an enterprise setting value as key=value",
-    )
-    customizer_evidence_bundle.add_argument("--update-url", required=True)
-    customizer_evidence_bundle.add_argument("--update-public-key", required=True)
-    customizer_evidence_bundle.add_argument("--update-channel", default="stable")
-    customizer_evidence_bundle.add_argument("--update-interval-hours", type=int, default=24)
-    customizer_evidence_bundle.add_argument("--rollout-ring", default="enterprise")
-    customizer_evidence_bundle.add_argument("--out-dir", required=True, type=Path)
-    customizer_evidence_bundle.add_argument("--bundle-manifest-evidence", required=True, type=Path)
-    customizer_evidence_bundle.add_argument("--installer-evidence", required=True, type=Path)
-    customizer_evidence_bundle.add_argument("--policy-evidence", required=True, type=Path)
-    customizer_evidence_bundle.add_argument("--update-evidence", required=True, type=Path)
-    customizer_evidence_bundle.add_argument("--update-manifest", required=True, type=Path)
-    customizer_evidence_bundle.add_argument("--update-assets-dir", type=Path)
-    customizer_evidence_bundle.add_argument("--bundle-manifest-sha256", required=True)
-    customizer_evidence_bundle.add_argument("--release-target", default="windows-x64")
-    customizer_evidence_bundle.add_argument("--bundle-command", default="")
-    customizer_evidence_bundle.add_argument("--installer-command", default="")
-    customizer_evidence_bundle.add_argument("--policy-command", default="")
-    customizer_evidence_bundle.add_argument("--update-command", default="")
-    customizer_evidence_bundle.add_argument("--sha256s-present", action="store_true")
-    customizer_evidence_bundle.add_argument("--windows-exe-rebranded", action="store_true")
-    customizer_evidence_bundle.add_argument("--windows-msi-rebranded", action="store_true")
-    customizer_evidence_bundle.add_argument("--product-name-matches-brand", action="store_true")
-    customizer_evidence_bundle.add_argument("--logo-applied", action="store_true")
-    customizer_evidence_bundle.add_argument(
-        "--surface-passed",
-        action="append",
-        default=[],
-        choices=REQUIRED_POLICY_SURFACES,
-        help="policy surface proven by release evidence",
-    )
-    customizer_evidence_bundle.add_argument(
-        "--all-policy-surfaces-passed",
-        action="store_true",
-        help="mark CLI, GUI, Web, profile editor, quick connect and launcher policy checks as passed",
-    )
-    customizer_evidence_bundle.add_argument("--https-update-url", action="store_true")
-    customizer_evidence_bundle.add_argument("--signature-verified", action="store_true")
-    customizer_evidence_bundle.add_argument("--organization-channel", action="store_true")
-    customizer_evidence_bundle.add_argument("--json", action="store_true")
-    customizer_evidence_bundle.set_defaults(func=cmd_customizer_evidence_bundle)
-    customizer_evidence = customizer_sub.add_parser(
-        "evidence-verify",
-        help="verify Professional-style deployment release evidence",
-    )
-    customizer_evidence.add_argument("--evidence", required=True, type=Path)
-    customizer_evidence.add_argument("--assets-dir", type=Path)
-    customizer_evidence.add_argument("--json", action="store_true")
-    customizer_evidence.set_defaults(func=cmd_customizer_evidence_verify)
-    customizer_update = customizer_sub.add_parser(
-        "update-verify",
-        help="verify a Professional-style signed update-channel manifest",
-    )
-    customizer_update.add_argument("--manifest", required=True, type=Path)
-    customizer_update.add_argument("--public-key", required=True)
-    customizer_update.add_argument("--channel", default="")
-    customizer_update.add_argument("--organization", default="")
-    customizer_update.add_argument("--assets-dir", type=Path)
-    customizer_update.add_argument("--json", action="store_true")
-    customizer_update.set_defaults(func=cmd_customizer_update_verify)
-
-    for command, handler, description in (
-        ("update-stage", cmd_customizer_update_stage, "authenticate and stage the complete signed update asset set"),
-        ("update-stage-recover", cmd_customizer_update_stage_recover, "reverify an interrupted complete update stage; never install"),
-    ):
-        updater = customizer_sub.add_parser(command, help=description)
-        updater.add_argument("--policy", required=True, type=Path)
-        updater.add_argument("--stage", required=True, type=Path)
-        updater.add_argument("--json", action="store_true")
-        updater.set_defaults(func=handler)
+    add_customizer_commands(sub)
 
     snippet = sub.add_parser("snippet", help="manage reusable snippets and macros")
     snip_sub = snippet.add_subparsers(required=True)
@@ -569,109 +423,7 @@ def build_parser() -> argparse.ArgumentParser:
     broadcast.add_argument("--dry-run", action="store_true")
     broadcast.set_defaults(func=cmd_broadcast)
 
-    files = sub.add_parser("files", help="browse and transfer files through SSH/SFTP profiles")
-    files_sub = files.add_subparsers(required=True)
-    files_open = files_sub.add_parser("open", help="open an interactive SFTP browser")
-    files_open.add_argument("profile")
-    files_open.add_argument("--dry-run", action="store_true")
-    files_open.set_defaults(func=cmd_files_open)
-    files_ls = files_sub.add_parser("ls", help="list a remote directory")
-    files_ls.add_argument("profile")
-    files_ls.add_argument("remote", nargs="?", default=".")
-    files_ls.add_argument("--dry-run", action="store_true")
-    files_ls.set_defaults(func=cmd_files_ls)
-    files_get = files_sub.add_parser("get", help="download a remote file or directory")
-    files_get.add_argument("profile")
-    files_get.add_argument("remote")
-    files_get.add_argument("--local", type=Path)
-    files_get.add_argument("--recursive", action="store_true")
-    files_get.add_argument("--force", action="store_true", help="allow overwriting an existing local target")
-    files_get.add_argument("--dry-run", action="store_true")
-    files_get.set_defaults(func=cmd_files_get)
-    files_put = files_sub.add_parser("put", help="upload a local file or directory")
-    files_put.add_argument("profile")
-    files_put.add_argument("local", type=Path)
-    files_put.add_argument("--remote")
-    files_put.add_argument("--recursive", action="store_true")
-    files_put.add_argument("--force", action="store_true", help="acknowledge remote overwrite risk")
-    files_put.add_argument("--dry-run", action="store_true")
-    files_put.set_defaults(func=cmd_files_put)
-    files_mkdir = files_sub.add_parser("mkdir", help="create a remote directory")
-    files_mkdir.add_argument("profile")
-    files_mkdir.add_argument("remote")
-    files_mkdir.add_argument("--dry-run", action="store_true")
-    files_mkdir.set_defaults(func=cmd_files_mkdir)
-    files_rm = files_sub.add_parser("rm", help="remove a remote file")
-    files_rm.add_argument("profile")
-    files_rm.add_argument("remote")
-    files_rm.add_argument("--force", action="store_true", help="confirm remote deletion")
-    files_rm.add_argument("--dry-run", action="store_true")
-    files_rm.set_defaults(func=cmd_files_rm)
-    files_rmdir = files_sub.add_parser("rmdir", help="remove a remote directory")
-    files_rmdir.add_argument("profile")
-    files_rmdir.add_argument("remote")
-    files_rmdir.add_argument("--force", action="store_true", help="confirm remote directory deletion")
-    files_rmdir.add_argument("--dry-run", action="store_true")
-    files_rmdir.set_defaults(func=cmd_files_rmdir)
-    files_rename = files_sub.add_parser("rename", help="rename a remote path")
-    files_rename.add_argument("profile")
-    files_rename.add_argument("old")
-    files_rename.add_argument("new")
-    files_rename.add_argument("--force", action="store_true", help="confirm remote rename or replace risk")
-    files_rename.add_argument("--dry-run", action="store_true")
-    files_rename.set_defaults(func=cmd_files_rename)
-    files_queue = files_sub.add_parser("queue", help="run or inspect a queued SFTP transfer batch")
-    files_queue.add_argument("profile")
-    files_queue.add_argument(
-        "--op",
-        action="append",
-        required=True,
-        help='queued operation such as "get /etc/hosts ./hosts", "put ./build.tar.gz /tmp/build.tar.gz", "mkdir /tmp/x", or "rename old new"',
-    )
-    files_queue.add_argument("--force", action="store_true", help="allow destructive queue items during execution")
-    files_queue.add_argument("--dry-run", action="store_true")
-    files_queue.add_argument("--json", action="store_true")
-    files_queue.set_defaults(func=cmd_files_queue)
-    files_preview_local = files_sub.add_parser("preview-local", help="preview local file or directory metadata")
-    files_preview_local.add_argument("path", type=Path)
-    files_preview_local.add_argument("--bytes", type=int, default=4096)
-    files_preview_local.add_argument("--entries", type=int, default=50)
-    files_preview_local.add_argument("--json", action="store_true")
-    files_preview_local.set_defaults(func=cmd_files_preview_local)
-    files_preview_remote = files_sub.add_parser("preview-remote", help="preview a remote path through SFTP ls")
-    files_preview_remote.add_argument("profile")
-    files_preview_remote.add_argument("remote", nargs="?", default=".")
-    files_preview_remote.add_argument("--dry-run", action="store_true")
-    files_preview_remote.add_argument("--json", action="store_true")
-    files_preview_remote.set_defaults(func=cmd_files_preview_remote)
-
-    ssh_browser = sub.add_parser("ssh-browser", help="manage MobaXterm-style SSH-browser state")
-    ssh_browser_sub = ssh_browser.add_subparsers(required=True)
-    ssh_browser_status = ssh_browser_sub.add_parser("status", help="show saved SSH-browser location and column state")
-    ssh_browser_status.add_argument("--json", action="store_true")
-    ssh_browser_status.set_defaults(func=cmd_ssh_browser_status)
-    ssh_browser_location = ssh_browser_sub.add_parser("location", help="set SSH-browser startup location")
-    ssh_browser_location.add_argument("location", choices=["side-by-side", "below-terminal", "hidden"])
-    ssh_browser_location.add_argument("--json", action="store_true")
-    ssh_browser_location.set_defaults(func=cmd_ssh_browser_location)
-    ssh_browser_columns = ssh_browser_sub.add_parser("columns", help="persist SSH-browser column widths")
-    ssh_browser_columns.add_argument("--name", type=int)
-    ssh_browser_columns.add_argument("--size", type=int)
-    ssh_browser_columns.add_argument("--modified", type=int)
-    ssh_browser_columns.add_argument("--json", action="store_true")
-    ssh_browser_columns.set_defaults(func=cmd_ssh_browser_columns)
-    ssh_browser_open = ssh_browser_sub.add_parser("open-plan", help="show same-parameter SFTP browser open plan")
-    ssh_browser_open.add_argument("profile")
-    ssh_browser_open.add_argument("--json", action="store_true")
-    ssh_browser_open.set_defaults(func=cmd_ssh_browser_open_plan)
-    ssh_browser_overwrite = ssh_browser_sub.add_parser("overwrite", help="review upload/download overwrite confirmation")
-    ssh_browser_overwrite.add_argument("action", choices=["upload", "download"])
-    ssh_browser_overwrite.add_argument("source")
-    ssh_browser_overwrite.add_argument("destination")
-    ssh_browser_overwrite.add_argument("--destination-exists", action="store_true")
-    ssh_browser_overwrite.add_argument("--force", action="store_true")
-    ssh_browser_overwrite.add_argument("--json", action="store_true")
-    ssh_browser_overwrite.set_defaults(func=cmd_ssh_browser_overwrite)
+    add_transfer_commands(sub)
 
     smartcard = sub.add_parser("smartcard", help="manage MobaXterm 26.4-style SSH smart-card workflows")
     smartcard_sub = smartcard.add_subparsers(required=True)
@@ -767,94 +519,7 @@ def build_parser() -> argparse.ArgumentParser:
     smartcard_evidence.add_argument("--json", action="store_true")
     smartcard_evidence.set_defaults(func=cmd_smartcard_evidence_verify)
 
-    text = sub.add_parser("text", help="preview, edit and diff local or SFTP-staged text files")
-    text_sub = text.add_subparsers(required=True)
-    text_preview = text_sub.add_parser("preview", help="preview a local text file with hash evidence")
-    text_preview.add_argument("path", type=Path)
-    text_preview.add_argument("--bytes", type=int, default=65536)
-    text_preview.add_argument("--lines", type=int, default=200)
-    text_preview.add_argument("--encoding", default="utf-8")
-    text_preview.add_argument("--json", action="store_true")
-    text_preview.set_defaults(func=cmd_text_preview)
-    text_write = text_sub.add_parser("write", help="write a local text file with guardrails and optional backup")
-    text_write.add_argument("path", type=Path)
-    text_source = text_write.add_mutually_exclusive_group(required=True)
-    text_source.add_argument("--text")
-    text_source.add_argument("--text-file", type=Path)
-    text_write.add_argument("--create", action="store_true")
-    text_write.add_argument("--force", action="store_true")
-    text_write.add_argument("--expected-sha256")
-    text_write.add_argument("--no-backup", action="store_true")
-    text_write.add_argument("--encoding", default="utf-8")
-    text_write.add_argument("--json", action="store_true")
-    text_write.set_defaults(func=cmd_text_write)
-    text_diff = text_sub.add_parser("diff", help="show a unified diff between two local text files")
-    text_diff.add_argument("left", type=Path)
-    text_diff.add_argument("right", type=Path)
-    text_diff.add_argument("--context", type=int, default=3)
-    text_diff.add_argument("--encoding", default="utf-8")
-    text_diff.add_argument("--json", action="store_true")
-    text_diff.set_defaults(func=cmd_text_diff)
-    text_remote = text_sub.add_parser("remote-plan", help="build SFTP get/put plans for editing a remote text file")
-    text_remote.add_argument("profile")
-    text_remote.add_argument("remote")
-    text_remote.add_argument("--local", type=Path)
-    text_remote.add_argument("--json", action="store_true")
-    text_remote.set_defaults(func=cmd_text_remote_plan)
-    text_open_remote = text_sub.add_parser(
-        "open-remote",
-        help="build a connected SFTP-browser editor-tab plan for a remote text file",
-    )
-    text_open_remote.add_argument("profile")
-    text_open_remote.add_argument("remote")
-    text_open_remote.add_argument("--local", type=Path)
-    text_open_remote.add_argument("--remote-sha256", default="")
-    text_open_remote.add_argument("--encoding", default="utf-8")
-    text_open_remote.add_argument("--json", action="store_true")
-    text_open_remote.set_defaults(func=cmd_text_open_remote)
-    text_save_review = text_sub.add_parser(
-        "save-review",
-        help="review a remote text save against the editor-tab open baseline",
-    )
-    text_save_review.add_argument("profile")
-    text_save_review.add_argument("remote")
-    text_save_review.add_argument("--local", required=True, type=Path)
-    text_save_review.add_argument("--original-remote-sha256", required=True)
-    text_save_review.add_argument("--current-remote-sha256", required=True)
-    text_save_review.add_argument("--force", action="store_true")
-    text_save_review.add_argument("--json", action="store_true")
-    text_save_review.set_defaults(func=cmd_text_save_review)
-    text_evidence_bundle = text_sub.add_parser(
-        "evidence-bundle",
-        help="assemble MobaTextEditor-style connected remote-edit release evidence",
-    )
-    text_evidence_bundle.add_argument("profile")
-    text_evidence_bundle.add_argument("remote")
-    text_evidence_bundle.add_argument("--out-dir", required=True, type=Path)
-    text_evidence_bundle.add_argument("--local", required=True, type=Path)
-    text_evidence_bundle.add_argument("--remote-sha256", required=True)
-    text_evidence_bundle.add_argument("--open-evidence", required=True, type=Path)
-    text_evidence_bundle.add_argument("--save-review-evidence", required=True, type=Path)
-    text_evidence_bundle.add_argument("--save-evidence", required=True, type=Path)
-    text_evidence_bundle.add_argument("--connected-evidence", required=True, type=Path)
-    text_evidence_bundle.add_argument("--release-target", default="local-bundle")
-    text_evidence_bundle.add_argument("--encoding", default="utf-8")
-    text_evidence_bundle.add_argument("--open-command", default="")
-    text_evidence_bundle.add_argument("--save-review-command", default="")
-    text_evidence_bundle.add_argument("--save-command", default="")
-    text_evidence_bundle.add_argument("--real-connected-session", action="store_true")
-    text_evidence_bundle.add_argument("--sftp-browser-open", action="store_true")
-    text_evidence_bundle.add_argument("--editor-tab-visible", action="store_true")
-    text_evidence_bundle.add_argument("--json", action="store_true")
-    text_evidence_bundle.set_defaults(func=cmd_text_evidence_bundle)
-    text_evidence = text_sub.add_parser(
-        "evidence-verify",
-        help="verify MobaTextEditor-style connected remote-edit release evidence",
-    )
-    text_evidence.add_argument("--evidence", required=True, type=Path)
-    text_evidence.add_argument("--assets-dir", type=Path)
-    text_evidence.add_argument("--json", action="store_true")
-    text_evidence.set_defaults(func=cmd_text_evidence_verify)
+    add_text_commands(sub)
 
     keygen = sub.add_parser("keygen", help="generate SSH keys with ssh-keygen")
     keygen.add_argument("--out", required=True, type=Path)
@@ -946,110 +611,7 @@ def build_parser() -> argparse.ArgumentParser:
     mobapt_update.add_argument("--json", action="store_true")
     mobapt_update.set_defaults(func=cmd_mobapt_package, action="update", package=None)
 
-    servers = sub.add_parser("servers", help="manage MobaXterm-style local server workflows")
-    servers_sub = servers.add_subparsers(required=True)
-    servers_status = servers_sub.add_parser("status", help="show embedded server suite status")
-    servers_status.add_argument("--json", action="store_true")
-    servers_status.set_defaults(func=cmd_servers_status)
-    servers_runtime = servers_sub.add_parser("runtime-status", help="inspect packaged embedded server daemon roots")
-    servers_runtime.add_argument("--root", action="append", type=Path, help="embedded server daemon runtime root to scan")
-    servers_runtime.add_argument("--json", action="store_true")
-    servers_runtime.set_defaults(func=cmd_servers_runtime_status)
-    servers_bundle = servers_sub.add_parser("bundle-runtime", help="assemble a packaged embedded server daemon root")
-    servers_bundle.add_argument("service", choices=list(SERVER_DEFAULT_PORTS))
-    servers_bundle.add_argument("--out", required=True, type=Path, help="output packaged daemon runtime directory")
-    servers_bundle.add_argument("--runtime", help="runtime key such as sshd, tftpd, x11vnc or nfsd")
-    servers_bundle.add_argument("--source", type=Path, help="source daemon executable to copy into the bundle")
-    servers_bundle.add_argument("--system", help="target system key; defaults to this host")
-    servers_bundle.add_argument("--release-target", default="local-bundle")
-    servers_bundle.add_argument("--executable-name", help="override packaged executable filename")
-    servers_bundle.add_argument("--allow-placeholder", action="store_true", help="allow placeholder daemon for rehearsal")
-    servers_bundle.add_argument("--json", action="store_true")
-    servers_bundle.set_defaults(func=cmd_servers_bundle_runtime)
-    servers_config = servers_sub.add_parser("config-plan", help="build an embedded server auth/hardening configuration plan")
-    servers_config.add_argument("service", choices=list(SERVER_DEFAULT_PORTS))
-    servers_config.add_argument("--host", default="127.0.0.1")
-    servers_config.add_argument("--port", type=int)
-    servers_config.add_argument("--root", type=Path)
-    servers_config.add_argument("--hardening-profile", default="loopback-private", choices=["loopback-private", "strict-private", "trusted-lan"])
-    servers_config.add_argument("--require-auth", action="store_true")
-    servers_config.add_argument("--require-tls", action="store_true")
-    servers_config.add_argument("--allow-public-bind", action="store_true")
-    servers_config.add_argument("--json", action="store_true")
-    servers_config.set_defaults(func=cmd_servers_config_plan)
-    servers_verify = servers_sub.add_parser("evidence-verify", help="verify packaged embedded server release evidence")
-    servers_verify.add_argument("--evidence", required=True, type=Path)
-    servers_verify.add_argument("--assets-dir", type=Path)
-    servers_verify.add_argument("--json", action="store_true")
-    servers_verify.set_defaults(func=cmd_servers_evidence_verify)
-    servers_start = servers_sub.add_parser("start", help="start or inspect a managed local server")
-    servers_start.add_argument("service", choices=list(SERVER_DEFAULT_PORTS))
-    servers_start.add_argument("--host", default="127.0.0.1")
-    servers_start.add_argument("--port", type=int)
-    servers_start.add_argument("--root", type=Path)
-    servers_start.add_argument("--allow-public-bind", action="store_true")
-    servers_start.add_argument("--require-tls", action="store_true")
-    servers_start.add_argument("--hardening-profile", default="loopback-private")
-    servers_start.add_argument("--dry-run", action="store_true")
-    servers_start.add_argument("--json", action="store_true")
-    servers_start.set_defaults(func=cmd_servers_start)
-
-    ftp_runtime = servers_sub.add_parser("_ftp-runtime", help=argparse.SUPPRESS)
-    ftp_runtime.add_argument("--host", required=True)
-    ftp_runtime.add_argument("--port", required=True, type=int)
-    ftp_runtime.add_argument("--root", required=True, type=Path)
-    ftp_runtime.set_defaults(func=cmd_servers_ftp_runtime)
-    servers_stop = servers_sub.add_parser("stop", help="stop a managed local server")
-    servers_stop.add_argument("service", choices=list(SERVER_DEFAULT_PORTS))
-    servers_stop.add_argument("--json", action="store_true")
-    servers_stop.set_defaults(func=cmd_servers_stop)
-
-    x11 = sub.add_parser("x11", help="manage local X server helper")
-    x11_sub = x11.add_subparsers(required=True)
-    x11_start = x11_sub.add_parser("start", help="start or inspect a local X server helper")
-    x11_start.add_argument("--display", default=":0")
-    x11_start.add_argument(
-        "--allow-tcp",
-        action="store_true",
-        help="enable authenticated TCP, required for managed Windows X servers (may listen on all interfaces)",
-    )
-    x11_start.add_argument("--authority-file", type=Path)
-    x11_start.add_argument("--dry-run", action="store_true")
-    x11_start.add_argument("--json", action="store_true")
-    x11_start.set_defaults(func=cmd_x11_start)
-    x11_status = x11_sub.add_parser("status", help="inspect managed X server runtime status")
-    x11_status.add_argument("--display", default=":0")
-    x11_status.add_argument("--json", action="store_true")
-    x11_status.set_defaults(func=cmd_x11_status)
-    x11_package = x11_sub.add_parser("package-status", help="inspect packaged/bundled X server runtime roots")
-    x11_package.add_argument("--root", action="append", type=Path, help="packaged X server runtime root to scan")
-    x11_package.add_argument("--json", action="store_true")
-    x11_package.set_defaults(func=cmd_x11_package_status)
-    x11_bundle = x11_sub.add_parser("bundle-runtime", help="assemble a packaged X server runtime root")
-    x11_bundle.add_argument("--out", required=True, type=Path, help="output packaged X server runtime directory")
-    x11_bundle.add_argument("--runtime", required=True, help="runtime key such as vcxsrv, xquartz, xorg or xvfb")
-    x11_bundle.add_argument("--source", type=Path, help="source X server executable to copy into the bundle")
-    x11_bundle.add_argument("--system", help="target system key; defaults to this host")
-    x11_bundle.add_argument("--release-target", default="local-bundle")
-    x11_bundle.add_argument("--executable-name", help="override packaged executable filename")
-    x11_bundle.add_argument("--allow-placeholder", action="store_true", help="allow placeholder runtime for rehearsal")
-    x11_bundle.add_argument("--json", action="store_true")
-    x11_bundle.set_defaults(func=cmd_x11_bundle_runtime)
-    x11_stop = x11_sub.add_parser("stop", help="stop the managed X server process recorded by ROW")
-    x11_stop.add_argument("--json", action="store_true")
-    x11_stop.set_defaults(func=cmd_x11_stop)
-    x11_smoke = x11_sub.add_parser("smoke", help="run an X11 display probe and optionally write evidence JSON")
-    x11_smoke.add_argument("--display", default=":0")
-    x11_smoke.add_argument("--probe-command", help="custom probe command, for example: xdpyinfo -display :0")
-    x11_smoke.add_argument("--timeout", type=float, default=5.0)
-    x11_smoke.add_argument("--out", type=Path)
-    x11_smoke.add_argument("--json", action="store_true")
-    x11_smoke.set_defaults(func=cmd_x11_smoke)
-    x11_verify = x11_sub.add_parser("evidence-verify", help="verify MobaXterm-style packaged X server release evidence")
-    x11_verify.add_argument("--evidence", required=True, type=Path)
-    x11_verify.add_argument("--assets-dir", type=Path)
-    x11_verify.add_argument("--json", action="store_true")
-    x11_verify.set_defaults(func=cmd_x11_evidence_verify)
+    add_managed_runtime_commands(sub)
 
     vault = sub.add_parser("vault", help="local encrypted vault")
     vsub = vault.add_subparsers(required=True)
@@ -1091,64 +653,7 @@ def build_parser() -> argparse.ArgumentParser:
     vstatus.add_argument("--json", action="store_true")
     vstatus.set_defaults(func=cmd_vault_status)
 
-    export = sub.add_parser("export", help="export profiles bundle")
-    export.add_argument("--out", required=True, type=Path)
-    export.set_defaults(func=cmd_export)
-
-    workspace = sub.add_parser("workspace", help="encrypted offline backup and restore of full workspace state")
-    workspace_sub = workspace.add_subparsers(required=True)
-    workspace_backup = workspace_sub.add_parser("backup", help="snapshot ROW_HOME after closing all ROW processes")
-    workspace_backup.add_argument("--out", required=True, type=Path, help="encrypted backup path outside ROW_HOME")
-    workspace_backup.add_argument("--offline", required=True, action="store_true", help="confirm all other ROW processes and managed helpers are stopped")
-    workspace_backup.add_argument("--passphrase-env", metavar="ENV", help="read backup passphrase from this variable; otherwise prompt with confirmation")
-    workspace_backup.set_defaults(func=cmd_workspace_backup)
-    workspace_restore = workspace_sub.add_parser("restore", help="restore into a new sibling ROW_HOME, retaining the original")
-    workspace_restore.add_argument("--backup", required=True, type=Path)
-    workspace_restore.add_argument("--destination", required=True, type=Path, help="new sibling directory next to the current ROW_HOME")
-    workspace_restore.add_argument("--offline", required=True, action="store_true", help="confirm all other ROW processes and managed helpers are stopped")
-    workspace_restore.add_argument("--passphrase-env", metavar="ENV", help="read backup passphrase from this variable; otherwise prompt")
-    workspace_restore.set_defaults(func=cmd_workspace_restore)
-
-    imp = sub.add_parser("import", help="import profiles bundle or external session export")
-    imp.add_argument("--in", dest="input", required=True, type=Path)
-    imp.add_argument(
-        "--format",
-        choices=sorted(SUPPORTED_IMPORT_FORMATS),
-        default="auto",
-        help="input format; auto detects ROW, Remmina, mRemoteNG, Termius-style JSON and MobaXterm sessions",
-    )
-    imp.add_argument("--replace", action="store_true")
-    imp.set_defaults(func=cmd_import)
-
-    sync = sub.add_parser("sync", help="sync through a mounted/shared directory provider")
-    sync_sub = sync.add_subparsers(required=True)
-    sync_push = sync_sub.add_parser("push", help="push a bundle to a shared directory")
-    sync_push.add_argument("--to", required=True, type=Path)
-    sync_push.set_defaults(func=cmd_sync_push)
-    sync_pull = sync_sub.add_parser("pull", help="pull a bundle from a shared directory or bundle file")
-    sync_pull.add_argument("--from", dest="source", required=True, type=Path)
-    sync_pull.add_argument("--replace", action="store_true")
-    sync_pull.set_defaults(func=cmd_sync_pull)
-
-    team_sync = sub.add_parser("team-sync", help="sync shared profile metadata through a versioned team directory")
-    team_sync_sub = team_sync.add_subparsers(required=True)
-    team_status = team_sync_sub.add_parser("status", help="show shared team version and profile count")
-    team_status.add_argument("--root", required=True, type=Path)
-    team_status.add_argument("--team", required=True)
-    team_status.add_argument("--json", action="store_true")
-    team_status.set_defaults(func=cmd_team_sync_status)
-    team_push = team_sync_sub.add_parser("push", help="publish local metadata with optimistic version control")
-    team_push.add_argument("--root", required=True, type=Path)
-    team_push.add_argument("--team", required=True)
-    team_push.add_argument("--expected-version", required=True, type=int)
-    team_push.add_argument("--json", action="store_true")
-    team_push.set_defaults(func=cmd_team_sync_push)
-    team_pull = team_sync_sub.add_parser("pull", help="merge shared metadata while retaining local credential references")
-    team_pull.add_argument("--root", required=True, type=Path)
-    team_pull.add_argument("--team", required=True)
-    team_pull.add_argument("--replace", action="store_true", help="replace local profiles instead of merging")
-    team_pull.add_argument("--json", action="store_true")
-    team_pull.set_defaults(func=cmd_team_sync_pull)
+    add_workspace_commands(sub)
 
     gui = sub.add_parser("gui", help="start PyQt6 desktop UI")
     gui.add_argument("--smoke-json", type=Path, help="write a bounded packaged GUI smoke report")
@@ -1278,234 +783,6 @@ def cmd_connect(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_doctor(args: argparse.Namespace) -> int:
-    result = run_doctor()
-    if args.json:
-        print(result.to_json())
-        return 0
-    print(f"Platform : {result.platform}")
-    print(f"Python   : {result.python}")
-    print(f"Data dir : {result.data_dir}")
-    print("\nExternal clients:")
-    for protocol, candidates in result.executables.items():
-        status = result.protocol_status.get(protocol, {})
-        summary = str(status.get("summary", _doctor_executable_summary(candidates)))
-        print(f"  {protocol:<8} {summary}")
-    return 0
-
-
-def _doctor_executable_summary(candidates: dict[str, bool]) -> str:
-    available = [name for name, ok in candidates.items() if ok]
-    return ", ".join(available) if available else "missing"
-
-
-def cmd_platforms(args: argparse.Namespace) -> int:
-    targets = load_platform_targets()
-    if args.json:
-        print(json.dumps(targets, indent=2, sort_keys=True))
-        return 0
-
-    architectures = targets.get("release_architectures", [])
-    legacy_targets = targets.get("windows_legacy_targets", [])
-    print("Release architecture targets:")
-    platform_width = max(len(item["platform"]) for item in architectures)
-    arch_width = max(len(item["cpu_arch"]) for item in architectures)
-    for item in architectures:
-        tier = str(item["release_tier"]).replace("-", " ")
-        channel = str(item.get("github_release_channel", "unspecified")).replace("-", " ")
-        print(
-            f"  {item['platform']:<{platform_width}} {item['cpu_arch']:<{arch_width}} "
-            f"{item['bits']:>2}-bit {tier} ({channel})"
-        )
-
-    print("\nLegacy Windows targets:")
-    version_width = max(len(item["version"]) for item in legacy_targets)
-    for item in legacy_targets:
-        remote_detail = str(item["remote_target_tier"])
-        if item.get("remote_target_coverage_percent") is not None:
-            architectures = "/".join(str(arch) for arch in item.get("architectures", []))
-            security = str(item.get("security_profile", ""))
-            remote_detail = (
-                f"{remote_detail} "
-                f"({float(item['remote_target_coverage_percent']):.1f}% {architectures} {security})"
-            )
-        print(
-            f"  {item['version']:<{version_width}} host {item['host_tier']}, "
-            f"remote target {remote_detail}"
-        )
-
-    platform = coverage_report()["platform_verified_readiness"]
-    protected_goal = platform.get("protected_goal_parity", {})
-    if protected_goal:
-        print("\nEvidence-backed protected readiness:")
-        print(
-            f"  Protected platform goal       : {float(protected_goal.get('current_percent', 0.0)):.1f}% "
-            f"({float(protected_goal.get('gap_percent', 0.0)):.1f}% gap; "
-            f"{int(protected_goal.get('accepted_target_count', 0))}/"
-            f"{int(protected_goal.get('target_count', 0))} accepted; "
-            f"{protected_goal.get('status', 'unknown')})"
-        )
-        asset_provenance_complete = (
-            protected_goal.get("release_asset_provenance_complete") is True
-        )
-        asset_provenance_state = (
-            "complete" if asset_provenance_complete else "not checked by static platform catalog"
-        )
-        print(f"  Release asset provenance      : {asset_provenance_state}")
-        remote_audit_command = str(
-            protected_goal.get("remote_release_evidence_audit_command", "")
-        ).strip()
-        if remote_audit_command:
-            print(f"  Published evidence audit      : {remote_audit_command}")
-        missing_targets = [
-            str(target) for target in protected_goal.get("missing_targets", [])
-        ]
-        if missing_targets:
-            print(f"  Missing accepted evidence     : {', '.join(missing_targets)}")
-        print(
-            "  Static platform catalog       : not native-host/readiness proof "
-            "for Linux i386/armhf or Windows XP"
-        )
-    return 0
-
-
-def cmd_features(args: argparse.Namespace) -> int:
-    if args.json:
-        payload = coverage_report() if args.coverage else load_feature_manifest()
-        print(json.dumps(payload, indent=2, sort_keys=True))
-        return 0
-    if args.coverage:
-        report = coverage_report()
-        mapping = report["feature_family_mapping"]
-        adapter = report["adapter_ready_coverage"]
-        parity = report["production_parity_coverage"]
-        platform = report["platform_verified_readiness"]
-        mapping_overall = mapping["overall"]
-        adapter_overall = adapter["overall"]
-        parity_overall = parity["overall"]
-        platform_overall = platform["overall"]
-        print(f"Feature-family mapping target : {mapping['target_percent']:.0f}%")
-        print(f"Feature-family mapping current: {mapping_overall['current_percent']:.1f}% ({mapping_overall['feature_count']} families)")
-        print(f"Adapter-ready target          : {adapter['target_percent']:.0f}%")
-        print(
-            f"Adapter-ready current         : {adapter_overall['current_percent']:.1f}% "
-            f"({adapter_overall['gap_percent']:.1f}% gap)"
-        )
-        print(f"Workflow parity target        : {parity['target_percent']:.0f}%")
-        print(
-            f"Workflow parity current       : {parity_overall['current_percent']:.1f}% "
-            f"({parity_overall['gap_percent']:.1f}% gap)"
-        )
-        print(
-            f"Platform build contract coverage: {platform_overall['current_percent']:.1f}% "
-            f"({platform_overall['gap_percent']:.1f}% gap across "
-            f"{platform_overall['target_count']} included build targets; "
-            f"{platform_overall.get('extended_target_count', 0)} extended rows)"
-        )
-        denominator = platform.get("denominator", {})
-        if denominator:
-            print(
-                "Build contract denominator    : "
-                f"{int(denominator.get('included_target_count', 0))} included, "
-                f"{int(denominator.get('excluded_target_count', 0))} extended excluded; "
-                f"protected goal source={denominator.get('protected_goal_score_source', 'unknown')}"
-            )
-        print(
-            "Runtime verification          : not assessed by this catalog; "
-            "production readiness requires artifact, host, trust and recovery evidence"
-        )
-        protected_goal = platform.get("protected_goal_parity", {})
-        if protected_goal:
-            missing_targets = [
-                str(target) for target in protected_goal.get("missing_targets", [])
-            ]
-            print(
-                f"Protected platform goal       : {float(protected_goal.get('current_percent', 0.0)):.1f}% "
-                f"({float(protected_goal.get('gap_percent', 0.0)):.1f}% gap; "
-                f"{int(protected_goal.get('accepted_target_count', 0))}/"
-                f"{int(protected_goal.get('target_count', 0))} accepted; "
-                f"{protected_goal.get('status', 'unknown')})"
-            )
-            asset_provenance_complete = (
-                protected_goal.get("release_asset_provenance_complete") is True
-            )
-            asset_provenance_state = (
-                "complete" if asset_provenance_complete else "not checked by static report"
-            )
-            print(f"  Release asset provenance : {asset_provenance_state}")
-            asset_command = str(protected_goal.get("release_asset_provenance_command", "")).strip()
-            if not asset_provenance_complete and asset_command:
-                print(f"  Asset provenance gate    : {asset_command}")
-            remote_audit_command = str(
-                protected_goal.get("remote_release_evidence_audit_command", "")
-            ).strip()
-            if remote_audit_command:
-                print(f"  Remote evidence audit    : {remote_audit_command}")
-            if missing_targets:
-                print(f"  Missing protected evidence  : {', '.join(missing_targets)}")
-        evidence = report["evidence_summary"]
-        print(
-            f"Evidence records              : {evidence['features_with_evidence']}/"
-            f"{evidence['total_features']} feature families"
-        )
-        print(f"Parity contract               : {report['workflow_parity_contract']['label']}")
-        print("\nProduct coverage:")
-        adapter_rows = {row["product"]: row for row in adapter["products"]}
-        parity_rows = {row["product"]: row for row in parity["products"]}
-        product_width = max(len(row["product"]) for row in mapping["products"])
-        for row in mapping["products"]:
-            adapter_row = adapter_rows[row["product"]]
-            parity_row = parity_rows[row["product"]]
-            print(
-                f"  {row['product']:<{product_width}} mapping {row['current_percent']:>5.1f}%, "
-                f"adapter {adapter_row['current_percent']:>5.1f}%, "
-                f"workflow parity {parity_row['current_percent']:>5.1f}% "
-                f"({row['feature_count']} families)"
-            )
-        if platform["targets"]:
-            print("\nPlatform build contracts:")
-            target_width = max(len(row["target"]) for row in platform["targets"])
-            display_statuses = {
-                "verified-default-native": "declared-default-native",
-                "verified-termux-web-mobile": "declared-termux-web-mobile",
-                "verified-ios-web-pwa": "declared-ios-web-pwa",
-            }
-            for row in platform["targets"]:
-                remote = ""
-                if row.get("remote_target_coverage_percent") is not None:
-                    architectures = "/".join(str(arch) for arch in row.get("legacy_architectures", []))
-                    security = str(row.get("security_profile", ""))
-                    remote = (
-                        f"; remote target {float(row['remote_target_coverage_percent']):.1f}% "
-                        f"{architectures} {security}"
-                    )
-                missing = ""
-                missing_targets = row.get("accepted_evidence_missing_targets", [])
-                if missing_targets:
-                    missing = f"; missing evidence {', '.join(str(target) for target in missing_targets)}"
-                provenance = _protected_platform_row_provenance_note(row)
-                print(
-                    f"  {row['target']:<{target_width}} {row['current_percent']:>5.1f}% "
-                    f"{display_statuses.get(row['status'], row['status'])} "
-                    f"({row['channel']}){remote}{missing}{provenance}"
-                )
-        return 0
-    for row in feature_summary():
-        print(f"{row['id']:<32} {row['status']:<18} {row['coverage']}")
-    return 0
-
-
-def _protected_platform_row_provenance_note(row: dict[str, object]) -> str:
-    required = row.get("accepted_evidence_required_targets")
-    if not isinstance(required, list) or not required:
-        return ""
-    if row.get("release_backed_readiness_complete") is True:
-        return "; release-backed proof complete"
-    if row.get("accepted_evidence_record_complete") is True:
-        return "; accepted records complete, release assets pending"
-    return "; accepted records/release assets pending"
-
-
 def cmd_plugins_list(args: argparse.Namespace) -> int:
     registry = load_plugin_registry()
     if args.json:
@@ -1554,212 +831,6 @@ def cmd_plugins_scaffold(args: argparse.Namespace) -> int:
         print(f"  {path}")
     print("next: python -m pip install -e . && row plugins validate")
     return 0
-
-
-def cmd_customizer_build(args: argparse.Namespace) -> int:
-    welcome_message = None
-    if args.welcome_file:
-        welcome_message = args.welcome_file.read_text(encoding="utf-8")
-    elif args.welcome_message:
-        welcome_message = args.welcome_message
-    plan = build_moba_professional_customizer_plan(
-        args.out,
-        brand_name=args.brand_name,
-        organization=args.organization,
-        welcome_message=welcome_message,
-        logo_path=args.logo,
-        settings_path=args.settings,
-        profiles_path=args.profiles,
-        policy_path=args.policy,
-        lock_settings=args.lock_setting,
-        force=args.force,
-    )
-    bundle = write_moba_professional_customizer_bundle(plan)
-    if args.json:
-        print(json.dumps(bundle.to_dict(), indent=2, sort_keys=True))
-        return 0
-    print(f"customizer bundle: {bundle.root}")
-    print(f"brand: {bundle.manifest['brand_name']}")
-    print(f"profiles: {bundle.manifest['profile_count']}")
-    print("files:")
-    for path in bundle.files:
-        print(f"  {path}")
-    return 0
-
-
-def cmd_customizer_deployment_plan(args: argparse.Namespace) -> int:
-    plan = build_professional_deployment_plan(
-        brand_name=args.brand_name,
-        organization=args.organization,
-        version=args.version,
-        logo_path=args.logo,
-        policy_path=args.policy,
-        lock_settings=args.lock_setting,
-        update_url=args.update_url,
-        update_public_key=args.update_public_key,
-        update_channel=args.update_channel,
-        update_interval_hours=args.update_interval_hours,
-        rollout_ring=args.rollout_ring,
-        enforcement_surfaces=args.surface or None,
-    )
-    if args.json:
-        print(json.dumps(plan.to_dict(), indent=2, sort_keys=True))
-        return 0
-    installer = plan.installer_branding
-    policy = plan.policy_locks
-    channel = plan.update_channel
-    print(f"deployment plan: {plan.schema}")
-    print(f"brand: {installer.brand_name}")
-    print(f"publisher: {installer.publisher}")
-    print("installer artifacts:")
-    for target, name in installer.artifact_names.items():
-        print(f"  {target}: {name}")
-    print("locked settings:")
-    for item in policy.locked_settings:
-        print(f"  {item['key']}={item['value']}")
-    print(f"enforcement surfaces: {', '.join(policy.enforcement_surfaces)}")
-    print(f"update channel: {channel.channel} {channel.update_url}")
-    print(f"signature required: {'yes' if channel.require_signature else 'no'}")
-    for requirement in plan.evidence_requirements:
-        print(f"evidence: {requirement}")
-    return 0
-
-
-def cmd_customizer_evidence_bundle(args: argparse.Namespace) -> int:
-    deployment = build_professional_deployment_plan(
-        brand_name=args.brand_name,
-        organization=args.organization,
-        version=args.version,
-        logo_path=args.logo,
-        policy_path=args.policy,
-        lock_settings=args.lock_setting,
-        update_url=args.update_url,
-        update_public_key=args.update_public_key,
-        update_channel=args.update_channel,
-        update_interval_hours=args.update_interval_hours,
-        rollout_ring=args.rollout_ring,
-    )
-    passed_surfaces = set(args.surface_passed)
-    if args.all_policy_surfaces_passed:
-        passed_surfaces.update(REQUIRED_POLICY_SURFACES)
-    surfaces = {surface: surface in passed_surfaces for surface in REQUIRED_POLICY_SURFACES}
-    plan = build_professional_deployment_evidence_bundle_plan(
-        deployment,
-        out_dir=args.out_dir,
-        bundle_manifest_evidence=args.bundle_manifest_evidence,
-        installer_evidence=args.installer_evidence,
-        policy_evidence=args.policy_evidence,
-        update_evidence=args.update_evidence,
-        update_manifest=args.update_manifest,
-        bundle_manifest_sha256=args.bundle_manifest_sha256,
-        update_manifest_assets_dir=args.update_assets_dir,
-        release_target=args.release_target,
-        bundle_command=args.bundle_command,
-        installer_command=args.installer_command,
-        policy_command=args.policy_command,
-        update_command=args.update_command,
-        surfaces=surfaces,
-        sha256s_present=args.sha256s_present,
-        windows_exe_rebranded=args.windows_exe_rebranded,
-        windows_msi_rebranded=args.windows_msi_rebranded,
-        product_name_matches_brand=args.product_name_matches_brand,
-        logo_applied=args.logo_applied,
-        https_update_url=args.https_update_url,
-        signature_verified=args.signature_verified,
-        organization_channel=args.organization_channel,
-    )
-    result = write_professional_deployment_evidence_bundle(plan)
-    if args.json:
-        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
-    else:
-        print(f"deployment evidence bundle: {result.evidence_path}")
-        print(f"passed: {'yes' if result.validation.passed else 'no'}")
-        print("files:")
-        for path in result.files:
-            print(f"  {path}")
-        for warning in result.validation.warnings:
-            print(f"warning: {warning}")
-        for error in result.validation.errors:
-            print(f"error: {error}", file=sys.stderr)
-    return 0 if result.validation.passed else 1
-
-
-def cmd_customizer_evidence_verify(args: argparse.Namespace) -> int:
-    result = validate_professional_deployment_evidence(args.evidence, assets_dir=args.assets_dir)
-    if args.json:
-        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
-    else:
-        print(f"evidence: {result.evidence_path}")
-        print(f"assets: {result.assets_dir}")
-        print(f"passed: {'yes' if result.passed else 'no'}")
-        if result.summary:
-            print(f"schema: {result.summary.get('schema', '')}")
-            print(f"release target: {result.summary.get('release_target', '')}")
-            print(f"brand: {result.summary.get('brand_name', '')}")
-            print(f"policy surfaces: {result.summary.get('surface_count', 0)}")
-        for warning in result.warnings:
-            print(f"warning: {warning}")
-        for error in result.errors:
-            print(f"error: {error}", file=sys.stderr)
-    return 0 if result.passed else 1
-
-
-def cmd_customizer_update_verify(args: argparse.Namespace) -> int:
-    result = validate_professional_update_manifest(
-        args.manifest,
-        public_key=args.public_key,
-        expected_channel=args.channel,
-        expected_organization=args.organization,
-        assets_dir=args.assets_dir,
-    )
-    if args.json:
-        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
-    else:
-        print(f"update manifest: {result.manifest_path}")
-        print(f"assets: {result.assets_dir}")
-        print(f"passed: {'yes' if result.passed else 'no'}")
-        if result.summary:
-            print(f"schema: {result.summary.get('schema', '')}")
-            print(f"channel: {result.summary.get('channel', '')}")
-            print(f"organization: {result.summary.get('organization', '')}")
-            print(f"version: {result.summary.get('version', '')}")
-            print(f"artifacts: {result.summary.get('artifact_count', 0)}")
-            print(f"signature: {result.summary.get('signature_algorithm', '')}")
-        for warning in result.warnings:
-            print(f"warning: {warning}")
-        for error in result.errors:
-            print(f"error: {error}", file=sys.stderr)
-    return 0 if result.passed else 1
-
-
-def _customizer_authenticated_stage(args: argparse.Namespace, *, recover: bool) -> int:
-    # Load the optional signature backend only for the explicit new command.
-    from .update_channel import UpdateError, load_update_policy, recover_update, stage_update
-
-    try:
-        policy = load_update_policy(args.policy)
-        operation = recover_update if recover else stage_update
-        result = operation(policy, args.stage, current_home=data_dir())
-    except UpdateError as exc:
-        result = {"phase": "refused", "refusal": str(exc), "install_permitted": False}
-    except (OSError, ValueError, RecursionError):
-        result = {"phase": "refused", "refusal": "update-stage-input-refused", "install_permitted": False}
-    if args.json:
-        print(json.dumps(result, sort_keys=True))
-    elif result["phase"] == "authenticated-staged":
-        print(f"Authenticated update staged: {result['version']} ({result['artifact_count']} assets)")
-        print("Installation is not permitted by the staging command.")
-    else:
-        print(f"Update staging refused: {result['refusal']}", file=sys.stderr)
-    return 0 if result["phase"] == "authenticated-staged" else 1
-
-
-def cmd_customizer_update_stage(args: argparse.Namespace) -> int:
-    return _customizer_authenticated_stage(args, recover=False)
-
-
-def cmd_customizer_update_stage_recover(args: argparse.Namespace) -> int:
-    return _customizer_authenticated_stage(args, recover=True)
 
 
 def cmd_snippet_add(args: argparse.Namespace) -> int:
@@ -2055,209 +1126,6 @@ def cmd_broadcast(args: argparse.Namespace) -> int:
     return 0 if all(result.ok for result in results) else 1
 
 
-def cmd_files_open(args: argparse.Namespace) -> int:
-    profile = ProfileStore().get(args.profile)
-    plan = build_sftp_interactive_plan(profile)
-    run_sftp_interactive(plan, dry_run=args.dry_run)
-    print(plan.printable())
-    for note in plan.notes:
-        print(f"note: {note}")
-    return 0
-
-
-def cmd_files_ls(args: argparse.Namespace) -> int:
-    profile = ProfileStore().get(args.profile)
-    plan = build_sftp_list_plan(profile, args.remote)
-    run_sftp_batch(plan, dry_run=args.dry_run)
-    _print_sftp_plan(plan, show_batch=args.dry_run)
-    return 0
-
-
-def cmd_files_get(args: argparse.Namespace) -> int:
-    profile = ProfileStore().get(args.profile)
-    plan = build_sftp_get_plan(
-        profile,
-        args.remote,
-        local_path=args.local,
-        recursive=args.recursive,
-        allow_overwrite=args.force,
-    )
-    run_sftp_batch(plan, dry_run=args.dry_run)
-    _print_sftp_plan(plan, show_batch=args.dry_run)
-    return 0
-
-
-def cmd_files_put(args: argparse.Namespace) -> int:
-    profile = ProfileStore().get(args.profile)
-    plan = build_sftp_put_plan(
-        profile,
-        args.local,
-        remote_path=args.remote,
-        recursive=args.recursive,
-        allow_overwrite=args.force,
-    )
-    run_sftp_batch(plan, dry_run=args.dry_run)
-    _print_sftp_plan(plan, show_batch=args.dry_run)
-    return 0
-
-
-def cmd_files_mkdir(args: argparse.Namespace) -> int:
-    profile = ProfileStore().get(args.profile)
-    plan = build_sftp_mkdir_plan(profile, args.remote)
-    run_sftp_batch(plan, dry_run=args.dry_run)
-    _print_sftp_plan(plan, show_batch=args.dry_run)
-    return 0
-
-
-def cmd_files_rm(args: argparse.Namespace) -> int:
-    profile = ProfileStore().get(args.profile)
-    plan = build_sftp_rm_plan(profile, args.remote, allow_delete=args.force)
-    run_sftp_batch(plan, dry_run=args.dry_run)
-    _print_sftp_plan(plan, show_batch=args.dry_run)
-    return 0
-
-
-def cmd_files_rmdir(args: argparse.Namespace) -> int:
-    profile = ProfileStore().get(args.profile)
-    plan = build_sftp_rmdir_plan(profile, args.remote, allow_delete=args.force)
-    run_sftp_batch(plan, dry_run=args.dry_run)
-    _print_sftp_plan(plan, show_batch=args.dry_run)
-    return 0
-
-
-def cmd_files_rename(args: argparse.Namespace) -> int:
-    profile = ProfileStore().get(args.profile)
-    plan = build_sftp_rename_plan(profile, args.old, args.new, allow_rename=args.force)
-    run_sftp_batch(plan, dry_run=args.dry_run)
-    _print_sftp_plan(plan, show_batch=args.dry_run)
-    return 0
-
-
-def cmd_files_queue(args: argparse.Namespace) -> int:
-    profile = ProfileStore().get(args.profile)
-    items = [parse_transfer_item_spec(spec) for spec in args.op]
-    plan = build_sftp_queue_plan(profile, items, force=args.force)
-    result = run_sftp_queue(plan, dry_run=args.dry_run)
-    if args.json:
-        payload = result.to_dict()
-        payload["batch_commands"] = plan.batch_commands
-        payload["notes"] = plan.notes
-        print(json.dumps(payload, indent=2))
-    else:
-        _print_sftp_queue_result(plan, result)
-    return 0 if result.ok else 1
-
-
-def cmd_files_preview_local(args: argparse.Namespace) -> int:
-    preview = preview_local_path(args.path, max_bytes=args.bytes, max_entries=args.entries)
-    if args.json:
-        print(json.dumps(preview.to_dict(), indent=2))
-        return 0 if preview.error == "" else 1
-    _print_local_preview(preview.to_dict())
-    return 0 if preview.error == "" else 1
-
-
-def cmd_files_preview_remote(args: argparse.Namespace) -> int:
-    profile = ProfileStore().get(args.profile)
-    plan = build_sftp_remote_preview_plan(profile, args.remote)
-    run_sftp_batch(plan, dry_run=args.dry_run)
-    if args.json:
-        print(
-            json.dumps(
-                {
-                    "profile": plan.profile_name,
-                    "command": plan.command,
-                    "batch_commands": plan.batch_commands,
-                    "notes": plan.notes,
-                    "dry_run": args.dry_run,
-                },
-                indent=2,
-            )
-        )
-    else:
-        _print_sftp_plan(plan, show_batch=True)
-    return 0
-
-
-def cmd_ssh_browser_status(args: argparse.Namespace) -> int:
-    preferences = load_moba_ssh_browser_preferences()
-    if args.json:
-        print(json.dumps(preferences.to_dict(), indent=2, sort_keys=True))
-        return 0
-    print(f"location: {preferences.location}")
-    print(f"overwrite confirmation: {'yes' if preferences.overwrite_confirmation else 'no'}")
-    print("columns:")
-    for key, width in preferences.column_widths.items():
-        print(f"  {key:<8} {width}")
-    print(f"updated: {preferences.updated_at}")
-    return 0
-
-
-def cmd_ssh_browser_location(args: argparse.Namespace) -> int:
-    preferences = update_moba_ssh_browser_location(args.location)
-    if args.json:
-        print(json.dumps(preferences.to_dict(), indent=2, sort_keys=True))
-        return 0
-    print(f"location: {preferences.location}")
-    return 0
-
-
-def cmd_ssh_browser_columns(args: argparse.Namespace) -> int:
-    widths = {
-        key: value
-        for key, value in {
-            "name": args.name,
-            "size": args.size,
-            "modified": args.modified,
-        }.items()
-        if value is not None
-    }
-    if not widths:
-        raise ValueError("at least one column width is required")
-    preferences = update_moba_ssh_browser_columns(widths)
-    if args.json:
-        print(json.dumps(preferences.to_dict(), indent=2, sort_keys=True))
-        return 0
-    for key, width in preferences.column_widths.items():
-        print(f"{key}: {width}")
-    return 0
-
-
-def cmd_ssh_browser_open_plan(args: argparse.Namespace) -> int:
-    profile = ProfileStore().get(args.profile)
-    plan = build_moba_ssh_browser_open_plan(profile)
-    if args.json:
-        print(json.dumps(plan.to_dict(), indent=2, sort_keys=True))
-        return 0
-    print(" ".join(plan.command))
-    print(f"location: {plan.location}")
-    print(f"terminal visible: {'yes' if plan.terminal_visible else 'no'}")
-    print(f"browser visible: {'yes' if plan.browser_visible else 'no'}")
-    for note in plan.notes:
-        print(f"note: {note}")
-    return 0
-
-
-def cmd_ssh_browser_overwrite(args: argparse.Namespace) -> int:
-    review = review_moba_ssh_browser_overwrite(
-        args.action,
-        args.source,
-        args.destination,
-        destination_exists=args.destination_exists,
-        force=args.force,
-    )
-    if args.json:
-        print(json.dumps(review.to_dict(), indent=2, sort_keys=True))
-        return 0 if review.allowed else 1
-    print(f"allowed: {'yes' if review.allowed else 'no'}")
-    print(f"confirmation required: {'yes' if review.confirmation_required else 'no'}")
-    if review.prompt:
-        print(f"prompt: {review.prompt}")
-    for note in review.notes:
-            print(f"note: {note}")
-    return 0 if review.allowed else 1
-
-
 def cmd_smartcard_inventory_plan(args: argparse.Namespace) -> int:
     plan = build_smartcard_inventory_plan(args.provider)
     if args.json:
@@ -2417,193 +1285,6 @@ def cmd_smartcard_evidence_verify(args: argparse.Namespace) -> int:
     return 0 if result.passed else 1
 
 
-def cmd_text_preview(args: argparse.Namespace) -> int:
-    preview = preview_text_document(
-        args.path,
-        max_bytes=args.bytes,
-        max_lines=args.lines,
-        encoding=args.encoding,
-    )
-    if args.json:
-        print(json.dumps(preview.to_dict(), indent=2, sort_keys=True))
-        return 0 if preview.exists and not preview.binary else 1
-    print(f"{preview.path}: {'present' if preview.exists else 'missing'}")
-    if preview.exists:
-        print(f"size: {preview.size}")
-        print(f"sha256: {preview.sha256}")
-        print(f"lines: {preview.line_count}")
-    for note in preview.notes:
-        print(f"note: {note}")
-    if preview.text:
-        print("preview:")
-        print(preview.text.rstrip())
-    return 0 if preview.exists and not preview.binary else 1
-
-
-def cmd_text_write(args: argparse.Namespace) -> int:
-    text = args.text if args.text is not None else args.text_file.read_text(encoding=args.encoding)
-    result = write_text_document(
-        args.path,
-        text,
-        create=args.create,
-        force=args.force,
-        expected_sha256=args.expected_sha256,
-        backup=not args.no_backup,
-        encoding=args.encoding,
-    )
-    if args.json:
-        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
-        return 0
-    print(f"written: {result.path}")
-    print(f"changed: {'yes' if result.changed else 'no'}")
-    print(f"sha256: {result.new_sha256}")
-    if result.backup_path:
-        print(f"backup: {result.backup_path}")
-    for note in result.notes:
-        print(f"note: {note}")
-    return 0
-
-
-def cmd_text_diff(args: argparse.Namespace) -> int:
-    result = diff_text_documents(args.left, args.right, context=args.context, encoding=args.encoding)
-    if args.json:
-        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
-    else:
-        print(f"equal: {'yes' if result.equal else 'no'}")
-        print(f"added: {result.added_lines} removed: {result.removed_lines} hunks: {result.hunk_count}")
-        if result.unified_diff:
-            print(result.unified_diff.rstrip())
-    return 0 if result.equal else 1
-
-
-def cmd_text_remote_plan(args: argparse.Namespace) -> int:
-    profile = ProfileStore().get(args.profile)
-    plan = build_remote_text_edit_plan(profile, args.remote, local_path=args.local)
-    if args.json:
-        print(json.dumps(plan.to_dict(), indent=2, sort_keys=True))
-    else:
-        print(f"remote: {plan.remote_path}")
-        print(f"local: {plan.local_path}")
-        print("download:")
-        _print_sftp_plan(plan.download_plan, show_batch=True)
-        print("upload:")
-        _print_sftp_plan(plan.upload_plan, show_batch=True)
-        for note in plan.notes:
-            print(f"note: {note}")
-    return 0
-
-
-def cmd_text_open_remote(args: argparse.Namespace) -> int:
-    profile = ProfileStore().get(args.profile)
-    plan = build_moba_text_editor_tab_plan(
-        profile,
-        args.remote,
-        local_path=args.local,
-        remote_sha256=args.remote_sha256,
-        encoding=args.encoding,
-    )
-    if args.json:
-        print(json.dumps(plan.to_dict(), indent=2, sort_keys=True))
-    else:
-        print(f"remote: {plan.remote_path}")
-        print(f"local: {plan.local_path}")
-        print(f"syntax: {plan.syntax}")
-        print(f"encoding: {plan.encoding}")
-        if plan.remote_sha256:
-            print(f"remote sha256: {plan.remote_sha256}")
-        print("open/download:")
-        _print_sftp_plan(plan.download_plan, show_batch=True)
-        print("save/upload:")
-        _print_sftp_plan(plan.save_plan, show_batch=True)
-        print(f"conflict policy: {plan.conflict_policy}")
-        for note in plan.notes:
-            print(f"note: {note}")
-    return 0
-
-
-def cmd_text_save_review(args: argparse.Namespace) -> int:
-    profile = ProfileStore().get(args.profile)
-    review = review_moba_remote_text_save(
-        profile,
-        args.remote,
-        args.local,
-        original_remote_sha256=args.original_remote_sha256,
-        current_remote_sha256=args.current_remote_sha256,
-        force=args.force,
-    )
-    if args.json:
-        print(json.dumps(review.to_dict(), indent=2, sort_keys=True))
-    else:
-        print(f"remote: {review.remote_path}")
-        print(f"local: {review.local_path}")
-        print(f"allowed: {'yes' if review.allowed else 'no'}")
-        print(f"conflict: {'yes' if review.conflict else 'no'}")
-        print(f"confirmation required: {'yes' if review.confirmation_required else 'no'}")
-        print(f"local sha256: {review.local_sha256}")
-        if review.prompt:
-            print(f"prompt: {review.prompt}")
-        print("upload:")
-        _print_sftp_plan(review.upload_plan, show_batch=True)
-        for note in review.notes:
-            print(f"note: {note}")
-    return 0 if review.allowed else 1
-
-
-def cmd_text_evidence_bundle(args: argparse.Namespace) -> int:
-    profile = ProfileStore().get(args.profile)
-    plan = build_moba_text_release_evidence_bundle_plan(
-        profile,
-        args.remote,
-        out_dir=args.out_dir,
-        local_path=args.local,
-        remote_sha256=args.remote_sha256,
-        open_evidence=args.open_evidence,
-        save_review_evidence=args.save_review_evidence,
-        save_evidence=args.save_evidence,
-        connected_evidence=args.connected_evidence,
-        release_target=args.release_target,
-        encoding=args.encoding,
-        open_command=args.open_command,
-        save_review_command=args.save_review_command,
-        save_command=args.save_command,
-        real_connected_session=args.real_connected_session,
-        sftp_browser_open=args.sftp_browser_open,
-        editor_tab_visible=args.editor_tab_visible,
-    )
-    result = write_moba_text_release_evidence_bundle(plan, profile=profile)
-    if args.json:
-        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
-    else:
-        print(f"text remote-edit evidence bundle: {'passed' if result.validation.passed else 'failed'}")
-        print(f"evidence: {result.evidence_path}")
-        for note in result.notes:
-            print(f"note: {note}")
-        for error in result.validation.errors:
-            print(f"error: {error}")
-    return 0 if result.validation.passed else 1
-
-
-def cmd_text_evidence_verify(args: argparse.Namespace) -> int:
-    result = validate_moba_text_release_evidence(args.evidence, assets_dir=args.assets_dir)
-    if args.json:
-        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
-    else:
-        print(f"evidence: {result.evidence_path}")
-        print(f"assets: {result.assets_dir}")
-        print(f"passed: {'yes' if result.passed else 'no'}")
-        if result.summary:
-            print(f"schema: {result.summary.get('schema', '')}")
-            print(f"release target: {result.summary.get('release_target', '')}")
-            print(f"profile: {result.summary.get('profile', '')}")
-            print(f"remote: {result.summary.get('remote_path', '')}")
-            print(f"syntax: {result.summary.get('syntax', '')}")
-        for warning in result.warnings:
-            print(f"warning: {warning}")
-        for error in result.errors:
-            print(f"error: {error}", file=sys.stderr)
-    return 0 if result.passed else 1
-
-
 def cmd_keygen(args: argparse.Namespace) -> int:
     passphrase = _secret_from_env(args.passphrase_env, "key passphrase") if args.passphrase_env else ""
     plan = build_keygen_plan(
@@ -2752,284 +1433,6 @@ def cmd_mobapt_package(args: argparse.Namespace) -> int:
     return 0 if result.ok else 1
 
 
-def cmd_servers_status(args: argparse.Namespace) -> int:
-    status = build_moba_server_suite_status()
-    if args.json:
-        print(json.dumps(status.to_dict(), indent=2, sort_keys=True))
-        return 0
-    print(f"system: {status.system}")
-    print("services:")
-    for service in status.services:
-        marker = "available" if service.available else "missing"
-        lifecycle = ""
-        if service.lifecycle is not None:
-            lifecycle = f" lifecycle={service.lifecycle.state} pid={service.lifecycle.pid or 'none'}"
-        print(f"  {service.key:<8} {marker:<9} port={service.default_port:<5} runtime={service.selected_runtime}{lifecycle}")
-    for note in status.notes:
-        print(f"note: {note}")
-    return 0
-
-
-def cmd_servers_runtime_status(args: argparse.Namespace) -> int:
-    status = build_moba_server_runtime_status(roots=args.root)
-    if args.json:
-        print(json.dumps(status.to_dict(), indent=2, sort_keys=True))
-        return 0
-    print(f"packaged daemon runtime: {'yes' if status.packaged_available else 'no'}")
-    print("roots:")
-    for root in status.roots:
-        print(f"  {root}")
-    print("service coverage:")
-    for service, available in status.service_coverage.items():
-        print(f"  {service:<8} {'available' if available else 'missing'}")
-    for note in status.notes:
-        print(f"note: {note}")
-    return 0
-
-
-def cmd_servers_bundle_runtime(args: argparse.Namespace) -> int:
-    plan = build_moba_server_runtime_bundle_plan(
-        args.out,
-        args.service,
-        runtime_key=args.runtime,
-        source_path=args.source,
-        system=args.system,
-        release_target=args.release_target,
-        executable_name=args.executable_name,
-        allow_placeholder=args.allow_placeholder,
-    )
-    result = write_moba_server_runtime_bundle(plan)
-    service_available = result.runtime_status.service_coverage.get(plan.service, False)
-    if args.json:
-        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
-    else:
-        print(f"embedded server runtime bundle: {'available' if service_available else 'not discovered'}")
-        print(f"service: {plan.service}")
-        print(f"root: {result.root}")
-        print(f"runtime: {result.executable_path}")
-        print(f"manifest: {result.manifest_path}")
-        print(f"sha256: {result.runtime_sha256}")
-        if result.placeholder:
-            print("placeholder: yes")
-        for note in result.notes:
-            print(f"note: {note}")
-    return 0 if service_available else 1
-
-
-def cmd_servers_config_plan(args: argparse.Namespace) -> int:
-    plan = build_moba_server_config_plan(
-        args.service,
-        host=args.host,
-        port=args.port,
-        root=args.root,
-        hardening_profile=args.hardening_profile,
-        require_auth=True if args.require_auth else None,
-        require_tls=args.require_tls,
-        allow_public_bind=args.allow_public_bind,
-    )
-    if args.json:
-        print(json.dumps(plan.to_dict(), indent=2, sort_keys=True))
-        return 0
-    print(f"service: {plan.service}")
-    print(f"bind: {plan.host}:{plan.port}")
-    print(f"hardening: {plan.hardening_profile}")
-    print(f"auth required: {'yes' if plan.auth_required else 'no'}")
-    for note in plan.notes:
-        print(f"note: {note}")
-    return 0
-
-
-def cmd_servers_evidence_verify(args: argparse.Namespace) -> int:
-    result = validate_moba_server_release_evidence(args.evidence, assets_dir=args.assets_dir)
-    if args.json:
-        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
-    else:
-        print(f"embedded server release evidence: {'passed' if result.passed else 'failed'}")
-        print(f"evidence: {result.evidence_path}")
-        print(f"assets: {result.assets_dir}")
-        for error in result.errors:
-            print(f"error: {error}")
-        for warning in result.warnings:
-            print(f"warning: {warning}")
-    return 0 if result.passed else 1
-
-
-def cmd_servers_start(args: argparse.Namespace) -> int:
-    plan = build_moba_server_plan(
-        args.service,
-        host=args.host,
-        port=args.port,
-        root=args.root,
-        allow_public_bind=args.allow_public_bind,
-        require_tls=getattr(args, "require_tls", False),
-        hardening_profile=getattr(args, "hardening_profile", "loopback-private"),
-    )
-    record = start_moba_server(plan, dry_run=args.dry_run)
-    if args.json:
-        payload = plan.to_dict()
-        payload["lifecycle"] = record.to_dict()
-        print(json.dumps(payload, indent=2, sort_keys=True))
-        return 0
-    print(plan.printable())
-    print(f"lifecycle: {record.state} pid={record.pid or 'none'} state={record.state_path}")
-    for note in plan.notes:
-        print(f"note: {note}")
-    return 0
-
-
-def cmd_servers_ftp_runtime(args: argparse.Namespace) -> int:
-    from .embedded_ftp import main as ftp_main
-
-    return ftp_main(["--host", args.host, "--port", str(args.port), "--root", str(args.root)])
-
-
-def cmd_servers_stop(args: argparse.Namespace) -> int:
-    record = stop_moba_server(args.service)
-    if args.json:
-        print(json.dumps(record.to_dict(), indent=2, sort_keys=True))
-        return 0
-    print(f"lifecycle: {record.state} pid={record.pid or 'none'} state={record.state_path}")
-    return 0
-
-
-def cmd_x11_start(args: argparse.Namespace) -> int:
-    managed_plan = build_moba_x_server_plan(
-        display=args.display,
-        allow_tcp=getattr(args, "allow_tcp", False),
-        authority_path=getattr(args, "authority_file", None),
-    )
-    record = start_moba_x_server(managed_plan, dry_run=args.dry_run)
-    if args.json:
-        payload = managed_plan.to_dict()
-        payload["lifecycle"] = record.to_dict()
-        print(json.dumps(payload, indent=2, sort_keys=True))
-        return 0
-    print(managed_plan.printable())
-    print(f"lifecycle: {record.state} pid={record.pid or 'none'} state={record.state_path}")
-    for note in managed_plan.notes:
-        print(f"note: {note}")
-    return 0
-
-
-def cmd_x11_status(args: argparse.Namespace) -> int:
-    status = build_moba_x_server_status(display=args.display)
-    if args.json:
-        print(json.dumps(status.to_dict(), indent=2, sort_keys=True))
-        return 0
-    print(f"display: {status.display}")
-    print(f"available: {'yes' if status.available else 'no'}")
-    print(f"selected runtime: {status.selected_runtime}")
-    print(f"display in use: {'yes' if status.display_in_use else 'no'}")
-    if status.lifecycle is not None:
-        print(
-            f"managed lifecycle: {status.lifecycle.state} "
-            f"pid={status.lifecycle.pid or 'none'} "
-            f"running={'yes' if status.lifecycle.running else 'no'}"
-        )
-    print("candidates:")
-    for candidate in status.candidates:
-        marker = "available" if candidate.available else "missing"
-        print(f"  {candidate.key:<12} {marker:<9} {candidate.executable}")
-    print("extensions:")
-    for extension in status.extensions:
-        print(f"  {extension.key:<10} {extension.status:<18} {extension.label}")
-    for note in status.notes:
-        print(f"note: {note}")
-    return 0
-
-
-def cmd_x11_package_status(args: argparse.Namespace) -> int:
-    status = build_moba_x_server_package_status(roots=args.root)
-    if args.json:
-        print(json.dumps(status.to_dict(), indent=2, sort_keys=True))
-        return 0
-    print(f"system: {status.system}")
-    print(f"packaged runtime: {'yes' if status.packaged_available else 'no'}")
-    print("roots:")
-    for root in status.roots:
-        print(f"  {root}")
-    print("packaged candidates:")
-    if status.candidates:
-        for candidate in status.candidates:
-            print(f"  {candidate.key:<12} available  {candidate.executable}")
-    else:
-        print("  none")
-    for note in status.notes:
-        print(f"note: {note}")
-    return 0
-
-
-def cmd_x11_bundle_runtime(args: argparse.Namespace) -> int:
-    plan = build_moba_x_server_runtime_bundle_plan(
-        args.out,
-        runtime_key=args.runtime,
-        source_path=args.source,
-        system=args.system,
-        release_target=args.release_target,
-        executable_name=args.executable_name,
-        allow_placeholder=args.allow_placeholder,
-    )
-    result = write_moba_x_server_runtime_bundle(plan)
-    if args.json:
-        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
-    else:
-        print(f"x11 runtime bundle: {'available' if result.package_status.packaged_available else 'not discovered'}")
-        print(f"root: {result.root}")
-        print(f"runtime: {result.executable_path}")
-        print(f"manifest: {result.manifest_path}")
-        print(f"sha256: {result.runtime_sha256}")
-        if result.placeholder:
-            print("placeholder: yes")
-        for note in result.notes:
-            print(f"note: {note}")
-    return 0 if result.package_status.packaged_available else 1
-
-
-def cmd_x11_stop(args: argparse.Namespace) -> int:
-    record = stop_moba_x_server()
-    if args.json:
-        print(json.dumps(record.to_dict(), indent=2, sort_keys=True))
-        return 0
-    print(f"lifecycle: {record.state} pid={record.pid or 'none'} state={record.state_path}")
-    return 0
-
-
-def cmd_x11_smoke(args: argparse.Namespace) -> int:
-    evidence = run_moba_x_server_smoke(
-        display=args.display,
-        probe_command=args.probe_command,
-        timeout_seconds=args.timeout,
-    )
-    if args.out:
-        evidence = write_moba_x_server_smoke_evidence(evidence, args.out)
-    if args.json:
-        print(json.dumps(evidence.to_dict(), indent=2, sort_keys=True))
-    else:
-        print(f"x11 smoke: {evidence.status} display={evidence.display} passed={'yes' if evidence.passed else 'no'}")
-        if evidence.evidence_path:
-            print(f"evidence: {evidence.evidence_path}")
-        if evidence.evidence_sha256:
-            print(f"evidence_sha256: {evidence.evidence_sha256}")
-        for note in evidence.notes or []:
-            print(f"note: {note}")
-    return 0 if evidence.passed else 1
-
-
-def cmd_x11_evidence_verify(args: argparse.Namespace) -> int:
-    result = validate_moba_x_server_release_evidence(args.evidence, assets_dir=args.assets_dir)
-    if args.json:
-        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
-    else:
-        print(f"x11 release evidence: {'passed' if result.passed else 'failed'}")
-        print(f"evidence: {result.evidence_path}")
-        print(f"assets: {result.assets_dir}")
-        for error in result.errors:
-            print(f"error: {error}")
-        for warning in result.warnings:
-            print(f"warning: {warning}")
-    return 0 if result.passed else 1
-
-
 def cmd_vault_init(args: argparse.Namespace) -> int:
     passphrase = _vault_passphrase(confirm=True)
     LocalVault().init(passphrase)
@@ -3082,96 +1485,6 @@ def cmd_vault_status(args: argparse.Namespace) -> int:
         print(f"version: {status.version}")
     if status.kdf:
         print(f"kdf: {status.kdf}")
-    return 0
-
-
-def cmd_export(args: argparse.Namespace) -> int:
-    BackupService().export_bundle(args.out)
-    print(f"exported: {args.out}")
-    return 0
-
-
-def _workspace_backup_passphrase(args: argparse.Namespace, *, confirm: bool) -> str:
-    if args.passphrase_env:
-        return _secret_from_env(args.passphrase_env, "backup passphrase")
-    passphrase = getpass("Backup passphrase: ")
-    if confirm and passphrase != getpass("Confirm backup passphrase: "):
-        raise ValueError("backup passphrases do not match")
-    return passphrase
-
-
-def cmd_workspace_backup(args: argparse.Namespace) -> int:
-    from .workspace_backup import create_workspace_backup
-
-    result = create_workspace_backup(
-        data_dir().resolve(), args.out, _workspace_backup_passphrase(args, confirm=True),
-        offline_confirmed=args.offline,
-    )
-    print(json.dumps(result, indent=2, sort_keys=True))
-    return 0
-
-
-def cmd_workspace_restore(args: argparse.Namespace) -> int:
-    from .workspace_backup import restore_workspace_backup
-
-    result = restore_workspace_backup(
-        args.backup, args.destination, _workspace_backup_passphrase(args, confirm=False),
-        current_home=data_dir().resolve(), offline_confirmed=args.offline,
-    )
-    print(json.dumps(result, indent=2, sort_keys=True))
-    return 0
-
-
-def cmd_import(args: argparse.Namespace) -> int:
-    result = import_profiles_into_store(args.input, ProfileStore(), source_format=args.format, replace=args.replace)
-    print(f"imported profiles: {len(result.profiles)}")
-    print(f"format: {result.source_format}")
-    for warning in result.warnings:
-        print(f"warning: {warning}", file=sys.stderr)
-    return 0
-
-
-def cmd_sync_push(args: argparse.Namespace) -> int:
-    target = DirectorySyncProvider().push(args.to)
-    print(f"synced: {target}")
-    return 0
-
-
-def cmd_sync_pull(args: argparse.Namespace) -> int:
-    count = DirectorySyncProvider().pull(args.source, replace=args.replace)
-    print(f"synced profiles: {count}")
-    return 0
-
-
-def _team_sync_client(root: Path) -> TeamSyncClient:
-    return TeamSyncClient(ProfileStore(), TeamSyncBackend(root))
-
-
-def _print_team_sync_snapshot(snapshot, *, as_json: bool) -> None:
-    if as_json:
-        print(json.dumps(snapshot.to_dict(), indent=2, sort_keys=True))
-        return
-    print(f"team: {snapshot.team}")
-    print(f"version: {snapshot.version}")
-    print(f"profiles: {len(snapshot.profiles)}")
-    if snapshot.updated_at:
-        print(f"updated_at: {snapshot.updated_at}")
-
-
-def cmd_team_sync_status(args: argparse.Namespace) -> int:
-    _print_team_sync_snapshot(TeamSyncBackend(args.root).read(args.team), as_json=args.json)
-    return 0
-
-
-def cmd_team_sync_push(args: argparse.Namespace) -> int:
-    snapshot = _team_sync_client(args.root).push(args.team, expected_version=args.expected_version)
-    _print_team_sync_snapshot(snapshot, as_json=args.json)
-    return 0
-
-
-def cmd_team_sync_pull(args: argparse.Namespace) -> int:
-    snapshot = _team_sync_client(args.root).pull(args.team, replace=args.replace)
-    _print_team_sync_snapshot(snapshot, as_json=args.json)
     return 0
 
 
@@ -3316,15 +1629,6 @@ def _select_smartcard_certificate(
     raise ValueError(f"smart-card certificate not found in --certificate inputs: {selected_id}")
 
 
-def _secret_from_env(name: str, label: str) -> str:
-    if name not in os.environ:
-        raise ValueError(f"{label} environment variable is not set: {name}")
-    value = os.environ[name]
-    if value == "":
-        raise ValueError(f"{label} environment variable is empty: {name}")
-    return value
-
-
 def _vault_passphrase(confirm: bool) -> str:
     if "ROW_VAULT_PASSWORD" in os.environ:
         return _secret_from_env("ROW_VAULT_PASSWORD", "vault passphrase")
@@ -3350,59 +1654,6 @@ def _strip_one_trailing_newline(value: str) -> str:
 
 def _write_secret_file(path: Path, secret: str) -> None:
     write_text_atomic(path, secret, private=True)
-
-
-def _print_sftp_plan(plan: SftpBatchPlan, *, show_batch: bool) -> None:
-    print(plan.printable())
-    if show_batch:
-        print("batch:")
-        for command in plan.batch_commands:
-            print(f"  {command}")
-    for note in plan.notes:
-        print(f"note: {note}")
-
-
-def _print_sftp_queue_result(plan: SftpQueuePlan, result: SftpQueueResult) -> None:
-    status = "DRY-RUN" if result.dry_run else ("OK" if result.ok else f"FAIL {result.returncode}")
-    print(f"{plan.profile_name}: {status}: {plan.printable()}")
-    print("queue:")
-    for index, command in enumerate(plan.batch_commands, start=1):
-        print(f"  {index}. {command}")
-    if result.progress:
-        print("progress:")
-        for event in result.progress:
-            returncode = "" if event.returncode is None else f" (exit {event.returncode})"
-            print(f"  {event.index}/{event.total} {event.item.action}: {event.state}{returncode}")
-    for note in plan.notes:
-        print(f"note: {note}")
-    if result.stdout:
-        print(result.stdout.rstrip())
-    if result.stderr:
-        print(result.stderr.rstrip(), file=sys.stderr)
-
-
-def _print_local_preview(preview: dict[str, object]) -> None:
-    print(f"{preview['path']}: {preview['kind']}")
-    if not preview["exists"]:
-        print("missing")
-        return
-    if preview.get("size") is not None:
-        print(f"size: {preview['size']}")
-    children = preview.get("children")
-    if isinstance(children, list) and children:
-        print("children:")
-        for child in children:
-            print(f"  {child}")
-    if preview.get("binary"):
-        print("binary: true")
-    if preview.get("truncated"):
-        print("truncated: true")
-    text = preview.get("text") or ""
-    if text:
-        print("preview:")
-        print(text)
-    if preview.get("error"):
-        print(f"error: {preview['error']}", file=sys.stderr)
 
 
 def _print_broadcast_result(result: BroadcastResult) -> None:

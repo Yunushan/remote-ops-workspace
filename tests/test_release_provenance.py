@@ -108,6 +108,97 @@ def test_release_asset_bytes_match_every_local_and_remote_file(tmp_path: Path) -
     )
 
 
+@pytest.mark.parametrize(("change", "error"), [
+    (None, None),
+    ("digest", "does not match the independently approved candidate bytes"),
+    ("size", "does not match the independently approved candidate bytes"),
+    ("missing", "file sets differ"),
+    ("extra", "file sets differ"),
+    ("duplicate", "duplicated file record"),
+    ("case-duplicate", "duplicated file record"),
+    ("unsafe", "invalid or duplicated file record"),
+])
+def test_certification_requires_every_standard_file_from_the_reviewed_inventory(change, error) -> None:
+    checker = _load_checker()
+    deb = "remote-ops-workspace-v1.0.28-linux-amd64.deb"
+    manifest = "remote-ops-workspace-v1.0.28-macos-arm64-native-manifest.json"
+    reviewed = [
+        {"files": [{"path": deb, "size": 10, "sha256": "a" * 64}]},
+        {"files": [{"path": manifest, "size": 20, "sha256": "b" * 64}]},
+    ]
+    published = {deb: (10, "a" * 64), manifest: (20, "b" * 64)}
+    if change == "digest":
+        published[manifest] = (20, "c" * 64)
+    elif change == "size":
+        published[manifest] = (21, "b" * 64)
+    elif change == "missing":
+        reviewed.pop()
+    elif change == "extra":
+        reviewed.append({"files": [{"path": "unreviewed.bin", "size": 30, "sha256": "d" * 64}]})
+    elif change == "duplicate":
+        reviewed.append(reviewed[0])
+    elif change == "case-duplicate":
+        reviewed.append({"files": [{**reviewed[0]["files"][0], "path": deb.upper()}]})
+    elif change == "unsafe":
+        reviewed[1]["files"][0]["path"] = "../" + manifest
+    if error is None:
+        checker.check_published_candidate_files(reviewed, published)
+    else:
+        with pytest.raises(ValueError, match=error):
+            checker.check_published_candidate_files(reviewed, published)
+
+
+@pytest.mark.parametrize("stale_manifest", [False, True])
+def test_certification_reopens_published_archive_indexes_when_file_hashes_match(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stale_manifest: bool,
+) -> None:
+    checker = _load_checker()
+    tag = "v1.0.28"
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    base = f"remote-ops-workspace-{tag}-linux"
+    package = assets / f"{base}-amd64.deb"
+    manifest = assets / f"{base}-x86_64-native-manifest.json"
+    checksum = assets / f"{base}-x86_64-native-SHA256SUMS.txt"
+    payload = b"release installer"
+    package.write_bytes(payload)
+    manifest.write_text(json.dumps([{
+        "file": package.name, "sha256": hashlib.sha256(payload).hexdigest(),
+        "size_bytes": len(payload) + int(stale_manifest),
+    }]), encoding="utf-8")
+    checksum.write_text("".join(
+        f"{hashlib.sha256(file.read_bytes()).hexdigest()}  {file.name}\n" for file in (package, manifest)
+    ), encoding="utf-8")
+    published = {
+        file.name: (file.stat().st_size, hashlib.sha256(file.read_bytes()).hexdigest()) for file in assets.iterdir()
+    }
+    records = [{"name": "release-linux-native-x86_64", "files": [
+        {"path": name, "size": size, "sha256": digest} for name, (size, digest) in published.items()
+    ]}]
+
+    candidate = tmp_path / "release-candidate-inventory.json"
+    raw = json.dumps({"schema_version": checker.ARCHIVE_FILE_SCOPE_SCHEMA_VERSION}).encode()
+    candidate.write_bytes(raw)
+    digest = hashlib.sha256(raw).hexdigest()
+    approval = {"candidate_inventory": {
+        "file": candidate.name, "sha256": digest, "size_bytes": len(raw), "reference": "candidate fixture",
+    }}
+    monkeypatch.setattr(checker, "validate_managed_release_qualification", lambda *_args, **_kwargs: records)
+
+    def verify() -> str:
+        return checker.check_approved_candidate_inventory(
+            candidate, approval, repository="example/project", tag=tag, sha="a" * 40,
+            published_files=published, assets_dir=assets, deb_package=package,
+            archive_root=None, require_retained_archives=False,
+        )
+
+    if stale_manifest:
+        with pytest.raises(ValueError, match="size or digest differs from extracted archive file"):
+            verify()
+    else:
+        assert verify() == digest
+
+
 def test_release_asset_bytes_reject_remote_digest_drift_and_inventory_gap(
     tmp_path: Path,
 ) -> None:
@@ -172,6 +263,8 @@ def test_release_asset_bytes_requires_explicit_remote_immutability(tmp_path: Pat
     ("condition", "expected_error"),
     [
         ("valid", ""),
+        ("reviewed-bytes-valid", ""),
+        ("reviewed-bytes-disagree", "does not match the independently reviewed SHA-256"),
         ("mutable", "must have GitHub immutable releases enabled"),
         ("unpublished", "must not be a draft"),
         ("malformed-page", "paginated lists"),
@@ -183,6 +276,11 @@ def test_release_asset_bytes_requires_explicit_remote_immutability(tmp_path: Pat
         ("wrong-source", "source repository digest"),
         ("failed-run", "no common certificate-bound release workflow run attempt completed successfully"),
         ("wrong-publication-time", "release publication time falls outside the successful publication step"),
+        ("native-valid", ""),
+        ("native-replaced-before", "local release asset changed before platform signature verification"),
+        ("native-replaced-during", "local release asset changed during verification"),
+        ("native-refused", "platform installer signature check failed"),
+        ("native-mutable", "must have GitHub immutable releases enabled"),
     ],
 )
 def test_single_asset_cli_checks_the_exact_published_release(
@@ -190,18 +288,20 @@ def test_single_asset_cli_checks_the_exact_published_release(
 ) -> None:
     checker = _load_checker()
     repository, tag, sha = "example/project", "v1.2.3", "a" * 40
+    native = condition.startswith("native-")
+    name = "installer.exe" if native else "installer.bin"
     published = tmp_path / "published"
     published.mkdir()
-    (published / "installer.bin").write_bytes(b"installer")
+    (published / name).write_bytes(b"installer")
     (published / "other.bin").write_bytes(b"other")
-    asset = tmp_path / "installer.bin"
+    asset = tmp_path / name
     asset.write_bytes(b"tampering" if condition == "wrong-bytes" else b"installer")
     release = _release(checker, published, repository, tag)
     release["published_at"] = (
         "2026-11-01T12:03:00Z" if condition == "wrong-publication-time" else "2026-11-01T12:02:00Z"
     )
     installer, other = release.pop("assets")
-    if condition == "mutable":
+    if condition in {"mutable", "native-mutable"}:
         release["immutable"] = False
     if condition == "unpublished":
         release["draft"] = True
@@ -210,9 +310,22 @@ def test_single_asset_cli_checks_the_exact_published_release(
         pages = [[other], installer]
     if condition == "missing-standard":
         pages = [[installer]]
-    monkeypatch.setattr(checker, "expected_release_assets", lambda _matrix, *, tag: {"installer.bin", "other.bin"})
+    monkeypatch.setattr(checker, "expected_release_assets", lambda _matrix, *, tag: {name, "other.bin"})
 
     calls: list[list[str]] = []
+    signature_checks: list[list[list[str]]] = []
+    signature_commands = [["local-platform-verifier", str(asset)]]
+    monkeypatch.setattr(checker, "native_installer_signature_commands", lambda _asset: signature_commands)
+
+    def platform_verify(commands):
+        signature_checks.append(commands)
+        assert len(calls) == 7 and asset.read_bytes() == b"installer"
+        if condition == "native-refused":
+            raise RuntimeError("platform installer signature check failed")
+        if condition == "native-replaced-during":
+            asset.write_bytes(b"replaced!")
+
+    monkeypatch.setattr(checker, "verify_platform_signature", platform_verify)
 
     def fake_run(args: list[str], _label: str, _timeout: int):
         calls.append(args)
@@ -235,7 +348,7 @@ def test_single_asset_cli_checks_the_exact_published_release(
                 digest=hashlib.sha256(asset.read_bytes()).hexdigest(),
             )
         if args == ["api", f"repos/{repository}/actions/runs/123/attempts/2"]:
-            if condition == "replaced-after-attestation":
+            if condition in {"replaced-after-attestation", "native-replaced-before"}:
                 asset.write_bytes(b"replaced!")
             return {
                 "id": 123,
@@ -271,15 +384,28 @@ def test_single_asset_cli_checks_the_exact_published_release(
         raise AssertionError(f"unexpected GitHub CLI arguments: {args}")
 
     monkeypatch.setattr(checker, "run_gh_json", fake_run)
-    result = checker.main(["--asset", str(asset), "--repository", repository, "--tag", tag, "--sha", sha])
+    signature_args = ["--verify-platform-signature"] if native else []
+    reviewed = None
+    if condition.startswith("reviewed-bytes-"):
+        reviewed = {name: "c" * 64 if condition == "reviewed-bytes-disagree"
+                    else hashlib.sha256(asset.read_bytes()).hexdigest()}
+    result = checker.main([
+        "--asset", str(asset), "--repository", repository, "--tag", tag, "--sha", sha, *signature_args,
+    ], reviewed_asset_hashes=reviewed)
     output = capsys.readouterr()
+    assert signature_checks == (
+        [signature_commands] if condition in {"native-valid", "native-replaced-during", "native-refused"} else []
+    )
     if expected_error:
         assert result == 1
         assert expected_error in output.err
         assert output.out == ""
+        if condition == "reviewed-bytes-disagree":
+            assert all(call[0] != "attestation" for call in calls)
     else:
         assert result == 0
-        assert "installer.bin matches immutable v1.2.3" in output.out
+        assert f"{name} matches immutable v1.2.3" in output.out
+        assert ("platform installer signature passed" in output.out) is native
         assert len(calls) == 7
         assert "--source-digest" in calls[4]
         assert f"refs/tags/{tag}" in calls[4]
@@ -298,6 +424,105 @@ def test_single_asset_mode_rejects_draft_transactions_before_contacting_github(c
     ])
     assert result == 1
     assert "requires a completed published release" in capsys.readouterr().err
+
+
+def test_platform_signature_flag_requires_a_single_asset(capsys) -> None:
+    checker = _load_checker()
+    assert checker.main([
+        "--assets-dir", "downloads", "--verify-platform-signature",
+        "--repository", "example/project", "--tag", "v1.2.3", "--sha", "a" * 40,
+    ]) == 1
+    assert "--verify-platform-signature requires --asset" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("suffix", [".exe", ".msi"])
+def test_windows_installer_signature_uses_the_windows_sdk(monkeypatch, tmp_path, suffix) -> None:
+    checker = _load_checker()
+    monkeypatch.setattr(checker.sys, "platform", "win32")
+    sdk_tool = tmp_path / "Windows SDK/signtool.exe"
+    monkeypatch.setattr(checker, "find_windows_signtool", lambda: sdk_tool)
+    installer = tmp_path / f"file with spaces{suffix}"
+    assert checker.native_installer_signature_commands(installer) == [[
+        str(sdk_tool), "verify", "/pa", "/all", "/tw", str(installer),
+    ]]
+
+
+def test_windows_sign_tool_uses_the_newest_sdk_for_the_host_architecture(monkeypatch, tmp_path) -> None:
+    from types import SimpleNamespace
+
+    checker = _load_checker()
+    sdk = tmp_path / "Windows Kits" / "10"
+    candidates = [
+        sdk / "bin/10.0.9.0/x64/signtool.exe",
+        sdk / "bin/10.0.10.0/x64/signtool.exe",
+        sdk / "bin/10.0.11.0/x86/signtool.exe",
+    ]
+    for candidate in candidates:
+        candidate.parent.mkdir(parents=True)
+        candidate.touch()
+    def missing_key(*_args, **_kwargs):
+        raise FileNotFoundError
+
+    registry = SimpleNamespace(
+        KEY_WOW64_32KEY=1, KEY_WOW64_64KEY=2, KEY_READ=4, HKEY_LOCAL_MACHINE=0, OpenKey=missing_key,
+    )
+    monkeypatch.setitem(checker.sys.modules, "winreg", registry)
+    monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path))
+    monkeypatch.setenv("PROCESSOR_ARCHITEW6432", "AMD64")
+    monkeypatch.setenv("PROCESSOR_ARCHITECTURE", "x86")
+    assert checker.find_windows_signtool() == candidates[1]
+
+
+@pytest.mark.parametrize(("suffix", "signature", "assessment"), [
+    (".PKG", ["/usr/sbin/pkgutil", "--check-signature"], ["--type", "install"]),
+    (".dmg", ["/usr/bin/codesign", "--verify", "--strict"], ["--type", "open", "--context", "context:primary-signature"]),
+])
+def test_macos_installer_signature_requires_signature_ticket_and_gatekeeper(monkeypatch, tmp_path, suffix, signature, assessment) -> None:
+    checker = _load_checker()
+    monkeypatch.setattr(checker.sys, "platform", "darwin")
+    installer = tmp_path / f"file with spaces{suffix}"
+    path = str(installer)
+    assert checker.native_installer_signature_commands(installer) == [
+        [*signature, path],
+        ["/usr/bin/xcrun", "stapler", "validate", path],
+        ["/usr/sbin/spctl", "--assess", *assessment, path],
+    ]
+
+
+@pytest.mark.parametrize(("suffix", "expected"), [
+    (".exe", "verify Windows installer signatures on Windows"),
+    (".dmg", "verify macOS installer signatures on macOS"),
+    (".AppImage", "supports Windows EXE/MSI and macOS PKG/DMG"),
+])
+def test_native_installer_refuses_wrong_host_or_unsupported_format(monkeypatch, suffix, expected) -> None:
+    checker = _load_checker()
+    monkeypatch.setattr(checker.sys, "platform", "linux")
+    with pytest.raises(ValueError, match=expected):
+        checker.native_installer_signature_commands(Path(f"installer{suffix}"))
+
+
+@pytest.mark.parametrize("outcome", ["pass", "warning", "timeout"])
+def test_platform_signature_runner_refuses_failures_and_timeouts(monkeypatch, outcome) -> None:
+    checker = _load_checker()
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        assert kwargs == {"stdin": checker.subprocess.DEVNULL, "capture_output": True, "check": False, "timeout": 120}
+        if outcome == "timeout":
+            raise checker.subprocess.TimeoutExpired(command, 120)
+        return checker.subprocess.CompletedProcess(command, 2 if outcome == "warning" else 0)
+
+    monkeypatch.setattr(checker.subprocess, "run", run)
+    commands = [["first-verify"], ["second-verify"]]
+    if outcome == "pass":
+        checker.verify_platform_signature(commands)
+        assert calls == commands
+    else:
+        message = "exited with 2" if outcome == "warning" else "timed out: first-verify"
+        with pytest.raises(RuntimeError, match=message):
+            checker.verify_platform_signature(commands)
+        assert calls == commands[:1]
 
 
 @pytest.mark.parametrize("mode", ["draft", "published-transaction", "published"])
@@ -679,7 +904,7 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
     repository, tag, sha = "example/project", "v1.2.3", "a" * 40
     root = tmp_path / "release-assets"
     root.mkdir()
-    asset = root / "release.bin"
+    asset = root / f"remote-ops-workspace-{tag}-linux-amd64.deb"
     asset.write_bytes(b"release asset")
     release = {**_release(checker, root, repository, tag), "published_at": published_at}
     attestation = tmp_path / "governance.json"
@@ -808,11 +1033,19 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
         assert checker.main([*completed_args, "--completed-promotion-run-attempt", "1"]) == 0
         assert checker.main([*completed_args, "--completed-promotion-run-attempt", "2"]) == 1
         assert "do not share the triggering promotion" in capsys.readouterr().err
+        with monkeypatch.context() as native:
+            def rejected_native_manifest(assets, names, *, native_release_channel):
+                assert (assets, names, native_release_channel) == (root, {asset.name}, "production-signed")
+                return ["stapled package not bound to its Apple notarization receipt"]
+
+            native.setattr(checker, "check_native_release_signing_metadata", rejected_native_manifest)
+            assert checker.main([*completed_args, "--completed-promotion-run-attempt", "1"]) == 1
+            assert "not bound to its Apple notarization receipt" in capsys.readouterr().err
         approved = tmp_path / "release-evidence.json"
         approved_sig = tmp_path / "release-evidence.sig.json"
 
-        def write_approval(expires_at):
-            approved.write_text(json.dumps({
+        def write_approval(expires_at, candidate=None, registry=None):
+            approval = {
                 "schema_version": 1,
                 "decision": "approved",
                 "repository": repository,
@@ -821,7 +1054,22 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
                 "policy_sha256": checker.sha256_file(policy),
                 "reviewed_at": "2026-11-01T11:00:00Z",
                 "expires_at": expires_at,
-            }), encoding="utf-8")
+            }
+            if candidate is not None:
+                approval["candidate_inventory"] = {
+                    "reference": "attested sealed candidate inventory",
+                    "file": candidate.name,
+                    "size_bytes": candidate.stat().st_size,
+                    "sha256": checker.sha256_file(candidate),
+                }
+            if registry is not None:
+                approval["protected_platform_registry"] = {
+                    "reference": "reviewed registry fixture",
+                    "file": registry.name,
+                    "size_bytes": registry.stat().st_size,
+                    "sha256": checker.sha256_file(registry),
+                }
+            approved.write_text(json.dumps(approval), encoding="utf-8")
             approved_sig.write_text(json.dumps({
                 "schema_version": 1,
                 "algorithm": "ed25519",
@@ -888,10 +1136,139 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
         assert checker.main(exact_completed) == 0
         assert checker.main([*current_args, *approval_args[:2]]) == 1
         assert checker.main([*args, *approval_args]) == 1
+        registry = tmp_path / "platform_verified_evidence.json"
+        registry.write_text('{"reviewed_registry_fixture": true}', encoding="utf-8")
+        write_approval("2026-11-01T12:02:30Z", registry=registry)
+        registry_args = ["--protected-platform-registry", str(registry)]
+        assert checker.main(exact_completed) == 1
+        assert "signed protected-platform registry is required" in capsys.readouterr().err
+        assert checker.main([*current_args, *registry_args]) == 1
+        assert "requires the signed redistribution approval" in capsys.readouterr().err
+        with monkeypatch.context() as platform:
+            def verify_registry(path, evidence, assets, **coordinates):
+                assert path == registry and assets == root
+                assert coordinates == {"repository": repository, "tag": tag, "sha": sha}
+                assert evidence["protected_platform_registry"]["sha256"] == checker.sha256_file(registry)
+                return checker.sha256_file(registry)
+
+            def other_registry_attempt(path, **kwargs):
+                if path == registry:
+                    return _attestation(
+                        checker, repository=repository, sha=sha, tag=tag,
+                        digest=checker.sha256_file(path), attempt=2,
+                    )
+                return attestation_api(path, **kwargs)
+
+            platform.setattr(checker, "check_approved_protected_platform_assets", verify_registry)
+            assert checker.main([*exact_completed, *registry_args]) == 0
+            assert checker.main([*current_args, *approval_args, *registry_args]) == 0
+            delegated_args = [*args, *approval_args, *registry_args]
+            delegated_inputs = {path: checker.sha256_file(path) for path in (approved, approved_sig)}
+            delegated = {"audited_policy": selected_policy, "audited_inputs": delegated_inputs}
+            assert checker.main(delegated_args, **delegated) == 0
+            signature_bytes = approved_sig.read_bytes()
+            approved_sig.write_bytes(signature_bytes + b"\n")
+            assert checker.main(delegated_args, **delegated) == 1
+            assert "signed redistribution approval changed after the compliance audit" in capsys.readouterr().err
+            approved_sig.write_bytes(signature_bytes)
+            platform.setattr(checker, "verify_attestation", other_registry_attempt)
+            assert checker.main([*exact_completed, *registry_args]) == 1
+            assert "must share the successful promotion attempt" in capsys.readouterr().err
+            assert checker.main(delegated_args, **delegated) == 1
+            assert "must share the successful promotion attempt" in capsys.readouterr().err
+        write_approval("2026-11-01T12:02:30Z")
         monkeypatch.setattr(checker, "verify_attestation", mismatched_input_attempt)
         assert checker.main([*current_args, *approval_args]) == 1
         assert "signed redistribution approval must share" in capsys.readouterr().err
         monkeypatch.setattr(checker, "verify_attestation", attestation_api)
+
+        prior_policy = policy.read_bytes()
+        debian_policy = {**json.loads(prior_policy), "production_targets": ["linux-x86_64"]}
+        policy.write_text(json.dumps(debian_policy), encoding="utf-8")
+        candidate = tmp_path / "release-candidate-inventory.json"
+        legacy_inventory = {"schema_version": 12, "sealed_candidate_fixture": True}
+        candidate.write_text(json.dumps(legacy_inventory), encoding="utf-8")
+        write_approval("2026-11-01T12:02:30Z", candidate)
+        qualified = []
+
+        def verify_exact_deb(value, **kwargs):
+            assert value == legacy_inventory
+            qualified.append(kwargs)
+            return [{"files": [{"path": asset.name, "size": asset.stat().st_size, "sha256": checker.sha256_file(asset)}]}]
+
+        monkeypatch.setattr(checker, "validate_managed_release_qualification", verify_exact_deb)
+        assert checker.main(exact_completed) == 1
+        assert "audited candidate inventory is required" in capsys.readouterr().err
+        candidate_args = [*exact_completed, "--candidate-inventory", str(candidate)]
+        assert checker.main(candidate_args) == 0
+        assert qualified == [{
+            "repository": repository, "release_tag": tag, "release_sha": sha,
+            "deb_sha256": checker.sha256_file(asset), "deb_package": asset,
+        }]
+
+        with monkeypatch.context() as current_schema:
+            current_inventory = {"schema_version": 12, "linux_smoke": "fixture"}
+            candidate.write_text(json.dumps(current_inventory), encoding="utf-8")
+            write_approval("2026-11-01T12:02:30Z", candidate)
+            current_schema.setattr(
+                checker, "validate_managed_release_qualification",
+                lambda value, **kwargs: verify_exact_deb(legacy_inventory, **kwargs),
+            )
+            assert checker.main(candidate_args) == 1
+            assert "published audit requires --candidate-qualification-archives" in capsys.readouterr().err
+            archive_root = tmp_path / "review archives"
+            archive_root.mkdir()
+            replays = []
+            current_schema.setattr(
+                checker, "verify_retained_qualification_archives",
+                lambda path, value: replays.append((path, value)),
+            )
+            assert checker.main([*candidate_args, "--candidate-qualification-archives", str(archive_root)]) == 0
+            assert replays == [(archive_root, current_inventory)]
+        candidate.write_text(json.dumps(legacy_inventory), encoding="utf-8")
+        write_approval("2026-11-01T12:02:30Z", candidate)
+
+        package = root / f"remote-ops-workspace-{tag}-macos-arm64.pkg"
+        package.write_bytes(b"alternate package with valid GitHub provenance")
+        original_assets = release["assets"]
+        release["assets"] = _release(checker, root, repository, tag)["assets"]
+        with monkeypatch.context() as alternate:
+            alternate.setattr(checker, "expected_release_assets", lambda *_args, **_kwargs: {asset.name, package.name})
+
+            def previously_reviewed_candidate(value, **kwargs):
+                records = verify_exact_deb(value, **kwargs)
+                records.append({"files": [{"path": package.name, "size": package.stat().st_size, "sha256": "f" * 64}]})
+                return records
+
+            alternate.setattr(checker, "validate_managed_release_qualification", previously_reviewed_candidate)
+            assert checker.main(candidate_args) == 1
+            assert f"published standard asset {package.name} does not match" in capsys.readouterr().err
+            assert checker.main(
+                [*args, *approval_args, "--candidate-inventory", str(candidate)],
+                audited_policy=checker.read_json_object(policy, "deb policy"),
+                audited_inputs={path: checker.sha256_file(path) for path in (approved, approved_sig)},
+            ) == 1
+            assert f"published standard asset {package.name} does not match" in capsys.readouterr().err
+        package.unlink()
+        release["assets"] = original_assets
+
+        def candidate_attested_by_other_attempt(path: Path, **kwargs):
+            if path == candidate:
+                return _attestation(
+                    checker, repository=repository, sha=sha, tag=tag,
+                    digest=checker.sha256_file(path), attempt=2,
+                )
+            return attestation_api(path, **kwargs)
+
+        monkeypatch.setattr(checker, "verify_attestation", candidate_attested_by_other_attempt)
+        assert checker.main(candidate_args) == 1
+        assert "must share the successful promotion attempt" in capsys.readouterr().err
+        monkeypatch.setattr(checker, "verify_attestation", attestation_api)
+        candidate.write_text("{}", encoding="utf-8")
+        assert checker.main(candidate_args) == 1
+        assert "does not match the signed redistribution approval" in capsys.readouterr().err
+        policy.write_bytes(prior_policy)
+
         write_approval("2026-11-01T12:01:59Z")
         assert checker.main(exact_completed) == 1
         assert "expired" in capsys.readouterr().err

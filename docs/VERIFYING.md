@@ -23,6 +23,7 @@ python -m pytest -q \
   --cov-fail-under=100
 python scripts/check_coverage_report.py \
   --report artifacts/coverage/coverage.json \
+  --source-root src/remote_ops_workspace \
   --min-total 100 \
   --min-branches 100
 ```
@@ -31,7 +32,9 @@ The release-blocking coverage gate requires 100% aggregate line-and-branch
 coverage and 100% pure branch-decision coverage. Any uncovered line or branch
 fails the gate; this is a test-coverage requirement, not a claim that every
 external platform or production signing prerequisite is complete. Repository
-policy rejects reducing either threshold or making the job advisory.
+policy rejects reducing either threshold or making the job advisory. The
+report validator checks the complete product module inventory and reconciles
+the per-file counts with the totals before accepting the result.
 CI retains XML and JSON reports for both successful and failed test runs so a
 threshold result is auditable. The gate runs the full suite with the native Qt
 Windows platform because instrumented PyQt6 application startup reproducibly
@@ -93,11 +96,11 @@ The full verifier runs:
 - `python scripts/check_optional_dependencies.py` for optional extra declarations, fail-closed missing dependency paths and real PyQt6/vault smoke checks when those extras are installed;
 - `python scripts/check_native_release_hardening.py` for native checksum sidecars, native manifest integrity, appimagetool verification hooks and native workflow boundaries;
 - `python scripts/check_native_installer_smoke.py` for the native installer smoke contract in `configs/native_installer_smoke.json`, including install, verify, upgrade and uninstall coverage for `.exe`, `.msi`, `.dmg`, `.pkg`, `.deb`, `.rpm` and AppImage release artifacts; every installed artifact must also run the `platforms --json` runtime-resource probe from its own packaged entrypoint and validate the bundled platform catalog, while Linux target-bound smoke retains source/run, target/architecture, target-scoped host label, evidence run ID and UTC observation proof lines;
-- `row x11 bundle-runtime --out <artifact-dir> --runtime <key> --source <x-server-binary> --system <target-system> --json` to assemble a packaged X server runtime root, then `python scripts/check_moba_xserver_release_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` for MobaXterm-style packaged X server evidence, including bundled/packaged runtime hash binding, passing X11 smoke JSON and forwarded GUI screenshot hash verification;
-- `row mobapt bundle-runtime --out <artifact-dir> --tool <name> --tool-source <name=path> --package <name=version> --package-source <name=version=path> --json` to assemble a ROW-owned MobApt runtime/cache bundle, then `python scripts/check_mobapt_cache_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` for MobApt-style offline package cache evidence, including ROW-owned runtime manifest hash binding, cached package archive hashes, install-test evidence and terminal-use proof;
-- `row servers bundle-runtime <service> --out <artifact-dir> --runtime <runtime-key> --source <daemon-binary> --system <target-system> --json` to assemble packaged embedded-server daemon roots, then `python scripts/check_moba_server_release_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` for MobaXterm-style embedded server evidence, including packaged daemon hash binding, auth/hardening policy checks and real client proof for every embedded service;
-- `row text evidence-bundle <profile> <remote-path> --out-dir <artifact-dir> --local <local-copy> --remote-sha256 <sha256> --open-evidence <open-proof> --save-review-evidence <review-proof> --save-evidence <upload-proof> --connected-evidence <connected-proof> --real-connected-session --sftp-browser-open --editor-tab-visible --json`, then `python scripts/check_moba_text_remote_edit_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` for MobaTextEditor-style connected remote-edit evidence, including editor-tab open proof, save conflict review proof, upload proof and SHA-bound real connected-session/SFTP-browser evidence;
-- `row macro evidence-bundle <macro> --profile <profile> --out-dir <artifact-dir> --capture-evidence <capture-proof> --review-evidence <review-proof> --replay-evidence <profile>=<replay-proof> --connected-profile <profile> --pane-id <profile>=<pane-id> --gui-record-button --gui-stop-button --gui-cancel-button --per-event-timing-captured --confirmation-prompt --cancel-prompt-verified --conflict-checked --real-connected-session --live-terminal-pane --per-keystroke-timing-replay --json`, then `python scripts/check_moba_macro_live_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` for MobaXterm-style live macro evidence, including GUI record/stop/cancel controls, replay confirmation/cancel review and SHA-bound real connected-terminal per-keystroke timing proof;
+- `python scripts/check_moba_xserver_release_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` for the packaged X server article, including managed runtime start, live X11 display probe and a visible GUI window forwarded over OpenSSH;
+- `row mobapt bundle-runtime --out <artifact-dir> --tool <name> --tool-source <name=path> --package <name=version> --package-source <name=version=path> --json` assembles a ROW-owned MobApt runtime/cache bundle. Use `row mobapt cache-verify` to check local assembly. Capture offline execution before running `python scripts/check_mobapt_cache_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` for release parity;
+- `row servers bundle-runtime <service> --out <artifact-dir> --runtime <runtime-key> --source <daemon-binary> --system <target-system> --json` assembles packaged embedded-server daemon roots. Use `python scripts/check_moba_server_release_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` to check the release-bound runtime and client captures for all eight services. The [embedded-server evidence format](MOBAXTERM_PARITY.md#embedded-server-release-evidence) lists the required attachments.
+- Build a connected editor bundle with `row text evidence-bundle <profile> <remote-path> --release-target <target> --out-dir <artifact-dir> --local <local-copy> --remote-sha256 <sha256> --open-evidence <downloaded-bytes> --save-review-evidence <dialogs.json> --save-evidence <saved-bytes> --connected-evidence <capture.json> --real-connected-session --sftp-browser-open --editor-tab-visible --json`. Follow the [connected editor release evidence format](MOBAXTERM_PARITY.md#connected-editor-release-evidence), then run `python scripts/check_moba_text_remote_edit_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>`.
+- `row macro evidence-bundle` assembles the local macro evidence envelope and attachments. Add the release identity and the [macro replay release evidence](MOBAXTERM_PARITY.md#macro-replay-release-evidence) fields, then run `python scripts/check_moba_macro_live_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` to verify recorded timing, review decisions, and remote SSH observations.
 - `row smartcard evidence-bundle <profile> --certificate-id <cert-id> --certificate <id|label|provider|fingerprint_sha256|public_key> --out-dir <artifact-dir> --management-evidence <management-proof> --selection-evidence <selection-proof> --mobagent-evidence <mobagent-proof> --browser-evidence <browser-proof> --add-to-mobagent --gui-visible --add-remove-controls --openssh-public-key-visible --expert-setting-visible --certificate-selected --profile-saved --global-add-setting --agent-loaded-certificate --same-parameters-sftp --multiplex-mode --real-connected-session --sftp-browser-open --json`, then `python scripts/check_moba_smartcard_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` for MobaXterm 26.4 smart-card evidence, including management UI proof, OpenSSH public-key retrieval, SSH expert certificate selection, MobAgent handoff and SHA-bound smart-card SSH-browser multiplex proof;
 - `row customizer evidence-bundle --brand-name <brand> --organization <org> --lock-setting <key=value> --update-url <https-url> --update-public-key <key> --out-dir <artifact-dir> --bundle-manifest-evidence <bundle-proof> --installer-evidence <installer-proof> --policy-evidence <policy-proof> --update-evidence <update-proof> --update-manifest <manifest.json> --bundle-manifest-sha256 <sha256> --sha256s-present --windows-exe-rebranded --windows-msi-rebranded --product-name-matches-brand --logo-applied --all-policy-surfaces-passed --https-update-url --signature-verified --organization-channel --json`, then `python scripts/check_moba_professional_deployment_evidence.py --evidence <artifact-dir>/moba-professional-deployment.json --assets-dir <artifact-dir>` for MobaXterm Professional-style deployment evidence, including branded EXE/MSI proof, all policy-lock enforcement surfaces, signed update-manifest verification and local SHA-bound update artifacts;
 - `python scripts/check_moba_professional_update_manifest.py --manifest <stable-update.json> --public-key <key> --channel <channel> --organization <org> --assets-dir <artifact-dir>` for MobaXterm Professional-style signed update manifests, including HTTPS artifact URL checks, payload signature verification and local artifact SHA-256 binding;
@@ -116,6 +119,152 @@ The full verifier runs:
 - `python scripts/check_product_readiness.py` for coverage truth checks: adapter-ready and implementation-backed workflow inventory with JSON references, explicit separation from runtime production readiness, strict platform evidence registry validity, visible platform gaps and no blanket product or feature overrides;
 - `python -m pytest -q`;
 - a CLI smoke test in a temporary `ROW_HOME`, including init, profile listing, example SSH dry-run, doctor JSON, and feature coverage output.
+
+### Embedded X server release evidence
+
+Once `.github/workflows/x11-forwarding-evidence.yml` is on `main` and in the
+published production tag, dispatch it against that tag:
+
+```bash
+gh workflow run x11-forwarding-evidence.yml --ref "$release_tag"
+```
+
+The job verifies the immutable Linux x86_64 Debian asset and its promotion
+provenance before installing it. Download `x11-forwarding-evidence-<run-id>-<attempt>`
+from the successful run. It contains `candidate.json` and the
+`embedded-x-server/` evidence directory. Use the same published `.deb` for
+independent finalization and retain the evidence directory for the strict audit.
+
+To qualify a Debian candidate locally, build the fixture image with the
+candidate's declared dependencies from Debian's signed repositories. The
+collector installs the candidate itself in the offline container. Set
+`X11_RELEASE_ASSETS` to the installer directory and `X11_DEB_NAME` to the native
+`.deb` filename. Mount the checkout and installer directory read-only with a
+separate writable evidence directory.
+
+```bash
+digest="$(sha256sum -- "$X11_RELEASE_ASSETS/$X11_DEB_NAME")"
+docker build --platform linux/amd64 --pull --target x11 --tag row-x11-evidence:local \
+  --file docker/Dockerfile.debian-parity-evidence \
+  --build-arg "ROW_DEB=$X11_DEB_NAME" --build-arg "ROW_DEB_SHA256=${digest%% *}" \
+  "$X11_RELEASE_ASSETS"
+docker run --rm --pull never --network none \
+  --cap-drop NET_ADMIN --cap-drop NET_RAW --cap-drop SYS_ADMIN \
+  --security-opt no-new-privileges \
+  --mount "type=bind,source=$PWD,target=/src,readonly" \
+  --mount "type=bind,source=$X11_RELEASE_ASSETS,target=/release,readonly" \
+  --mount "type=bind,source=$X11_OUTPUT,target=/proof" \
+  row-x11-evidence:local python /src/scripts/capture_moba_xserver_forwarding.py \
+  --out /proof/review --release-deb "/release/$X11_DEB_NAME"
+
+python scripts/check_moba_xserver_release_evidence.py --local-capture \
+  --evidence "$X11_OUTPUT/review/evidence.json" --assets-dir "$X11_OUTPUT/review"
+```
+
+The collector uses the installed `row` command to bundle, start, probe, and
+stop Xvfb. It generates short-lived SSH keys in the container, pins the local
+SSH daemon's host key, and captures a real forwarded clock window. The matched
+control session uses the same SSH settings with `-x` and must report an empty
+remote `DISPLAY`. The packaged CLI also verifies the captured evidence. Its
+receipt binds the evidence file to the tested installer hash. Only the
+validated evidence files are written to `review`.
+
+For a local capture on another platform, use the following inputs.
+
+Assemble the real X server with `row x11 bundle-runtime --out <runtime-root>
+--runtime <key> --source <binary> --release-target <target> --system <system>`.
+Set `ROW_XSERVER_RUNTIME_DIR` to the bundle and capture the output of
+`row x11 start --display <display> --json`. Run `row x11 smoke --display <display>
+--out <smoke.json>` using `xdpyinfo`. Use a real OpenSSH session with X11
+forwarding, record the remote `DISPLAY`, capture `xwininfo -id <window-id>` and
+save a visible 8-bit RGB or RGBA PNG of the forwarded window.
+
+In the `row.moba-xserver.release-evidence.v1` record, bind the runtime manifest
+as `runtime.manifest` and `runtime.manifest_sha256` and the start JSON as
+`runtime.start` and `runtime.start_sha256`. Preserve the bundle layout under
+the capture root. Bind a `row.moba-xserver.ssh-forwarding.v1` receipt as
+`forwarded_gui_app.receipt` and `forwarded_gui_app.receipt_sha256`.
+Include the local `display`, `remote_display`, executed `ssh_argv`, application
+`command`, `window_id`, `window_title`, relative `window_info` path and its
+`window_info_sha256`, plus `runtime_sha256`, `start_sha256`, `smoke_sha256` and
+`screenshot_sha256`. Start the remote SSH command with
+`printf "remote_display=%s\n" "$DISPLAY"; exec <application command>`.
+Record the same SSH argument list with forwarding replaced by `-x` and only
+the `printf` command as `control_argv`, plus its exact `control_stdout`.
+Paths in the evidence are relative to the capture root. Independent review
+must bind this capture to the published release and exact workflow attempt.
+
+### MobApt release evidence
+
+Once `.github/workflows/mobapt-offline-evidence.yml` is on `main` and in the
+published production tag, dispatch it against that tag:
+
+```bash
+gh workflow run mobapt-offline-evidence.yml --ref "$release_tag"
+```
+
+The job downloads the exact Linux x86_64 Debian asset and verifies its
+immutable-release digest, source SHA, and completed promotion provenance
+before installing it. Download `mobapt-offline-evidence-<run-id>-<attempt>`
+from the successful run. It contains `candidate.json` and the
+`mobapt-unix-runtime/` evidence directory. The independent reviewer uses the
+same published `.deb` for finalization and retains the evidence directory for
+the strict release audit.
+
+To reproduce the capture locally or assemble an input cache manually, use
+the steps below.
+
+For a Debian target, assemble the bundle with a real `bin/bash` for the target
+architecture and `.deb` archives from an authenticated package source. Prepare
+a disposable Debian image with Python, the matching architecture, and the
+archives' dependencies. The cached packages themselves must be absent from
+the image. Use a trusted image and archives because the capture runs Debian
+maintainer scripts as container root. For release evidence, run this from a
+GitHub Actions job checked out at the release tag. Set `MOBAPT_DEB_NAME` to the
+native `.deb` filename and `MOBAPT_RELEASE_ASSETS` to the directory containing
+the exact staged or published installer. Mount it read-only along with the
+checkout and bundle. Build the fixture from that installer to resolve its
+declared dependencies before capture. For example, with `tree` in the bundle,
+run:
+
+```bash
+MOBAPT_IMAGE=row-mobapt-evidence:local
+digest="$(sha256sum -- "$MOBAPT_RELEASE_ASSETS/$MOBAPT_DEB_NAME")"
+docker build --platform linux/amd64 --pull --target mobapt --tag "$MOBAPT_IMAGE" \
+  --file docker/Dockerfile.debian-parity-evidence \
+  --build-arg "ROW_DEB=$MOBAPT_DEB_NAME" --build-arg "ROW_DEB_SHA256=${digest%% *}" \
+  "$MOBAPT_RELEASE_ASSETS"
+
+docker run --rm --pull never --network none \
+  --cap-drop NET_ADMIN --cap-drop NET_RAW --cap-drop SYS_ADMIN \
+  --security-opt no-new-privileges \
+  --mount "type=bind,source=$PWD,target=/src,readonly" \
+  --mount "type=bind,source=$MOBAPT_BUNDLE,target=/bundle,readonly" \
+  --mount "type=bind,source=$MOBAPT_RELEASE_ASSETS,target=/release,readonly" \
+  --mount "type=bind,source=$MOBAPT_OUTPUT,target=/proof" \
+  --env GITHUB_ACTIONS --env GITHUB_REF --env GITHUB_REPOSITORY \
+  --env GITHUB_SHA --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT \
+  "$MOBAPT_IMAGE" python /src/scripts/capture_mobapt_offline_evidence.py \
+  --bundle /bundle --out /proof/review --release-deb "/release/$MOBAPT_DEB_NAME" --probe-package tree \
+  --probe-executable /usr/bin/tree --probe-arg=--version
+
+python scripts/check_mobapt_cache_evidence.py --local-execution \
+  --evidence "$MOBAPT_OUTPUT/review/evidence.json" --assets-dir "$MOBAPT_OUTPUT/review"
+```
+
+The collector records the actual `dpkg` installation and invokes the installed
+executable through bundled Bash on a pseudo-terminal. It installs the test
+release's `.deb` in the same offline container and runs that package's
+`row mobapt cache-verify` against `evidence.json`. The `review` directory holds
+the execution receipts, runtime manifest, index, exact offline cache bytes,
+and the packaged CLI result bound to the evidence and installer hashes.
+Give the parity candidate generator the tested `.deb` as `--artifact` and its
+exact GitHub release asset URL as `--release-asset-url`. Independent review and
+the published asset audit confirm the release bytes and Actions attempt.
+
+For a local qualification, use `--local-execution` on the checker. The collector
+can omit `--release-deb` when checking the cache and terminal only. The strict
+checker always requires the native CLI result and exact Actions source identity.
 
 For dependency-constrained environments, run:
 
@@ -136,6 +285,22 @@ CLI smoke, and real PyQt6 rendering. It rejects `--quick` and
 `--no-cli-smoke`; the internal step builder also overrides those skip switches
 so another caller cannot accidentally weaken the production profile.
 
+When the application uses a newer PyQt6 runtime, use the same minimum
+PyQt6 typing dependencies that CI uses. Create a separate virtual environment
+with the project's security dependencies and install the hash-pinned minimum
+Qt wheels into it. Point `ROW_MYPY_PYTHON` at that environment's interpreter.
+Mypy searches its installed packages for type information while pytest and
+the render checks use the application interpreter.
+
+```bash
+python -m venv .tmp/row-typing
+.tmp/row-typing/bin/python -m pip install '.[security]'
+.tmp/row-typing/bin/python -m pip install --require-hashes --only-binary=:all: -r tests/fixtures/pyqt6-minimum-requirements.txt
+ROW_MYPY_PYTHON=.tmp/row-typing/bin/python python scripts/verify.py --production-quality
+```
+
+Use `.tmp\row-typing\Scripts\python.exe` for `ROW_MYPY_PYTHON` on Windows.
+
 The aggregate `make production-readiness` target additionally requires an exact
 tag/SHA checkout and a clean working tree both before and after the audit. After
 validating the downloaded asset set locally, it runs
@@ -150,7 +315,7 @@ must consume their platform locks with `--require-hashes`. GUI evidence must
 also prove the selected commercial or open-source PyQt/Qt channel. A signed
 self-assertion naming an unused or missing lock does not pass.
 
-The same target runs `scripts/check_release_maturity.py`; v1.0.27 declares
+The same target runs `scripts/check_release_maturity.py`. The v1.0.28 candidate declares
 `Development Status :: 5 - Production/Stable`, while any future Alpha/Beta
 classifier remains an explicit production blocker. It then runs
 `scripts/check_release_provenance.py` to match every local file to the live
@@ -201,6 +366,12 @@ python -m build --sdist --wheel --outdir artifacts/python315-dist
 python scripts/check_python_distribution_install.py --dist-dir artifacts/python315-dist --out artifacts/python315-runtime/distribution-install.json
 ```
 
+The frozen CLI check compares the reported version with `pyproject.toml` and
+the reported platform catalog with `configs/platform_targets.json`. The frozen
+app loads configuration and Web/PWA assets from its bundle. Launch failures
+such as Windows Application Control denials appear in the failed
+`python315-frozen` receipt with the executable digest and command diagnostic.
+
 The two native Windows Python 3.15 rows also install `paramiko==5.0.0`, set
 `ROW_REQUIRE_WINDOWS_SSH_LOOPBACK=1`, and run
 `tests/test_windows_ssh_loopback.py`. They retain the three machine-readable
@@ -215,9 +386,17 @@ matrices. The stable `Native Windows readiness` job aggregates the native
 Windows ConPTY/OpenSSH and GUI evidence job. Live branch protection must require
 both exact contexts. Release preflight separately runs
 `python scripts/check_python315_ci_evidence.py --repository <owner/repo> --branch main --sha <release-source-sha>`
-with read-only GitHub Actions access and rejects any non-push, wrong-SHA,
-incomplete, skipped or unsuccessful evidence for either aggregate in that same
-run attempt. The aggregate production gate additionally runs
+with read-only GitHub Actions access. The exact push attempt must contain both
+successful aggregate jobs, all six Python 3.15 runtime jobs, the native
+Windows render and interaction job, and the Windows branch coverage job.
+The gate checks the runner labels and recorded step results for the frozen
+CLI, runtime evidence, tests, GUI, distribution installs, and Windows SSH,
+ConPTY and tab-switch paint checks. It also verifies execution of the full
+coverage suite and validation of its 100% aggregate and 100% branch thresholds.
+After reading the job pages, the live check confirms that the verified attempt
+is still the latest push attempt for that commit and still reports success.
+Retry the check if a rerun begins while it is verifying the jobs.
+The aggregate production gate additionally runs
 `python scripts/check_repository_governance.py --repository <owner/repo> --branch main --sha <release-source-sha>`;
 that command verifies both the configured branch-protection contexts and the
 latest exact-SHA check run for every required context, rejecting missing,

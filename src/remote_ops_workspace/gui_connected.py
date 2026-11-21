@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import difflib
-import hashlib
-import ntpath
 import os
 import posixpath
 import re
 import shlex
 import stat
+import subprocess
 import sys
-import time
 from abc import abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -33,8 +30,6 @@ from PyQt6.QtGui import (
     QPen,
     QPixmap,
     QPolygon,
-    QSyntaxHighlighter,
-    QTextCharFormat,
 )
 from PyQt6.QtWidgets import (
     QAbstractButton,
@@ -50,8 +45,6 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPlainTextEdit,
-    QSizePolicy,
-    QSplitter,
     QStatusBar,
     QStyle,
     QTabWidget,
@@ -65,9 +58,15 @@ from PyQt6.QtWidgets import (
 
 from .file_transfer import (
     SftpBatchPlan,
+    SftpQueueItem,
     SftpQueuePlan,
-    build_sftp_get_plan,
     build_sftp_list_plan,
+)
+from .gui_connected_terminal import (
+    ConnectedSessionPanel as ConnectedSessionPanel,
+)
+from .gui_connected_terminal import (
+    create_connected_terminal_class,
 )
 from .gui_designs import (
     gui_design_moba_connected_dock_frame,
@@ -79,11 +78,6 @@ from .gui_designs import (
     gui_design_moba_monitoring_telemetry_route,
     gui_design_moba_remote_monitoring_control_route,
     gui_design_moba_remote_monitoring_dock_chrome,
-    gui_design_moba_right_utility_action_route,
-    gui_design_moba_right_utility_actions,
-    gui_design_moba_right_utility_rail_chrome,
-    gui_design_moba_session_edge_action_route,
-    gui_design_moba_session_edge_actions,
     gui_design_moba_sftp_browser_chrome,
     gui_design_moba_sftp_dock_actions,
     gui_design_moba_sftp_dock_layout,
@@ -94,44 +88,41 @@ from .gui_designs import (
     gui_design_moba_sftp_toolbar_action_geometry,
     gui_design_moba_sftp_toolbar_action_geometry_for,
     gui_design_moba_sftp_toolbar_action_route,
-    gui_design_moba_ssh_banner_chrome,
-    gui_design_moba_ssh_banner_row_geometry,
-    gui_design_moba_ssh_banner_row_geometry_for,
-    gui_design_moba_terminal_transcript_row_geometry,
 )
 from .gui_processes import _background_process
+from .gui_remote_monitoring import RemoteMonitoringRuntime
+from .gui_sftp_editor import (
+    SFTP_ROW_INDEX_ROLE,
+    SFTP_ROW_KIND_ROLE,
+    SFTP_ROW_SOURCE_PATH_ROLE,
+    SftpTextEditor,
+)
+from .gui_ssh_connection import SharedSshConnectionState
 from .gui_terminal import TerminalPane
 from .gui_values import _required_gui_value, _safe_tooltip_html
+from .launcher import LauncherError, pinned_smartcard_uses_agent
 from .moba_connected import (
     MobaConnectedSessionState,
-    moba_connected_session_identity_route,
     moba_connected_session_route,
-    moba_connected_text_editor_route,
     moba_sftp_terminal_folder_route,
-    moba_telemetry_cell_geometry,
-    moba_telemetry_cell_geometry_for,
     moba_telemetry_cells,
     normalise_remote_path,
-    parse_remote_monitoring_output,
     parse_sftp_ls_output,
 )
-from .moba_text import (
-    MobaTextEditorTabPlan,
-    build_moba_text_editor_tab_plan,
-    prepare_managed_edit_cache,
-    write_text_document,
-)
 from .models import Profile
+from .smartcard_keys import PINNED_SMARTCARD_KEY
 from .terminal import (
     openssh_command_with_overrides,
     openssh_command_without_windows_connection_sharing,
     ssh_command_with_control_path,
     ssh_connection_key,
+    ssh_control_path_for_profile,
 )
 
 if TYPE_CHECKING:
-    class ConnectedSftpDock(QFrame):
+    class ConnectedSftpDock(SftpTextEditor):
         state: MobaConnectedSessionState
+        session_panel: ConnectedSessionPanel | None = None
 
         @abstractmethod
         def __init__(self, state: MobaConnectedSessionState) -> None: ...
@@ -144,23 +135,12 @@ if TYPE_CHECKING:
         @abstractmethod
         def schedule_background_state_activation(self, delay_ms: int = 0) -> None: ...
         @abstractmethod
+        def sync_shared_ssh_connection(self) -> SharedSshConnectionState | None: ...
+        @abstractmethod
         def shutdown_runtime(self) -> None: ...
 
-    class ConnectedSessionPanel(QWidget):
-        state: MobaConnectedSessionState
-        moba_connected_state: MobaConnectedSessionState
-        terminal_pane: TerminalPane
-        terminal_splitter: QSplitter
-
-        @abstractmethod
-        def __init__(
-            self, state: MobaConnectedSessionState, terminal_pane: TerminalPane,
-        ) -> None: ...
-        @abstractmethod
-        def add_terminal_split(self, pane: TerminalPane, orientation: Qt.Orientation) -> QSplitter: ...
 else:
-    ConnectedSftpDock = QFrame
-    ConnectedSessionPanel = QWidget
+    ConnectedSftpDock = SftpTextEditor
 
 
 class ConnectedTransferQueue(Protocol):
@@ -188,7 +168,13 @@ class ConnectedMainWindow(Protocol):
     def terminal_panes_in(self, widget: QWidget) -> list[TerminalPane]: ...
     def all_terminal_panes(self) -> list[TerminalPane]: ...
     def active_terminal_pane(self) -> TerminalPane | None: ...
-    def create_transfer_queue_dialog(self, profile: Profile) -> ConnectedTransferQueue: ...
+    def create_transfer_queue_dialog(
+        self,
+        profile: Profile,
+        *,
+        prepare_command: Callable[[list[str]], list[str]] = ...,
+        on_item_completed: Callable[[SftpQueueItem], None] | None = None,
+    ) -> ConnectedTransferQueue: ...
     def show_moba_tools_status(self) -> None: ...
 
 
@@ -227,71 +213,30 @@ def create_moba_connected_classes(
 
     _application_clipboard = services.application_clipboard
     _literal_label = services.literal_label
-    _literal_message_box = services.literal_message_box
     _widget_style = services.widget_style
 
     SFTP_ROW_ICON_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 41
-    SFTP_ROW_KIND_ROLE = int(Qt.ItemDataRole.UserRole) + 42
     SFTP_ROW_ICON_SIZE_ROLE = int(Qt.ItemDataRole.UserRole) + 43
     SFTP_ROW_ICON_RENDER_ROLE = int(Qt.ItemDataRole.UserRole) + 44
     SFTP_ROW_CONTRACT_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 45
     SFTP_ROW_ROUTE_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 46
-    SFTP_ROW_SOURCE_PATH_ROLE = int(Qt.ItemDataRole.UserRole) + 47
-    SFTP_ROW_INDEX_ROLE = int(Qt.ItemDataRole.UserRole) + 48
     SFTP_ROW_SELECTED_BY_ROUTE_ROLE = int(Qt.ItemDataRole.UserRole) + 49
     SFTP_ROW_TERMINAL_FOLDER_ROUTE_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 50
 
 
-    class MobaTextEditorHighlighter(QSyntaxHighlighter):
-        def __init__(self, document, syntax: str) -> None:
-            super().__init__(document)
-            self.set_syntax(syntax)
-
-        def set_syntax(self, syntax: str) -> None:
-            self.syntax = syntax
-            self.patterns = self.patterns_for_syntax(syntax)
-            self.rehighlight()
-
-        @staticmethod
-        def patterns_for_syntax(syntax: str) -> list[tuple[str, str]]:
-            common = [
-                (r"(?m)#.*$", "#6a9955"),
-                (r"(?m)//.*$", "#6a9955"),
-                (r"\"(?:[^\"\\]|\\.)*\"", "#ce9178"),
-                (r"\b\d+(?:\.\d+)?\b", "#b5cea8"),
-            ]
-            if syntax in {"json", "javascript", "typescript"}:
-                return [*common, (r"\b(?:true|false|null)\b", "#569cd6")]
-            if syntax in {"shell", "powershell"}:
-                return [*common, (r"\b(?:if|then|else|fi|for|do|done|set|function)\b", "#569cd6")]
-            if syntax in {"ssh-config", "ini", "systemd", "nginx"}:
-                return [*common, (r"(?m)^[A-Za-z0-9_.-]+(?=\s|=)", "#9cdcfe")]
-            if syntax == "log":
-                return [*common, (r"\b(?:error|failed|denied|warning|ok|success)\b", "#dcdcaa")]
-            return common
-
-        def highlightBlock(self, text: str | None) -> None:
-            source = text or ""
-            for pattern, color in self.patterns:
-                text_format = QTextCharFormat()
-                text_format.setForeground(QColor(color))
-                for match in re.finditer(pattern, source, re.IGNORECASE):
-                    start, end = match.span()
-                    self.setFormat(start, end - start, text_format)
-
-    class MobaSftpDock(ConnectedSftpDock):
+    class MobaSftpDock(ConnectedSftpDock, RemoteMonitoringRuntime):
         OPERATIONAL_ACTIONS = frozenset(
             {
                 "parent-folder",
                 "download",
                 "upload",
+                "new-folder",
                 "connect",
                 "tools",
                 "terminal",
             }
         )
         UNAVAILABLE_ACTION_DETAILS = {
-            "new-folder": "Use Tools > Transfer queue to review and run mkdir safely.",
             "new-file": "Remote file creation is not available in the connected dock.",
             "delete": "Use Tools > Transfer queue for guarded rm/rmdir operations.",
             "ascii-mode": "ASCII transfer mode is not supported by the SFTP queue backend.",
@@ -505,43 +450,10 @@ def create_moba_connected_classes(
             for key, value in properties.items():
                 widget.setProperty(key, value)
 
-        def apply_connected_text_editor_route_properties(self, widget, *, triggered: bool = False, status: str = "ready") -> None:
-            route = moba_connected_text_editor_route(self.state)
-            properties = {
-                "mobaTextEditorSchema": route.schema,
-                "mobaTextEditorProfile": route.profile_name,
-                "mobaTextEditorRemotePath": route.remote_path,
-                "mobaTextEditorLocalPath": route.local_path,
-                "mobaTextEditorSyntax": route.syntax,
-                "mobaTextEditorEncoding": route.encoding,
-                "mobaTextEditorRemoteSha256": route.remote_sha256,
-                "mobaTextEditorOpenedFromSftpBrowser": route.opened_from_sftp_browser,
-                "mobaTextEditorSourceBrowserObject": route.source_browser_object,
-                "mobaTextEditorSourceTableObject": route.source_table_object,
-                "mobaTextEditorSourceRowName": route.source_row_name,
-                "mobaTextEditorSourceRowIndex": route.source_row_index,
-                "mobaTextEditorTabObject": route.editor_tab_object,
-                "mobaTextEditorObject": route.editor_object,
-                "mobaTextEditorSaveActionObject": route.save_action_object,
-                "mobaTextEditorDiffActionObject": route.diff_action_object,
-                "mobaTextEditorOpenSignal": route.open_signal,
-                "mobaTextEditorSaveSignal": route.save_signal,
-                "mobaTextEditorDiffSignal": route.diff_signal,
-                "mobaTextEditorOpenCommand": list(route.open_command),
-                "mobaTextEditorOpenBatchCommands": list(route.open_batch_commands),
-                "mobaTextEditorSaveCommand": list(route.save_command),
-                "mobaTextEditorSaveBatchCommands": list(route.save_batch_commands),
-                "mobaTextEditorConflictPolicy": route.conflict_policy,
-                "mobaTextEditorCapturedOpen": triggered,
-                "mobaTextEditorStatus": status,
-                "mobaTextEditorDirty": False,
-                "mobaTextEditorRenderSource": route.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
-
         def __init__(self, state: MobaConnectedSessionState) -> None:
             QFrame.__init__(self)
+            self.session_panel: ConnectedSessionPanel | None = None
+            self._connected_services = services
             self.setObjectName("mobaConnectedLeftDock")
             self.state = replace(
                 state,
@@ -549,7 +461,6 @@ def create_moba_connected_classes(
             )
             self.active_remote_path = normalise_remote_path(self.state.remote_path)
             self.monitoring_control_widgets: dict[str, QAbstractButton] = {}
-            self.monitoring_output_buffer = bytearray()
             self.runtime_shutting_down = False
             self.background_auth_retry_attempt = 0
             self._background_password: bytearray | None = None
@@ -559,7 +470,7 @@ def create_moba_connected_classes(
                 "sftp": bytearray(),
                 "text-editor": bytearray(),
             }
-            self._background_auth_password_sent = {
+            self._background_auth_prompt_complete = {
                 "monitoring": False,
                 "sftp": False,
                 "text-editor": False,
@@ -574,37 +485,7 @@ def create_moba_connected_classes(
             self.background_state_activation_timer.timeout.connect(
                 self.activate_initial_background_state
             )
-            self.monitoring_generation = 0
-            self.monitoring_active_generation = 0
-            self._monitoring_manual_request = False
-            self.monitoring_refresh_timer = QTimer(self)
-            self.monitoring_refresh_timer.setInterval(
-                gui_design_moba_remote_monitoring_dock_chrome().refresh_seconds * 1000
-            )
-            self.monitoring_refresh_timer.timeout.connect(
-                self.request_remote_monitoring_refresh
-            )
-            # Monitoring is periodic and must never open a visible interactive
-            # prompt. Reusing the active SSH control path or configured key/
-            # agent remains non-interactive; a session-only password may use
-            # the hidden PTY transport after an explicit manual auth action.
-            self.monitoring_process = _background_process(self, interactive_auth=True)
-            self.monitoring_process.setProperty(
-                "mobaMonitoringNonInteractive",
-                True,
-            )
-            self.monitoring_process.setProcessChannelMode(
-                QProcess.ProcessChannelMode.MergedChannels
-            )
-            self.monitoring_process.readyReadStandardOutput.connect(
-                self.read_remote_monitoring_output
-            )
-            self.monitoring_process.finished.connect(
-                self.handle_remote_monitoring_finished
-            )
-            self.monitoring_process.errorOccurred.connect(
-                self.handle_remote_monitoring_error
-            )
+            self.initialize_monitoring_runtime(_background_process)
             self.sftp_refresh_output_buffer = bytearray()
             self.sftp_refresh_plan: SftpBatchPlan | None = None
             self.sftp_refresh_generation = 0
@@ -638,47 +519,7 @@ def create_moba_connected_classes(
             self.sftp_auth_probe_timer.timeout.connect(
                 lambda: self.write_sftp_refresh_batch(force=True)
             )
-            self.text_editor_output_buffer = bytearray()
-            self.text_editor_process = _background_process(self, interactive_auth=True)
-            self.text_editor_process.setProcessChannelMode(
-                QProcess.ProcessChannelMode.MergedChannels
-            )
-            self.text_editor_process.started.connect(
-                self.write_text_editor_sftp_batch
-            )
-            self.text_editor_process.readyReadStandardOutput.connect(
-                self.read_text_editor_sftp_output
-            )
-            self.text_editor_process.finished.connect(
-                self.handle_text_editor_sftp_finished
-            )
-            self.text_editor_process.errorOccurred.connect(
-                self.handle_text_editor_sftp_error
-            )
-            self.text_editor_timeout = QTimer(self)
-            self.text_editor_timeout.setSingleShot(True)
-            self.text_editor_timeout.timeout.connect(
-                self.cancel_text_editor_sftp_timeout
-            )
-            self.text_editor_auth_probe_timer = QTimer(self)
-            self.text_editor_auth_probe_timer.setSingleShot(True)
-            self.text_editor_auth_probe_timer.setInterval(1200)
-            self.text_editor_auth_probe_timer.timeout.connect(
-                lambda: self.write_text_editor_sftp_batch(force=True)
-            )
-            self.text_editor_generation = 0
-            self.text_editor_active_generation = 0
-            self.text_editor_operation = ""
-            self.text_editor_tab_plan: MobaTextEditorTabPlan | None = None
-            self.text_editor_sftp_plan: SftpBatchPlan | None = None
-            self.text_editor_pending_sftp: tuple[str, SftpBatchPlan, str, str] | None = None
-            self.text_editor_remote_path = ""
-            self.text_editor_local_path = ""
-            self.text_editor_probe_path = ""
-            self.text_editor_baseline_text = ""
-            self.text_editor_original_remote_sha256 = ""
-            self.text_editor_cache_sha256 = ""
-            self.text_editor_save_force = False
+            self.initialize_text_editor_runtime(_background_process)
             frame = gui_design_moba_connected_dock_frame()
             density = gui_design_moba_sftp_dock_layout()
             follow_route = gui_design_moba_sftp_follow_folder_route()
@@ -900,23 +741,26 @@ def create_moba_connected_classes(
 
             return tuple(entry for entry in entries if entry.name.strip() not in {".", ".."})
 
-        def shared_ssh_control_path(self) -> str:
-            """Find an available OpenSSH control socket for this session."""
-
+        def _shared_ssh_panes(self) -> list[TerminalPane]:
             main_window = self.main_window()
             key = self.state.ssh_connection_key
             if not key or main_window is None or not hasattr(main_window, "tabs"):
-                return ""
+                return []
+            current = main_window.tabs.currentWidget()
+            visible = main_window.terminal_panes_in(current) if current is not None else []
             pane_provider = getattr(main_window, "all_terminal_panes", None)
-            if callable(pane_provider):
-                panes = pane_provider()
-            else:
-                current = main_window.tabs.currentWidget()
-                if current is None:
-                    return ""
-                panes = main_window.terminal_panes_in(current)
-            for pane in panes:
-                if getattr(pane, "ssh_connection_key", "") != key or not pane.is_running():
+            other_panes = [pane for pane in pane_provider() if pane not in visible] if callable(pane_provider) else []
+            panes = [*visible, *other_panes]
+            return [pane for pane in panes if getattr(pane, "ssh_connection_key", "") == key]
+
+        def shared_ssh_control_path(self) -> str:
+            """Find an available OpenSSH control socket for this session."""
+
+            for pane in self._shared_ssh_panes():
+                if not pane.is_running():
+                    continue
+                connection = getattr(pane, "ssh_connection", None)
+                if connection is not None and connection.state.phase != "connected":
                     continue
                 control_path = str(getattr(pane, "ssh_control_path", "") or "")
                 if not control_path:
@@ -930,11 +774,57 @@ def create_moba_connected_classes(
                     return control_path
             return ""
 
+        def sync_shared_ssh_connection(self) -> SharedSshConnectionState | None:
+            states = [
+                connection.state
+                for pane in self._shared_ssh_panes()
+                if (connection := getattr(pane, "ssh_connection", None)) is not None
+            ]
+            selected = next((state for state in states if state.phase == "connected"), None)
+            if selected is None and states:
+                selected = next((state for state in states if state.phase not in {"idle", "closed"}), states[0])
+            snapshot = selected.properties() if selected is not None else None
+            description = selected.description() if selected is not None else ""
+            self.setProperty("sshConnectionDescription", description)
+            sftp_status = getattr(self, "sftp_status_badge", None)
+            monitoring = self.monitoring_control_widgets.get("remote-monitoring")
+            for widget in (self, self.browser, sftp_status, self.remote_monitoring_panel, monitoring):
+                if widget is not None:
+                    widget.setProperty("sshConnectionState", snapshot)
+            for badge, message_key in (
+                (sftp_status, "mobaSftpStatusBadgeMessage"),
+                (monitoring, "mobaMonitoringStatusBadgeMessage"),
+            ):
+                if badge is not None:
+                    message = str(badge.property(message_key) or "")
+                    badge.setToolTip(self._background_ssh_tooltip(message))
+                    badge.setAccessibleDescription("\n".join(filter(None, (message, description))))
+            return selected
+
+        def _background_ssh_tooltip(self, message: str) -> str:
+            description = str(self.property("sshConnectionDescription") or "")
+            return _safe_tooltip_html("\n".join(filter(None, (message, description, self.background_ssh_auth_detail()))))
+
+        def _waiting_for_shared_ssh(self) -> bool:
+            snapshot = self.property("sshConnectionState")
+            return isinstance(snapshot, dict) and snapshot["phase"] != "connected"
+
         def background_ssh_auth_capability(self, profile: Profile | None) -> tuple[bool, str]:
             """Return whether an automatic, non-interactive SSH child is defensible."""
 
             if profile is None:
                 return False, "connected profile was not found"
+            if PINNED_SMARTCARD_KEY in profile.options:
+                if self.shared_ssh_control_path():
+                    return True, "active terminal SSH connection (shared control socket)"
+                if ssh_control_path_for_profile(profile):
+                    return False, "waiting for the terminal to authenticate with the saved smart-card key"
+                try:
+                    if pinned_smartcard_uses_agent(profile.options):
+                        return True, "configured SSH agent for the saved smart-card key"
+                except LauncherError as exc:
+                    return False, str(exc)
+                return False, "the saved smart-card key needs an authenticated terminal or a configured SSH agent"
             if self._background_password and self.background_auth_password_supported():
                 return True, "encrypted-vault credential loaded for this session"
             if self.shared_ssh_control_path():
@@ -985,6 +875,9 @@ def create_moba_connected_classes(
         def background_ssh_auth_detail(self) -> str:
             """Describe the authentication route currently used by background tools."""
 
+            profile = self.profile_for_sftp_action()
+            if profile is not None and PINNED_SMARTCARD_KEY in profile.options:
+                return self.background_ssh_auth_capability(profile)[1]
             if self._background_password and self.background_auth_password_supported():
                 source = str(self.property("mobaBackgroundSshCredentialSource") or "")
                 source_detail = (
@@ -1016,8 +909,6 @@ def create_moba_connected_classes(
                 password.clear()
             for buffer in self._background_auth_prompt_buffers.values():
                 buffer.clear()
-            for process_kind in self._background_auth_password_sent:
-                self._background_auth_password_sent[process_kind] = False
             self.setProperty("mobaBackgroundSshCredentialLoaded", False)
             self.setProperty("mobaBackgroundSshCredentialSource", "")
 
@@ -1056,12 +947,18 @@ def create_moba_connected_classes(
             password = self._background_password
             if not password or process_kind not in self._background_auth_prompt_buffers:
                 return
-            if self._background_auth_password_sent[process_kind]:
+            if self._background_auth_prompt_complete[process_kind]:
                 return
             prompt_buffer = self._background_auth_prompt_buffers[process_kind]
             prompt_buffer.extend(payload)
             del prompt_buffer[:-1024]
             prompt = prompt_buffer.decode(errors="replace")[-768:]
+            # ConPTY can surround the OpenSSH prompt with cursor and title updates.
+            prompt = re.sub(
+                r"\x1b(?:\[(?:\?[0-9;]+[hl]|[0-9;]*[mHJC])|\]0;[^\x07\x1b]*(?:\x07|\x1b\\))",
+                "",
+                prompt,
+            )
             if not self.background_password_prompt_matches_target(prompt):
                 if re.search(
                     r"(?i)(?:password|passphrase)[^:\r\n]{0,240}:\s*$",
@@ -1076,10 +973,13 @@ def create_moba_connected_classes(
             }.get(process_kind)
             if process is None:
                 return
-            accepted = process.write(bytes(password) + b"\r")
+            # Win32 OpenSSH can consume the next console character after CR.
+            # LF ends the password without reading into the SFTP batch.
+            ending = b"\n" if getattr(process, "is_pty", False) else b"\r"
+            accepted = process.write(bytes(password) + ending)
             if accepted <= 0:
                 return
-            self._background_auth_password_sent[process_kind] = True
+            self._background_auth_prompt_complete[process_kind] = True
             prompt_buffer.clear()
             if process_kind == "sftp":
                 self.sftp_auth_probe_timer.stop()
@@ -1141,6 +1041,9 @@ def create_moba_connected_classes(
                 self.set_sftp_runtime_status(message, state="auth-required")
                 self.set_remote_monitoring_status(message, state="auth-required")
                 self.show_sftp_status(message)
+                return False
+            if PINNED_SMARTCARD_KEY in profile.options:
+                self.show_sftp_status(self.background_ssh_auth_capability(profile)[1])
                 return False
             credential_ref = str(profile.credential_ref or "").strip() if profile else ""
             if not self.background_auth_password_supported():
@@ -1238,14 +1141,14 @@ def create_moba_connected_classes(
                 return False
             return True
 
-        def schedule_background_auth_retry(self) -> None:
+        def schedule_background_auth_retry(self, *, waiting_for_smartcard: bool = False) -> None:
             """Retry background clients after the interactive SSH prompt completes."""
 
             if self.runtime_shutting_down:
                 return
             profile = self.profile_for_sftp_action()
             available, _detail = self.background_ssh_auth_capability(profile)
-            if not available:
+            if not available and not waiting_for_smartcard:
                 return
             self.setProperty("mobaBackgroundSshWaitingForTerminalAuth", True)
             self.background_auth_retry_attempt = min(
@@ -1273,6 +1176,7 @@ def create_moba_connected_classes(
             if self.runtime_shutting_down:
                 return
             self.background_state_activation_timer.stop()
+            self.update_sftp_action_states()
             self._apply_initial_background_state(start_runtime=False)
             self.schedule_background_state_activation()
 
@@ -1290,7 +1194,11 @@ def create_moba_connected_classes(
             if self.runtime_shutting_down:
                 return
             profile = self.profile_for_sftp_action()
-            available, detail = self.background_ssh_auth_capability(profile)
+            self.sync_shared_ssh_connection()
+            if self._waiting_for_shared_ssh():
+                available, detail = False, "waiting for the managed terminal SSH connection"
+            else:
+                available, detail = self.background_ssh_auth_capability(profile)
             auth_gate_forced_monitoring_off = bool(
                 self.property("mobaBackgroundSshAuthGateForcedMonitoringOff")
             )
@@ -1349,19 +1257,18 @@ def create_moba_connected_classes(
                 f"Monitoring not started automatically: {detail}",
                 state="auth-required",
             )
+            if (start_runtime and profile is not None and PINNED_SMARTCARD_KEY in profile.options
+                and self.background_auth_retry_attempt < 5 and ssh_control_path_for_profile(profile)):
+                self.schedule_background_auth_retry(waiting_for_smartcard=True)
 
         def set_sftp_runtime_status(self, message: str, *, state: str) -> None:
             badge = getattr(self, "sftp_status_badge", None)
-            auth_detail = self.background_ssh_auth_detail()
-            tooltip = (
-                f"{message}\n"
-                f"{auth_detail}"
-            )
+            tooltip = self._background_ssh_tooltip(message)
             if badge is not None:
                 badge.setProperty("state", state)
                 badge.setProperty("mobaSftpStatusBadgeState", state)
                 badge.setProperty("mobaSftpStatusBadgeMessage", message)
-                badge.setToolTip(_safe_tooltip_html(tooltip))
+                badge.setToolTip(tooltip)
                 badge.setAccessibleDescription(message)
                 status_icon = {
                     "pending": QStyle.StandardPixmap.SP_BrowserReload,
@@ -1389,765 +1296,7 @@ def create_moba_connected_classes(
                     widget.setProperty("mobaSftpRuntimeMessage", message)
             table = getattr(self, "file_table", None)
             if table is not None:
-                table.setToolTip(_safe_tooltip_html(tooltip))
-
-        def build_text_editor_toolbar(self) -> QFrame:
-            toolbar = QFrame()
-            toolbar.setObjectName("mobaTextEditorToolbar")
-            self.apply_connected_text_editor_route_properties(toolbar)
-            layout = QHBoxLayout(toolbar)
-            layout.setContentsMargins(0, 4, 0, 2)
-            layout.setSpacing(4)
-            self.text_editor_save_button = self.text_editor_action_button(
-                "save",
-                "SP_DialogSaveButton",
-                "mobaTextEditorSaveAction",
-                self.handle_moba_text_editor_save,
-            )
-            self.text_editor_diff_button = self.text_editor_action_button(
-                "diff",
-                "SP_FileDialogDetailedView",
-                "mobaTextEditorDiffAction",
-                self.handle_moba_text_editor_diff,
-            )
-            layout.addWidget(self.text_editor_save_button)
-            layout.addWidget(self.text_editor_diff_button)
-            layout.addStretch(1)
-            close_button = self.text_editor_action_button(
-                "close",
-                "SP_DialogCancelButton",
-                "mobaTextEditorCloseAction",
-                self.hide_moba_text_editor,
-            )
-            close_button.setToolTip("Close the inline editor")
-            self.text_editor_close_button = close_button
-            layout.addWidget(close_button)
-            return toolbar
-
-        def build_text_editor(self) -> QPlainTextEdit:
-            route = moba_connected_text_editor_route(self.state)
-            editor = QPlainTextEdit()
-            editor.setObjectName(route.editor_object)
-            self.apply_connected_text_editor_route_properties(editor)
-            editor.setPlainText("")
-            editor.setPlaceholderText(
-                "Remote content is not loaded. Use Download to retrieve the file first."
-            )
-            editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-            editor.setFixedHeight(116)
-            editor.setReadOnly(True)
-            editor.setProperty("mobaTextEditorContentLoaded", False)
-            editor.setProperty("mobaTextEditorSyntheticPreviewSuppressed", True)
-            editor.textChanged.connect(self.handle_moba_text_editor_changed)
-            self.text_editor_highlighter = MobaTextEditorHighlighter(editor.document(), route.syntax)
-            self.text_editor_save_button.setEnabled(False)
-            self.text_editor_diff_button.setEnabled(False)
-            return editor
-
-        def text_editor_action_button(self, action_key: str, icon_name: str, object_name: str, handler) -> QToolButton:
-            route = moba_connected_text_editor_route(self.state)
-            button = QToolButton()
-            button.setObjectName(object_name)
-            button.setProperty("mobaTextEditorActionKey", action_key)
-            button.setProperty("mobaTextEditorActionObject", object_name)
-            button.setProperty("mobaTextEditorRemotePath", route.remote_path)
-            button.setProperty("mobaTextEditorRenderSource", route.render_source)
-            button.setIcon(_widget_style(self).standardIcon(self.standard_icon(icon_name)))
-            button.setIconSize(QSize(16, 16))
-            button.setFixedSize(QSize(24, 22))
-            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-            button.clicked.connect(handler)
-            return button
-
-        def text_editor_route_widgets(self) -> tuple[QWidget, ...]:
-            return tuple(
-                widget
-                for widget in (
-                    self,
-                    getattr(self, "browser", None),
-                    getattr(self, "file_table", None),
-                    getattr(self, "text_editor_toolbar", None),
-                    getattr(self, "text_editor", None),
-                    getattr(self, "text_editor_save_button", None),
-                    getattr(self, "text_editor_diff_button", None),
-                )
-                if widget is not None
-            )
-
-        def update_text_editor_state_from_plan(
-            self,
-            plan: MobaTextEditorTabPlan,
-            *,
-            source_row_name: str,
-            source_row_index: int,
-            remote_sha256: str = "",
-        ) -> None:
-            current = self.state.text_editor
-            self.state = replace(
-                self.state,
-                text_editor=replace(
-                    current,
-                    schema=plan.schema,
-                    profile_name=plan.profile_name,
-                    remote_path=plan.remote_path,
-                    local_path=plan.local_path,
-                    syntax=plan.syntax,
-                    encoding=plan.encoding,
-                    remote_sha256=remote_sha256,
-                    opened_from_sftp_browser=plan.opened_from_sftp_browser,
-                    source_row_name=source_row_name,
-                    source_row_index=source_row_index,
-                    open_command=tuple(plan.download_plan.command),
-                    open_batch_commands=tuple(plan.download_plan.batch_commands),
-                    save_command=tuple(plan.save_plan.command),
-                    save_batch_commands=tuple(plan.save_plan.batch_commands),
-                    conflict_policy=plan.conflict_policy,
-                    preview_text="",
-                    render_source="connected-sftp-browser-text-editor",
-                ),
-            )
-            self.text_editor_highlighter.set_syntax(plan.syntax)
-
-        def set_text_editor_runtime_state(
-            self,
-            *,
-            status: str,
-            dirty: bool | None = None,
-            content_loaded: bool | None = None,
-            remote_sha256: str | None = None,
-            operation: str | None = None,
-        ) -> None:
-            editor = getattr(self, "text_editor", None)
-            if editor is None:
-                return
-            effective_dirty = (
-                bool(editor.property("mobaTextEditorDirty"))
-                if dirty is None
-                else bool(dirty)
-            )
-            effective_loaded = (
-                bool(editor.property("mobaTextEditorContentLoaded"))
-                if content_loaded is None
-                else bool(content_loaded)
-            )
-            for widget in self.text_editor_route_widgets():
-                widget.setProperty("mobaTextEditorStatus", status)
-                widget.setProperty("mobaTextEditorDirty", effective_dirty)
-                widget.setProperty("mobaTextEditorContentLoaded", effective_loaded)
-                if remote_sha256 is not None:
-                    widget.setProperty("mobaTextEditorRemoteSha256", remote_sha256)
-                if operation is not None:
-                    widget.setProperty("mobaTextEditorOperation", operation)
-            operation_is_locked = operation == "upload"
-            editor.setReadOnly(not effective_loaded or operation_is_locked)
-            save_button = getattr(self, "text_editor_save_button", None)
-            if save_button is not None:
-                save_button.setEnabled(effective_loaded and effective_dirty)
-                save_button.setProperty("mobaTextEditorDirty", effective_dirty)
-            diff_button = getattr(self, "text_editor_diff_button", None)
-            if diff_button is not None:
-                diff_button.setEnabled(effective_loaded)
-                diff_button.setProperty("mobaTextEditorDirty", effective_dirty)
-
-        def handle_moba_text_editor_open_from_item(self, item: QTreeWidgetItem, _column: int) -> None:
-            remote_path = self.text_editor_remote_path_for_item(item)
-            if not remote_path:
-                return
-            editor = getattr(self, "text_editor", None)
-            if editor is None:
-                return
-            if (
-                bool(editor.property("mobaTextEditorContentLoaded"))
-                and bool(editor.property("mobaTextEditorDirty"))
-            ):
-                current_path = self.text_editor_remote_path or "the current document"
-                choice = _literal_message_box(
-                    self,
-                    QMessageBox.Icon.Warning,
-                    "Unsaved editor changes",
-                    (
-                        f"Discard unsaved changes to {current_path} and open "
-                        f"{remote_path}?"
-                    ),
-                    buttons=(
-                        QMessageBox.StandardButton.Yes
-                        | QMessageBox.StandardButton.No
-                    ),
-                    default_button=QMessageBox.StandardButton.No,
-                )
-                if choice != QMessageBox.StandardButton.Yes:
-                    self.show_sftp_status("Opening the file was cancelled; unsaved changes were kept")
-                    return
-            profile = self.profile_for_sftp_action()
-            if profile is None:
-                self.show_sftp_status(
-                    "Text editor unavailable: connected profile was not found"
-                )
-                return
-            try:
-                plan = build_moba_text_editor_tab_plan(profile, remote_path)
-                prepare_managed_edit_cache(plan.local_path)
-            except (OSError, ValueError) as exc:
-                self.show_sftp_status(f"Text editor unavailable: {exc}")
-                return
-            self.cancel_text_editor_sftp_operation()
-            self.text_editor_tab_plan = plan
-            self.text_editor_remote_path = plan.remote_path
-            self.text_editor_local_path = plan.local_path
-            self.text_editor_probe_path = ""
-            self.text_editor_baseline_text = ""
-            self.text_editor_original_remote_sha256 = ""
-            self.text_editor_cache_sha256 = ""
-            self.text_editor_save_force = False
-            self.update_text_editor_state_from_plan(
-                plan,
-                source_row_name=item.text(0),
-                source_row_index=int(item.data(0, SFTP_ROW_INDEX_ROLE) or -1),
-            )
-            previous = editor.blockSignals(True)
-            try:
-                editor.clear()
-            finally:
-                editor.blockSignals(previous)
-            save_button = getattr(self, "text_editor_save_button", None)
-            diff_button = getattr(self, "text_editor_diff_button", None)
-            toolbar = getattr(self, "text_editor_toolbar", None)
-            widgets = [
-                self,
-                getattr(self, "browser", None),
-                getattr(self, "file_table", None),
-                editor,
-                save_button,
-                diff_button,
-                toolbar,
-            ]
-            for widget in widgets:
-                if widget is None:
-                    continue
-                self.apply_connected_text_editor_route_properties(widget, triggered=True, status="opened")
-                widget.setProperty("mobaTextEditorRemotePath", plan.remote_path)
-                widget.setProperty("mobaTextEditorLocalPath", plan.local_path)
-                widget.setProperty("mobaTextEditorCapturedRowName", item.text(0))
-                widget.setProperty("mobaTextEditorCapturedOpenSignal", "itemDoubleClicked")
-                widget.setProperty("mobaTextEditorDirty", False)
-                widget.setProperty("mobaTextEditorContentLoaded", False)
-                widget.setProperty("mobaTextEditorOnDemand", True)
-            editor.setPlaceholderText(
-                f"Downloading {plan.remote_path}..."
-            )
-            editor.setReadOnly(True)
-            if toolbar is not None:
-                toolbar.setVisible(True)
-            editor.setVisible(True)
-            self.setProperty("mobaTextEditorOnDemandVisible", True)
-            self.set_text_editor_runtime_state(
-                status="downloading",
-                dirty=False,
-                content_loaded=False,
-                operation="open",
-            )
-            if not self.ensure_background_authentication_for_request():
-                self.set_text_editor_runtime_state(
-                    status="auth-required",
-                    dirty=False,
-                    content_loaded=False,
-                    operation="open",
-                )
-                editor.setPlaceholderText(
-                    f"Authentication required to download {plan.remote_path}."
-                )
-                return
-            self.show_sftp_status(f"Downloading {plan.remote_path} for editing")
-            self.start_text_editor_sftp_operation("open", plan.download_plan)
-
-        def hide_moba_text_editor(self, *_args) -> None:
-            self.cancel_text_editor_sftp_operation()
-            toolbar = getattr(self, "text_editor_toolbar", None)
-            editor = getattr(self, "text_editor", None)
-            if toolbar is not None:
-                toolbar.setVisible(False)
-            if editor is not None:
-                editor.setVisible(False)
-            self.setProperty("mobaTextEditorOnDemandVisible", False)
-
-        def handle_moba_text_editor_changed(self) -> None:
-            editor = getattr(self, "text_editor", None)
-            if editor is None or not bool(editor.property("mobaTextEditorContentLoaded")):
-                return
-            self.set_text_editor_runtime_state(
-                status="modified",
-                dirty=True,
-                content_loaded=True,
-                operation="idle",
-            )
-
-        def handle_moba_text_editor_save(self) -> None:
-            editor = getattr(self, "text_editor", None)
-            if editor is None or not bool(editor.property("mobaTextEditorContentLoaded")):
-                self.show_sftp_status("Text editor save unavailable: remote content is not loaded")
-                return
-            if not bool(editor.property("mobaTextEditorDirty")):
-                self.show_sftp_status("Text editor has no unsaved changes")
-                return
-            if self.text_editor_active_generation:
-                self.show_sftp_status("Text editor is still transferring")
-                return
-            profile = self.profile_for_sftp_action()
-            if profile is None:
-                self.show_sftp_status("Text editor save unavailable: connected profile was not found")
-                return
-            if not self.ensure_background_authentication_for_request():
-                return
-            local_path = Path(self.text_editor_local_path)
-            probe_path = local_path.with_name(f"{local_path.name}.remote-check")
-            try:
-                probe_plan = build_sftp_get_plan(
-                    profile,
-                    self.text_editor_remote_path,
-                    local_path=probe_path,
-                    allow_overwrite=True,
-                )
-            except ValueError as exc:
-                self.show_sftp_status(f"Text editor save unavailable: {exc}")
-                return
-            self.text_editor_probe_path = str(probe_path)
-            self.text_editor_save_force = False
-            self.set_text_editor_runtime_state(
-                status="checking-remote",
-                dirty=True,
-                content_loaded=True,
-                operation="save-check",
-            )
-            self.show_sftp_status(
-                f"Checking {self.text_editor_remote_path} for remote changes"
-            )
-            self.start_text_editor_sftp_operation("save-check", probe_plan)
-
-        def handle_moba_text_editor_diff(self) -> None:
-            editor = getattr(self, "text_editor", None)
-            if editor is None or not bool(editor.property("mobaTextEditorContentLoaded")):
-                self.show_sftp_status("Text editor diff unavailable: remote content is not loaded")
-                return
-            current_text = editor.toPlainText()
-            diff_lines = list(
-                difflib.unified_diff(
-                    self.text_editor_baseline_text.splitlines(keepends=True),
-                    current_text.splitlines(keepends=True),
-                    fromfile=self.text_editor_remote_path,
-                    tofile=f"{self.text_editor_remote_path} (editor)",
-                    n=3,
-                )
-            )
-            diff_text = "".join(diff_lines)
-            self.capture_moba_text_editor_action("diff", status="diff-ready")
-            for widget in self.text_editor_route_widgets():
-                widget.setProperty("mobaTextEditorDiffText", diff_text)
-                widget.setProperty("mobaTextEditorDiffEqual", not bool(diff_text))
-                widget.setProperty(
-                    "mobaTextEditorDiffHunkCount",
-                    sum(1 for line in diff_lines if line.startswith("@@")),
-                )
-            box = QMessageBox(self)
-            box.setIcon(QMessageBox.Icon.Information)
-            box.setWindowTitle("Remote text diff")
-            box.setTextFormat(Qt.TextFormat.PlainText)
-            box.setText(
-                "No changes from the downloaded remote baseline."
-                if not diff_text
-                else "Local editor changes compared with the downloaded remote baseline:"
-            )
-            box.setDetailedText(diff_text or "No changes")
-            box.exec()
-
-        def capture_moba_text_editor_action(self, action: str, *, status: str) -> None:
-            editor = getattr(self, "text_editor", None)
-            route = moba_connected_text_editor_route(self.state)
-            line_count = len(editor.toPlainText().splitlines()) if editor is not None else 0
-            dirty = bool(editor is not None and editor.property("mobaTextEditorDirty"))
-            content_loaded = bool(
-                editor is not None
-                and editor.property("mobaTextEditorContentLoaded")
-            )
-            for widget in self.text_editor_route_widgets():
-                self.apply_connected_text_editor_route_properties(widget, triggered=True, status=status)
-                widget.setProperty("mobaTextEditorCapturedAction", action)
-                widget.setProperty("mobaTextEditorCapturedLineCount", line_count)
-                widget.setProperty("mobaTextEditorCapturedSaveBatchCommands", list(route.save_batch_commands))
-                widget.setProperty("mobaTextEditorCapturedConflictPolicy", route.conflict_policy)
-                widget.setProperty("mobaTextEditorDirty", dirty)
-                widget.setProperty("mobaTextEditorContentLoaded", content_loaded)
-                if action == "save":
-                    widget.setProperty("mobaTextEditorCapturedSave", True)
-                    widget.setProperty("mobaTextEditorDirty", False)
-                elif action == "diff":
-                    widget.setProperty("mobaTextEditorCapturedDiff", True)
-
-        def text_editor_remote_path_for_item(self, item: QTreeWidgetItem) -> str:
-            kind = str(item.data(0, SFTP_ROW_KIND_ROLE) or "")
-            name = item.text(0).strip()
-            if kind != "file" or not name:
-                return ""
-            base = str(
-                item.data(0, SFTP_ROW_SOURCE_PATH_ROLE)
-                or self.active_remote_path
-            ).rstrip("/")
-            if not base:
-                base = "/"
-            return f"/{name}" if base == "/" else f"{base}/{name}"
-
-        def text_editor_preview_for_remote_path(self, remote_path: str) -> str:
-            del remote_path
-            return ""
-
-        def start_text_editor_sftp_operation(
-            self,
-            operation: str,
-            plan: SftpBatchPlan,
-        ) -> bool:
-            """Run one editor transfer without blocking the Qt event loop."""
-
-            if self.runtime_shutting_down:
-                return False
-            process = self.text_editor_process
-            if process.state() != QProcess.ProcessState.NotRunning:
-                self.text_editor_generation += 1
-                self.text_editor_active_generation = 0
-                self.text_editor_pending_sftp = (
-                    operation,
-                    plan,
-                    self.text_editor_remote_path,
-                    self.text_editor_local_path,
-                )
-                process.kill()
-                self.show_sftp_status("Text editor transfer queued")
-                return True
-            self.text_editor_generation += 1
-            request_generation = self.text_editor_generation
-            self.text_editor_active_generation = request_generation
-            self.text_editor_operation = operation
-            self.text_editor_sftp_plan = plan
-            self.text_editor_output_buffer.clear()
-            self._background_auth_prompt_buffers["text-editor"].clear()
-            self._background_auth_password_sent["text-editor"] = False
-            runtime_command = openssh_command_with_overrides(
-                list(plan.command),
-                self.background_ssh_overrides(),
-            )
-            runtime_command = openssh_command_without_windows_connection_sharing(
-                runtime_command
-            )
-            control_path = self.shared_ssh_control_path()
-            if control_path:
-                runtime_command = ssh_command_with_control_path(
-                    runtime_command,
-                    control_path,
-                    master=False,
-                )
-            try:
-                process.setProgram(runtime_command[0])
-                process.setArguments(runtime_command[1:])
-                process.start()
-            except (OSError, RuntimeError) as exc:
-                self.text_editor_active_generation = 0
-                self.set_text_editor_runtime_state(
-                    status="error",
-                    operation="idle",
-                )
-                self.show_sftp_status(f"Text editor transfer could not start: {exc}")
-                if operation == "save-check":
-                    self.clear_text_editor_probe_file()
-                self.schedule_pending_text_editor_sftp()
-                return False
-            self.text_editor_timeout.start(30_000)
-            return True
-
-        def clear_text_editor_probe_file(self) -> None:
-            probe_path = self.text_editor_probe_path
-            self.text_editor_probe_path = ""
-            if not probe_path:
-                return
-            try:
-                Path(probe_path).unlink(missing_ok=True)
-            except OSError:
-                pass
-
-        def cancel_text_editor_sftp_operation(self) -> None:
-            self.text_editor_generation += 1
-            self.text_editor_active_generation = 0
-            self.text_editor_pending_sftp = None
-            self.text_editor_timeout.stop()
-            self.text_editor_auth_probe_timer.stop()
-            self.clear_text_editor_probe_file()
-            if self.text_editor_process.state() != QProcess.ProcessState.NotRunning:
-                self.text_editor_process.kill()
-
-        def text_editor_sftp_request_is_current(self) -> bool:
-            return bool(
-                not self.runtime_shutting_down
-                and self.text_editor_active_generation != 0
-                and self.text_editor_active_generation == self.text_editor_generation
-            )
-
-        def write_text_editor_sftp_batch(self, *, force: bool = False) -> None:
-            if not self.text_editor_sftp_request_is_current():
-                return
-            if self._background_password and not force:
-                if not self.text_editor_auth_probe_timer.isActive():
-                    self.text_editor_auth_probe_timer.start()
-                return
-            self.text_editor_auth_probe_timer.stop()
-            plan = self.text_editor_sftp_plan
-            if plan is None:
-                return
-            accepted = self.text_editor_process.write(
-                plan.batch_input().encode("utf-8")
-            )
-            self.text_editor_process.closeWriteChannel()
-            if accepted < 0:
-                self.show_sftp_status(
-                    "Text editor transfer failed: batch input was not accepted"
-                )
-
-        def read_text_editor_sftp_output(self) -> None:
-            payload = bytes(self.text_editor_process.readAllStandardOutput())
-            self._submit_background_password_if_prompt("text-editor", payload)
-            self.text_editor_output_buffer.extend(payload)
-
-        def handle_text_editor_sftp_error(self, error) -> None:
-            self.text_editor_timeout.stop()
-            self.text_editor_auth_probe_timer.stop()
-            operation = self.text_editor_operation
-            request_is_current = self.text_editor_sftp_request_is_current()
-            self.text_editor_active_generation = 0
-            if operation == "save-check":
-                self.clear_text_editor_probe_file()
-            if request_is_current:
-                detail = getattr(error, "name", str(error))
-                self.set_text_editor_runtime_state(
-                    status="error",
-                    operation="idle",
-                )
-                self.show_sftp_status(f"Text editor transfer error: {detail}")
-            self.schedule_pending_text_editor_sftp()
-
-        def cancel_text_editor_sftp_timeout(self) -> None:
-            if self.text_editor_process.state() == QProcess.ProcessState.NotRunning:
-                return
-            request_is_current = self.text_editor_sftp_request_is_current()
-            operation = self.text_editor_operation
-            self.text_editor_active_generation = 0
-            self.text_editor_auth_probe_timer.stop()
-            if operation == "save-check":
-                self.clear_text_editor_probe_file()
-            self.text_editor_process.kill()
-            if request_is_current:
-                self.set_text_editor_runtime_state(
-                    status="error",
-                    operation="idle",
-                )
-                self.show_sftp_status("Text editor transfer timed out after 30 seconds")
-
-        def handle_text_editor_sftp_finished(
-            self,
-            exit_code: int,
-            _exit_status: QProcess.ExitStatus,
-        ) -> None:
-            self.text_editor_timeout.stop()
-            self.text_editor_auth_probe_timer.stop()
-            request_is_current = self.text_editor_sftp_request_is_current()
-            self.read_text_editor_sftp_output()
-            output = self.text_editor_output_buffer.decode(errors="replace")
-            operation = self.text_editor_operation
-            self.text_editor_active_generation = 0
-            if not request_is_current:
-                self.schedule_pending_text_editor_sftp()
-                return
-            if exit_code != 0:
-                if operation == "save-check":
-                    self.clear_text_editor_probe_file()
-                detail = next(
-                    (line.strip() for line in reversed(output.splitlines()) if line.strip()),
-                    f"exit {exit_code}",
-                )
-                self.set_text_editor_runtime_state(
-                    status="error",
-                    operation="idle",
-                )
-                self.show_sftp_status(
-                    f"Text editor {operation} failed: {detail[:160]}"
-                )
-                self.schedule_background_auth_retry()
-                self.schedule_pending_text_editor_sftp()
-                return
-            try:
-                if operation == "open":
-                    self.finish_text_editor_open()
-                elif operation == "save-check":
-                    self.finish_text_editor_save_check()
-                elif operation == "upload":
-                    self.finish_text_editor_upload()
-                else:
-                    self.show_sftp_status(f"Text editor completed unknown operation: {operation}")
-            except (OSError, UnicodeDecodeError, ValueError) as exc:
-                self.set_text_editor_runtime_state(
-                    status="error",
-                    operation="idle",
-                )
-                self.show_sftp_status(f"Text editor transfer result was invalid: {exc}")
-            self.schedule_pending_text_editor_sftp()
-
-        def schedule_pending_text_editor_sftp(self) -> None:
-            pending = self.text_editor_pending_sftp
-            self.text_editor_pending_sftp = None
-            if pending is None or self.runtime_shutting_down:
-                return
-            operation, plan, remote_path, local_path = pending
-
-            def start_pending() -> None:
-                if self.runtime_shutting_down:
-                    return
-                self.text_editor_remote_path = remote_path
-                self.text_editor_local_path = local_path
-                self.start_text_editor_sftp_operation(operation, plan)
-
-            QTimer.singleShot(0, start_pending)
-
-        @staticmethod
-        def text_editor_file_sha256(path: Path) -> str:
-            digest = hashlib.sha256()
-            with path.open("rb") as handle:
-                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                    digest.update(chunk)
-            return digest.hexdigest()
-
-        def finish_text_editor_open(self) -> None:
-            path = Path(self.text_editor_local_path)
-            encoding = self.state.text_editor.encoding or "utf-8"
-            payload = path.read_bytes()
-            if b"\x00" in payload:
-                raise ValueError("remote file appears to be binary; text editing was refused")
-            text = payload.decode(encoding)
-            digest = self.text_editor_file_sha256(path)
-            editor = self.text_editor
-            previous = editor.blockSignals(True)
-            try:
-                editor.setPlainText(text)
-            finally:
-                editor.blockSignals(previous)
-            editor.setPlaceholderText("")
-            self.text_editor_baseline_text = text
-            self.text_editor_original_remote_sha256 = digest
-            self.text_editor_cache_sha256 = digest
-            route = self.state.text_editor
-            self.state = replace(
-                self.state,
-                text_editor=replace(route, remote_sha256=digest),
-            )
-            for widget in self.text_editor_route_widgets():
-                self.apply_connected_text_editor_route_properties(
-                    widget,
-                    triggered=True,
-                    status="loaded",
-                )
-                widget.setProperty("mobaTextEditorCapturedOpenSignal", "itemDoubleClicked")
-            self.set_text_editor_runtime_state(
-                status="loaded",
-                dirty=False,
-                content_loaded=True,
-                remote_sha256=digest,
-                operation="idle",
-            )
-            self.show_sftp_status(
-                f"Loaded {self.text_editor_remote_path} for editing"
-            )
-
-        def finish_text_editor_save_check(self) -> None:
-            probe = Path(self.text_editor_probe_path)
-            try:
-                current_digest = self.text_editor_file_sha256(probe)
-            finally:
-                self.clear_text_editor_probe_file()
-            conflict = current_digest != self.text_editor_original_remote_sha256
-            self.text_editor_save_force = conflict
-            if conflict:
-                choice = _literal_message_box(
-                    self,
-                    QMessageBox.Icon.Warning,
-                    "Remote file changed",
-                    (
-                        f"{self.text_editor_remote_path} changed after it was opened. "
-                        "Overwrite the newer remote version?"
-                    ),
-                    buttons=(
-                        QMessageBox.StandardButton.Yes
-                        | QMessageBox.StandardButton.No
-                    ),
-                    default_button=QMessageBox.StandardButton.No,
-                )
-                if choice != QMessageBox.StandardButton.Yes:
-                    self.set_text_editor_runtime_state(
-                        status="conflict",
-                        dirty=True,
-                        content_loaded=True,
-                        operation="idle",
-                    )
-                    self.show_sftp_status("Text editor save cancelled after remote conflict")
-                    return
-            editor = self.text_editor
-            try:
-                result = write_text_document(
-                    self.text_editor_local_path,
-                    editor.toPlainText(),
-                    expected_sha256=self.text_editor_cache_sha256,
-                    backup=True,
-                    encoding=self.state.text_editor.encoding or "utf-8",
-                )
-            except (OSError, ValueError) as exc:
-                self.set_text_editor_runtime_state(
-                    status="error",
-                    dirty=True,
-                    content_loaded=True,
-                    operation="idle",
-                )
-                self.show_sftp_status(f"Text editor cache save failed: {exc}")
-                return
-            self.text_editor_cache_sha256 = result.new_sha256
-            tab_plan = self.text_editor_tab_plan
-            if tab_plan is None:
-                self.show_sftp_status("Text editor upload unavailable: editor plan is missing")
-                return
-            self.set_text_editor_runtime_state(
-                status="uploading",
-                dirty=True,
-                content_loaded=True,
-                operation="upload",
-            )
-            self.show_sftp_status(
-                f"Uploading edited {self.text_editor_remote_path}"
-            )
-            self.start_text_editor_sftp_operation("upload", tab_plan.save_plan)
-
-        def finish_text_editor_upload(self) -> None:
-            digest = self.text_editor_file_sha256(Path(self.text_editor_local_path))
-            self.text_editor_baseline_text = self.text_editor.toPlainText()
-            self.text_editor_original_remote_sha256 = digest
-            self.text_editor_cache_sha256 = digest
-            route = self.state.text_editor
-            self.state = replace(
-                self.state,
-                text_editor=replace(route, remote_sha256=digest),
-            )
-            self.capture_moba_text_editor_action("save", status="saved")
-            self.set_text_editor_runtime_state(
-                status="saved",
-                dirty=False,
-                content_loaded=True,
-                remote_sha256=digest,
-                operation="idle",
-            )
-            self.show_sftp_status(
-                f"Saved {self.text_editor_remote_path} to the remote host"
-            )
+                table.setToolTip(tooltip)
 
         def generated_icon_pixmap(
             self,
@@ -2550,13 +1699,6 @@ def create_moba_connected_classes(
                 return self.state.follow_terminal_folder
             return bool(control.checked)
 
-        def activate_initial_monitoring_state(self) -> None:
-            control = self.monitoring_control_widgets.get("remote-monitoring")
-            self.set_remote_monitoring_runtime(
-                bool(control is not None and control.isChecked()),
-                immediate=True,
-            )
-
         def set_remote_monitoring_expanded(self, expanded: bool) -> None:
             panel = getattr(self, "remote_monitoring_panel", None)
             if panel is None:
@@ -2602,15 +1744,10 @@ def create_moba_connected_classes(
                 label.update()
             control = self.monitoring_control_widgets.get("remote-monitoring")
             if control is not None:
-                auth_detail = self.background_ssh_auth_detail()
-                tooltip = (
-                    f"{message}\n"
-                    f"{auth_detail}"
-                )
                 control.setProperty("state", state)
                 control.setProperty("mobaMonitoringStatusBadgeState", state)
                 control.setProperty("mobaMonitoringStatusBadgeMessage", message)
-                control.setToolTip(_safe_tooltip_html(tooltip))
+                control.setToolTip(self._background_ssh_tooltip(message))
                 control.setAccessibleDescription(message)
                 status_icon = {
                     "starting": QStyle.StandardPixmap.SP_BrowserReload,
@@ -2634,32 +1771,11 @@ def create_moba_connected_classes(
                     widget.setProperty("mobaRemoteMonitoringRuntimeState", state)
                     widget.setProperty("mobaRemoteMonitoringRuntimeMessage", message)
 
-        def monitoring_surface_is_current(self) -> bool:
-            if self.runtime_shutting_down:
-                return False
-            main_window = self.main_window()
-            if main_window is not None and hasattr(main_window, "moba_connected_dock"):
-                return main_window.moba_connected_dock is self
-            return True
-
-        def remote_monitoring_request_is_current(self) -> bool:
-            control = self.monitoring_control_widgets.get("remote-monitoring")
-            return (
-                self.monitoring_surface_is_current()
-                and self.monitoring_active_generation != 0
-                and self.monitoring_active_generation
-                == self.monitoring_generation
-                and control is not None
-                and (control.isChecked() or self._monitoring_manual_request)
-            )
-
         def shutdown_runtime(self) -> None:
             if self.runtime_shutting_down:
                 return
             self.runtime_shutting_down = True
-            self.monitoring_generation += 1
-            self.monitoring_active_generation = 0
-            self._monitoring_manual_request = False
+            self._invalidate_monitoring_request()
             self.sftp_refresh_generation += 1
             self.sftp_refresh_active_generation = 0
             self.sftp_refresh_pending = None
@@ -2708,210 +1824,6 @@ def create_moba_connected_classes(
                 and self.state.banner == state.banner
                 and self.state.smartcard_selection
                 == state.smartcard_selection
-            )
-
-        def set_remote_monitoring_runtime(
-            self,
-            enabled: bool,
-            *,
-            immediate: bool,
-            start_periodic: bool = True,
-        ) -> None:
-            active = bool(enabled)
-            self.set_remote_monitoring_expanded(active)
-            for widget in (
-                self,
-                getattr(self, "browser", None),
-                getattr(self, "remote_monitoring_panel", None),
-                getattr(self, "remote_monitoring_controls", None),
-            ):
-                if widget is not None:
-                    widget.setProperty(
-                        "mobaRemoteMonitoringRuntimeActive",
-                        active,
-                    )
-            refresh_button = getattr(self, "monitoring_refresh_button", None)
-            if refresh_button is not None:
-                # Manual refresh is also the recovery path for password-only
-                # SSH on Windows, so it must remain usable while the periodic
-                # toggle is paused.
-                refresh_button.setEnabled(True)
-            if active:
-                if start_periodic and not self.monitoring_refresh_timer.isActive():
-                    self.monitoring_refresh_timer.start()
-                self.set_remote_monitoring_status(
-                    "Monitoring on · waiting for live data",
-                    state="starting",
-                )
-                if immediate:
-                    QTimer.singleShot(0, self.request_remote_monitoring_refresh)
-                return
-            self.monitoring_generation += 1
-            self.monitoring_active_generation = 0
-            self._monitoring_manual_request = False
-            self.monitoring_refresh_timer.stop()
-            if self.monitoring_process.state() != QProcess.ProcessState.NotRunning:
-                self.monitoring_process.kill()
-            self.set_remote_monitoring_status("Monitoring off", state="paused")
-
-        def monitoring_runtime_command(self) -> list[str]:
-            command = list(self.state.monitoring_plan.command)
-            if not command:
-                return command
-            executable = ntpath.basename(command[0]).lower()
-            if executable in {"ssh", "ssh.exe"}:
-                command = openssh_command_without_windows_connection_sharing(command)
-                command = openssh_command_with_overrides(command, self.background_ssh_overrides())
-                control_path = self.shared_ssh_control_path()
-                if control_path:
-                    command = ssh_command_with_control_path(
-                        command,
-                        control_path,
-                        master=False,
-                    )
-            return command
-
-        def request_remote_monitoring_refresh(
-            self,
-            *_args,
-            allow_prompt: bool = False,
-        ) -> None:
-            if self.runtime_shutting_down or not self.monitoring_surface_is_current():
-                return
-            control = self.monitoring_control_widgets.get("remote-monitoring")
-            manual_request = bool(allow_prompt)
-            if control is None or (not control.isChecked() and not manual_request):
-                return
-            if manual_request:
-                auth_ready = self.ensure_background_authentication_for_request(
-                    allow_prompt=True,
-                )
-            else:
-                auth_ready = self.ensure_background_authentication_for_request()
-            if not auth_ready:
-                if manual_request:
-                    self.set_remote_monitoring_status(
-                        "Monitoring authentication required",
-                        state="auth-required",
-                    )
-                    return
-                self.setProperty("mobaBackgroundSshApplyingAuthGate", True)
-                try:
-                    control.setChecked(False)
-                finally:
-                    self.setProperty("mobaBackgroundSshApplyingAuthGate", False)
-                return
-            self._monitoring_manual_request = manual_request and not control.isChecked()
-            count = int(
-                self.property("mobaRemoteMonitoringRefreshRequestCount") or 0
-            ) + 1
-            for widget in (
-                self,
-                getattr(self, "remote_monitoring_panel", None),
-                control,
-            ):
-                if widget is not None:
-                    widget.setProperty(
-                        "mobaRemoteMonitoringRefreshRequestCount",
-                        count,
-                    )
-            if self.monitoring_process.state() != QProcess.ProcessState.NotRunning:
-                self.set_remote_monitoring_status(
-                    "Monitoring refresh already running",
-                    state="refreshing",
-                )
-                return
-            command = self.monitoring_runtime_command()
-            if not command:
-                self.set_remote_monitoring_status(
-                    "Monitoring unavailable: empty command",
-                    state="error",
-                )
-                return
-            self.monitoring_output_buffer.clear()
-            self.monitoring_generation += 1
-            self.monitoring_active_generation = self.monitoring_generation
-            self._background_auth_prompt_buffers["monitoring"].clear()
-            self._background_auth_password_sent["monitoring"] = False
-            self.set_remote_monitoring_status(
-                "Refreshing live telemetry…",
-                state="refreshing",
-            )
-            self.monitoring_process.setProgram(command[0])
-            self.monitoring_process.setArguments(command[1:])
-            self.monitoring_process.start()
-
-        def read_remote_monitoring_output(self) -> None:
-            payload = bytes(self.monitoring_process.readAllStandardOutput())
-            self._submit_background_password_if_prompt("monitoring", payload)
-            self.monitoring_output_buffer.extend(payload)
-
-        def handle_remote_monitoring_error(self, error) -> None:
-            request_is_current = self.remote_monitoring_request_is_current()
-            self.monitoring_active_generation = 0
-            self._monitoring_manual_request = False
-            if not request_is_current:
-                return
-            self.set_remote_monitoring_status(
-                f"Monitoring error: {error.name}",
-                state="error",
-            )
-            self.setProperty("mobaRemoteMonitoringLastError", error.name)
-            self.schedule_background_auth_retry()
-
-        def handle_remote_monitoring_finished(
-            self,
-            exit_code: int,
-            _exit_status: QProcess.ExitStatus,
-        ) -> None:
-            request_is_current = self.remote_monitoring_request_is_current()
-            self.read_remote_monitoring_output()
-            output = self.monitoring_output_buffer.decode(errors="replace")
-            self.monitoring_active_generation = 0
-            self._monitoring_manual_request = False
-            if not request_is_current:
-                return
-            snapshot = parse_remote_monitoring_output(output) if exit_code == 0 else None
-            if snapshot is None:
-                detail = next(
-                    (line.strip() for line in reversed(output.splitlines()) if line.strip()),
-                    f"exit {exit_code}",
-                )
-                if "permission denied" in detail.lower() and "password" in detail.lower():
-                    detail = (
-                        "password-only SSH cannot run background monitoring; "
-                        "configure key or agent authentication"
-                    )
-                elif "host key verification failed" in detail.lower():
-                    detail = (
-                        "host key not trusted; verify it in the terminal, then refresh"
-                    )
-                shared_control = self.shared_ssh_control_path()
-                self.set_remote_monitoring_status(
-                    (
-                        f"Waiting for terminal SSH authentication: {detail[:120]}"
-                        if shared_control
-                        else f"Monitoring unavailable: {detail[:120]}"
-                    ),
-                    state="auth-required" if shared_control else "error",
-                )
-                self.setProperty("mobaRemoteMonitoringLastError", detail)
-                self.schedule_background_auth_retry()
-                return
-            if not self.apply_live_remote_monitoring_snapshot(snapshot):
-                return
-            refreshed_at = time.strftime("%H:%M:%S")
-            last_refresh = getattr(self, "monitoring_last_refresh_label", None)
-            if last_refresh is not None:
-                last_refresh.setText(refreshed_at)
-                last_refresh.setToolTip(f"Last successful refresh: {refreshed_at}")
-            self.setProperty("mobaRemoteMonitoringLastRefresh", refreshed_at)
-            self.background_auth_retry_attempt = 0
-            self.background_auth_retry_timer.stop()
-            self.setProperty("mobaBackgroundSshWaitingForTerminalAuth", False)
-            self.set_remote_monitoring_status(
-                f"Live · {refreshed_at}",
-                state="live",
             )
 
         def _update_live_telemetry_panel(self, panel, live_state) -> None:
@@ -3016,7 +1928,7 @@ def create_moba_connected_classes(
             live_state = replace(self.state, monitoring=snapshot)
             self.state = live_state
             main_window = self.main_window()
-            matching_panels: list[MobaConnectedSessionPanel] = []
+            matching_panels: list[ConnectedSessionPanel] = []
             if main_window is not None:
                 for index in range(main_window.tabs.count()):
                     candidate = main_window.tabs.widget(index)
@@ -3024,10 +1936,11 @@ def create_moba_connected_classes(
                         isinstance(candidate, MobaConnectedSessionPanel)
                         and candidate.state.profile_name == live_state.profile_name
                         and candidate.state.target == live_state.target
+                        and candidate.state.ssh_connection_key == live_state.ssh_connection_key
                     ):
                         matching_panels.append(candidate)
             for panel in matching_panels:
-                self._update_live_telemetry_panel(panel, live_state)
+                self._update_live_telemetry_panel(panel, replace(panel.state, monitoring=snapshot))
             return True
 
         def build_remote_monitoring_context_menu(self) -> QMenu:
@@ -3175,6 +2088,12 @@ def create_moba_connected_classes(
         def request_sftp_refresh(self, *, reason: str = "manual") -> None:
             if self.runtime_shutting_down:
                 return
+            if reason in {"initial-key-agent-auth", "follow-enabled", "path-change"} and self._waiting_for_shared_ssh():
+                self.set_sftp_runtime_status(
+                    "SFTP is waiting for the managed SSH connection",
+                    state="auth-required",
+                )
+                return
             if not self.ensure_background_authentication_for_request():
                 return
             count = int(self.property("mobaSftpRefreshRequestCount") or 0) + 1
@@ -3211,7 +2130,7 @@ def create_moba_connected_classes(
                 return
             try:
                 plan = build_sftp_list_plan(profile, request_path)
-            except ValueError as exc:
+            except (LauncherError, ValueError) as exc:
                 self.set_sftp_runtime_status(
                     f"SFTP refresh unavailable: {exc}",
                     state="error",
@@ -3242,7 +2161,7 @@ def create_moba_connected_classes(
             self.sftp_refresh_process.setProgram(runtime_command[0])
             self.sftp_refresh_process.setArguments(runtime_command[1:])
             self._background_auth_prompt_buffers["sftp"].clear()
-            self._background_auth_password_sent["sftp"] = False
+            self._background_auth_prompt_complete["sftp"] = False
             self.sftp_refresh_process.start()
             self.sftp_refresh_timeout.start(10_000)
 
@@ -3260,14 +2179,25 @@ def create_moba_connected_classes(
             plan = self.sftp_refresh_plan
             if plan is None:
                 return
-            accepted = self.sftp_refresh_process.write(
-                plan.batch_input().encode("utf-8")
-            )
-            self.sftp_refresh_process.closeWriteChannel()
+            accepted = self._write_connected_sftp_batch(self.sftp_refresh_process, plan, "sftp")
             if accepted < 0:
                 self.show_sftp_status(
                     "SFTP refresh failed: batch input was not accepted"
                 )
+
+        def _write_connected_sftp_batch(
+            self, process: QProcess, plan: SftpBatchPlan, process_kind: str,
+        ) -> int:
+            # The credential may be submitted only before the first batch command.
+            self._background_auth_prompt_complete[process_kind] = True
+            payload = plan.batch_input()
+            if getattr(process, "is_pty", False):
+                # Closing the ConPTY input pipe can end the process before SFTP
+                # consumes its console input. Exit through the batch instead.
+                return process.write((payload + "quit\n").replace("\n", "\r").encode("utf-8"))
+            accepted = process.write(payload.encode("utf-8"))
+            process.closeWriteChannel()
+            return accepted
 
         def read_sftp_refresh_output(self) -> None:
             payload = bytes(self.sftp_refresh_process.readAllStandardOutput())
@@ -3367,7 +2297,9 @@ def create_moba_connected_classes(
                 self.schedule_background_auth_retry()
                 self.schedule_pending_sftp_refresh()
                 return
-            entries = self.filtered_sftp_entries(parse_sftp_ls_output(output))
+            entries = self.filtered_sftp_entries(
+                parse_sftp_ls_output(output, directory=self.sftp_refresh_request_path)
+            )
             self.apply_live_sftp_entries(
                 entries,
                 request_path=self.sftp_refresh_request_path,
@@ -3406,6 +2338,9 @@ def create_moba_connected_classes(
                 sftp_list_plan=plan,
                 follow_folder_plan=plan,
             )
+            if self.session_panel is not None:
+                self.session_panel.state = self.state
+                self.session_panel.moba_connected_state = self.state
             self.file_table.clear()
             parent_item = QTreeWidgetItem([chrome.parent_row_label, "", ""])
             self.apply_sftp_file_row_icon(parent_item, chrome.parent_row_kind)
@@ -3505,9 +2440,10 @@ def create_moba_connected_classes(
                 and profile.protocol.lower().strip() in {"ssh", "sftp"}
                 and profile.host
             )
+            tooltips = {action.key: action.tooltip for action in gui_design_moba_sftp_dock_actions()}
             for action_key, button in getattr(self, "sftp_action_buttons", {}).items():
                 operational = action_key in self.OPERATIONAL_ACTIONS
-                transfer_action = action_key in {"download", "upload"}
+                transfer_action = action_key in {"download", "upload", "new-folder"}
                 enabled = operational and (not transfer_action or sftp_ready) and (
                     action_key != "download" or download_ready
                 )
@@ -3518,6 +2454,8 @@ def create_moba_connected_classes(
                     button.setToolTip("Connect an SSH/SFTP profile before using this action")
                 elif action_key == "download" and operational and not download_ready:
                     button.setToolTip("Select a remote file or directory to download")
+                elif operational and transfer_action:
+                    button.setToolTip(tooltips[action_key])
             transfer_actions = getattr(self, "sftp_transfer_menu_actions", {})
             download_menu_action = transfer_actions.get("download")
             upload_menu_action = transfer_actions.get("upload")
@@ -3546,6 +2484,8 @@ def create_moba_connected_classes(
                 return False
             if not normalized.startswith("/"):
                 normalized = f"/{normalized}"
+            if normalized != self.active_remote_path and hasattr(self, "file_table"):
+                self.file_table.clear()
             self.active_remote_path = normalized
             self.path.setText(normalized)
             navigation_count = int(self.path.property("mobaSftpPathNavigationCount") or 0) + 1
@@ -3564,19 +2504,10 @@ def create_moba_connected_classes(
                 widget.setProperty("mobaSftpFollowRoutePath", normalized)
                 widget.setProperty("mobaSftpTerminalFolderRoutePath", normalized)
                 widget.setProperty("mobaConnectedRouteRemotePath", normalized)
-            if hasattr(self, "file_table"):
-                for index in range(self.file_table.topLevelItemCount()):
-                    item = self.file_table.topLevelItem(index)
-                    if item is not None:
-                        item.setData(0, SFTP_ROW_SOURCE_PATH_ROLE, normalized)
             if hasattr(self, "sftp_transfer_queue"):
                 self.sftp_transfer_queue.setText(f"Path: {normalized}")
             self.show_sftp_status(f"SFTP path: {normalized}")
-            follow_control = self.monitoring_control_widgets.get(
-                "follow-terminal-folder"
-            )
-            if follow_control is not None and follow_control.isChecked():
-                self.request_sftp_refresh(reason="path-change")
+            self.request_sftp_refresh(reason="path-change")
             return True
 
         def selected_sftp_item(self) -> tuple[str, str] | None:
@@ -3621,6 +2552,12 @@ def create_moba_connected_classes(
                 self.file_table.setCurrentItem(item)
                 item.setSelected(True)
             selected = item or self.file_table.currentItem()
+            menu_path = self.active_remote_path
+
+            def for_current_listing(action, *args):
+                if not self.runtime_shutting_down and self.active_remote_path == menu_path and self.file_table.currentItem() is selected:
+                    action(*args)
+
             kind = (
                 str(selected.data(0, SFTP_ROW_KIND_ROLE) or "")
                 if selected is not None
@@ -3634,7 +2571,7 @@ def create_moba_connected_classes(
             open_action = _required_gui_value(
                 menu.addAction(
                     "Open" if kind == "file" else "Open folder",
-                    lambda: self.open_sftp_context_item(selected),
+                    lambda: for_current_listing(self.open_sftp_context_item, selected),
                 ),
                 "SFTP open action",
             )
@@ -3643,19 +2580,19 @@ def create_moba_connected_classes(
             download_action = _required_gui_value(
                 menu.addAction(
                     "Download",
-                    lambda: self.show_moba_sftp_toolbar_action("download"),
+                    lambda: for_current_listing(self.show_moba_sftp_toolbar_action, "download"),
                 ),
                 "SFTP download action",
             )
             download_action.setEnabled(transfer_ready)
             menu.addAction(
                 "Upload here",
-                lambda: self.show_moba_sftp_toolbar_action("upload"),
+                lambda: for_current_listing(self.show_moba_sftp_toolbar_action, "upload"),
             )
             copy_action = _required_gui_value(
                 menu.addAction(
                     "Copy remote path",
-                    lambda: self.copy_sftp_context_path(selected),
+                    lambda: for_current_listing(self.copy_sftp_context_path, selected),
                 ),
                 "SFTP copy-path action",
             )
@@ -3663,7 +2600,7 @@ def create_moba_connected_classes(
             menu.addSeparator()
             menu.addAction(
                 "Parent folder",
-                lambda: self.show_moba_sftp_toolbar_action("parent-folder"),
+                lambda: for_current_listing(self.show_moba_sftp_toolbar_action, "parent-folder"),
             )
             auth_action = _required_gui_value(
                 menu.addAction(
@@ -3770,6 +2707,60 @@ def create_moba_connected_classes(
             )
             return True
 
+        def open_moba_sftp_new_folder_workflow(self) -> bool:
+            main_window = self.main_window()
+            profile = self.profile_for_sftp_action()
+            if self.runtime_shutting_down or main_window is None or profile is None:
+                return False
+            parent_path = self.active_remote_path
+            name, accepted = QInputDialog.getText(
+                self, "New remote folder", "Name of the folder to create"
+            )
+            if not accepted:
+                return True
+            if (
+                not name.strip()
+                or not name.isprintable()
+                or name in {".", ".."}
+                or "/" in name
+                or "\\" in name
+            ):
+                self.show_sftp_status("Enter a single remote folder name")
+                return True
+            remote_path = str(PurePosixPath(parent_path) / name)
+
+            def prepare_command(command: list[str]) -> list[str]:
+                if self.runtime_shutting_down or self.profile_for_sftp_action() != profile:
+                    raise ValueError("the connected SSH profile changed")
+                command = openssh_command_with_overrides(
+                    command,
+                    {"BatchMode": "yes", "ConnectTimeout": "5", "StrictHostKeyChecking": "yes"},
+                )
+                control_path = self.shared_ssh_control_path()
+                if control_path:
+                    return ssh_command_with_control_path(command, control_path, master=False)
+                return openssh_command_without_windows_connection_sharing(command)
+
+            def refresh_created_folder(item: SftpQueueItem) -> None:
+                if (
+                    item.action == "mkdir"
+                    and item.remote_path == remote_path
+                    and self.active_remote_path == parent_path
+                ):
+                    self.request_sftp_refresh(reason="new-folder")
+
+            dialog = main_window.create_transfer_queue_dialog(
+                profile,
+                prepare_command=prepare_command,
+                on_item_completed=refresh_created_folder,
+            )
+            arguments = ["mkdir", remote_path]
+            operation = subprocess.list2cmdline(arguments) if os.name == "nt" else shlex.join(arguments)
+            dialog.operations.setPlainText(operation)
+            dialog.refresh_queue_preview()
+            dialog.exec()
+            return True
+
         def reconnect_moba_sftp_session(self) -> bool:
             main_window = self.main_window()
             if main_window is None:
@@ -3823,6 +2814,8 @@ def create_moba_connected_classes(
                 return self.navigate_moba_sftp_path(parent)
             if action_key in {"download", "upload"}:
                 return self.open_moba_sftp_transfer_workflow(action_key)
+            if action_key == "new-folder":
+                return self.open_moba_sftp_new_folder_workflow()
             if action_key == "connect":
                 return self.reconnect_moba_sftp_session()
             if action_key == "tools":
@@ -4137,1058 +3130,5 @@ def create_moba_connected_classes(
         def standard_icon(self, icon_name: str):
             return getattr(QStyle.StandardPixmap, icon_name, QStyle.StandardPixmap.SP_FileIcon)
 
-    class MobaConnectedSessionPanel(ConnectedSessionPanel):
-        def __init__(self, state: MobaConnectedSessionState, terminal_pane: TerminalPane) -> None:
-            QWidget.__init__(self)
-            self.setObjectName("mobaConnectedSession")
-            self.setMinimumSize(0, 0)
-            self.setSizePolicy(
-                QSizePolicy.Policy.Expanding,
-                QSizePolicy.Policy.Expanding,
-            )
-            self.state = state
-            self.moba_connected_state = state
-            self.terminal_pane = terminal_pane
-            self.apply_connected_session_route_properties(self)
-            self.apply_connected_identity_route_properties(self)
-
-            root = QVBoxLayout(self)
-            root.setContentsMargins(0, 0, 0, 0)
-            root.setSpacing(0)
-            root.addWidget(self.build_terminal_area(), 1)
-            root.addWidget(self.build_telemetry_bar())
-            self._connected_session_layout: QVBoxLayout = root
-
-        def apply_connected_session_route_properties(self, widget) -> None:
-            route = moba_connected_session_route(self.state)
-            properties = {
-                "mobaConnectedRouteKey": route.key,
-                "mobaConnectedRouteRole": route.route_role,
-                "mobaConnectedRouteActiveTabKey": route.active_tab_key,
-                "mobaConnectedRouteActiveTabLabel": route.active_tab_label,
-                "mobaConnectedRouteReferenceTabLabel": route.reference_tab_label,
-                "mobaConnectedRouteActiveTabObject": route.active_tab_object,
-                "mobaConnectedRouteConnectedPanelObject": route.connected_panel_object,
-                "mobaConnectedRouteLeftDockObject": route.left_dock_object,
-                "mobaConnectedRouteSftpBrowserObject": route.sftp_browser_object,
-                "mobaConnectedRouteSftpPathObject": route.sftp_path_object,
-                "mobaConnectedRouteSftpTableObject": route.sftp_table_object,
-                "mobaConnectedRouteSshBannerObject": route.ssh_banner_object,
-                "mobaConnectedRouteTerminalAreaObject": route.terminal_area_object,
-                "mobaConnectedRouteTerminalOutputObject": route.terminal_output_object,
-                "mobaConnectedRouteTelemetryBarObject": route.telemetry_bar_object,
-                "mobaConnectedRouteTelemetryIdentityCellKey": route.telemetry_identity_cell_key,
-                route.target_property: route.target,
-                route.remote_path_property: route.remote_path,
-                "mobaConnectedRouteRenderSource": route.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
-
-        def apply_connected_identity_route_properties(self, widget) -> None:
-            route = moba_connected_session_identity_route(self.state)
-            properties = {
-                "mobaConnectedIdentityRouteKey": route.key,
-                "mobaConnectedIdentityRouteRole": route.route_role,
-                "mobaConnectedIdentityWindowTitle": route.window_title,
-                "mobaConnectedIdentityActiveTabLabel": route.active_tab_label,
-                "mobaConnectedIdentityReferenceTabLabel": route.reference_tab_label,
-                "mobaConnectedIdentityBannerTarget": route.banner_target,
-                "mobaConnectedIdentityWebConsoleLine": route.web_console_line,
-                "mobaConnectedIdentityTerminalPrompt": route.terminal_prompt,
-                "mobaConnectedIdentityTelemetryTarget": route.telemetry_target,
-                "mobaConnectedIdentityTargetEndpoint": route.target_endpoint,
-                "mobaConnectedIdentityRemotePath": route.remote_path,
-                "mobaConnectedIdentityRenderSource": route.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
-
-        def apply_sftp_terminal_folder_route_properties(self, widget) -> None:
-            route = moba_sftp_terminal_folder_route(self.state)
-            properties = {
-                "mobaSftpTerminalFolderRouteKey": route.key,
-                "mobaSftpTerminalFolderRouteRole": route.route_role,
-                "mobaSftpTerminalFolderRouteTerminalAreaObject": route.terminal_area_object,
-                "mobaSftpTerminalFolderRouteTerminalOutputObject": route.terminal_output_object,
-                "mobaSftpTerminalFolderRouteSourceControlObject": route.source_control_object,
-                "mobaSftpTerminalFolderRouteTargetBrowserObject": route.target_browser_object,
-                "mobaSftpTerminalFolderRouteTargetPathObject": route.target_path_object,
-                "mobaSftpTerminalFolderRouteTargetTableObject": route.target_table_object,
-                "mobaSftpTerminalFolderRouteParentRowLabel": route.parent_row_label,
-                "mobaSftpTerminalFolderRouteSelectedRowKind": route.selected_row_kind,
-                "mobaSftpTerminalFolderRoutePath": route.remote_path,
-                "mobaSftpTerminalFolderRoutePlan": route.list_command,
-                "mobaSftpTerminalFolderRouteEnabled": route.follow_enabled,
-                "mobaSftpTerminalFolderRouteRowRouteProperty": route.row_route_property,
-                "mobaSftpTerminalFolderRouteRenderSource": route.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
-
-        def build_terminal_area(self) -> QWidget:
-            area = QWidget()
-            area.setObjectName("mobaTerminalArea")
-            area.setMinimumSize(0, 0)
-            area.setSizePolicy(
-                QSizePolicy.Policy.Expanding,
-                QSizePolicy.Policy.Expanding,
-            )
-            self.apply_connected_session_route_properties(area)
-            self.apply_sftp_terminal_folder_route_properties(area)
-            area.setProperty("mobaFixedBannerVisible", False)
-            area.setProperty("mobaRightUtilityRailVisible", False)
-            area.setProperty("mobaRightUtilityRoutesRetainedInMenu", True)
-            layout = QHBoxLayout(area)
-            layout.setContentsMargins(0, 0, 0, 0)
-            layout.setSpacing(0)
-            terminal_stack = QWidget()
-            terminal_stack.setObjectName("mobaTerminalStack")
-            terminal_stack.setMinimumSize(0, 0)
-            terminal_stack.setSizePolicy(
-                QSizePolicy.Policy.Expanding,
-                QSizePolicy.Policy.Expanding,
-            )
-            stack_layout = QVBoxLayout(terminal_stack)
-            stack_layout.setContentsMargins(0, 0, 0, 0)
-            stack_layout.setSpacing(0)
-            self.apply_terminal_transcript_evidence()
-            self.apply_moba_plain_terminal_mode()
-            self.terminal_splitter = QSplitter(Qt.Orientation.Horizontal)
-            self.terminal_splitter.setObjectName("mobaTerminalSplitter")
-            self.terminal_splitter.setMinimumSize(0, 0)
-            self.terminal_splitter.setSizePolicy(
-                QSizePolicy.Policy.Expanding,
-                QSizePolicy.Policy.Expanding,
-            )
-            self.terminal_splitter.setChildrenCollapsible(False)
-            self.terminal_splitter.addWidget(self.terminal_pane)
-            self.terminal_splitter.setCollapsible(0, False)
-            self.terminal_splitter.setStretchFactor(0, 1)
-            stack_layout.addWidget(self.terminal_splitter, 1)
-            layout.addWidget(terminal_stack, 1)
-            return area
-
-        def add_terminal_split(
-            self,
-            pane: TerminalPane,
-            orientation: Qt.Orientation,
-        ) -> QSplitter:
-            self.apply_terminal_transcript_evidence(pane)
-            self.apply_moba_plain_terminal_mode(pane)
-            self.terminal_splitter.setOrientation(orientation)
-            self.terminal_splitter.addWidget(pane)
-            self.terminal_splitter.setChildrenCollapsible(False)
-            for index in range(self.terminal_splitter.count()):
-                self.terminal_splitter.setCollapsible(index, False)
-                self.terminal_splitter.setStretchFactor(index, 1)
-            self.terminal_splitter.setSizes([1000] * self.terminal_splitter.count())
-            return self.terminal_splitter
-
-        def apply_terminal_transcript_evidence(self, pane: TerminalPane | None = None) -> None:
-            pane = pane or self.terminal_pane
-            pane.set_launch_command_echo_visible(False)
-            pane.set_startup_preamble(self.moba_startup_preamble(pane))
-            pane.output.setProperty("mobaTerminalTranscriptKeys", [])
-            pane.output.setProperty("mobaTerminalTranscriptTones", [])
-            pane.output.setProperty("mobaTerminalTranscriptPreviewOnly", False)
-            pane.output.setProperty("mobaTerminalTranscriptInjected", False)
-            pane.output.setProperty("mobaSyntheticConnectedTranscriptSuppressed", True)
-            pane.output.setProperty("mobaFixedBannerVisible", False)
-            self.apply_connected_session_route_properties(pane.output)
-            self.apply_connected_identity_route_properties(pane.output)
-            self.apply_sftp_terminal_folder_route_properties(pane.output)
-            pane.output.setProperty("mobaConnectedIdentityWebConsoleLine", "")
-            pane.output.setProperty("mobaConnectedIdentityTerminalPrompt", "")
-
-        def moba_startup_preamble(self, pane: TerminalPane | None = None) -> str:
-            pane = pane or self.terminal_pane
-            command = set(pane.plan.command)
-            compression = "requested" if "-C" in command else "not requested"
-            x11 = (
-                "requested"
-                if any(flag in command for flag in {"-X", "-Y"})
-                else "not requested"
-            )
-            return "\n".join(
-                [
-                    "* Remote Ops Workspace *",
-                    "  (SSH client, SFTP browser, and remote tools)",
-                    f"> SSH session target: {self.state.target}",
-                    "* Direct SSH: requested",
-                    f"* SSH compression: {compression}",
-                    "* SSH browser: requested",
-                    f"* X11 forwarding: {x11}",
-                    "> Waiting for authentication and server output.",
-                ]
-            )
-
-        def apply_moba_plain_terminal_mode(self, pane: TerminalPane | None = None) -> None:
-            pane = pane or self.terminal_pane
-            geometry = gui_design_moba_terminal_transcript_row_geometry()
-            native_pty = bool(getattr(pane.process, "is_pty", False))
-            process_property = getattr(pane.process, "property", lambda _name: None)
-            pipe_fallback = bool(
-                process_property("terminalOpenSshPipeFallback")
-            ) or not native_pty
-            self.apply_connected_session_route_properties(pane)
-            self.apply_connected_identity_route_properties(pane)
-            self.apply_sftp_terminal_folder_route_properties(pane)
-            pane.setProperty("mobaPlainTerminalMode", True)
-            pane.setProperty("mobaTerminalHeaderVisible", False)
-            pane.setProperty("mobaTerminalCommandRowVisible", False)
-            pane.setProperty("mobaTerminalInputVisible", pipe_fallback)
-            pane.setProperty("mobaTerminalDirectInput", True)
-            pane.setProperty(
-                "mobaTerminalInputMode",
-                "explicit-pipe-line-fallback"
-                if pipe_fallback
-                else "native-pty-direct",
-            )
-            pane.header.setVisible(False)
-            pane.command_row.setVisible(False)
-            pane.input.setVisible(pipe_fallback)
-            pane.input.setPlaceholderText(
-                "Type a command and press Enter (non-PTY fallback)"
-            )
-            pane.input.setToolTip(
-                "This field is shown only because this process is using an explicit "
-                "non-PTY pipe fallback."
-            )
-            pane.input.setAccessibleName("Terminal command input")
-            pane.output.setProperty("mobaPlainTerminalMode", True)
-            pane.output.setProperty("mobaTerminalDirectInput", True)
-            pane.output.setProperty("mobaTerminalLineInputFallback", pipe_fallback)
-            pane.output.setProperty("mobaTerminalNativePty", native_pty)
-            pane.output.setToolTip(
-                "Click the terminal and type. Right-click or middle-click pastes; "
-                "Shift+Right-click opens copy, paste, save, telemetry, and session actions."
-            )
-            pane.output_context_menu_builder = self.build_moba_terminal_context_menu
-            pane.output.setProperty("mobaTerminalTranscriptGeometryKeys", [row.key for row in geometry])
-            pane.output.setProperty("mobaTerminalTranscriptX", [row.static_x for row in geometry])
-            pane.output.setProperty("mobaTerminalTranscriptY", [row.static_y for row in geometry])
-            pane.output.setProperty("mobaTerminalTranscriptRowHeight", [row.row_height for row in geometry])
-            pane.output.setProperty("mobaTerminalTranscriptFontSize", [row.font_size for row in geometry])
-
-        def build_moba_terminal_context_menu(self, pane: TerminalPane) -> QMenu:
-            menu = QMenu(pane.output)
-            menu.setObjectName("mobaTerminalContextMenu")
-            selection = bool(pane.output.textCursor().selectedText())
-            copy_action = _required_gui_value(
-                menu.addAction("Copy"),
-                "terminal context copy action",
-            )
-            copy_action.setEnabled(selection)
-            copy_action.triggered.connect(pane.copy_terminal_selection)
-            save_action = _required_gui_value(
-                menu.addAction("Save to file"),
-                "terminal context save action",
-            )
-            save_action.setEnabled(bool(pane._rendered_terminal_text))
-            save_action.triggered.connect(
-                lambda _checked=False, active_pane=pane: self.save_terminal_to_file(
-                    active_pane
-                )
-            )
-            menu.addSeparator()
-            cells = {
-                cell.key: cell
-                for cell in moba_telemetry_cells(self.state)
-            }
-            for key, frame in getattr(self, "telemetry_cell_frames", {}).items():
-                label = (
-                    "host"
-                    if key == "target"
-                    else (
-                        cells[key].label.lower()
-                        if key in cells
-                        else key.replace("-", " ")
-                    )
-                )
-                action = _required_gui_value(
-                    menu.addAction(f"Display {label} information"),
-                    f"terminal telemetry action for {key}",
-                )
-                action.setCheckable(True)
-                action.setChecked(frame.isVisible())
-                action.setProperty("mobaTelemetryVisibilityKey", key)
-                action.toggled.connect(
-                    lambda checked, cell_key=key: self.set_telemetry_cell_visible(
-                        cell_key,
-                        checked,
-                    )
-                )
-
-            menu.addSeparator()
-            paste_action = _required_gui_value(
-                menu.addAction("Paste"),
-                "terminal context paste action",
-            )
-            paste_action.setEnabled(bool(_application_clipboard().text()))
-            paste_action.triggered.connect(pane.paste_to_terminal)
-            select_action = _required_gui_value(
-                menu.addAction("Select all"),
-                "terminal context select-all action",
-            )
-            select_action.triggered.connect(pane.output.selectAll)
-
-            dock = self.active_moba_sftp_dock()
-            if dock is not None:
-                monitoring_menu = _required_gui_value(
-                    menu.addMenu("Monitoring"),
-                    "terminal monitoring menu",
-                )
-                monitoring_menu.setObjectName("mobaMonitoringContextMenu")
-                monitoring_control = dock.monitoring_control_widgets.get(
-                    "remote-monitoring"
-                )
-                monitoring_action = _required_gui_value(
-                    monitoring_menu.addAction("Remote monitoring enabled"),
-                    "remote monitoring toggle action",
-                )
-                monitoring_action.setCheckable(True)
-                monitoring_action.setChecked(
-                    bool(
-                        monitoring_control is not None
-                        and monitoring_control.isChecked()
-                    )
-                )
-                if monitoring_control is not None:
-                    monitoring_action.toggled.connect(
-                        monitoring_control.setChecked
-                    )
-                follow_control = dock.monitoring_control_widgets.get(
-                    "follow-terminal-folder"
-                )
-                follow_action = _required_gui_value(
-                    monitoring_menu.addAction("Follow terminal folder"),
-                    "follow terminal folder action",
-                )
-                follow_action.setCheckable(True)
-                follow_action.setChecked(
-                    bool(follow_control is not None and follow_control.isChecked())
-                )
-                if follow_control is not None:
-                    follow_action.toggled.connect(follow_control.setChecked)
-
-            tools_menu = _required_gui_value(
-                menu.addMenu("Session tools"),
-                "terminal session tools menu",
-            )
-            session_route = gui_design_moba_session_edge_action_route()
-            session_handlers = dict(
-                zip(
-                    session_route.action_keys,
-                    session_route.action_handlers,
-                    strict=True,
-                )
-            )
-            for session_action_spec in gui_design_moba_session_edge_actions():
-                action = _required_gui_value(
-                    tools_menu.addAction(session_action_spec.label),
-                    f"session edge action for {session_action_spec.key}",
-                )
-                action.setProperty("mobaSessionEdgeKey", session_action_spec.key)
-                action.triggered.connect(
-                    lambda _checked=False, handler=session_handlers[
-                        session_action_spec.key
-                    ]: self.dispatch_moba_workspace_action(handler)
-                )
-            utility_route = gui_design_moba_right_utility_action_route()
-            utility_handlers = dict(
-                zip(
-                    utility_route.action_keys,
-                    utility_route.action_handlers,
-                    strict=True,
-                )
-            )
-            for utility_action_spec in gui_design_moba_right_utility_actions():
-                action = _required_gui_value(
-                    tools_menu.addAction(utility_action_spec.label),
-                    f"right utility action for {utility_action_spec.key}",
-                )
-                action.setProperty("mobaRightUtilityKey", utility_action_spec.key)
-                action.triggered.connect(
-                    lambda _checked=False, handler=utility_handlers[
-                        utility_action_spec.key
-                    ]: self.dispatch_moba_workspace_action(handler)
-                )
-
-            menu.addSeparator()
-            restart_action = _required_gui_value(
-                menu.addAction("Restart session"),
-                "terminal restart-session action",
-            )
-            restart_action.setEnabled(bool(pane.plan.command))
-            restart_action.triggered.connect(pane.restart)
-            stop_action = _required_gui_value(
-                menu.addAction("Stop session"),
-                "terminal stop-session action",
-            )
-            stop_action.setEnabled(pane.is_running())
-            stop_action.triggered.connect(pane.request_stop)
-            return menu
-
-        def active_moba_sftp_dock(self):
-            dock = getattr(self.window(), "moba_connected_dock", None)
-            if dock is None:
-                return None
-            if dock.state.profile_name != self.state.profile_name:
-                return None
-            return dock
-
-        def dispatch_moba_workspace_action(self, handler_name: str) -> None:
-            handler = getattr(self.window(), handler_name, None)
-            if callable(handler):
-                handler()
-                return
-            fallback = getattr(self, handler_name, None)
-            if callable(fallback):
-                fallback()
-
-        def save_terminal_to_file(self, pane: TerminalPane) -> None:
-            stem = re.sub(r"[^A-Za-z0-9_.-]+", "-", pane.plan.title).strip("-")
-            filename, _selected_filter = QFileDialog.getSaveFileName(
-                self,
-                "Save terminal transcript",
-                f"{stem or 'terminal'}.txt",
-                "Text files (*.txt);;All files (*)",
-            )
-            if not filename:
-                return
-            try:
-                Path(filename).write_text(
-                    pane._rendered_terminal_text,
-                    encoding="utf-8",
-                )
-            except OSError as exc:
-                self.setProperty("mobaTerminalSaveError", str(exc))
-                status_bar = getattr(self.window(), "statusBar", lambda: None)()
-                if status_bar is not None:
-                    status_bar.showMessage(f"Could not save terminal output: {exc}")
-                return
-            self.setProperty("mobaTerminalSavedPath", filename)
-            status_bar = getattr(self.window(), "statusBar", lambda: None)()
-            if status_bar is not None:
-                status_bar.showMessage(f"Saved terminal output to {filename}", 5000)
-
-        def set_telemetry_cell_visible(self, key: str, visible: bool) -> None:
-            frame = getattr(self, "telemetry_cell_frames", {}).get(key)
-            if frame is None:
-                return
-            frame.setVisible(bool(visible))
-            frame.setProperty("mobaTelemetryUserVisible", bool(visible))
-            visible_keys = [
-                cell_key
-                for cell_key, cell_frame in self.telemetry_cell_frames.items()
-                if cell_frame.isVisible()
-            ]
-            self.telemetry_bar.setProperty(
-                "mobaTelemetryVisibleCellKeys",
-                visible_keys,
-            )
-            self.telemetry_bar.setProperty(
-                "mobaTelemetryVisibilityChangedKey",
-                key,
-            )
-
-        def show_moba_terminal_context_menu(
-            self,
-            source: QWidget,
-            position: QPoint,
-        ) -> None:
-            pane = self.moba_terminal_context_pane(source)
-            menu = self.build_moba_terminal_context_menu(pane)
-            menu.exec(source.mapToGlobal(position))
-            menu.deleteLater()
-
-        def moba_terminal_context_pane(self, source: QWidget) -> TerminalPane:
-            """Route shared chrome actions to the split that originated or owns focus."""
-
-            candidate: QWidget | None = source
-            while candidate is not None:
-                if isinstance(candidate, TerminalPane):
-                    return candidate
-                candidate = candidate.parentWidget()
-            main_window = services.main_window(self.window())
-            active = (
-                main_window.active_terminal_pane()
-                if main_window is not None
-                else None
-            )
-            if (
-                isinstance(active, TerminalPane)
-                and hasattr(self, "terminal_splitter")
-                and self.terminal_splitter.indexOf(active) >= 0
-            ):
-                return active
-            return self.terminal_pane
-
-        def install_moba_terminal_context_menu(self, widget: QWidget) -> None:
-            widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-            widget.customContextMenuRequested.connect(
-                lambda position, source=widget: self.show_moba_terminal_context_menu(
-                    source,
-                    position,
-                )
-            )
-
-        def build_right_utility_rail(self) -> QFrame:
-            chrome = gui_design_moba_right_utility_rail_chrome()
-            route = gui_design_moba_right_utility_action_route()
-            rail = QFrame()
-            rail.setObjectName("mobaRightUtilityRail")
-            rail.setProperty("mobaRightUtilityRouteKey", route.key)
-            rail.setProperty("mobaRightUtilityRouteRole", route.route_role)
-            rail.setProperty("mobaRightUtilityRouteRailObject", route.rail_object)
-            rail.setProperty("mobaRightUtilityRouteActionObject", route.action_object)
-            rail.setProperty(route.action_keys_property, list(route.action_keys))
-            rail.setProperty("mobaRightUtilityRouteRenderSource", route.render_source)
-            rail.setProperty("mobaRightUtilityRailStaticWidth", chrome.static_width)
-            rail.setProperty("mobaRightUtilityRailLiveWidth", chrome.live_width)
-            rail.setProperty("mobaRightUtilityRailMargins", [chrome.margin_left, chrome.margin_top, chrome.margin_right, chrome.margin_bottom])
-            rail.setProperty("mobaRightUtilityRailActionSpacing", chrome.action_spacing)
-            rail.setProperty("mobaRightUtilityRailSessionEdgeTopY", chrome.session_edge_top_y)
-            rail.setProperty("mobaRightUtilityRailSessionEdgeHeight", chrome.session_edge_height)
-            rail.setProperty("mobaRightUtilityRailSessionEdgeIconX", chrome.session_edge_icon_x)
-            rail.setProperty("mobaRightUtilityRailSessionEdgeIconSize", chrome.session_edge_icon_size)
-            rail.setFixedWidth(chrome.live_width)
-            layout = QVBoxLayout(rail)
-            layout.setContentsMargins(chrome.margin_left, chrome.margin_top, chrome.margin_right, chrome.margin_bottom)
-            layout.setSpacing(chrome.action_spacing)
-            layout.addWidget(self.build_session_edge_controls())
-            route_handlers = dict(zip(route.action_keys, route.action_handlers, strict=True))
-            for action in gui_design_moba_right_utility_actions():
-                button = QToolButton()
-                button.setObjectName("mobaRightUtilityAction")
-                button.setProperty("mobaRightUtilityKey", action.key)
-                button.setProperty("mobaRightUtilityIconKey", action.icon_key)
-                button.setProperty("mobaRightUtilityRouteKey", route.key)
-                button.setProperty("mobaRightUtilityRouteRole", route.route_role)
-                button.setProperty(route.action_key_property, action.key)
-                button.setProperty(route.action_label_property, action.label)
-                button.setProperty(route.action_object_property, route.action_object)
-                button.setProperty(route.icon_key_property, action.icon_key)
-                button.setProperty("mobaRightUtilityRouteHandler", route_handlers[action.key])
-                button.setProperty(route.action_keys_property, list(route.action_keys))
-                button.setProperty("mobaRightUtilityRouteRenderSource", route.render_source)
-                button.setProperty("mobaRightUtilityStaticX", action.static_x)
-                button.setProperty("mobaRightUtilityStaticY", action.static_y)
-                button.setProperty("mobaRightUtilityStaticSize", action.static_size)
-                button.setProperty("mobaRightUtilityLiveIconSize", action.live_icon_size)
-                button.setProperty("mobaRightUtilityButtonSize", action.button_size)
-                button.setProperty("mobaRightUtilityRenderSource", action.render_source)
-                button.setToolTip(action.tooltip)
-                button.setIcon(self.moba_utility_icon(action.icon_key, action.color))
-                button.setIconSize(QSize(action.live_icon_size, action.live_icon_size))
-                button.setFixedSize(QSize(action.button_size, action.button_size))
-                button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-                button.clicked.connect(getattr(self, route_handlers[action.key]))
-                layout.addWidget(button)
-            layout.addStretch(1)
-            return rail
-
-        def build_session_edge_controls(self) -> QFrame:
-            chrome = gui_design_moba_right_utility_rail_chrome()
-            route = gui_design_moba_session_edge_action_route()
-            controls = QFrame()
-            controls.setObjectName("mobaSessionEdgeControls")
-            actions = gui_design_moba_session_edge_actions()
-            controls.setProperty("mobaSessionEdgeRouteKey", route.key)
-            controls.setProperty("mobaSessionEdgeRouteRole", route.route_role)
-            controls.setProperty("mobaSessionEdgeRouteControlsObject", route.controls_object)
-            controls.setProperty("mobaSessionEdgeRouteActionObject", route.action_object)
-            controls.setProperty("mobaSessionEdgeRoutePlacement", route.placement)
-            controls.setProperty(route.action_keys_property, list(route.action_keys))
-            controls.setProperty("mobaSessionEdgeRouteRenderSource", route.render_source)
-            controls.setProperty("mobaSessionEdgeActionKeys", [action.key for action in actions])
-            controls.setProperty("mobaSessionEdgePlacement", "tab-strip-overlay")
-            controls.setProperty("mobaSessionEdgeTopY", chrome.session_edge_top_y)
-            controls.setProperty("mobaSessionEdgeStaticHeight", chrome.session_edge_height)
-            controls.setProperty("mobaSessionEdgeIconX", chrome.session_edge_icon_x)
-            controls.setProperty("mobaSessionEdgeIconSize", chrome.session_edge_icon_size)
-            controls.setProperty(
-                "mobaSessionEdgeRelativeY",
-                [action.relative_y(chrome.session_edge_top_y) for action in actions],
-            )
-            controls.setFixedWidth(chrome.live_width)
-            controls.setFixedHeight(chrome.session_edge_height)
-            route_handlers = dict(zip(route.action_keys, route.action_handlers, strict=True))
-            for action in actions:
-                relative_y = action.relative_y(chrome.session_edge_top_y)
-                button = QToolButton(controls)
-                button.setObjectName("mobaSessionEdgeAction")
-                button.setProperty("mobaSessionEdgeKey", action.key)
-                button.setProperty("mobaSessionEdgeIconKey", action.icon_key)
-                button.setProperty("mobaSessionEdgeRouteKey", route.key)
-                button.setProperty("mobaSessionEdgeRouteRole", route.route_role)
-                button.setProperty(route.action_key_property, action.key)
-                button.setProperty(route.action_label_property, action.label)
-                button.setProperty(route.action_object_property, route.action_object)
-                button.setProperty(route.icon_key_property, action.icon_key)
-                button.setProperty("mobaSessionEdgeRouteHandler", route_handlers[action.key])
-                button.setProperty(route.action_keys_property, list(route.action_keys))
-                button.setProperty("mobaSessionEdgeRouteRenderSource", route.render_source)
-                button.setProperty("mobaSessionEdgeStaticY", action.static_y)
-                button.setProperty("mobaSessionEdgeRelativeY", relative_y)
-                button.setProperty("mobaSessionEdgeIconX", chrome.session_edge_icon_x)
-                button.setProperty("mobaSessionEdgeIconSize", chrome.session_edge_icon_size)
-                button.setProperty("mobaSessionEdgeStaticSize", action.static_size)
-                button.setProperty("mobaSessionEdgeLiveIconSize", action.live_icon_size)
-                button.setProperty("mobaSessionEdgeButtonSize", action.button_size)
-                button.setProperty("mobaSessionEdgeRenderSource", action.render_source)
-                button.setToolTip(action.tooltip)
-                button.setIcon(self.moba_utility_icon(action.icon_key, action.color))
-                button.setIconSize(QSize(action.live_icon_size, action.live_icon_size))
-                button.setFixedSize(QSize(action.button_size, action.button_size))
-                button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-                button.setGeometry(
-                    chrome.session_edge_icon_x,
-                    relative_y,
-                    action.button_size,
-                    action.button_size,
-                )
-                button.clicked.connect(getattr(self, route_handlers[action.key]))
-            return controls
-
-        def show_moba_session_attachment(self, *_args) -> None:
-            self.record_moba_panel_action("session-edge", "attachment")
-
-        def show_moba_session_settings(self, *_args) -> None:
-            self.record_moba_panel_action("session-edge", "settings")
-
-        def show_moba_clipboard_hints(self, *_args) -> None:
-            self.record_moba_panel_action("right-utility", "clipboard")
-
-        def show_moba_terminal_settings(self, *_args) -> None:
-            self.record_moba_panel_action("right-utility", "settings")
-
-        def show_moba_tools_status(self, *_args) -> None:
-            self.record_moba_panel_action("right-utility", "tools")
-
-        def record_moba_panel_action(self, route_role: str, action_key: str) -> None:
-            self.setProperty("mobaConnectedLastActionRouteRole", route_role)
-            self.setProperty("mobaConnectedLastActionKey", action_key)
-            status_bar = getattr(self.window(), "statusBar", lambda: None)()
-            if status_bar is not None:
-                status_bar.showMessage(
-                    f"{action_key.replace('-', ' ').title()} selected",
-                    3000,
-                )
-
-        def moba_utility_icon(self, icon_key: str, fill: str) -> QIcon:
-            scale = max(1.0, float(self.devicePixelRatioF()))
-            pixel_size = max(1, int(round(20 * scale)))
-            pixmap = QPixmap(pixel_size, pixel_size)
-            pixmap.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(pixmap)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-            painter.scale(scale, scale)
-            color = QColor(fill)
-            try:
-                painter.setPen(QPen(color, 2))
-                painter.setBrush(Qt.BrushStyle.NoBrush)
-                if icon_key == "clip":
-                    painter.drawArc(5, 3, 10, 13, 35 * 16, 280 * 16)
-                    painter.drawArc(8, 5, 6, 10, 35 * 16, 280 * 16)
-                    painter.drawLine(9, 14, 6, 11)
-                elif icon_key == "spark":
-                    painter.drawLine(10, 3, 10, 17)
-                    painter.drawLine(3, 10, 17, 10)
-                    painter.drawLine(5, 5, 15, 15)
-                    painter.drawLine(15, 5, 5, 15)
-                elif icon_key == "gear":
-                    painter.drawEllipse(6, 6, 8, 8)
-                    painter.drawEllipse(8, 8, 4, 4)
-                    for start, end in (
-                        ((10, 2), (10, 6)),
-                        ((10, 14), (10, 18)),
-                        ((2, 10), (6, 10)),
-                        ((14, 10), (18, 10)),
-                        ((4, 4), (7, 7)),
-                        ((16, 4), (13, 7)),
-                        ((4, 16), (7, 13)),
-                        ((16, 16), (13, 13)),
-                    ):
-                        painter.drawLine(*start, *end)
-                elif icon_key == "arrow-left":
-                    painter.drawLine(14, 5, 7, 10)
-                    painter.drawLine(7, 10, 14, 15)
-                    painter.drawLine(7, 10, 17, 10)
-                elif icon_key == "arrow-right":
-                    painter.drawLine(6, 5, 13, 10)
-                    painter.drawLine(13, 10, 6, 15)
-                    painter.drawLine(3, 10, 13, 10)
-                elif icon_key == "close":
-                    painter.drawLine(6, 6, 14, 14)
-                    painter.drawLine(14, 6, 6, 14)
-                else:
-                    painter.drawRect(4, 4, 12, 12)
-            finally:
-                painter.end()
-            pixmap.setDevicePixelRatio(scale)
-            return QIcon(pixmap)
-
-        def build_ssh_banner_slot(self) -> QFrame:
-            chrome = gui_design_moba_ssh_banner_chrome()
-            slot = QFrame()
-            slot.setObjectName("mobaSshBannerSlot")
-            self.apply_connected_session_route_properties(slot)
-            slot.setProperty("mobaBannerLeftOffset", chrome.static_left_offset)
-            slot.setProperty("mobaBannerTopOffset", chrome.static_top_offset)
-            slot.setProperty("mobaBannerTerminalGap", chrome.terminal_gap)
-            slot.setFixedHeight(chrome.static_top_offset + chrome.static_height + chrome.terminal_gap)
-            banner = self.build_ssh_banner()
-            banner.setParent(slot)
-            banner.setGeometry(
-                chrome.static_left_offset,
-                chrome.static_top_offset,
-                chrome.static_width,
-                chrome.static_height,
-            )
-            return slot
-
-        def apply_ssh_banner_row_geometry(self, label: QLabel, key: str) -> None:
-            geometry = gui_design_moba_ssh_banner_row_geometry_for(key)
-            label.setProperty("mobaSshBannerRowKey", geometry.key)
-            label.setProperty("mobaSshBannerRowX", geometry.static_x)
-            label.setProperty("mobaSshBannerRowY", geometry.static_y)
-            label.setProperty("mobaSshBannerRowWidth", geometry.static_width)
-            label.setProperty("mobaSshBannerRowHeight", geometry.static_height)
-            label.setProperty("mobaSshBannerRowCentered", geometry.centered)
-            label.setGeometry(
-                geometry.static_x,
-                geometry.static_y,
-                geometry.static_width,
-                geometry.static_height,
-            )
-            if geometry.centered:
-                label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            else:
-                label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-
-        @staticmethod
-        def apply_ssh_banner_font(
-            label: QLabel,
-            *,
-            pixel_size: int,
-            bold: bool = False,
-        ) -> None:
-            font = QFont("Cascadia Mono")
-            font.setStyleHint(QFont.StyleHint.Monospace)
-            font.setPixelSize(pixel_size)
-            font.setBold(bold)
-            font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
-            label.setFont(font)
-            label.setProperty("mobaBannerTextHinting", "PreferFullHinting")
-            label.setProperty("mobaBannerTextPixelSize", pixel_size)
-
-        def build_ssh_banner(self) -> QFrame:
-            chrome = gui_design_moba_ssh_banner_chrome()
-            banner = QFrame()
-            banner.setObjectName("mobaSshBanner")
-            self.apply_connected_session_route_properties(banner)
-            self.apply_connected_identity_route_properties(banner)
-            banner.setProperty("mobaBannerTitle", chrome.title)
-            banner.setProperty("mobaBannerSubtitle", chrome.subtitle)
-            banner.setProperty("mobaBannerTargetIntro", chrome.target_intro)
-            banner.setProperty("mobaBannerCapabilityLabelWidth", chrome.capability_label_width)
-            banner.setProperty("mobaBannerFooterPrefix", chrome.footer_prefix)
-            banner.setProperty("mobaBannerCapabilityKeys", [row.key for row in self.state.banner.capability_rows()])
-            banner.setProperty("mobaBannerFooterLinks", list(self.state.banner.footer_links()))
-            banner.setProperty("mobaBannerWidth", chrome.static_width)
-            banner.setProperty("mobaBannerHeight", chrome.static_height)
-            banner.setProperty("mobaBannerLeftOffset", chrome.static_left_offset)
-            banner.setProperty("mobaBannerTopOffset", chrome.static_top_offset)
-            banner.setProperty("mobaBannerTerminalGap", chrome.terminal_gap)
-            banner.setProperty(
-                "mobaSshBannerRowGeometryKeys",
-                [geometry.key for geometry in gui_design_moba_ssh_banner_row_geometry()],
-            )
-            banner.setFixedSize(QSize(chrome.static_width, chrome.static_height))
-            title = _literal_label(f"{chrome.heading_prefix}{chrome.title}{chrome.heading_suffix}")
-            title.setParent(banner)
-            title.setObjectName("mobaSshBannerTitle")
-            self.apply_ssh_banner_font(title, pixel_size=14, bold=True)
-            self.apply_ssh_banner_row_geometry(title, "title")
-            subtitle = _literal_label(chrome.subtitle)
-            subtitle.setParent(banner)
-            subtitle.setObjectName("mobaSshBannerSubtitle")
-            self.apply_ssh_banner_font(subtitle, pixel_size=12)
-            self.apply_ssh_banner_row_geometry(subtitle, "subtitle")
-            target = _literal_label(f"> {chrome.target_intro} {self.state.banner.title}")
-            target.setParent(banner)
-            target.setObjectName("mobaSshBannerTargetLine")
-            self.apply_ssh_banner_font(target, pixel_size=12)
-            self.apply_connected_identity_route_properties(target)
-            target.setProperty("mobaSshBannerTarget", self.state.banner.title)
-            target.setProperty("mobaSshBannerTargetIntro", chrome.target_intro)
-            self.apply_ssh_banner_row_geometry(target, "target")
-            target.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            for row in self.state.banner.capability_rows():
-                label = _literal_label(f"  * {row.line(label_width=chrome.capability_label_width)}")
-                label.setParent(banner)
-                label.setObjectName("mobaSshBannerCapability")
-                self.apply_ssh_banner_font(label, pixel_size=12)
-                label.setProperty("mobaSshBannerCapabilityKey", row.key)
-                label.setProperty("mobaSshBannerCapabilityLabel", row.label)
-                label.setProperty("mobaSshBannerCapabilityValue", row.value)
-                label.setProperty("mobaSshBannerCapabilityStatus", row.status)
-                label.setProperty("capabilityStatus", row.status)
-                self.apply_ssh_banner_row_geometry(label, row.key)
-                label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            help_link, website_link = self.state.banner.footer_links()
-            footer = _literal_label(f"> {chrome.footer_prefix} {help_link} or visit our {website_link}.")
-            footer.setParent(banner)
-            footer.setObjectName("mobaSshBannerFooter")
-            self.apply_ssh_banner_font(footer, pixel_size=12)
-            footer.setProperty("mobaSshBannerFooterLinks", [help_link, website_link])
-            self.apply_ssh_banner_row_geometry(footer, "footer")
-            footer.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            return banner
-
-        def rebuild_telemetry_bar(self, *, hidden_keys: set[str] | None = None) -> QFrame:
-            """Recreate the fixed status strip when live metrics add cells."""
-
-            layout = self._connected_session_layout
-            old_bar = getattr(self, "telemetry_bar", None)
-            insert_at = layout.indexOf(old_bar) if old_bar is not None else -1
-            if insert_at < 0:
-                insert_at = layout.count()
-            if old_bar is not None:
-                layout.removeWidget(old_bar)
-                old_bar.setParent(None)
-                old_bar.deleteLater()
-            bar = self.build_telemetry_bar()
-            layout.insertWidget(insert_at, bar)
-            for key in hidden_keys or set():
-                frame = self.telemetry_cell_frames.get(key)
-                if frame is None:
-                    continue
-                frame.setVisible(False)
-                frame.setProperty("mobaTelemetryUserVisible", False)
-            bar.setProperty(
-                "mobaTelemetryVisibleCellKeys",
-                [
-                    key
-                    for key, frame in self.telemetry_cell_frames.items()
-                    if frame.property("mobaTelemetryUserVisible") is not False
-                ],
-            )
-            layout.invalidate()
-            layout.activate()
-            return bar
-
-        def build_telemetry_bar(self) -> QFrame:
-            bar = QFrame()
-            bar.setObjectName("mobaTelemetryBar")
-            self.telemetry_bar = bar
-            self.telemetry_cell_frames: dict[str, QFrame] = {}
-            self.apply_connected_session_route_properties(bar)
-            self.apply_connected_identity_route_properties(bar)
-            route = gui_design_moba_monitoring_telemetry_route()
-            cells = moba_telemetry_cells(self.state)
-            geometry_items = moba_telemetry_cell_geometry(
-                tuple(cell.key for cell in cells)
-            )
-            bar.setProperty("mobaTelemetryGeometryKeys", [geometry.key for geometry in geometry_items])
-            bar.setProperty("mobaTelemetryStartX", geometry_items[0].static_x)
-            bar.setProperty("mobaTelemetryBarHeight", 24)
-            bar.setProperty("mobaMonitoringTelemetryRouteKey", route.key)
-            bar.setProperty("mobaMonitoringTelemetryRouteRole", route.route_role)
-            bar.setProperty("mobaMonitoringTelemetrySourcePanelObject", route.source_panel_object)
-            bar.setProperty("mobaMonitoringTelemetrySourceControl", route.source_control_key)
-            bar.setProperty("mobaMonitoringTelemetrySurface", route.telemetry_surface)
-            bar.setProperty("mobaMonitoringTelemetryMetricCellKeys", list(route.target_metric_cell_keys))
-            bar.setProperty("mobaMonitoringTelemetryIdentityCellKey", route.target_identity_cell_key)
-            bar.setProperty("mobaTelemetryDataSource", "unavailable-until-live")
-            bar.setProperty("mobaTelemetryLive", False)
-            bar.setProperty("mobaTerminalContextMenuObject", "mobaTerminalContextMenu")
-            bar.setFixedHeight(24)
-            self.install_moba_terminal_context_menu(bar)
-            layout = QHBoxLayout(bar)
-            layout.setContentsMargins(geometry_items[0].static_x, 0, 7, 0)
-            layout.setSpacing(0)
-            for cell in cells:
-                geometry = moba_telemetry_cell_geometry_for(cell.key)
-                cell_frame = QFrame()
-                cell_frame.setObjectName("mobaTelemetryCell")
-                self.telemetry_cell_frames[cell.key] = cell_frame
-                cell_frame.setProperty("mobaTelemetryKey", cell.key)
-                cell_frame.setProperty("mobaTelemetryIconKey", cell.icon_key)
-                cell_frame.setProperty("mobaTelemetryIconAccent", cell.icon_accent)
-                cell_frame.setProperty("mobaTelemetryIconSize", cell.icon_size)
-                cell_frame.setProperty("mobaTelemetryDisplayText", cell.display_text)
-                if cell.key == "target":
-                    self.apply_connected_identity_route_properties(cell_frame)
-                cell_frame.setProperty("mobaTelemetryCellStaticX", geometry.static_x)
-                cell_frame.setProperty("mobaTelemetryCellStaticY", geometry.static_y)
-                cell_frame.setProperty("mobaTelemetryCellWidth", geometry.width)
-                cell_frame.setProperty("mobaTelemetryCellHeight", geometry.height)
-                cell_frame.setProperty("mobaTelemetrySeparatorTop", geometry.separator_top)
-                cell_frame.setProperty("mobaTelemetrySeparatorBottom", geometry.separator_bottom)
-                cell_frame.setProperty("mobaMonitoringTelemetryRouted", cell.key in route.target_metric_cell_keys)
-                cell_frame.setProperty("mobaTelemetryLivePreferredWidth", geometry.width)
-                cell_frame.setToolTip(
-                    _safe_tooltip_html(f"{cell.label}: {cell.display_text}")
-                )
-                # Telemetry cells are a fixed-width status strip, not a
-                # stretchable form row.  Ignored size policies let Qt squeeze
-                # them to a few pixels when the terminal is resized, which is
-                # why values appeared as clipped/blank boxes in the bottom
-                # monitoring bar.
-                # Keep the compact contract's minimum width unconstrained so
-                # Qt can negotiate the status strip at narrow window sizes.
-                # The fixed policy, child label hint, and maximum width still
-                # preserve the measured cell width when space is available
-                # without turning the strip into a hard minimum.
-                cell_frame.setMinimumWidth(0)
-                cell_frame.setMaximumWidth(geometry.width)
-                cell_frame.setFixedHeight(geometry.height)
-                cell_frame.setSizePolicy(
-                    QSizePolicy.Policy.Fixed,
-                    QSizePolicy.Policy.Fixed,
-                )
-                self.install_moba_terminal_context_menu(cell_frame)
-                cell_layout = QHBoxLayout(cell_frame)
-                cell_layout.setContentsMargins(geometry.icon_x, 0, 5, 0)
-                cell_layout.setSpacing(geometry.label_x - geometry.icon_x - geometry.icon_size)
-                icon = QLabel()
-                icon.setObjectName("mobaTelemetryIcon")
-                icon.setProperty("mobaTelemetryKey", cell.key)
-                icon.setProperty("mobaTelemetryIconKey", cell.icon_key)
-                icon.setProperty("mobaTelemetryIconAccent", cell.icon_accent)
-                icon.setProperty("mobaTelemetryIconX", geometry.icon_x)
-                icon.setProperty("mobaTelemetryIconY", geometry.icon_y)
-                icon.setProperty("mobaTelemetryIconSize", geometry.icon_size)
-                icon.setProperty("mobaTelemetryIconRender", "generated-pixmap")
-                icon.setPixmap(self.telemetry_icon_pixmap(cell))
-                icon.setFixedSize(QSize(geometry.icon_size, geometry.icon_size))
-                icon.setToolTip(_safe_tooltip_html(cell.label))
-                self.install_moba_terminal_context_menu(icon)
-                cell_layout.addWidget(icon)
-                label = _literal_label("")
-                label.setObjectName("mobaTelemetryItem")
-                label.setProperty("mobaTelemetryKey", cell.key)
-                label.setProperty("mobaTelemetryDisplayText", cell.display_text)
-                if cell.key == "target":
-                    self.apply_connected_identity_route_properties(label)
-                label.setProperty("mobaTelemetryLabelX", geometry.label_x)
-                label.setProperty("mobaTelemetryLabelY", geometry.label_y)
-                label.setProperty("mobaTelemetryLabelFontSize", geometry.label_font_size)
-                label.setProperty(
-                    "mobaTelemetryRenderedText",
-                    self.telemetry_label_text(
-                        label,
-                        cell,
-                        geometry.width - geometry.label_x - 8,
-                    ),
-                )
-                label.setText(str(label.property("mobaTelemetryRenderedText")))
-                label.setToolTip(
-                    _safe_tooltip_html(f"{cell.label}: {cell.display_text}")
-                )
-                label.setMinimumWidth(
-                    max(1, geometry.width - geometry.label_x - 8)
-                )
-                label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
-                self.install_moba_terminal_context_menu(label)
-                cell_layout.addWidget(label, 1)
-                layout.addWidget(cell_frame, geometry.width)
-            layout.addStretch(1)
-            bar.setProperty(
-                "mobaTelemetryVisibleCellKeys",
-                list(self.telemetry_cell_frames),
-            )
-            return bar
-
-        def generated_icon_pixmap(
-            self,
-            size: int,
-            draw: Callable[[QPainter, int], None],
-            *,
-            antialias: bool = True,
-        ) -> QPixmap:
-            scale = max(1.0, float(self.devicePixelRatioF()))
-            pixel_size = max(1, int(round(size * scale)))
-            pixmap = QPixmap(pixel_size, pixel_size)
-            pixmap.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(pixmap)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing, antialias)
-            painter.scale(scale, scale)
-            try:
-                draw(painter, size)
-            finally:
-                painter.end()
-            pixmap.setDevicePixelRatio(scale)
-            return pixmap
-
-        def telemetry_icon_pixmap(self, cell) -> QPixmap:
-            size = cell.icon_size
-
-            def draw(painter: QPainter, logical_size: int) -> None:
-                accent = QColor(cell.icon_accent)
-                dark = QColor("#101010")
-
-                def pen(color: QColor, width: int = 1) -> None:
-                    painter.setPen(QPen(color, width))
-
-                def brush(color: QColor) -> None:
-                    painter.setBrush(QBrush(color))
-
-                pen(accent)
-                brush(dark)
-                painter.drawRect(0, 0, logical_size - 1, logical_size - 1)
-                mid = logical_size // 2
-                icon_key = cell.icon_key
-                if icon_key == "host":
-                    painter.drawRect(3, 3, logical_size - 6, logical_size - 8)
-                    painter.drawLine(4, logical_size - 3, logical_size - 4, logical_size - 3)
-                elif icon_key == "cpu":
-                    painter.drawRect(3, 3, logical_size - 6, logical_size - 6)
-                    painter.drawPoint(mid, 4)
-                    painter.drawPoint(mid, logical_size - 4)
-                    painter.drawPoint(4, mid)
-                    painter.drawPoint(logical_size - 4, mid)
-                elif icon_key in {"memory", "disk"}:
-                    painter.drawRect(3, 4, logical_size - 6, logical_size - 8)
-                    painter.drawLine(4, logical_size - 5, logical_size - 4, logical_size - 5)
-                elif icon_key == "upload":
-                    pen(accent, 2)
-                    painter.drawLine(mid, logical_size - 3, mid, 3)
-                    painter.drawLine(mid, 3, mid - 3, 6)
-                    painter.drawLine(mid, 3, mid + 3, 6)
-                elif icon_key == "download":
-                    pen(accent, 2)
-                    painter.drawLine(mid, 3, mid, logical_size - 3)
-                    painter.drawLine(mid, logical_size - 3, mid - 3, logical_size - 6)
-                    painter.drawLine(mid, logical_size - 3, mid + 3, logical_size - 6)
-                elif icon_key == "connection":
-                    pen(accent, 2)
-                    painter.drawArc(2, 3, logical_size - 4, logical_size, 200 * 16, 140 * 16)
-                elif icon_key == "process":
-                    painter.drawLine(3, 4, logical_size - 3, 4)
-                    painter.drawLine(3, 7, logical_size - 5, 7)
-                    painter.drawLine(3, 10, logical_size - 6, 10)
-
-            return self.generated_icon_pixmap(size, draw, antialias=False)
-
-        @staticmethod
-        def telemetry_label_text(
-            label: QLabel,
-            cell,
-            available_width: int,
-        ) -> str:
-            """Fit live values into the fixed footer without losing their full tooltip."""
-
-            display_text = str(cell.display_text)
-            if display_text in {"Unavailable", "Connections: unavailable"}:
-                display_text = "N/A"
-            return label.fontMetrics().elidedText(
-                display_text,
-                Qt.TextElideMode.ElideRight,
-                max(1, available_width),
-            )
-
+    MobaConnectedSessionPanel = create_connected_terminal_class(services)
     return MobaSftpDock, MobaConnectedSessionPanel

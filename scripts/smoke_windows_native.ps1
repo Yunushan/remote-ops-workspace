@@ -150,6 +150,7 @@ function Initialize-CandidateByteBinding {
     expected_executables = @()
     required_paths = $script:CandidateRequiredPaths
     observations = @()
+    msi_lifecycle = @()
   }
   Save-CandidateByteBinding
   $Cleanup = [ordered]@{
@@ -273,11 +274,34 @@ function Test-RowVersion([string]$Path, [string]$ExpectedVersion) {
   }
 }
 
+function Test-InstalledRuntimeLicenses([string]$InstallDir, [string]$Label) {
+  $RelativeDir = "docs\licenses\runtime"
+  $Staged = Get-Item -LiteralPath (Join-Path $Root "build\native\windows\stage\$RelativeDir")
+  $Installed = Join-Path $InstallDir $RelativeDir
+  $ExpectedFiles = @(Get-ChildItem -LiteralPath $Staged.FullName -File -Recurse -Force)
+  $ActualFiles = @(Get-ChildItem -LiteralPath $Installed -File -Recurse -Force)
+  if ($ExpectedFiles.Count -eq 0 -or $ExpectedFiles.Count -ne $ActualFiles.Count) {
+    throw "$Label installed runtime license inventory differs from staging"
+  }
+  foreach ($File in $ExpectedFiles) {
+    $RelativePath = $File.FullName.Substring($Staged.FullName.Length + 1)
+    $Actual = Join-Path $Installed $RelativePath
+    if (!(Test-Path -LiteralPath $Actual -PathType Leaf) -or
+        ((Get-Item -LiteralPath $Actual).Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+        (Get-FileHash -LiteralPath $Actual -Algorithm SHA256).Hash -cne
+        (Get-FileHash -LiteralPath $File.FullName -Algorithm SHA256).Hash) {
+      throw "$Label installed runtime license differs from staging: $RelativePath"
+    }
+  }
+  Write-Host "native installer smoke runtime licenses: $Label"
+}
+
 function Test-RowRuntimeResources([string]$Path, [string]$Label) {
   Assert-CandidateExecutableBytes $Path "cli" "$Label platforms --json"
   if (!(Test-Path $Path)) {
     throw "expected installed row executable missing: $Path"
   }
+  Test-InstalledRuntimeLicenses (Split-Path -Parent (Split-Path -Parent $Path)) $Label
   $Output = & $Path platforms --json
   if ($LASTEXITCODE -ne 0) {
     throw "$Label platforms --json failed for $Path"
@@ -458,21 +482,31 @@ function Test-RowVault([string]$Path, [string]$Label, [bool]$ExpectedBackend) {
   }
 }
 
-function Find-MsiRowExe {
-  $Candidates = @()
-  if ($env:ProgramFiles) {
-    $Candidates += (Join-Path $env:ProgramFiles "Remote Ops Workspace\bin\row.exe")
+function Add-MsiLifecycleProbe([string]$Probe, [string]$State) {
+  $Inspector = Join-Path $PSScriptRoot "inspect_windows_msi.py"
+  $Output = & python -I $Inspector --package $Msi --architecture $Arch --version $Version --state $State --require-transactional-upgrade
+  if ($LASTEXITCODE -ne 0) { throw "Windows Installer registration check failed at $Probe" }
+  $Snapshot = $Output | ConvertFrom-Json
+  $Registration = $Snapshot.registration
+  if ($Registration.state -cne $State) { throw "Windows Installer registration state differs at $Probe" }
+  if ($script:CandidateByteBinding.msi_lifecycle.Count -and
+      $Snapshot.package.sha256 -cne $script:CandidateByteBinding.msi_lifecycle[0].package.sha256) {
+    throw "MSI bytes changed during installer smoke"
   }
-  $ProgramFilesX86 = [Environment]::GetEnvironmentVariable("ProgramFiles(x86)")
-  if ($ProgramFilesX86) {
-    $Candidates += (Join-Path $ProgramFilesX86 "Remote Ops Workspace\bin\row.exe")
-  }
-  foreach ($Candidate in $Candidates) {
-    if ($Candidate -and (Test-Path $Candidate)) {
-      return $Candidate
+  $RowPath = $null
+  if ($State -eq "installed") {
+    $RowPath = $Registration.row_path
+    $Registration.row_path = Get-CandidateNormalizedPath $RowPath
+    if ($Registration.row_path -cne "msi-install/bin/row.exe") { throw "MSI did not register the stock Program Files launcher" }
+    $LauncherDigest = (Get-FileHash -LiteralPath $RowPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($LauncherDigest -cne $Snapshot.package.launcher_payload_sha256) {
+      throw "Registered launcher bytes differ from the exact MSI payload at $Probe"
     }
+    $Registration | Add-Member -NotePropertyName "launcher_sha256" -NotePropertyValue $LauncherDigest
   }
-  throw "MSI install did not create row.exe in Program Files"
+  $script:CandidateByteBinding.msi_lifecycle += [ordered]@{ probe = $Probe; package = $Snapshot.package; registration = $Registration }
+  Save-CandidateByteBinding
+  if ($RowPath) { return $RowPath }
 }
 
 Assert-DisposableCandidateHost
@@ -504,6 +538,14 @@ $SmokeRoot = Join-Path $Root "build\native-smoke\windows-$Arch"
 Remove-CandidateSmokeTree $SmokeRoot
 New-Item -ItemType Directory -Force $SmokeRoot | Out-Null
 Initialize-CandidateByteBinding
+if ($RequireReleaseSigning -and $Arch -ne "x86") {
+  $script:CandidateByteBinding["installer_sha256"] = @{}
+  foreach ($Artifact in @($NativeZip, $SetupExe, $Msi)) {
+    $script:CandidateByteBinding.installer_sha256[(Split-Path -Leaf $Artifact)] =
+      (Get-FileHash -LiteralPath $Artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+  }
+  Save-CandidateByteBinding
+}
 
 # extract / verify / remove smoke for the native portable zip.
 $PortableInstallDir = Join-Path $SmokeRoot "portable"
@@ -553,20 +595,22 @@ if (Test-Path $ExeGui) {
   throw "EXE uninstall left row-gui.exe behind"
 }
 
-# install / verify / upgrade / uninstall smoke for the WiX .msi installer.
+# Install, reinstall and uninstall the same WiX MSI.
 $MsiLog = Join-Path $SmokeRoot "msi-smoke.log"
+$null = Add-MsiLifecycleProbe "before-install" "absent"
 Invoke-SmokeCommand "MSI install" "msiexec.exe" @("/i", $Msi, "/qn", "/norestart", "/l*v", $MsiLog)
-$MsiRow = Find-MsiRowExe
+$MsiRow = Add-MsiLifecycleProbe "after-install" "installed"
 Test-RowVersion $MsiRow $Version
 Test-RowRuntimeResources $MsiRow "MSI verify"
 Test-RowGuiLauncher $MsiRow $Arch
 Test-RowVault $MsiRow "MSI install" $ExpectedVaultBackend
-Invoke-SmokeCommand "MSI upgrade" "msiexec.exe" @("/i", $Msi, "/qn", "/norestart", "/l*v", $MsiLog)
-$MsiRow = Find-MsiRowExe
+Invoke-SmokeCommand "MSI reinstall" "msiexec.exe" @("/i", $Msi, "/qn", "/norestart", "/l*v", $MsiLog)
+$MsiRow = Add-MsiLifecycleProbe "after-reinstall" "installed"
 Test-RowVersion $MsiRow $Version
-Test-RowRuntimeResources $MsiRow "MSI upgrade"
+Test-RowRuntimeResources $MsiRow "MSI reinstall"
 Test-RowGuiLauncher $MsiRow $Arch
 Invoke-SmokeCommand "MSI uninstall" "msiexec.exe" @("/x", $Msi, "/qn", "/norestart", "/l*v", $MsiLog)
+$null = Add-MsiLifecycleProbe "after-uninstall" "absent"
 if (Test-Path $MsiRow) {
   throw "MSI uninstall left row.exe behind"
 }
@@ -575,5 +619,13 @@ if (Test-Path $MsiGui) {
   throw "MSI uninstall left row-gui.exe behind"
 }
 
+if ($RequireReleaseSigning -and $Arch -ne "x86") {
+  foreach ($Artifact in @($NativeZip, $SetupExe, $Msi)) {
+    $InitialHash = $script:CandidateByteBinding.installer_sha256[(Split-Path -Leaf $Artifact)]
+    if ((Get-FileHash -LiteralPath $Artifact -Algorithm SHA256).Hash.ToLowerInvariant() -cne $InitialHash) {
+      throw "Installer bytes changed during native smoke: $(Split-Path -Leaf $Artifact)"
+    }
+  }
+}
 Complete-CandidateByteBinding
 Write-Host "native installer smoke passed for Windows $Arch"

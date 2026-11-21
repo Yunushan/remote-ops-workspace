@@ -38,14 +38,20 @@ def candidate_binding():
     assert "types: [opened, synchronize, reopened, labeled]" in workflow
     assert "contains(github.event.pull_request.labels.*.name, 'native-all-modern')" in workflow
     assert "scope: ${{ steps.bind.outputs.scope }}" in workflow
+    assert "python_version: ${{ steps.bind.outputs.python_version }}" in workflow
+    assert workflow.count("python-version: ${{ needs.candidate-source.outputs.python_version }}") == 3
     assert workflow.count("if: ${{ needs.candidate-source.outputs.scope == 'all-modern' }}") == 2
     return blocks[0]
 
 
-def _execute_binding(binding, version, scope, tmp_path, monkeypatch):
+def _execute_binding(binding, version, scope, tmp_path, monkeypatch, *, python_version="3.14.10"):
     output = tmp_path / "github-output.txt"
     output.write_text("")
     (tmp_path / "pyproject.toml").write_text("[project]\nversion=" + json.dumps(version) + "\n")
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs" / "release_toolchain.json").write_text(
+        json.dumps({"python": {"version": python_version}}), encoding="utf-8"
+    )
     monkeypatch.chdir(tmp_path)
     for key, value in {
         "EXPECTED_CANDIDATE_SHA": HEAD,
@@ -67,7 +73,24 @@ def test_candidate_scope_and_commit_outputs(candidate_binding, tmp_path, monkeyp
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
     assert values["sha"] == HEAD and values["tree"] == TREE
     assert values["scope"] == scope and values["version_tag"] == "v1.0.27"
+    assert values["python_version"] == "3.14.10"
     assert len(json.loads(values["windows_matrix"])["include"]) == rows
+
+
+def test_candidate_uses_historical_checkout_python_pin(candidate_binding, tmp_path, monkeypatch):
+    output = _execute_binding(
+        candidate_binding, "1.0.27", "all-modern", tmp_path, monkeypatch, python_version="3.14.7"
+    )
+    assert "python_version=3.14.7" in output.read_text().splitlines()
+
+
+@pytest.mark.parametrize("python_version", ["3.14", "latest", "3.14.10rc1"])
+def test_candidate_rejects_nonexact_python_pin(candidate_binding, tmp_path, monkeypatch, python_version):
+    with pytest.raises(AssertionError, match="release Python must be a canonical CPython version"):
+        _execute_binding(
+            candidate_binding, "1.0.27", "all-modern", tmp_path, monkeypatch, python_version=python_version
+        )
+    assert (tmp_path / "github-output.txt").read_bytes() == b""
 
 
 def test_candidate_rejects_unknown_scope_before_outputs(candidate_binding, tmp_path, monkeypatch):

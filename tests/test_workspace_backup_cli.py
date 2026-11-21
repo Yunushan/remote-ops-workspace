@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from remote_ops_workspace import cli
+from remote_ops_workspace import cli, cli_workspace
 from remote_ops_workspace.models import Profile
 from remote_ops_workspace.storage import ProfileStore
 
@@ -17,7 +17,7 @@ def test_backup_passphrase_prompt_confirms_without_printing(monkeypatch, capsys)
         prompts.append(label)
         return "isolated recovery passphrase"
 
-    monkeypatch.setattr(cli, "getpass", prompt)
+    monkeypatch.setattr(cli_workspace, "getpass", prompt)
     args = argparse.Namespace(passphrase_env=None)
     assert cli._workspace_backup_passphrase(args, confirm=True) == "isolated recovery passphrase"
     assert prompts == ["Backup passphrase: ", "Confirm backup passphrase: "]
@@ -29,7 +29,7 @@ def test_backup_passphrase_prompt_confirms_without_printing(monkeypatch, capsys)
 
 def test_backup_rejects_mismatched_confirmation(monkeypatch):
     values = iter(["first recovery passphrase", "different recovery passphrase"])
-    monkeypatch.setattr(cli, "getpass", lambda _label: next(values))
+    monkeypatch.setattr(cli_workspace, "getpass", lambda _label: next(values))
     with pytest.raises(ValueError, match="do not match"):
         cli._workspace_backup_passphrase(argparse.Namespace(passphrase_env=None), confirm=True)
 

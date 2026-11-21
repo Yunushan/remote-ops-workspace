@@ -304,7 +304,8 @@ def test_real_conpty_output_shutdown_preserves_tail_and_reaches_eof() -> None:
         + " + b'\\r\\n'); "
         "sys.stdout.buffer.flush()"
     )
-    process = WindowsConPtyProcess([sys.executable, "-c", child])
+    # This fixture needs buffered stdout for its single large write.
+    process = WindowsConPtyProcess([sys.executable, "-E", "-c", child])
     output = bytearray()
     shutdown_started = False
 

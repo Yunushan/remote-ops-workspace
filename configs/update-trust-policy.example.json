@@ -1,10 +1,11 @@
 {
-  "schema": "row.update-trust-policy.v1",
+  "schema": "row.update-trust-policy.v2",
   "enabled": false,
   "manifest_url": "",
   "public_key": "",
   "organization": "",
   "channel": "",
+  "minimum_version": "",
   "selected_target": "",
   "approved_targets": [],
   "allowed_origins": [],

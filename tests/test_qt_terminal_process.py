@@ -515,6 +515,7 @@ def test_fast_exit_drains_high_volume_tail_before_finished(
     process.setProgram(sys.executable)
     process.setArguments(
         [
+            "-E",  # This fixture needs buffered stdout for its single large write.
             "-c",
             (
                 "import sys;"

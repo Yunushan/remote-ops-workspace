@@ -18,11 +18,13 @@ def _clean_github_actions_env(**overrides: str) -> dict[str, str]:
     return env
 
 
-def _run_xp_smoke_runner(tmp_path: Path, **overrides: str) -> tuple[subprocess.CompletedProcess[str], Path]:
+def _run_xp_smoke_runner(
+    tmp_path: Path, *, proof_text: str = "cli launch proof: ok\n", **overrides: str,
+) -> tuple[subprocess.CompletedProcess[str], Path]:
     runner = Path("scripts/xp_smoke_runner.cmd").resolve()
     proof = tmp_path / "proof.txt"
     output = tmp_path / "xp-smoke-evidence" / "cli_launch.txt"
-    proof.write_text("cli launch proof: ok\n", encoding="utf-8")
+    proof.write_text(proof_text, encoding="utf-8")
     values = {
         "target": "windows-xp-native-x86",
         "release_tag": "v1.0.2",
@@ -217,6 +219,62 @@ def test_xp_smoke_runner_requires_existing_proof_file(tmp_path: Path) -> None:
     assert result.returncode == 1
     assert "proof file is missing" in result.stderr
     assert not output.exists()
+
+
+def test_xp_smoke_runner_refuses_empty_proof(tmp_path: Path) -> None:
+    result, output = _run_xp_smoke_runner(tmp_path, proof_text="")
+
+    assert result.returncode == 1
+    assert "proof file must be nonempty" in result.stderr
+    assert not output.exists()
+
+
+def test_xp_smoke_runner_preserves_proof_when_output_names_it(tmp_path: Path) -> None:
+    proof = tmp_path / "proof.txt"
+    alternate_path = f"{tmp_path}\\.\\PROOF.txt"
+    result, _ = _run_xp_smoke_runner(tmp_path, evidence_file=alternate_path)
+
+    assert result.returncode == 1
+    assert "evidence file must differ from the proof file" in result.stderr
+    assert proof.read_text(encoding="utf-8") == "cli launch proof: ok\n"
+
+
+def test_xp_smoke_runner_reports_output_failure(tmp_path: Path) -> None:
+    output = tmp_path / "xp-smoke-evidence" / "cli_launch.txt"
+    output.mkdir(parents=True)
+    result, _ = _run_xp_smoke_runner(tmp_path)
+
+    assert result.returncode == 1
+    assert "could not write XP smoke evidence" in result.stderr
+    assert "XP smoke evidence written:" not in result.stdout
+    assert not list(output.iterdir())
+
+
+def test_xp_smoke_runner_accepts_a_quoted_output_path(tmp_path: Path) -> None:
+    output = tmp_path / "XP & lab" / "cli_launch.txt"
+    result, _ = _run_xp_smoke_runner(tmp_path, evidence_file=str(output))
+
+    assert result.returncode == 0, result.stderr
+    assert not result.stderr
+    assert "cli launch proof: ok" in output.read_text(encoding="utf-8")
+
+
+def test_xp_smoke_runner_retries_after_output_is_unlocked(tmp_path: Path) -> None:
+    output = tmp_path / "xp-smoke-evidence" / "cli_launch.txt"
+    output.parent.mkdir()
+    output.write_bytes(b"previous evidence")
+    with output.open("rb") as previous_evidence:
+        result, _ = _run_xp_smoke_runner(tmp_path)
+
+        assert result.returncode == 1
+        assert "could not write XP smoke evidence" in result.stderr
+        assert previous_evidence.read() == b"previous evidence"
+        assert list(output.parent.iterdir()) == [output]
+
+    result, _ = _run_xp_smoke_runner(tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert "cli launch proof: ok" in output.read_text(encoding="utf-8")
+    assert list(output.parent.iterdir()) == [output]
 
 
 def test_xp_smoke_runner_rejects_github_repository_mismatch(tmp_path: Path) -> None:

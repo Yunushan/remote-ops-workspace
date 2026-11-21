@@ -17,7 +17,7 @@ def sample():
     binding = {'nonce': 'a' * 64, 'source_head': 'b' * 40, 'source_tree': 'c' * 40,
         'source_bytes_sha256': 'd' * 64, 'workflow_sha256': 'e' * 64, 'run_id': '12', 'run_attempt': '1',
         'event_sha': 'f' * 40, 'image_version': '20261006.1.0', 'image_os': 'ubuntu24'}
-    runtime = {'chrome_version': '150.0.1.2', 'driver_version': '150.0.1.2', 'python_version': '3.14.7',
+    runtime = {'chrome_version': '150.0.1.2', 'driver_version': '150.0.1.2', 'python_version': '3.14.10',
         'tool_inventory_sha256': '1' * 64, 'loaded_runtime_sha256': '2' * 64, 'loaded_runtime_files': 8}
     events = []
     for launch, case, method, status in ((1, 'api-read', 'GET', 200),
@@ -752,10 +752,12 @@ class RuntimeStartupDiagnosticTests(unittest.TestCase):
             owners.append(owner)
             entered('initial-fixture-startup' if frames else 'driver-service-birth')
             if frames:
+                case.assertEqual(env['LD_LIBRARY_PATH'], str(PurePosixPath(argv[0]).parent.parent / 'lib'))
                 count = 0 if failure_stage == 'initial-fixture-inventory' else 1
                 owner.receive.return_value = {'ready': True, 'nonce': 'a' * 64, 'port': 12345,
                     'inventory': {'count': count, 'profiles': [{}] * count, 'digest': '1' * 64}}
             else:
+                case.assertNotIn('LD_LIBRARY_PATH', env)
                 case.assertEqual(argv, ['/synthetic/driver', '--port=0', '--enable-chrome-logs'])
                 port = 0 if failure_stage == 'driver-port-validation' else 12346
                 owner.output.extend(('ChromeDriver was started successfully on port ' + str(port)).encode())
@@ -2246,7 +2248,7 @@ class ActualPolicyCheckpointMainTests(unittest.TestCase):
                 enter(patch.object(policy_runtime.os, 'readlink', side_effect=lambda path:
                     str(chrome) if str(path) == '/proc/401/exe' else str(chrome_driver)))
                 enter(patch.object(host_controller.secrets, 'token_hex', side_effect=['a' * 64, 'b' * 64, 'c' * 64]))
-                enter(patch.object(host_controller.platform, 'python_version', return_value='3.14.7'))
+                enter(patch.object(host_controller.platform, 'python_version', return_value='3.14.10'))
                 connection = enter(patch.object(host_controller.http.client, 'HTTPConnection'))
                 connection.return_value.getresponse.return_value.status = 200
                 connection.return_value.getresponse.return_value.read.return_value = b''

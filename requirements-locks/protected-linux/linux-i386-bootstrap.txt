@@ -1,4 +1,4 @@
-# Linux i386 wheel-only build backend lock; CPython 3.14.7.
+# Linux i386 wheel-only build backend lock; CPython 3.14.10.
 # Candidate dependency inputs. Hashes are from the pinned PyPI releases.
 # Native execution and independent redistribution approval are still required.
 maturin==1.16.0 \

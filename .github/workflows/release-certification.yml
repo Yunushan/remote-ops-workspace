@@ -75,7 +75,7 @@ jobs:
           test "$(git rev-parse 'refs/tags/row-release-certification^{commit}')" = "$RELEASE_SHA"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.14.7"
+          python-version: "3.14.10"
       - name: Create isolated compliance verifier environment
         shell: bash
         run: |
@@ -103,6 +103,14 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ env.PROMOTION_RUN_ID }}
           path: ${{ runner.temp }}/redistribution-approval
+      - name: Download candidate qualification ZIPs from the triggering promotion attempt
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: production-candidate-qualification-${{ env.PROMOTION_RUN_ID }}-${{ env.PROMOTION_RUN_ATTEMPT }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.PROMOTION_RUN_ID }}
+          path: ${{ runner.temp }}/candidate-qualification
       - name: Download complete published inventory
         shell: bash
         env:
@@ -130,7 +138,10 @@ jobs:
             --governance-attestation "$RUNNER_TEMP/publication-governance/tag-governance-attestation.json" \
             --governance-signature "$RUNNER_TEMP/publication-governance/tag-governance-attestation.sig.json" \
             --redistribution-evidence "$RUNNER_TEMP/redistribution-approval/release-evidence.json" \
-            --redistribution-signature "$RUNNER_TEMP/redistribution-approval/release-evidence.sig.json"
+            --redistribution-signature "$RUNNER_TEMP/redistribution-approval/release-evidence.sig.json" \
+            --candidate-inventory "$RUNNER_TEMP/redistribution-approval/bundle/release-candidate-inventory.json" \
+            --candidate-qualification-archives "$RUNNER_TEMP/candidate-qualification" \
+            --protected-platform-registry "$RUNNER_TEMP/redistribution-approval/bundle/platform_verified_evidence.json"
       - name: Verify published production release notes
         env:
           GH_TOKEN: ${{ github.token }}

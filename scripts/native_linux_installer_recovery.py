@@ -18,7 +18,9 @@ import shutil
 import stat
 import subprocess
 import sys
+import sysconfig
 import tarfile
+import tempfile
 import threading
 import time
 import uuid
@@ -28,6 +30,17 @@ from pathlib import Path, PurePosixPath
 
 ROOT = Path.cwd().resolve()
 HERE = Path(__file__).resolve().parent
+if str(HERE.parent) not in sys.path:
+    sys.path.insert(0, str(HERE.parent))
+
+from scripts.debian_native_dependencies import LIBRARY_PACKAGES, dependency_field  # noqa: E402
+from scripts.managed_debian_qualification import (  # noqa: E402
+    MANAGED_IMAGE,
+    REPORT_NAME,
+    validate_receipt,
+)
+from scripts.stage_linux_runtime_licenses import is_runtime_license_member  # noqa: E402
+
 REPO = "Yunushan/remote-ops-workspace"
 PREVIOUS = "1.0.24"
 TARGET = "linux-x86_64"
@@ -35,7 +48,9 @@ PACKAGE = "remote-ops-workspace"
 SCHEMA = "row.linux-deb-upgrade-rollback.v1"
 MAX_FILE = 150 * 1024 * 1024
 MAX_PAYLOAD = 180 * 1024 * 1024
+MAX_PAYLOAD_MEMBERS = 64
 REPORT = Path("build/native-smoke/linux-x86_64/native-upgrade-rollback.json")
+MANAGED_REPORT = REPORT.with_name(REPORT_NAME)
 PINS = Path("configs/native_linux_previous_release_pins.json")
 ROW = Path("/usr/bin/row")
 DOCS = Path("/usr/share/doc/remote-ops-workspace")
@@ -144,6 +159,10 @@ PUBLIC_FAILURE_CODES = frozenset(
         "command-pipe-lifetime-or-bound",
         "command-stdin-bound",
         "command-timeout",
+        "managed-debian-bundle-selection-mismatch",
+        "managed-debian-dependencies-outside-library-inventory",
+        "managed-debian-dependency-image-id-invalid",
+        "managed-debian-receipt-binding-mismatch",
         "command-unexpected-exit",
         "control-archive-bound",
         "deb-bytes-mismatch-before-inspection",
@@ -185,7 +204,7 @@ PUBLIC_FAILURE_CODES = frozenset(
         "package-expanded-payload-bound",
         "package-payload-files-incomplete",
         "payload-archive-bound",
-        "pinned-cpython3147-required",
+        "pinned-cpython31410-required",
         "preexisting-or-partial-package-registration",
         "preexisting-or-residual-owned-path",
         "previous-backup-modified-state",
@@ -478,8 +497,8 @@ def validate_host_values(values: dict, sha: str) -> None:
         "x86_64",
     ):
         raise EvidenceError("native-linux-x64-required")
-    if values.get("implementation") != "cpython" or values.get("version_info") != (3, 14, 7):
-        raise EvidenceError("pinned-cpython3147-required")
+    if values.get("implementation") != "cpython" or values.get("version_info") != (3, 14, 10):
+        raise EvidenceError("pinned-cpython31410-required")
     if (values.get("distro_id"), values.get("distro_version")) != ("ubuntu", "24.04"):
         raise EvidenceError("ubuntu2404-required")
     if values.get("workspace_absolute") is not True or values.get("workspace_resolved") != str(
@@ -632,9 +651,10 @@ def control_identity(raw: bytes, version: str) -> None:
         control = members[names.index("control")]
         text = archive.extractfile(control).read().decode("utf-8")
     fields = {}
+    key = None
     for line in text.splitlines():
         if line.startswith(" "):
-            if "Description" not in fields:
+            if key != "Description":
                 raise EvidenceError("malformed-control-continuation")
             continue
         if not line or ": " not in line:
@@ -643,6 +663,11 @@ def control_identity(raw: bytes, version: str) -> None:
         if key in fields:
             raise EvidenceError("duplicate-control-field")
         fields[key] = value
+    depends = fields.pop("Depends", None)
+    if depends is not None:
+        if version == PREVIOUS:
+            raise EvidenceError("unexpected-package-control-identity")
+        validate_library_dependencies(depends)
     if set(fields) != {
         "Package",
         "Version",
@@ -677,17 +702,29 @@ def expected_payload_files(version: str) -> tuple[str, ...]:
     return FILES
 
 
+def license_parent_directories(files: set[str]) -> set[str]:
+    return {
+        parent.as_posix()
+        for name in files
+        for parent in PurePosixPath(name).parents
+        if is_runtime_license_member(parent, directory=True)
+    }
+
+
 def payload_inventory(raw: bytes, version: str) -> Payload:
     expected_files = set(expected_payload_files(version))
     if len(raw) > MAX_PAYLOAD:
         raise EvidenceError("payload-archive-bound")
-    seen, rows, total = set(), [], 0
+    seen, directories, rows, total = set(), set(), [], 0
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as archive:
         for item in archive:
             name = member_name(item.name)
+            license_member = version != PREVIOUS and is_runtime_license_member(
+                PurePosixPath(name), directory=item.isdir(),
+            )
             if (
                 name in seen
-                or len(seen) >= 30
+                or len(seen) >= MAX_PAYLOAD_MEMBERS
                 or item.uid != 0
                 or item.gid != 0
                 or item.pax_headers
@@ -695,13 +732,14 @@ def payload_inventory(raw: bytes, version: str) -> Payload:
                 raise EvidenceError("duplicate-or-unexpected-package-member")
             seen.add(name)
             if item.isdir():
-                if name not in DIRECTORIES or item.size != 0 or item.mode != 0o755:
+                if (name not in DIRECTORIES and not license_member) or item.size != 0 or item.mode != 0o755:
                     raise EvidenceError("unexpected-package-directory")
+                directories.add(name)
                 continue
             expected_mode = 0o755 if name == "usr/bin/row" else 0o644
             bound = MAX_FILE if name == "usr/bin/row" else 4 * 1024 * 1024
             if (
-                name not in expected_files
+                (name not in expected_files and not license_member)
                 or item.type != tarfile.REGTYPE
                 or item.name.endswith("/")
                 or item.mode != expected_mode
@@ -717,7 +755,8 @@ def payload_inventory(raw: bytes, version: str) -> Payload:
             if size != item.size or total > MAX_PAYLOAD:
                 raise EvidenceError("package-expanded-payload-bound")
             rows.append((name, size, value.hexdigest(), expected_mode))
-    if {row[0] for row in rows} != expected_files or not DIRECTORIES.issubset(seen):
+    files = {row[0] for row in rows}
+    if not expected_files <= files or directories != DIRECTORIES | license_parent_directories(files):
         raise EvidenceError("package-payload-files-incomplete")
     return Payload(version, tuple(sorted(rows)))
 
@@ -746,7 +785,11 @@ def installed_identity(commands: Commands, payload: Payload) -> None:
 
 
 def verify_payload_files(root: Path, payload: Payload) -> None:
-    if {row[0] for row in payload.files} != set(expected_payload_files(payload.version)):
+    files = {row[0] for row in payload.files}
+    expected = set(expected_payload_files(payload.version))
+    if not expected <= files or any(
+        payload.version == PREVIOUS or not is_runtime_license_member(PurePosixPath(name)) for name in files - expected
+    ):
         raise EvidenceError("package-payload-files-incomplete")
     for name, size, sha, mode in payload.files:
         path = root / name
@@ -758,9 +801,12 @@ def verify_payload_files(root: Path, payload: Payload) -> None:
         ):
             raise EvidenceError("owned-installed-payload-bytes-or-path-mismatch")
     docs = root / "usr/share/doc/remote-ops-workspace"
-    if {path.name for path in docs.iterdir()} != {
-        PurePosixPath(name).name for name, *_ in payload.files if name.startswith("usr/share/doc/")
-    }:
+    license_directories = license_parent_directories(files)
+    expected_docs = {name for name in files if name.startswith("usr/share/doc/")} | license_directories
+    if (
+        {path.relative_to(root).as_posix() for path in docs.rglob("*")} != expected_docs
+        or any(stat.S_IMODE((root / name).lstat().st_mode) != 0o755 for name in license_directories)
+    ):
         raise EvidenceError("owned-documentation-directory-changed")
 
 
@@ -911,15 +957,7 @@ def candidate_assets(commands: Commands, sha: str, version: str) -> tuple[dict, 
     verifier.validate_posix_byte_binding(
         json.loads(regular(paths["binding"])), archives, TARGET, finish["assets"], launchers
     )
-    suffixes = (
-        "linux-amd64.deb",
-        "linux-x86_64.rpm",
-        "linux-x86_64.AppImage",
-        "linux-x86_64-native.tar.gz",
-        "linux-x86_64-native-manifest.json",
-        "linux-x86_64-native-SHA256SUMS.txt",
-    )
-    expected_names = {f"remote-ops-workspace-v{version}-{suffix}" for suffix in suffixes}
+    expected_names = set(native_asset_names(version))
     assets = {}
     for row in finish["assets"]:
         name = PurePosixPath(row["path"]).name
@@ -939,11 +977,30 @@ def candidate_assets(commands: Commands, sha: str, version: str) -> tuple[dict, 
     return assets, finish, digest(original)
 
 
+def native_asset_names(version: str) -> tuple[str, ...]:
+    return tuple(f"remote-ops-workspace-v{version}-{suffix}" for suffix in (
+        "linux-amd64.deb",
+        "linux-x86_64.rpm",
+        "linux-x86_64.AppImage",
+        "linux-x86_64-native.tar.gz",
+        "linux-x86_64-native-manifest.json",
+        "linux-x86_64-native-SHA256SUMS.txt",
+    ))
+
+
 def verify_manifest(paths: dict[str, Path], version: str) -> None:
     prefix = f"remote-ops-workspace-v{version}-linux-x86_64-native-"
     manifest = json.loads(regular(paths[prefix + "manifest.json"], 1024 * 1024))
-    rows = {row["file"]: row for row in manifest}
-    if len(rows) != len(manifest) or len(rows) != 4:
+    rows = {}
+    for row in manifest:
+        reference = row["file"]
+        if not isinstance(reference, str):
+            raise EvidenceError("native-manifest-row-set")
+        name = PurePosixPath(reference).name
+        if not name or reference not in {name, "native-dist/linux/" + name} or name in rows:
+            raise EvidenceError("native-manifest-row-set")
+        rows[name] = row
+    if len(rows) != 4:
         raise EvidenceError("native-manifest-row-set")
     checksums = {}
     for line in regular(paths[prefix + "SHA256SUMS.txt"], 65536).decode("ascii").splitlines():
@@ -958,10 +1015,10 @@ def verify_manifest(paths: dict[str, Path], version: str) -> None:
             raise EvidenceError("native-checksum-bytes-disagree")
         if name.endswith("manifest.json"):
             continue
-        row = rows.get("native-dist/linux/" + name)
+        row = rows.get(name)
         if row is None or row["size_bytes"] != path.stat().st_size or row["sha256"] != digest(path):
             raise EvidenceError("native-manifest-bytes-disagree")
-    if set(checksums) != {PurePosixPath(name).name for name in rows} | {prefix + "manifest.json"}:
+    if set(checksums) != set(rows) | {prefix + "manifest.json"}:
         raise EvidenceError("native-checksum-file-set-mismatch")
 
 
@@ -992,6 +1049,121 @@ def bound_deb_hashes(pins: dict, finish: dict, version: str) -> tuple[str, str]:
     ):
         raise EvidenceError("canonical-bound-deb-digest-missing-or-duplicate")
     return old[0], new[0]
+
+
+def validate_library_dependencies(depends: str) -> None:
+    rows = depends.split(", ")
+    refusal = "managed-debian-dependencies-outside-library-inventory"
+    try:
+        canonical = dependency_field(rows)
+    except ValueError as error:
+        raise EvidenceError(refusal) from error
+    if canonical != depends or {row.split()[0] for row in rows} - {"libc6", *LIBRARY_PACKAGES.values()}:
+        raise EvidenceError(refusal)
+
+
+def managed_drill_image(commands: Commands, private: Path, depends: str) -> str:
+    if not depends:
+        return MANAGED_IMAGE
+    validate_library_dependencies(depends)
+    context = private / "apt-image"
+    context.mkdir()
+    (context / "Dockerfile").write_text(
+        f"FROM {MANAGED_IMAGE}\n"
+        "ARG ROW_DRILL_DEPENDS\n"
+        "RUN apt-get update && "
+        'DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends --no-remove -y satisfy "$ROW_DRILL_DEPENDS"\n',
+        encoding="utf-8",
+    )
+    image_id = private / "dependency-image-id"
+    # The connected build receives only the generated Dockerfile and validated
+    # relationships. The installers and the update feed enter the offline run.
+    commands.capture([
+        "/usr/bin/docker", "build", "--platform", "linux/amd64", "--iidfile", str(image_id),
+        "--build-arg", f"ROW_DRILL_DEPENDS={depends}", str(context),
+    ], timeout=300)
+    image = regular(image_id, 128).decode("ascii").strip()
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", image):
+        raise EvidenceError("managed-debian-dependency-image-id-invalid")
+    return image
+
+
+def managed_debian_report(
+    commands: Commands, private: Path, source_sha: str, previous: Path, candidate: Path,
+    previous_sha: str, candidate_sha: str, *, depends: str = "",
+) -> dict:
+    archive = private / "managed-source.tar"
+    archive.write_bytes(commands.capture(
+        ["/usr/bin/git", "archive", "--format=tar", source_sha], timeout=45, limit=64 * 1024 * 1024,
+    ))
+    previous_input = "/input/" + previous.name
+    candidate_input = "/input/" + candidate.name
+    dependencies = sysconfig.get_path("platlib")
+    entrypoint = (
+        'umask 077; mkdir /root/row-source; tar -xf /source.tar -C /root/row-source; '
+        'exec python -I /root/row-source/scripts/qualify_managed_debian_update.py "$@"'
+    )
+    commands.capture(["/usr/bin/docker", "pull", "--platform", "linux/amd64", MANAGED_IMAGE], timeout=180)
+    image = managed_drill_image(commands, private, depends)
+    receipt = json.loads(commands.capture([
+        "/usr/bin/docker", "run", "--rm", "--network", "none", "--pull=never", "--platform", "linux/amd64",
+        "--security-opt", "no-new-privileges",
+        "--mount", f"type=bind,source={archive},target=/source.tar,readonly",
+        "--mount", f"type=bind,source={previous},target={previous_input},readonly",
+        "--mount", f"type=bind,source={candidate},target={candidate_input},readonly",
+        "--mount", f"type=bind,source={dependencies},target=/usr/local/lib/python3.14/site-packages,readonly",
+        image, "sh", "-ec", entrypoint, "managed-debian-update",
+        "--previous-deb", previous_input, "--previous-sha256", previous_sha,
+        "--candidate-deb", candidate_input, "--candidate-sha256", candidate_sha,
+    ], timeout=420, limit=65536))
+    try:
+        validate_receipt(receipt, previous_sha=previous_sha, candidate_sha=candidate_sha, require_current=True)
+    except ValueError as error:
+        raise EvidenceError(str(error)) from error
+    if receipt.get("controller_sha256") != digest(ROOT / "scripts/managed_linux_update.py"):
+        raise EvidenceError("managed-debian-receipt-binding-mismatch")
+    return {**receipt, "source_sha": source_sha, "source_archive_sha256": digest(archive),
+            "container_image": MANAGED_IMAGE, "drill_image": image, "debian_depends": depends,
+            "run_id": os.environ["GITHUB_RUN_ID"],
+            "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"]}
+
+
+def qualify_release_debian(args) -> None:
+    import tomllib
+    import truststore
+
+    sha = args.candidate_source_sha
+    validate_host_claims(sha)
+    commands = Commands()
+    if os.environ["GITHUB_RUN_ATTEMPT"] != "1" or git_output(commands, "rev-parse", "HEAD") != sha or git_output(
+        commands, "status", "--porcelain", "--untracked-files=no"
+    ):
+        raise EvidenceError("candidate-source-not-exact-clean")
+    version = tomllib.loads(regular(ROOT / "pyproject.toml").decode("utf-8"))["project"]["version"]
+    require_newer_version(version)
+    candidates = {name: ROOT / "native-dist/linux" / name for name in native_asset_names(version)}
+    verify_manifest(candidates, version)
+    candidate = candidates[f"remote-ops-workspace-v{version}-linux-amd64.deb"]
+    candidate_sha = digest(candidate)
+    depends = commands.capture(["/usr/bin/dpkg-deb", "--field", str(candidate), "Depends"], limit=4096).decode().strip()
+    truststore.inject_into_ssl()
+    with tempfile.TemporaryDirectory(prefix="row-managed-release-") as work:
+        private = Path(work)
+        prior, pins = previous_assets(private)
+        name = f"remote-ops-workspace-v{PREVIOUS}-linux-amd64.deb"
+        previous = prior[name]
+        previous_sha = next(row["digest"].removeprefix("sha256:") for row in pins["assets"] if row["name"] == name)
+        report = managed_debian_report(commands, private, sha, previous, candidate, previous_sha, candidate_sha, depends=depends)
+        if digest(candidate) != candidate_sha or digest(previous) != previous_sha:
+            raise EvidenceError("final-source-proof-or-candidate-changed")
+    if report["candidate_has_server_bundle"] != (args.server_bundle == "true"):
+        raise EvidenceError("managed-debian-bundle-selection-mismatch")
+    if git_output(commands, "rev-parse", "HEAD") != sha or git_output(
+        commands, "status", "--porcelain", "--untracked-files=no"
+    ):
+        raise EvidenceError("final-source-proof-or-candidate-changed")
+    verify_manifest(candidates, version)
+    save(ROOT / MANAGED_REPORT, report)
 
 
 class Drill(native.Drill):
@@ -1430,6 +1602,12 @@ def run(args) -> dict:
             fixture,
             lambda value: setattr(args, "phase", value),
         )
+        managed_report = None
+        if args.qualify_managed_update:
+            args.phase = "managed-debian-update-and-rollback"
+            managed_report = managed_debian_report(
+                commands, private, args.candidate_source_sha, old, new, old_sha, new_sha,
+            )
         args.phase = "final-source-input-artifact-revalidation"
         assets_again, finish_again, row_again = candidate_assets(
             commands, args.candidate_source_sha, version
@@ -1449,6 +1627,8 @@ def run(args) -> dict:
             ):
                 raise EvidenceError("prior-input-changed-during-transition")
         assert_absent(commands)
+        if managed_report is not None:
+            save(ROOT / MANAGED_REPORT, managed_report)
         return {
             "schema": SCHEMA,
             "status": "passed",
@@ -1503,9 +1683,21 @@ EXPECTED_PINS = '{"assets":[{"browser_download_url":"https://github.com/Yunushan
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", nargs="?", choices=("plan", "run"), default="plan")
+    parser.add_argument("action", nargs="?", choices=("plan", "run", "managed-release"), default="plan")
     parser.add_argument("--candidate-source-sha", default="")
+    parser.add_argument("--qualify-managed-update", action="store_true")
+    parser.add_argument("--server-bundle", choices=("true", "false"))
     args = parser.parse_args(argv)
+    if args.action == "managed-release":
+        if args.server_bundle is None:
+            parser.error("managed-release requires --server-bundle")
+        try:
+            qualify_release_debian(args)
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+            print(f"Release Debian managed update failed ({public_failure_code(error)})", file=sys.stderr)
+            return 1
+        print("Release Debian managed update and rollback passed")
+        return 0
     if args.action == "plan":
         print(
             json.dumps(

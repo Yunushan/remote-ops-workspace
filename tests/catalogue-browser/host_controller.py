@@ -304,7 +304,7 @@ def command(registry, argv, repo, env, deadline):
 
 
 def host_context():
-    need(sys.platform == 'linux' and platform.machine() == 'x86_64' and platform.python_version() == '3.14.7')
+    need(sys.platform == 'linux' and platform.machine() == 'x86_64' and platform.python_version() == '3.14.10')
     need(sys.flags.isolated == 1 and sys.flags.no_site == 1 and sys.dont_write_bytecode)
     need(os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted'
          and os.environ.get('GITHUB_REPOSITORY') == PUBLIC_REPO and os.environ.get('ImageOS') == 'ubuntu24')
@@ -804,9 +804,11 @@ def main():
             public['host_policy'] = policy_evidence(runtime_state['host_policy'])
             preparation('python-path')
             python = Path(sys.executable).resolve(strict=True)
+            python_lib = python.parent.parent / 'lib'
             tools_before = {}
             for step, path in (('chrome-file-pin', chrome), ('driver-file-pin', chrome_driver),
-                ('python-file-pin', python), ('git-file-pin', Path('/usr/bin/git'))):
+                ('python-file-pin', python), ('python-file-pin', python_lib / 'libpython3.14.so.1.0'),
+                ('git-file-pin', Path('/usr/bin/git'))):
                 preparation(step)
                 diagnostic = (lambda stage: chrome_file_note(public, stage)) if step == 'chrome-file-pin' else None
                 tools_before[str(path)] = file_pin(path, trusted_owner=True, elf=True, diagnostic=diagnostic)
@@ -836,7 +838,9 @@ def main():
             inventories = []
             checks = []
             def launch(number, port):
-                child = Owned(registry, [str(python), '-I', '-S', '-B', str(DIRECTORY / 'entry.py'), 'fixture'], repo, env, deadline, frames=True)
+                # The official launcher has an absolute tool-cache RUNPATH.
+                fixture_env = {**env, 'LD_LIBRARY_PATH': str(python_lib)}
+                child = Owned(registry, [str(python), '-I', '-S', '-B', str(DIRECTORY / 'entry.py'), 'fixture'], repo, fixture_env, deadline, frames=True)
                 child.send({'repo': str(repo), 'home': str(private / 'state'), 'port': port,
                     'token': tokens[number - 1], 'nonce': nonce, 'launch': number})
                 ready = child.receive()

@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from . import command_safety as safe
 from .file_safety import write_json_atomic
@@ -35,6 +35,9 @@ ProcessTerminator = Callable[[int], None]
 SERVER_RUNTIME_DIR_ENV = "ROW_SERVER_RUNTIME_DIR"
 SERVER_RUNTIME_BUNDLE_SCHEMA = "row.moba-servers.runtime-bundle.v1"
 SERVER_RUNTIME_MANIFEST_NAME = "servers-runtime.json"
+SERVER_OPENSSH_HELPER_DIR = "linux/openssh/libexec"
+SERVER_OPENSSH_HELPERS = ("sshd-session", "sshd-auth")
+SERVER_RUNTIME_MAX_BYTES = 128 * 1024 * 1024
 SERVER_RELEASE_EVIDENCE_SCHEMA = "row.moba-servers.release-evidence.v1"
 SERVER_POLICY_SCHEMA = "row.moba-servers.policy.v1"
 SERVER_GUI_CONFIG_SCHEMA = "row.moba-servers.gui-config-surface.v1"
@@ -51,7 +54,7 @@ SERVER_DEFAULT_PORTS: dict[str, int] = {
 }
 
 FILE_ROOT_SERVICES = {"http", "ftp", "tftp"}
-AUTH_CAPABLE_SERVICES = {"ftp", "ssh", "sftp", "telnet", "vnc"}
+AUTH_CAPABLE_SERVICES = {"ftp", "ssh", "sftp", "telnet", "vnc", "nfs"}
 
 
 @dataclass(slots=True)
@@ -456,7 +459,12 @@ def discover_moba_server_runtimes(
             resolved = sys.executable
             available = bool(sys.executable)
         else:
-            resolved = which(executable)
+            if system_key == "linux" and key == "nfsd":
+                resolved = which("rpc.nfsd") or which(executable)
+            elif system_key == "linux" and key == "telnetd":
+                resolved = which(executable) or which("in.telnetd")
+            else:
+                resolved = which(executable)
             available = resolved is not None
         runtimes.append(
             MobaEmbeddedServerRuntime(
@@ -661,6 +669,10 @@ def moba_server_runtime_roots(roots: Iterable[Path] | None = None) -> tuple[Path
     if env_value:
         raw_roots.extend(Path(part) for part in env_value.split(os.pathsep) if part)
     executable_dir = Path(sys.executable).resolve().parent
+    if sys.platform == "linux" and getattr(sys, "frozen", False):
+        installed_root = executable_dir.parent / "lib" / "remote-ops-workspace" / "servers"
+        if (installed_root / SERVER_RUNTIME_MANIFEST_NAME).is_file():
+            raw_roots.append(installed_root)
     raw_roots.extend(
         [
             executable_dir / "servers",
@@ -791,6 +803,11 @@ def build_moba_server_config_plan(
         settings["transport"]["certificate_env"] = "ROW_FTP_TLS_CERT"
         settings["transport"]["private_key_env"] = "ROW_FTP_TLS_KEY"
     if service_key in {"telnet", "nfs"}:
+        settings["auth"] = {
+            "required": True,
+            "source": "system-pam-login" if service_key == "telnet" else "kerberos-rpcsec-gss",
+            "passwords_in_config": False,
+        }
         settings["execution"] = {
             "mode": "host-managed", "managed_start_supported": False,
             "reason": "portable daemon adapter cannot enforce listener binding and system authentication",
@@ -1023,7 +1040,12 @@ def _start_moba_server_locked(
     identity_factory: Callable[[Any], dict[str, Any]] | None,
 ) -> MobaEmbeddedServerLifecycleRecord:
     factory = popen_hidden if popen_factory is None else popen_factory
-    process = factory(plan.command, env={**os.environ, **plan.environment})
+    environment = {**os.environ, **plan.environment}
+    if getattr(sys, "frozen", False) and plan.runtime.key in {"python-http", "pyftpdlib"}:
+        # The server outlives the CLI that starts it. A one-file PyInstaller
+        # child needs its own extraction directory after that CLI exits.
+        environment["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    process = factory(plan.command, env=environment)
     try:
         identity = (identity_factory or register_process)(process)
         if process.poll() is not None:
@@ -1150,6 +1172,24 @@ def validate_server_bind(host: str, *, allow_public_bind: bool = False) -> str:
             "use --allow-public-bind only for trusted networks"
         )
     return host
+
+
+def run_http_server(host: str, port: int, root: Path, *, allow_public_bind: bool = False) -> None:
+    from functools import partial
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+    from socket import SOCK_STREAM, getaddrinfo
+
+    bind_host = validate_server_bind(host, allow_public_bind=allow_public_bind)
+    bind_port = safe.port(port, "server port")
+    directory = _resolve_root("http", root)
+    family, _, _, _, address = getaddrinfo(bind_host, bind_port, type=SOCK_STREAM)[0]
+
+    class BoundHTTPServer(ThreadingHTTPServer):
+        address_family = family
+
+    handler = partial(SimpleHTTPRequestHandler, directory=directory)
+    with BoundHTTPServer(cast(tuple[str, int] | tuple[str, int, int, int], address), handler) as server:
+        server.serve_forever()
 
 
 def _service_status(
@@ -1299,6 +1339,7 @@ def _merged_server_runtime_manifest(
     service_record: dict[str, Any],
 ) -> dict[str, Any]:
     services: list[dict[str, Any]] = []
+    helper_manifest: dict[str, Any] = {}
     if manifest_path.is_file():
         try:
             existing = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -1308,6 +1349,8 @@ def _merged_server_runtime_manifest(
             raw_services = existing.get("services", [])
             if isinstance(raw_services, list):
                 services = [item for item in raw_services if isinstance(item, dict)]
+            if "openssh_helpers" in existing:
+                helper_manifest["openssh_helpers"] = existing["openssh_helpers"]
     service_key = str(service_record.get("service") or "")
     services = [item for item in services if str(item.get("service") or "") != service_key]
     services.append(service_record)
@@ -1316,6 +1359,7 @@ def _merged_server_runtime_manifest(
         "release_target": release_target,
         "system": system,
         "services": sorted(services, key=lambda item: str(item.get("service") or "")),
+        **helper_manifest,
     }
 
 
@@ -1331,21 +1375,42 @@ def _packaged_runtime_manifest_path(executable: Path) -> Path:
     raise ValueError(f"packaged embedded server runtime has no integrity manifest: {executable}")
 
 
-def _manifest_runtime_record(manifest_path: Path, runtime: MobaEmbeddedServerRuntime) -> dict[str, Any]:
+def _manifest_runtime_record(
+    manifest_path: Path, runtime: MobaEmbeddedServerRuntime,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"packaged embedded server manifest is unreadable: {manifest_path}") from exc
-    services = manifest.get("services") if isinstance(manifest, dict) else None
-    if not isinstance(services, list):
+    if not isinstance(manifest, dict) or not isinstance(services := manifest.get("services"), list):
         raise ValueError(f"packaged embedded server manifest is malformed: {manifest_path}")
     for item in services:
         if not isinstance(item, dict) or str(item.get("service") or "") != runtime.service:
             continue
         record = item.get("runtime")
         if isinstance(record, dict) and str(record.get("key") or "") == runtime.key:
-            return record
+            return manifest, record
     raise ValueError(f"packaged embedded server runtime is not recorded in {manifest_path.name}: {runtime.key}")
+
+
+def verify_packaged_openssh_helpers(root: Path, hashes: Any) -> dict[str, str]:
+    """Verify the two companion executables in the package-owned libexec directory."""
+    if not isinstance(hashes, dict) or hashes.keys() != set(SERVER_OPENSSH_HELPERS):
+        raise ValueError("OpenSSH helper manifest must record sshd-session and sshd-auth")
+    root = root.resolve()
+    verified = {}
+    for name in SERVER_OPENSSH_HELPERS:
+        relative = f"{SERVER_OPENSSH_HELPER_DIR}/{name}"
+        helper = root / relative
+        expected = hashes[name]
+        if not isinstance(expected, str) or re.fullmatch(r"[0-9a-f]{64}", expected) is None:
+            raise ValueError(f"OpenSSH helper has an invalid SHA-256: {name}")
+        if helper.resolve() != helper or not helper.is_file() or not 0 < helper.stat().st_size <= SERVER_RUNTIME_MAX_BYTES:
+            raise ValueError(f"OpenSSH helper must be a regular package file: {helper}")
+        if not hmac.compare_digest(_sha256_file(helper), expected):
+            raise ValueError(f"OpenSSH helper failed its integrity check: {helper}")
+        verified[relative] = expected
+    return verified
 
 
 def verify_packaged_runtime_integrity(runtime: MobaEmbeddedServerRuntime) -> None:
@@ -1354,7 +1419,7 @@ def verify_packaged_runtime_integrity(runtime: MobaEmbeddedServerRuntime) -> Non
         return
     executable = Path(runtime.executable)
     manifest_path = _packaged_runtime_manifest_path(executable)
-    record = _manifest_runtime_record(manifest_path, runtime)
+    manifest, record = _manifest_runtime_record(manifest_path, runtime)
     recorded_executable = manifest_path.parent / str(record.get("executable") or "")
     if recorded_executable.resolve() != executable.resolve():
         raise ValueError(
@@ -1365,6 +1430,8 @@ def verify_packaged_runtime_integrity(runtime: MobaEmbeddedServerRuntime) -> Non
         raise ValueError(f"packaged embedded server runtime has no recorded sha256: {runtime.key}")
     if not hmac.compare_digest(_sha256_file(executable), expected):
         raise ValueError(f"packaged embedded server runtime failed its integrity check: {executable}")
+    if runtime.service in {"ssh", "sftp"} and "openssh_helpers" in manifest:
+        verify_packaged_openssh_helpers(manifest_path.parent, manifest["openssh_helpers"])
 
 
 def _chmod_executable(path: Path) -> None:
@@ -1429,6 +1496,11 @@ def _runtime_command(
     if runtime.key == "python-http":
         if root is None:
             raise ValueError("http server requires a root directory")
+        if getattr(sys, "frozen", False):
+            command = [*_frozen_server_command("http", "HTTP"), "--host", host, "--port", str(port), "--root", str(root)]
+            if not _is_loopback_host(host.lower()):
+                command.append("--allow-public-bind")
+            return command
         return [executable, "-m", "http.server", str(port), "--bind", host, "--directory", str(root)]
     if runtime.key == "pyftpdlib":
         if root is None:
@@ -1443,7 +1515,10 @@ def _runtime_command(
     if runtime.key in {"tftpd", "atftpd"}:
         if root is None:
             raise ValueError("tftp server requires a root directory")
-        return [executable, "--foreground", "--address", f"{host}:{port}", str(root)]
+        if runtime.key == "atftpd":
+            return [executable, "--daemon", "--no-fork", "--bind-address", host, "--port", str(port), str(root)]
+        address = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
+        return [executable, "--foreground", "--address", address, str(root)]
     if runtime.key == "sshd":
         return [executable, "-D", "-p", str(port), "-o", f"ListenAddress={host}", "-o", "PermitEmptyPasswords=no", "-o", "PermitRootLogin=no"]
     if runtime.key == "sshd-sftp":
@@ -1463,37 +1538,52 @@ def _runtime_command(
 def _ftp_runner_command() -> list[str]:
     if not getattr(sys, "frozen", False):
         return [sys.executable, "-m", "remote_ops_workspace.embedded_ftp"]
+    return _frozen_server_command("ftp", "authenticated FTP")
+
+
+def _frozen_server_command(service: str, label: str) -> list[str]:
     executable = Path(sys.executable)
+    arguments = ["servers", f"_{service}-runtime"]
     # The macOS app launcher already delegates all supplied arguments to the
     # CLI, whereas Windows has separate GUI and console entry points.
     if platform.system().lower() == "darwin" and executable.is_file():
-        return [str(executable), "servers", "_ftp-runtime"]
+        return [str(executable), *arguments]
     name = "row.exe" if os.name == "nt" else "row"
     candidates = (executable.with_name(name), executable.parent / "bin" / name)
     for candidate in candidates:
         if candidate.is_file():
-            return [str(candidate), "servers", "_ftp-runtime"]
-    raise ValueError("native authenticated FTP requires the packaged row CLI helper alongside the GUI")
+            return [str(candidate), *arguments]
+    raise ValueError(f"native {label} requires the packaged row CLI helper alongside the GUI")
 
 
 def _host_managed_config(service: str, host: str, port: int) -> dict[str, Any]:
     """Concrete administrator settings, separate from managed process claims."""
     if service == "telnet":
+        legacy_daemon = "/usr/sbin/in.telnetd"
+        daemon = legacy_daemon if Path(legacy_daemon).is_file() else "/usr/sbin/telnetd"
         return {
             "implementation": "xinetd", "service": {
                 "type": "UNLISTED", "socket_type": "stream", "protocol": "tcp",
-                "wait": "no", "user": "root", "server": "/usr/sbin/in.telnetd",
+                "wait": "no", "user": "root", "server": daemon,
                 "bind": host, "port": port,
                 "only_from": "127.0.0.0/8 ::1" if _is_loopback_host(host.lower()) else "ADMINISTRATOR_CLIENT_ALLOWLIST_REQUIRED",
                 "disable": "yes",
             },
             "requirements": ["administrator-approved patched telnetd", "system PAM/login authentication", "explicit insecure-protocol approval", "verify effective listener and client allowlist before enabling"],
         }
+    # Older rpc.nfsd builds interpret every nonempty rdma value as a legacy
+    # port name when it does not enable RDMA as a boolean.
     return {
         "implementation": "Linux nfs-utils", "nfs.conf": {
-            "nfsd": {"host": host, "port": port, "vers3": "n", "vers4": "y", "udp": "n", "tcp": "y", "rdma": "n"},
+            "nfsd": {"host": host, "port": port, "vers3": "n", "vers4": "y", "udp": "n", "tcp": "y"},
         },
-        "requirements": ["administrator-approved exports with explicit client and sec=krb5p policy", "stop existing nfsd before applying listener changes", "verify mountd/rpcbind/lockd auxiliary listeners and firewall", "verify effective server configuration after restart"],
+        "requirements": [
+            "administrator-approved exports with explicit client and sec=krb5p policy",
+            "stop existing nfsd before applying listener changes",
+            "remove rdma and rdma-port settings and --rdma flags from the effective NFS configuration",
+            "verify mountd/rpcbind/lockd auxiliary listeners and firewall",
+            "verify effective server configuration after restart",
+        ],
     }
 
 

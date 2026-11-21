@@ -36,6 +36,39 @@ def test_gui_parity_checker_json_mode_outputs_report(capsys) -> None:
     assert report["overall"]["live_render_proof_gap_percent"] == 0.0
 
 
+def test_gui_parity_dimensions_reuse_source_reads_for_one_check(monkeypatch, tmp_path: Path) -> None:
+    checker = _load_checker()
+    implementation = tmp_path / "implementation.py"
+    evidence = tmp_path / "evidence.md"
+    implementation.write_text("implementation token", encoding="utf-8")
+    evidence.write_text("evidence token", encoding="utf-8")
+    preset_data = {
+        "requirements": [{
+            "id": "shared",
+            "source_tokens": {
+                "implementation.py": ["implementation token"],
+                "evidence.md": ["evidence token"],
+            },
+        }],
+        "dimension_coverage": {"first": ["shared"], "second": ["shared"]},
+    }
+    reads = []
+    read_text = Path.read_text
+
+    def count_read(path, *args, **kwargs):
+        reads.append(path)
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(checker, "ROOT", tmp_path)
+    monkeypatch.setattr(Path, "read_text", count_read)
+
+    assert checker.dimension_counts(preset_data, ["first", "second"]) == (2, 2)
+    assert reads == [implementation, evidence]
+
+    evidence.write_text("changed", encoding="utf-8")
+    assert checker.dimension_counts(preset_data, ["first", "second"]) == (2, 0)
+
+
 def test_gui_parity_tracks_all_product_style_presets() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
@@ -775,8 +808,8 @@ def test_mobaxterm_static_renderer_uses_drawn_ribbon_pictograms() -> None:
     moba = criteria["presets"]["mobaxterm"]
     requirement_ids = {item["id"] for item in moba["requirements"]}
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
-    design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
+    toolbar_source = Path("src/remote_ops_workspace/gui_toolbars.py").read_text(encoding="utf-8")
+    mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
 
@@ -800,14 +833,14 @@ def test_mobaxterm_static_renderer_uses_drawn_ribbon_pictograms() -> None:
     assert "gui_design_moba_ribbon_action_geometry_for" in renderer_source
     assert "geometry.separator_x" in renderer_source
     assert "geometry.active_outline_x" in renderer_source
-    assert "GuiMobaRibbonEdgeActionRoute" in design_source
-    assert "GUI_DESIGN_MOBA_RIBBON_EDGE_ACTION_ROUTE" in design_source
-    assert "gui_design_moba_ribbon_edge_action_route" in design_source
-    assert "GuiMobaRibbonActionGeometry" in design_source
-    assert "GUI_DESIGN_MOBA_RIBBON_ACTION_GEOMETRY" in design_source
-    assert "apply_moba_ribbon_edge_action_route" in gui_source
-    assert "mobaRibbonEdgeRouteKey" in gui_source
-    assert "mobaRibbonEdgeRouteHandler" in gui_source
+    assert "GuiMobaRibbonEdgeActionRoute" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_RIBBON_EDGE_ACTION_ROUTE" in mobaxterm_design_source
+    assert "gui_design_moba_ribbon_edge_action_route" in mobaxterm_design_source
+    assert "GuiMobaRibbonActionGeometry" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_RIBBON_ACTION_GEOMETRY" in mobaxterm_design_source
+    assert "apply_moba_ribbon_edge_action_route" in toolbar_source
+    assert "mobaRibbonEdgeRouteKey" in toolbar_source
+    assert "mobaRibbonEdgeRouteHandler" in toolbar_source
     assert "EXPECTED_MOBA_RIBBON_EDGE_ACTION_ROUTE" in checker_source
     assert "ribbon-edge-action-route" in checker_source
     assert "expected_moba_ribbon_edge_action_route" in checker_source
@@ -816,8 +849,8 @@ def test_mobaxterm_static_renderer_uses_drawn_ribbon_pictograms() -> None:
     assert "expected_moba_ribbon_action_geometry" in checker_source
     assert "MobaXterm-style ribbon geometry" in docs_source
     assert "MobaXterm-style ribbon edge action route" in docs_source
-    assert "GuiMobaTopMenuItem" in design_source
-    assert "GUI_DESIGN_MOBA_TOP_MENU_ITEMS" in design_source
+    assert "GuiMobaTopMenuItem" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_TOP_MENU_ITEMS" in mobaxterm_design_source
     assert "gui_design_moba_top_menu_items" in renderer_source
     for token in ['"servers"', '"tunneling"', '"xserver"', '"exit"']:
         assert token in renderer_source
@@ -827,19 +860,19 @@ def test_mobaxterm_titlebar_chrome_uses_shared_metadata() -> None:
     criteria = _load_checker().load_json(_load_checker().CRITERIA_PATH)
     requirement_ids = {item["id"] for item in criteria["presets"]["mobaxterm"]["requirements"]}
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
-    design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
+    chrome_source = Path("src/remote_ops_workspace/gui_window_chrome.py").read_text(encoding="utf-8")
+    mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     menu_source = Path("src/remote_ops_workspace/gui_menus.py").read_text(encoding="utf-8")
 
     assert "moba.top-stack-geometry" in requirement_ids
     assert "moba.top-menu-geometry" in requirement_ids
-    assert "GuiMobaTitlebarChrome" in design_source
-    assert "GuiMobaTopStackGeometry" in design_source
-    assert "GuiMobaTopMenuGeometry" in design_source
-    assert "GUI_DESIGN_MOBA_TITLEBAR_CHROME" in design_source
-    assert "GUI_DESIGN_MOBA_TOP_STACK_GEOMETRY" in design_source
-    assert "GUI_DESIGN_MOBA_TOP_MENU_GEOMETRY" in design_source
+    assert "GuiMobaTitlebarChrome" in mobaxterm_design_source
+    assert "GuiMobaTopStackGeometry" in mobaxterm_design_source
+    assert "GuiMobaTopMenuGeometry" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_TITLEBAR_CHROME" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_TOP_STACK_GEOMETRY" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_TOP_MENU_GEOMETRY" in mobaxterm_design_source
     assert "gui_design_moba_titlebar_chrome" in renderer_source
     assert "gui_design_moba_top_stack_geometry" in renderer_source
     assert "gui_design_moba_top_menu_geometry_for" in renderer_source
@@ -849,12 +882,12 @@ def test_mobaxterm_titlebar_chrome_uses_shared_metadata() -> None:
     assert "top_stack.left_dock_y" in renderer_source
     assert "draw_moba_titlebar_icon" in renderer_source
     assert "draw_moba_titlebar_control" in renderer_source
-    assert "apply_moba_titlebar_chrome" in gui_source
-    assert "apply_moba_top_stack_geometry" in gui_source
-    assert "mobaTitlebarTitle" in gui_source
-    assert "mobaTitlebarControlKeys" in gui_source
-    assert "mobaTopStackRibbonHeight" in gui_source
-    assert "mobaTopStackQuickConnectY" in gui_source
+    assert "apply_moba_titlebar_chrome" in chrome_source
+    assert "apply_moba_top_stack_geometry" in chrome_source
+    assert "mobaTitlebarTitle" in chrome_source
+    assert "mobaTitlebarControlKeys" in chrome_source
+    assert "mobaTopStackRibbonHeight" in chrome_source
+    assert "mobaTopStackQuickConnectY" in chrome_source
     assert "mobaTopMenuStaticX" in menu_source
     assert "mobaTopMenuLabelFontSize" in menu_source
     assert "EXPECTED_MOBA_TITLEBAR_CHROME" in checker_source
@@ -869,15 +902,15 @@ def test_mobaxterm_titlebar_chrome_uses_shared_metadata() -> None:
 
 def test_mobaxterm_quick_connect_chrome_uses_shared_metadata() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
-    design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
+    gui_source = Path("src/remote_ops_workspace/gui_quick_connect.py").read_text(encoding="utf-8")
+    mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
 
-    assert "GuiMobaQuickConnectChrome" in design_source
-    assert "GUI_DESIGN_MOBA_QUICK_CONNECT_CHROME" in design_source
-    assert "connected_idle_query" in design_source
-    assert "connected_suggestions_visible" in design_source
+    assert "GuiMobaQuickConnectChrome" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_QUICK_CONNECT_CHROME" in mobaxterm_design_source
+    assert "connected_idle_query" in mobaxterm_design_source
+    assert "connected_suggestions_visible" in mobaxterm_design_source
     assert "gui_design_moba_quick_connect_chrome" in renderer_source
     assert "draw_moba_quick_connect_chrome" in renderer_source
     assert "connected_idle_query" in renderer_source
@@ -901,14 +934,14 @@ def test_mobaxterm_quick_connect_suggestions_use_shared_metadata() -> None:
         if item["id"] == "moba.quick-connect-suggestions"
     )
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
-    design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
+    gui_source = Path("src/remote_ops_workspace/gui_quick_connect.py").read_text(encoding="utf-8")
+    mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
 
-    assert "GuiMobaQuickConnectSuggestionChrome" in design_source
-    assert "GUI_DESIGN_MOBA_QUICK_CONNECT_SUGGESTION_CHROME" in design_source
-    assert "gui_design_moba_quick_connect_suggestion_chrome" in design_source
+    assert "GuiMobaQuickConnectSuggestionChrome" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_QUICK_CONNECT_SUGGESTION_CHROME" in mobaxterm_design_source
+    assert "gui_design_moba_quick_connect_suggestion_chrome" in mobaxterm_design_source
     assert "draw_moba_quick_connect_suggestions" in renderer_source
     assert "quick_connect_candidates" in renderer_source
     assert "quick_connect_suggestions" in gui_source
@@ -918,7 +951,7 @@ def test_mobaxterm_quick_connect_suggestions_use_shared_metadata() -> None:
     assert "quick-connect-suggestions" in checker_source
     assert "expected_moba_quick_connect_suggestion_chrome" in checker_source
     assert "MobaXterm-style Quick Connect suggestion dropdown" in docs_source
-    assert "mobaQuickConnectSuggestionKinds" in requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+    assert "mobaQuickConnectSuggestionKinds" in requirement["source_tokens"]["src/remote_ops_workspace/gui_quick_connect.py"]
 
 
 def test_mobaxterm_connected_quick_connect_idle_is_tracked() -> None:
@@ -929,15 +962,15 @@ def test_mobaxterm_connected_quick_connect_idle_is_tracked() -> None:
         if item["id"] == "moba.connected-quick-connect-idle"
     )
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
-    design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
+    gui_source = Path("src/remote_ops_workspace/gui_quick_connect.py").read_text(encoding="utf-8")
+    mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
 
-    assert "connected_idle_query" in requirement["source_tokens"]["src/remote_ops_workspace/gui_designs.py"]
-    assert "connected_suggestions_visible" in requirement["source_tokens"]["src/remote_ops_workspace/gui_designs.py"]
-    assert "connected_idle_query" in design_source
-    assert "connected_suggestions_visible" in design_source
+    assert "connected_idle_query" in requirement["source_tokens"]["src/remote_ops_workspace/gui_preset_mobaxterm.py"]
+    assert "connected_suggestions_visible" in requirement["source_tokens"]["src/remote_ops_workspace/gui_preset_mobaxterm.py"]
+    assert "connected_idle_query" in mobaxterm_design_source
+    assert "connected_suggestions_visible" in mobaxterm_design_source
     assert "connected_idle_query" in renderer_source
     assert "connected_suggestions_visible" in renderer_source
     assert "set_moba_quick_connect_connected_idle" in gui_source
@@ -948,8 +981,8 @@ def test_mobaxterm_connected_quick_connect_idle_is_tracked() -> None:
 
 
 def test_mobaxterm_home_welcome_uses_shared_metadata() -> None:
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
-    design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
+    gui_source = Path("src/remote_ops_workspace/gui_home.py").read_text(encoding="utf-8")
+    mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     preview_checker_source = Path("scripts/check_gui_design_previews.py").read_text(encoding="utf-8")
     visual_checker_source = Path("scripts/check_gui_visual_metrics.py").read_text(encoding="utf-8")
@@ -957,12 +990,12 @@ def test_mobaxterm_home_welcome_uses_shared_metadata() -> None:
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
 
-    assert "GuiMobaHomeWelcomeChrome" in design_source
-    assert "GUI_DESIGN_MOBA_HOME_WELCOME_CHROME" in design_source
-    assert "gui_design_moba_home_welcome_chrome" in design_source
-    assert "GuiMobaHomeWelcomeGeometry" in design_source
-    assert "GUI_DESIGN_MOBA_HOME_WELCOME_GEOMETRY" in design_source
-    assert "gui_design_moba_home_welcome_geometry" in design_source
+    assert "GuiMobaHomeWelcomeChrome" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_HOME_WELCOME_CHROME" in mobaxterm_design_source
+    assert "gui_design_moba_home_welcome_chrome" in mobaxterm_design_source
+    assert "GuiMobaHomeWelcomeGeometry" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_HOME_WELCOME_GEOMETRY" in mobaxterm_design_source
+    assert "gui_design_moba_home_welcome_geometry" in mobaxterm_design_source
     assert "render_mobaxterm_home_preset" in renderer_source
     assert "mobaxterm-home.png" in renderer_source
     assert "state_previews" in renderer_source
@@ -995,19 +1028,22 @@ def test_mobaxterm_home_welcome_uses_shared_metadata() -> None:
 
 def test_mobaxterm_live_gui_uses_generated_ribbon_icons() -> None:
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    interaction_source = Path("src/remote_ops_workspace/gui_interaction_states.py").read_text(encoding="utf-8")
+    toolbar_source = Path("src/remote_ops_workspace/gui_toolbars.py").read_text(encoding="utf-8")
+    icon_source = Path("src/remote_ops_workspace/gui_icons.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     menu_source = Path("src/remote_ops_workspace/gui_menus.py").read_text(encoding="utf-8")
 
     assert "def moba_ribbon_icon" in gui_source
-    assert "def draw_moba_ribbon_icon" in gui_source
-    assert "gui_design_moba_ribbon_actions" in gui_source
-    assert "gui_design_moba_top_menu_items" in gui_source
+    assert "def draw_moba_ribbon_icon" in icon_source
+    assert "gui_design_moba_ribbon_actions" in toolbar_source
+    assert "gui_design_moba_top_menu_items" in menu_source
     assert "mobaTopMenuKey" in menu_source
     assert "EXPECTED_MOBA_TOP_MENU_KEYS" in live_checker_source
-    assert "mobaIconKey" in gui_source
-    assert "mobaRibbonStaticX" in gui_source
-    assert "mobaRibbonIconX" in gui_source
-    assert "mobaRibbonActiveOutlineWidth" in gui_source
+    assert "mobaIconKey" in interaction_source
+    assert "mobaRibbonStaticX" in toolbar_source
+    assert "mobaRibbonIconX" in toolbar_source
+    assert "mobaRibbonActiveOutlineWidth" in toolbar_source
     assert "mobaRibbonSeparatorBottom" in live_checker_source
     assert "must use a generated ribbon icon" in live_checker_source
 
@@ -1016,21 +1052,21 @@ def test_mobaxterm_rail_uses_role_based_generated_icons() -> None:
     criteria = _load_checker().load_json(_load_checker().CRITERIA_PATH)
     moba = criteria["presets"]["mobaxterm"]
     requirement = next(item for item in moba["requirements"] if item["id"] == "moba.rail-geometry")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    sidebar_source = Path("src/remote_ops_workspace/gui_sidebar.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
+    mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
 
-    assert "mobaRailRole" in gui_source
-    assert "mobaRailStaticIconY" in gui_source
-    assert "mobaRailStaticIconKey" in gui_source
-    assert "mobaRailButtonHeight" in gui_source
-    assert "show_moba_sftp_rail" in gui_source
-    assert '"S\\ne\\ns\\ns\\ni\\no\\nn\\ns"' not in gui_source
-    assert "GuiMobaRailChrome" in design_source
-    assert "GUI_DESIGN_MOBA_RAIL_ITEM_GEOMETRY" in design_source
-    assert "rail_icon_key" in design_source
+    assert "mobaRailRole" in sidebar_source
+    assert "mobaRailStaticIconY" in sidebar_source
+    assert "mobaRailStaticIconKey" in sidebar_source
+    assert "mobaRailButtonHeight" in sidebar_source
+    assert "show_moba_sftp_rail" in sidebar_source
+    assert '"S\\ne\\ns\\ns\\ni\\no\\nn\\ns"' not in sidebar_source
+    assert "GuiMobaRailChrome" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_RAIL_ITEM_GEOMETRY" in mobaxterm_design_source
+    assert "rail_icon_key" in mobaxterm_design_source
     assert "draw_moba_rail_icon" in renderer_source
     assert "gui_design_moba_rail_item_geometry_for" in renderer_source
     assert "rail_chrome.static_icon_size" in renderer_source
@@ -1040,25 +1076,25 @@ def test_mobaxterm_rail_uses_role_based_generated_icons() -> None:
     assert "expected_moba_rail_item_geometry" in live_checker_source
     assert "must not use stacked text" in live_checker_source
     assert "MobaXterm-style left rail geometry" in docs_source
-    assert "mobaRailStaticIconY" in requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+    assert "mobaRailStaticIconY" in requirement["source_tokens"]["src/remote_ops_workspace/gui_sidebar.py"]
 
 
 def test_mobaxterm_static_sftp_dock_uses_drawn_glyphs() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    tree_source = Path("src/remote_ops_workspace/gui_profile_tree.py").read_text(encoding="utf-8")
     connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
-    design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
+    mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
 
-    assert "GuiMobaSftpFileRowIcon" in design_source
-    assert "GUI_DESIGN_MOBA_SFTP_FILE_ROW_ICONS" in design_source
+    assert "GuiMobaSftpFileRowIcon" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_SFTP_FILE_ROW_ICONS" in mobaxterm_design_source
     assert "draw_moba_sftp_toolbar_icon" in renderer_source
     assert "draw_moba_sftp_file_icon" in renderer_source
     assert "gui_design_moba_sftp_file_row_icon" in renderer_source
     assert "draw_moba_monitor_icon" in renderer_source
     assert "apply_sftp_file_row_icon" in connected_source
     assert "SFTP_ROW_ICON_RENDER_ROLE" in connected_source
-    assert "generated-pixmap" in gui_source
+    assert "generated-pixmap" in tree_source
     assert "EXPECTED_MOBA_SFTP_FILE_ROW_ICONS" in live_checker_source
     assert "expected_moba_sftp_file_row_icons" in live_checker_source
     assert "sftp-file-row-icons" in live_checker_source
@@ -1071,9 +1107,9 @@ def test_mobaxterm_static_sftp_dock_uses_drawn_glyphs() -> None:
 
 def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    sidebar_source = Path("src/remote_ops_workspace/gui_sidebar.py").read_text(encoding="utf-8")
     connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
-    design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
+    mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
     criteria = _load_checker().load_json(_load_checker().CRITERIA_PATH)
@@ -1101,34 +1137,34 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     )
     state_source = Path("src/remote_ops_workspace/moba_connected.py").read_text(encoding="utf-8")
 
-    assert "GuiMobaSftpDockAction" in design_source
-    assert "GuiMobaSftpToolbarActionGeometry" in design_source
-    assert "GuiMobaSftpToolbarActionRoute" in design_source
-    assert "GuiMobaConnectedDockFrame" in design_source
-    assert "GUI_DESIGN_MOBA_CONNECTED_DOCK_FRAME" in design_source
-    assert "GUI_DESIGN_MOBA_SFTP_DOCK_ACTIONS" in design_source
-    assert "GUI_DESIGN_MOBA_SFTP_TOOLBAR_ACTION_GEOMETRY" in design_source
-    assert "GUI_DESIGN_MOBA_SFTP_TOOLBAR_ACTION_ROUTE" in design_source
-    assert "gui_design_moba_sftp_toolbar_action_route" in design_source
-    assert "GuiMobaSftpBrowserChrome" in design_source
-    assert "GUI_DESIGN_MOBA_SFTP_BROWSER_CHROME" in design_source
-    assert "path_text_x" in design_source
-    assert "dropdown_right_offset" in design_source
-    assert "row_modified_x" in design_source
-    assert "geometry_dict" in design_source
-    assert "GuiMobaSftpFileRowIcon" in design_source
-    assert "GuiMobaSftpDockLayout" in design_source
-    assert "GUI_DESIGN_MOBA_SFTP_DOCK_LAYOUT" in design_source
-    assert "group_key" in design_source
-    assert "separator_after" in design_source
-    assert "GuiMobaMonitoringControl" in design_source
-    assert "GUI_DESIGN_MOBA_MONITORING_CONTROLS" in design_source
-    assert "GuiMobaSftpFollowFolderRoute" in design_source
-    assert "GUI_DESIGN_MOBA_SFTP_FOLLOW_FOLDER_ROUTE" in design_source
-    assert "gui_design_moba_sftp_follow_folder_route" in design_source
-    assert "GuiMobaSftpRoutedFileRows" in design_source
-    assert "GUI_DESIGN_MOBA_SFTP_ROUTED_FILE_ROWS" in design_source
-    assert "gui_design_moba_sftp_routed_file_rows" in design_source
+    assert "GuiMobaSftpDockAction" in mobaxterm_design_source
+    assert "GuiMobaSftpToolbarActionGeometry" in mobaxterm_design_source
+    assert "GuiMobaSftpToolbarActionRoute" in mobaxterm_design_source
+    assert "GuiMobaConnectedDockFrame" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_CONNECTED_DOCK_FRAME" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_SFTP_DOCK_ACTIONS" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_SFTP_TOOLBAR_ACTION_GEOMETRY" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_SFTP_TOOLBAR_ACTION_ROUTE" in mobaxterm_design_source
+    assert "gui_design_moba_sftp_toolbar_action_route" in mobaxterm_design_source
+    assert "GuiMobaSftpBrowserChrome" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_SFTP_BROWSER_CHROME" in mobaxterm_design_source
+    assert "path_text_x" in mobaxterm_design_source
+    assert "dropdown_right_offset" in mobaxterm_design_source
+    assert "row_modified_x" in mobaxterm_design_source
+    assert "geometry_dict" in mobaxterm_design_source
+    assert "GuiMobaSftpFileRowIcon" in mobaxterm_design_source
+    assert "GuiMobaSftpDockLayout" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_SFTP_DOCK_LAYOUT" in mobaxterm_design_source
+    assert "group_key" in mobaxterm_design_source
+    assert "separator_after" in mobaxterm_design_source
+    assert "GuiMobaMonitoringControl" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_MONITORING_CONTROLS" in mobaxterm_design_source
+    assert "GuiMobaSftpFollowFolderRoute" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_SFTP_FOLLOW_FOLDER_ROUTE" in mobaxterm_design_source
+    assert "gui_design_moba_sftp_follow_folder_route" in mobaxterm_design_source
+    assert "GuiMobaSftpRoutedFileRows" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_SFTP_ROUTED_FILE_ROWS" in mobaxterm_design_source
+    assert "gui_design_moba_sftp_routed_file_rows" in mobaxterm_design_source
     assert "MobaSftpTerminalFolderRoute" in state_source
     assert "moba_sftp_terminal_folder_route" in state_source
     assert "terminal-cwd-follow-checkbox-to-sftp-path-and-rows" in state_source
@@ -1167,9 +1203,9 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     assert "moba_monitoring_metric_text" in renderer_source
     assert "mobaSftpActionKey" in connected_source
     assert "mobaSftpIconKey" in connected_source
-    assert "mobaConnectedDockSideWidth" in gui_source
-    assert "mobaConnectedDockRailWidth" in gui_source
-    assert "mobaConnectedDockWidth" in gui_source
+    assert "mobaConnectedDockSideWidth" in sidebar_source
+    assert "mobaConnectedDockRailWidth" in sidebar_source
+    assert "mobaConnectedDockWidth" in sidebar_source
     assert "mobaSftpActionGroupKey" in connected_source
     assert "mobaSftpToolbarRouteKey" in connected_source
     assert "mobaSftpToolbarRouteHandler" in connected_source
@@ -1250,7 +1286,7 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     assert "MobaXterm-style SFTP routed file rows" in docs_source
     assert (
         "mobaConnectedDockSideWidth"
-        in connected_frame_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+        in connected_frame_requirement["source_tokens"]["src/remote_ops_workspace/gui_sidebar.py"]
     )
     assert (
         "mobaSftpActionStaticX"
@@ -1258,7 +1294,7 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     )
     assert (
         "GuiMobaSftpToolbarActionRoute"
-        in toolbar_route_requirement["source_tokens"]["src/remote_ops_workspace/gui_designs.py"]
+        in toolbar_route_requirement["source_tokens"]["src/remote_ops_workspace/gui_preset_mobaxterm.py"]
     )
     assert (
         "show_moba_sftp_toolbar_action"
@@ -1357,29 +1393,30 @@ def test_mobaxterm_compact_monitoring_dock_uses_shared_metadata() -> None:
     ]
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
-    design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
+    terminal_panel_source = Path("src/remote_ops_workspace/gui_connected_terminal.py").read_text(encoding="utf-8")
+    mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
 
     assert "compact" in requirement["description"]
-    assert "GuiMobaRemoteMonitoringDockChrome" in design_source
-    assert "GUI_DESIGN_MOBA_REMOTE_MONITORING_DOCK_CHROME" in design_source
-    assert "GuiMobaMonitoringTelemetryRoute" in design_source
-    assert "GUI_DESIGN_MOBA_MONITORING_TELEMETRY_ROUTE" in design_source
-    assert "gui_design_moba_monitoring_telemetry_route" in design_source
-    assert "GuiMobaRemoteMonitoringControlRoute" in design_source
-    assert "GUI_DESIGN_MOBA_REMOTE_MONITORING_CONTROL_ROUTE" in design_source
-    assert "gui_design_moba_remote_monitoring_control_route" in design_source
-    assert "GuiMobaFollowTerminalFolderControlRoute" in design_source
-    assert "GUI_DESIGN_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE" in design_source
-    assert "gui_design_moba_follow_terminal_folder_control_route" in design_source
-    assert "GuiMobaMonitoringControlGeometry" in design_source
-    assert "GUI_DESIGN_MOBA_MONITORING_CONTROL_GEOMETRY" in design_source
-    assert "divider_left_inset" in design_source
-    assert "live_controls_width" in design_source
-    assert "label_y_offset" in design_source
-    assert "checkmark_points" in design_source
-    assert "live_width" in design_source
+    assert "GuiMobaRemoteMonitoringDockChrome" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_REMOTE_MONITORING_DOCK_CHROME" in mobaxterm_design_source
+    assert "GuiMobaMonitoringTelemetryRoute" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_MONITORING_TELEMETRY_ROUTE" in mobaxterm_design_source
+    assert "gui_design_moba_monitoring_telemetry_route" in mobaxterm_design_source
+    assert "GuiMobaRemoteMonitoringControlRoute" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_REMOTE_MONITORING_CONTROL_ROUTE" in mobaxterm_design_source
+    assert "gui_design_moba_remote_monitoring_control_route" in mobaxterm_design_source
+    assert "GuiMobaFollowTerminalFolderControlRoute" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE" in mobaxterm_design_source
+    assert "gui_design_moba_follow_terminal_folder_control_route" in mobaxterm_design_source
+    assert "GuiMobaMonitoringControlGeometry" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_MONITORING_CONTROL_GEOMETRY" in mobaxterm_design_source
+    assert "divider_left_inset" in mobaxterm_design_source
+    assert "live_controls_width" in mobaxterm_design_source
+    assert "label_y_offset" in mobaxterm_design_source
+    assert "checkmark_points" in mobaxterm_design_source
+    assert "live_width" in mobaxterm_design_source
     assert "gui_design_moba_remote_monitoring_dock_chrome" in renderer_source
     assert "gui_design_moba_monitoring_telemetry_route" in renderer_source
     assert "moba_remote_monitoring_control_route" in renderer_source
@@ -1413,7 +1450,7 @@ def test_mobaxterm_compact_monitoring_dock_uses_shared_metadata() -> None:
     assert "control_route.live_plan_property" in connected_source
     assert "mobaMonitoringTelemetryRouteKey" in connected_source
     assert "mobaMonitoringTelemetryMetricCellKeys" in connected_source
-    assert "mobaMonitoringTelemetryRouted" in connected_source
+    assert "mobaMonitoringTelemetryRouted" in terminal_panel_source
     assert "mobaMonitoringControlLabelFontSize" in connected_source
     assert "mobaMonitoringControlCheckYOffset" in connected_source
     assert "EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME" in checker_source
@@ -1481,7 +1518,10 @@ def test_mobaxterm_compact_monitoring_dock_uses_shared_metadata() -> None:
 def test_mobaxterm_static_renderer_uses_connected_tab_chrome_metadata() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     state_source = Path("src/remote_ops_workspace/moba_connected.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    sessions_source = Path("src/remote_ops_workspace/gui_moba_sessions.py").read_text(encoding="utf-8")
+    tabs_path = "src/remote_ops_workspace/gui_workspace_tabs.py"
+    tabs_source = Path(tabs_path).read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
     criteria = _load_checker().load_json(_load_checker().CRITERIA_PATH)
@@ -1535,14 +1575,14 @@ def test_mobaxterm_static_renderer_uses_connected_tab_chrome_metadata() -> None:
     assert "moba_connected_tab_chrome_geometry_for" in renderer_source
     assert "geometry.close_right_offset" in renderer_source
     assert "geometry.gap_after" in renderer_source
-    assert "mobaTabStaticWidth" in gui_source
-    assert "mobaTabCloseRightOffset" in gui_source
-    assert "mobaTabChromeGeometryKeys" in gui_source
-    assert "mobaConnectedSessionActionRouteKey" in gui_source
-    assert "apply_moba_connected_session_action_route_to_tab" in gui_source
-    assert "build_tab_context_menu" in gui_source
-    assert "apply_session_action_menu_capture" in gui_source
-    assert "session_action_menu_object_name" in gui_source
+    assert "mobaTabStaticWidth" in tabs_source
+    assert "mobaTabCloseRightOffset" in tabs_source
+    assert "mobaTabChromeGeometryKeys" in tabs_source
+    assert "mobaConnectedSessionActionRouteKey" in preset_properties_source
+    assert "apply_moba_connected_session_action_route_to_tab" in sessions_source
+    assert "build_tab_context_menu" in tabs_source
+    assert "apply_session_action_menu_capture" in tabs_source
+    assert "session_action_menu_object_name" in tabs_source
     assert "EXPECTED_MOBA_TAB_CHROME_GEOMETRY" in checker_source
     assert "EXPECTED_MOBA_CONNECTED_SESSION_ACTION_ROUTE" in checker_source
     assert "check_live_moba_connected_session_action_route" in checker_source
@@ -1555,19 +1595,19 @@ def test_mobaxterm_static_renderer_uses_connected_tab_chrome_metadata() -> None:
     assert "MobaXterm-style connected session action menu route" in docs_source
     assert (
         "mobaTabStaticWidth"
-        in geometry_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+        in geometry_requirement["source_tokens"][tabs_path]
     )
     assert (
         "route.captured_enabled_keys_property"
-        in action_route_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+        in action_route_requirement["source_tokens"]["src/remote_ops_workspace/gui_moba_sessions.py"]
     )
     assert (
         "apply_session_action_menu_capture"
-        in action_menu_route_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+        in action_menu_route_requirement["source_tokens"][tabs_path]
     )
     assert (
         "session_action_menu_object_name"
-        in action_menu_route_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+        in action_menu_route_requirement["source_tokens"][tabs_path]
     )
 
 
@@ -1608,19 +1648,19 @@ def test_mobaxterm_static_contract_excludes_obsolete_permanent_edge_surfaces() -
 
 def test_mobaxterm_ssh_banner_uses_shared_chrome_metadata() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
-    design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
+    terminal_panel_source = Path("src/remote_ops_workspace/gui_connected_terminal.py").read_text(encoding="utf-8")
+    mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
 
-    assert "GuiMobaSshBannerChrome" in design_source
-    assert "GuiMobaSshBannerRowGeometry" in design_source
+    assert "GuiMobaSshBannerChrome" in mobaxterm_design_source
+    assert "GuiMobaSshBannerRowGeometry" in mobaxterm_design_source
     assert "gui_design_moba_ssh_banner_chrome" in renderer_source
     assert "gui_design_moba_ssh_banner_row_geometry_for" in renderer_source
     assert "draw_centered_text" in renderer_source
-    assert "mobaSshBannerTitle" in connected_source
-    assert "mobaSshBannerSubtitle" in connected_source
-    assert "mobaSshBannerSlot" in connected_source
-    assert "mobaSshBannerRowY" in connected_source
+    assert "mobaSshBannerTitle" in terminal_panel_source
+    assert "mobaSshBannerSubtitle" in terminal_panel_source
+    assert "mobaSshBannerSlot" in terminal_panel_source
+    assert "mobaSshBannerRowY" in terminal_panel_source
     assert "EXPECTED_MOBA_SSH_BANNER_CHROME" in checker_source
     assert "EXPECTED_MOBA_SSH_BANNER_ROW_GEOMETRY" in checker_source
     assert "expected_moba_ssh_banner_row_geometry" in checker_source
@@ -1629,8 +1669,8 @@ def test_mobaxterm_ssh_banner_uses_shared_chrome_metadata() -> None:
 def test_mobaxterm_ssh_banner_capability_card_is_tracked() -> None:
     criteria = json.loads(Path("configs/gui_parity_criteria.json").read_text(encoding="utf-8"))
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
-    design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
+    terminal_panel_source = Path("src/remote_ops_workspace/gui_connected_terminal.py").read_text(encoding="utf-8")
+    mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     state_source = Path("src/remote_ops_workspace/moba_connected.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
@@ -1641,14 +1681,14 @@ def test_mobaxterm_ssh_banner_capability_card_is_tracked() -> None:
     assert "SshConnectionCapability" in state_source
     assert "capability_rows" in state_source
     assert "footer_links" in state_source
-    assert "target_intro" in design_source
-    assert "capability_label_width" in design_source
+    assert "target_intro" in mobaxterm_design_source
+    assert "capability_label_width" in mobaxterm_design_source
     assert "draw_moba_ssh_banner_card" in renderer_source
     assert "state.banner.capability_rows()" in renderer_source
     assert "state.banner.footer_links()" in renderer_source
-    assert "mobaSshBannerTargetLine" in connected_source
-    assert "mobaSshBannerCapabilityKey" in connected_source
-    assert "mobaSshBannerFooter" in connected_source
+    assert "mobaSshBannerTargetLine" in terminal_panel_source
+    assert "mobaSshBannerCapabilityKey" in terminal_panel_source
+    assert "mobaSshBannerFooter" in terminal_panel_source
     assert "EXPECTED_MOBA_SSH_BANNER_CAPABILITY_KEYS" in checker_source
     assert "expected_moba_ssh_banner_capability_card" in checker_source
     assert "MobaXterm-style SSH banner capability card" in docs_source
@@ -1657,8 +1697,8 @@ def test_mobaxterm_ssh_banner_capability_card_is_tracked() -> None:
 
 def test_mobaxterm_terminal_transcript_uses_shared_connected_state() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
-    design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
+    terminal_panel_source = Path("src/remote_ops_workspace/gui_connected_terminal.py").read_text(encoding="utf-8")
+    mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     state_source = Path("src/remote_ops_workspace/moba_connected.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
@@ -1666,16 +1706,16 @@ def test_mobaxterm_terminal_transcript_uses_shared_connected_state() -> None:
     assert "MobaTerminalTranscriptLine" in state_source
     assert "build_moba_terminal_transcript" in state_source
     assert "terminal_transcript" in state_source
-    assert "GuiMobaTerminalTranscriptRowGeometry" in design_source
+    assert "GuiMobaTerminalTranscriptRowGeometry" in mobaxterm_design_source
     assert "state.terminal_transcript" in renderer_source
     assert "line.tone" in renderer_source
     assert "gui_design_moba_terminal_transcript_row_geometry_for" in renderer_source
     assert "geometry.font_size" in renderer_source
-    assert "apply_terminal_transcript_evidence" in connected_source
-    assert "mobaTerminalTranscriptKeys" in connected_source
-    assert "mobaTerminalTranscriptTones" in connected_source
-    assert "mobaPlainTerminalMode" in connected_source
-    assert "mobaTerminalTranscriptGeometryKeys" in connected_source
+    assert "apply_terminal_transcript_evidence" in terminal_panel_source
+    assert "mobaTerminalTranscriptKeys" in terminal_panel_source
+    assert "mobaTerminalTranscriptTones" in terminal_panel_source
+    assert "mobaPlainTerminalMode" in terminal_panel_source
+    assert "mobaTerminalTranscriptGeometryKeys" in terminal_panel_source
     assert "EXPECTED_MOBA_TERMINAL_TRANSCRIPT_KEYS" in checker_source
     assert "expected_moba_terminal_transcript" in checker_source
     assert "EXPECTED_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY" in checker_source
@@ -1686,24 +1726,24 @@ def test_mobaxterm_terminal_transcript_uses_shared_connected_state() -> None:
 
 def test_mobaxterm_bottom_status_uses_shared_chrome_metadata() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
-    design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
+    chrome_source = Path("src/remote_ops_workspace/gui_window_chrome.py").read_text(encoding="utf-8")
+    mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
 
-    assert "GuiMobaStatusBarChrome" in design_source
-    assert "GUI_DESIGN_MOBA_STATUS_SEGMENTS" in design_source
-    assert "segment_start_right_offset" in design_source
-    assert "marker_right_inset" in design_source
+    assert "GuiMobaStatusBarChrome" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_STATUS_SEGMENTS" in mobaxterm_design_source
+    assert "segment_start_right_offset" in mobaxterm_design_source
+    assert "marker_right_inset" in mobaxterm_design_source
     assert "gui_design_moba_status_bar_chrome" in renderer_source
     assert "gui_design_moba_status_segments" in renderer_source
     assert "chrome.notice_x" in renderer_source
     assert "chrome.segment_start_right_offset" in renderer_source
-    assert "productStatusNotice" in gui_source
-    assert "productStatusMarker" in gui_source
-    assert "productStatusKey" in gui_source
-    assert "mobaStatusNoticeX" in gui_source
-    assert "mobaStatusMarkerRightInset" in gui_source
+    assert "productStatusNotice" in chrome_source
+    assert "productStatusMarker" in chrome_source
+    assert "productStatusKey" in chrome_source
+    assert "mobaStatusNoticeX" in chrome_source
+    assert "mobaStatusMarkerRightInset" in chrome_source
     assert "EXPECTED_MOBA_STATUS_KEYS" in checker_source
     assert "EXPECTED_MOBA_STATUS_CHROME" in checker_source
     assert "mobaStatusSegmentStartRightOffset" in checker_source
@@ -1714,28 +1754,35 @@ def test_mobaxterm_bottom_status_uses_shared_chrome_metadata() -> None:
 def test_mobaxterm_bottom_edge_controls_use_shared_metadata() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
-    design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
+    chrome_source = Path("src/remote_ops_workspace/gui_window_chrome.py").read_text(encoding="utf-8")
+    home_source = Path("src/remote_ops_workspace/gui_home.py").read_text(encoding="utf-8")
+    session_tabs_source = Path("src/remote_ops_workspace/gui_session_tabs.py").read_text(encoding="utf-8")
+    tabs_source = Path("src/remote_ops_workspace/gui_workspace_tabs.py").read_text(encoding="utf-8")
+    mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
 
-    assert "GuiMobaBottomEdgeControl" in design_source
-    assert "GUI_DESIGN_MOBA_BOTTOM_EDGE_CONTROLS" in design_source
+    assert "GuiMobaBottomEdgeControl" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_BOTTOM_EDGE_CONTROLS" in mobaxterm_design_source
     assert "gui_design_moba_bottom_edge_controls" in renderer_source
     assert "draw_moba_bottom_edge_controls" in renderer_source
     assert "draw_moba_bottom_edge_icon" in renderer_source
-    assert "mobaBottomEdgeControls" in gui_source
-    assert "mobaBottomEdgeControl" in gui_source
-    assert 'box.setProperty("designPreset", self.current_design_id())' in gui_source
-    assert 'home_widget_preset != self.current_design_id()' in gui_source
+    assert "mobaBottomEdgeControls" in chrome_source
+    assert "mobaBottomEdgeControl" in chrome_source
+    assert 'box.setProperty("designPreset", self.current_design_id())' in home_source
+    assert 'home_widget_preset != self.current_design_id()' in tabs_source
     main_window_source = gui_source.split("class MainWindow", 1)[1]
     assert "def moba_utility_icon" in main_window_source
-    assert main_window_source.index("def moba_utility_icon") < main_window_source.index(
-        "def create_moba_bottom_edge_controls"
-    )
+    assert "def create_moba_bottom_edge_controls" in chrome_source
+    assert "self.moba_utility_icon(action.icon_key, action.color)" in chrome_source
     assert '"arrow-left"' in main_window_source
     assert '"arrow-right"' in main_window_source
     assert '"close"' in main_window_source
-    assert "activate_adjacent_tab" in gui_source
+    main_window_bases = main_window_source.split("):", 1)[0]
+    assert "SessionTabActions" in main_window_bases
+    assert "WorkspaceTabs" in main_window_bases
+    assert "WindowChrome" in main_window_bases
+    assert "def activate_adjacent_tab" in session_tabs_source
     assert "EXPECTED_MOBA_BOTTOM_EDGE_KEYS" in checker_source
     assert "expected_moba_bottom_edge_controls" in checker_source
     assert "bottom-edge navigation controls" in docs_source
@@ -1743,8 +1790,9 @@ def test_mobaxterm_bottom_edge_controls_use_shared_metadata() -> None:
 
 def test_mobaxterm_connected_chrome_uses_shared_target_and_telemetry_state() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    sessions_source = Path("src/remote_ops_workspace/gui_moba_sessions.py").read_text(encoding="utf-8")
     connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
+    terminal_panel_source = Path("src/remote_ops_workspace/gui_connected_terminal.py").read_text(encoding="utf-8")
     state_source = Path("src/remote_ops_workspace/moba_connected.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
@@ -1767,20 +1815,20 @@ def test_mobaxterm_connected_chrome_uses_shared_target_and_telemetry_state() -> 
     assert "identity_route.terminal_prompt" in renderer_source
     assert "identity_route.telemetry_target" in renderer_source
     assert "geometry.label_x" in renderer_source
-    assert "moba_connected_window_title" in gui_source
-    assert "moba_connected_tab_label" in gui_source
-    assert "mobaConnectedRouteKey" in gui_source
-    assert "mobaConnectedRouteActiveTabLabel" in gui_source
-    assert "mobaConnectedRouteTelemetryBarObject" in gui_source
-    assert "mobaConnectedIdentityRouteKey" in gui_source
-    assert "mobaConnectedIdentityWindowTitle" in gui_source
-    assert "mobaConnectedIdentityTelemetryTarget" in gui_source
+    assert "moba_connected_window_title" in sessions_source
+    assert "moba_connected_tab_label" in sessions_source
+    assert "mobaConnectedRouteKey" in sessions_source
+    assert "mobaConnectedRouteActiveTabLabel" in sessions_source
+    assert "mobaConnectedRouteTelemetryBarObject" in sessions_source
+    assert "mobaConnectedIdentityRouteKey" in sessions_source
+    assert "mobaConnectedIdentityWindowTitle" in sessions_source
+    assert "mobaConnectedIdentityTelemetryTarget" in sessions_source
     assert "moba_telemetry_cells" in connected_source
-    assert "mobaTelemetryGeometryKeys" in connected_source
-    assert "mobaTelemetryCellStaticX" in connected_source
-    assert "mobaTelemetryLabelX" in connected_source
-    assert "telemetry_icon_pixmap" in connected_source
-    assert "mobaTelemetryIconRender" in connected_source
+    assert "mobaTelemetryGeometryKeys" in terminal_panel_source
+    assert "mobaTelemetryCellStaticX" in terminal_panel_source
+    assert "mobaTelemetryLabelX" in terminal_panel_source
+    assert "telemetry_icon_pixmap" in terminal_panel_source
+    assert "mobaTelemetryIconRender" in terminal_panel_source
     assert "mobaTelemetryCellWidth" in connected_source
     assert "mobaTelemetryKey" in connected_source
     assert "EXPECTED_MOBA_TELEMETRY_CELL_KEYS" in live_checker_source
@@ -1802,18 +1850,18 @@ def test_mobaxterm_connected_chrome_uses_shared_target_and_telemetry_state() -> 
 
 
 def test_mobaxterm_live_connected_session_uses_left_dock_switch() -> None:
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
-    connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
-    connected_panel_init = connected_source.split("class MobaConnectedSessionPanel", 1)[1].split(
+    sessions_source = Path("src/remote_ops_workspace/gui_moba_sessions.py").read_text(encoding="utf-8")
+    terminal_panel_source = Path("src/remote_ops_workspace/gui_connected_terminal.py").read_text(encoding="utf-8")
+    connected_panel_init = terminal_panel_source.split("class MobaConnectedSessionPanel", 1)[1].split(
         "def build_terminal_area", 1
     )[0]
 
     assert "QSplitter" not in connected_panel_init
     assert "build_sftp" not in connected_panel_init
-    assert "moba_left_stack" in gui_source
-    assert "show_moba_connected_dock" in gui_source
-    assert "refresh_moba_left_dock_for_current_tab" in gui_source
-    assert 'set_moba_rail_active("sftp")' in gui_source
+    assert "moba_left_stack" in sessions_source
+    assert "show_moba_connected_dock" in sessions_source
+    assert "refresh_moba_left_dock_for_current_tab" in sessions_source
+    assert 'set_moba_rail_active("sftp")' in sessions_source
 
 
 def test_gui_parity_tracks_product_specific_sidebar_identity() -> None:
@@ -1847,12 +1895,12 @@ def test_gui_parity_tracks_product_specific_toolbar_identity() -> None:
 
 
 def test_live_and_static_renderers_share_toolbar_copy() -> None:
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    toolbar_source = Path("src/remote_ops_workspace/gui_toolbars.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
 
     assert "GUI_DESIGN_TOOLBAR_COPY" in design_source
-    assert "configure_toolbar_copy_for_design" in gui_source
+    assert "configure_toolbar_copy_for_design" in toolbar_source
     assert "gui_design_toolbar_actions" in renderer_source
 
 
@@ -1896,8 +1944,10 @@ def test_gui_parity_tracks_product_specific_session_trees() -> None:
 
 def test_live_and_static_renderers_share_session_tree_copy() -> None:
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    tree_source = Path("src/remote_ops_workspace/gui_profile_tree.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
+    mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
 
@@ -1905,16 +1955,16 @@ def test_live_and_static_renderers_share_session_tree_copy() -> None:
     assert "GUI_DESIGN_TREE_ROWS" in design_source
     assert "GUI_DESIGN_TREE_ROOT_ICONS" in design_source
     assert "GUI_DESIGN_TREE_ROW_ICONS" in design_source
-    assert "GuiMobaSessionTreeChrome" in design_source
-    assert "GUI_DESIGN_MOBA_SESSION_TREE_CHROME" in design_source
-    assert "profile_group_label" in gui_source
-    assert "profile_tree_tooltip" in gui_source
-    assert "apply_profile_tree_icon" in gui_source
-    assert "GENERATED_PROFILE_TREE_ICON_PRESETS" in gui_source
+    assert "GuiMobaSessionTreeChrome" in mobaxterm_design_source
+    assert "GUI_DESIGN_MOBA_SESSION_TREE_CHROME" in mobaxterm_design_source
+    assert "profile_group_label" in tree_source
+    assert "profile_tree_tooltip" in tree_source
+    assert "apply_profile_tree_icon" in tree_source
+    assert "GENERATED_PROFILE_TREE_ICON_PRESETS" in tree_source
     for preset_id in ("mobaxterm", "securecrt", "termius", "remmina", "mremoteng"):
         assert f'"{preset_id}"' in gui_source
-    assert "mobaSessionTreeProfileRowHeight" in gui_source
-    assert "TREE_ROW_STATIC_HEIGHT_ROLE" in gui_source
+    assert "mobaSessionTreeProfileRowHeight" in tree_source
+    assert "TREE_ROW_STATIC_HEIGHT_ROLE" in tree_source
     assert "gui_design_tree_rows" in renderer_source
     assert "gui_design_tree_row_icon_key" in renderer_source
     assert "gui_design_moba_session_tree_chrome" in renderer_source
@@ -1929,7 +1979,7 @@ def test_static_renderer_tracks_product_specific_sidebar_glyphs() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    tree_source = Path("src/remote_ops_workspace/gui_profile_tree.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
 
     expected = {
@@ -1947,8 +1997,8 @@ def test_static_renderer_tracks_product_specific_sidebar_glyphs() -> None:
     assert "gui_design_tree_row_icon_key" in renderer_source
     assert "ssh2" in renderer_source
     assert "command" in renderer_source
-    assert "GENERATED_PROFILE_TREE_ICON_PRESETS" in gui_source
-    assert "profile_tree_generated_icon" in gui_source
+    assert "GENERATED_PROFILE_TREE_ICON_PRESETS" in tree_source
+    assert "profile_tree_generated_icon" in tree_source
     assert "EXPECTED_PRODUCT_TREE_ICON_ROWS" in live_checker_source
     assert "check_product_tree_icon_metadata" in live_checker_source
     assert "termius-tree-icons" in live_checker_source
@@ -1972,13 +2022,13 @@ def test_gui_parity_tracks_product_specific_tab_models() -> None:
 
 
 def test_live_and_static_renderers_share_tab_copy() -> None:
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    home_source = Path("src/remote_ops_workspace/gui_home.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
 
     assert "GUI_DESIGN_TAB_COPY" in design_source
     assert "GUI_DESIGN_HOME_TAB_COPY" in design_source
-    assert "gui_design_home_tab_label" in gui_source
+    assert "gui_design_home_tab_label" in home_source
     assert "gui_design_tab_items" in renderer_source
 
 
@@ -1998,14 +2048,15 @@ def test_gui_parity_tracks_product_specific_workspace_surfaces() -> None:
 
 
 def test_live_and_static_renderers_share_workspace_surface_copy() -> None:
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    product_workspace_source = Path("src/remote_ops_workspace/gui_product_workspace.py").read_text(encoding="utf-8")
+    home_source = Path("src/remote_ops_workspace/gui_home.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
 
     assert "GUI_DESIGN_WORKSPACE_SURFACES" in design_source
-    assert "gui_design_workspace_surface" in gui_source
-    assert "productWorkspaceSurface" in gui_source
-    assert "build_product_workspace_surface_evidence" in gui_source
+    assert "gui_design_workspace_surface" in home_source
+    assert "productWorkspaceSurface" in product_workspace_source
+    assert "build_product_workspace_surface_evidence" in product_workspace_source
     assert "draw_securecrt_workspace" in renderer_source
     assert "draw_termius_workspace" in renderer_source
     assert "draw_remmina_workspace" in renderer_source
@@ -2016,9 +2067,16 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    interaction_source = Path("src/remote_ops_workspace/gui_interaction_states.py").read_text(encoding="utf-8")
+    sidebar_source = Path("src/remote_ops_workspace/gui_sidebar.py").read_text(encoding="utf-8")
+    product_workspace_source = Path("src/remote_ops_workspace/gui_product_workspace.py").read_text(encoding="utf-8")
+    mremoteng_source = Path("src/remote_ops_workspace/gui_mremoteng.py").read_text(encoding="utf-8")
+    remmina_source = Path("src/remote_ops_workspace/gui_remmina.py").read_text(encoding="utf-8")
+    toolbar_source = Path("src/remote_ops_workspace/gui_toolbars.py").read_text(encoding="utf-8")
+    tree_source = Path("src/remote_ops_workspace/gui_profile_tree.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
-    design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
+    mremoteng_design_source = Path("src/remote_ops_workspace/gui_preset_mremoteng.py").read_text(encoding="utf-8")
+    remmina_design_source = Path("src/remote_ops_workspace/gui_preset_remmina.py").read_text(encoding="utf-8")
     visual_metrics_source = Path("configs/gui_visual_metrics.json").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
@@ -2151,85 +2209,85 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
         in criteria["presets"]["mremoteng"]["dimension_coverage"]["connected_session_behavior"]
     )
     assert "mremoteng.inheritance-route" in criteria["presets"]["mremoteng"]["dimension_coverage"]["interaction_states"]
-    assert "GuiMRemoteNgTopChrome" in design_source
-    assert "gui_design_mremoteng_top_chrome" in design_source
-    assert "GuiMRemoteNgDocumentControl" in design_source
-    assert "gui_design_mremoteng_document_controls" in design_source
-    assert "GuiMRemoteNgPropertyGridChrome" in design_source
-    assert "gui_design_mremoteng_property_grid_chrome" in design_source
-    assert "GuiMRemoteNgConnectionDocumentRoute" in design_source
-    assert "GuiMRemoteNgDocumentFilterRoute" in design_source
-    assert "GUI_DESIGN_MREMOTENG_DOCUMENT_FILTER_ROUTE" in design_source
-    assert "GuiMRemoteNgInheritanceRoute" in design_source
-    assert "GUI_DESIGN_MREMOTENG_INHERITANCE_ROUTE" in design_source
-    assert "gui_design_mremoteng_connection_document_route" in design_source
-    assert "gui_design_mremoteng_document_filter_route" in design_source
-    assert "gui_design_mremoteng_inheritance_route" in design_source
-    assert "mRemoteNgTopToolbarIconKey" in gui_source
-    assert "build_mremoteng_document_controls_evidence" in gui_source
-    assert "mRemoteNgDocumentControlKey" in gui_source
-    assert "mRemoteNgDocumentRenderSource" in gui_source
-    assert "mRemoteNgConnectionRouteKey" in gui_source
-    assert "mRemoteNgConnectionRouteActive" in gui_source
-    assert "apply_mremoteng_reconnect_route_properties" in gui_source
-    assert "handle_mremoteng_document_reconnect" in gui_source
-    assert "route.live_triggered_property" in gui_source
-    assert "mRemoteNgDocumentFilterRouteKey" in gui_source
-    assert "mRemoteNgInheritanceRouteKey" in gui_source
-    assert "mRemoteNgInheritanceRouteInheritedValue" in gui_source
-    assert "MREMOTENG_FILTER_ROUTE_KEY_ROLE" in gui_source
-    assert "mremoteng_document_control_icon" in gui_source
-    assert "build_mremoteng_property_grid_evidence" in gui_source
-    assert "mRemoteNgPropertyRowKey" in gui_source
-    assert "GuiRemminaViewerControl" in design_source
-    assert "GuiRemminaProfileListChrome" in design_source
-    assert "GuiRemminaProfileViewerRoute" in design_source
-    assert "GuiRemminaProfileFilterRoute" in design_source
-    assert "GUI_DESIGN_REMMINA_PROFILE_FILTER_ROUTE" in design_source
-    assert "GuiRemminaClipboardRoute" in design_source
-    assert "GUI_DESIGN_REMMINA_CLIPBOARD_ROUTE" in design_source
-    assert "GuiRemminaScreenshotRoute" in design_source
-    assert "GUI_DESIGN_REMMINA_SCREENSHOT_ROUTE" in design_source
-    assert "GuiRemminaSftpTransferRoute" in design_source
-    assert "GUI_DESIGN_REMMINA_SFTP_TRANSFER_ROUTE" in design_source
-    assert "handler=\"handle_remmina_sftp_transfer_action\"" in design_source
-    assert "live_triggered_property=\"remminaSftpTransferRouteLiveTriggered\"" in design_source
-    assert "gui_design_remmina_profile_filter_route" in design_source
-    assert "gui_design_remmina_clipboard_route" in design_source
-    assert "gui_design_remmina_screenshot_route" in design_source
-    assert "gui_design_remmina_sftp_transfer_route" in design_source
-    assert "gui_design_remmina_profile_viewer_route" in design_source
-    assert "static_width" in design_source
-    assert "live_button_height" in design_source
-    assert "static_row_start_y" in design_source
-    assert "gui_design_remmina_viewer_controls" in design_source
-    assert "build_remmina_viewer_controls_evidence" in gui_source
-    assert "remmina_profile_filter" in gui_source
-    assert "remminaViewerControlKey" in gui_source
-    assert "remminaViewerControlStaticWidth" in gui_source
-    assert "remminaViewerControlRenderSource" in gui_source
-    assert "remminaProfileViewerRouteKey" in gui_source
-    assert "remminaProfileViewerRouteActive" in gui_source
-    assert "remminaProfileFilterRouteKey" in gui_source
-    assert "filter_remmina_profile_rows" in gui_source
-    assert "filter_input.textChanged.connect" in gui_source
-    assert "remminaClipboardRouteKey" in gui_source
-    assert "remminaClipboardRouteActive" in gui_source
-    assert "remminaClipboardRouteState" in gui_source
-    assert "remminaScreenshotRouteKey" in gui_source
-    assert "remminaScreenshotRouteActive" in gui_source
-    assert "remminaScreenshotRouteArtifact" in gui_source
-    assert "apply_remmina_screenshot_capture_route_properties" in gui_source
-    assert "handle_remmina_screenshot_capture" in gui_source
-    assert "route.live_triggered_property" in gui_source
-    assert "remminaSftpTransferRouteKey" in gui_source
-    assert "remminaSftpTransferRoutePath" in gui_source
-    assert "remminaSftpTransferRouteQueueState" in gui_source
-    assert "apply_remmina_sftp_transfer_action_route_properties" in gui_source
-    assert "handle_remmina_sftp_transfer_action" in gui_source
-    assert "route.live_triggered_property" in gui_source
-    assert "remminaProfileStaticRowStartY" in gui_source
-    assert "remminaProfileLiveRowMinHeight" in gui_source
+    assert "GuiMRemoteNgTopChrome" in mremoteng_design_source
+    assert "gui_design_mremoteng_top_chrome" in mremoteng_design_source
+    assert "GuiMRemoteNgDocumentControl" in mremoteng_design_source
+    assert "gui_design_mremoteng_document_controls" in mremoteng_design_source
+    assert "GuiMRemoteNgPropertyGridChrome" in mremoteng_design_source
+    assert "gui_design_mremoteng_property_grid_chrome" in mremoteng_design_source
+    assert "GuiMRemoteNgConnectionDocumentRoute" in mremoteng_design_source
+    assert "GuiMRemoteNgDocumentFilterRoute" in mremoteng_design_source
+    assert "GUI_DESIGN_MREMOTENG_DOCUMENT_FILTER_ROUTE" in mremoteng_design_source
+    assert "GuiMRemoteNgInheritanceRoute" in mremoteng_design_source
+    assert "GUI_DESIGN_MREMOTENG_INHERITANCE_ROUTE" in mremoteng_design_source
+    assert "gui_design_mremoteng_connection_document_route" in mremoteng_design_source
+    assert "gui_design_mremoteng_document_filter_route" in mremoteng_design_source
+    assert "gui_design_mremoteng_inheritance_route" in mremoteng_design_source
+    assert "mRemoteNgTopToolbarIconKey" in toolbar_source
+    assert "build_mremoteng_document_controls_evidence" in product_workspace_source
+    assert "mRemoteNgDocumentControlKey" in mremoteng_source
+    assert "mRemoteNgDocumentRenderSource" in mremoteng_source
+    assert "mRemoteNgConnectionRouteKey" in mremoteng_source
+    assert "mRemoteNgConnectionRouteActive" in mremoteng_source
+    assert "apply_mremoteng_reconnect_route_properties" in mremoteng_source
+    assert "handle_mremoteng_document_reconnect" in mremoteng_source
+    assert "route.live_triggered_property" in mremoteng_source
+    assert "mRemoteNgDocumentFilterRouteKey" in mremoteng_source
+    assert "mRemoteNgInheritanceRouteKey" in product_workspace_source
+    assert "mRemoteNgInheritanceRouteInheritedValue" in product_workspace_source
+    assert "MREMOTENG_FILTER_ROUTE_KEY_ROLE" in tree_source
+    assert "mremoteng_document_control_icon" in mremoteng_source
+    assert "self.build_mremoteng_config_dock()" in sidebar_source
+    assert "mRemoteNgPropertyRowKey" in mremoteng_source
+    assert "GuiRemminaViewerControl" in remmina_design_source
+    assert "GuiRemminaProfileListChrome" in remmina_design_source
+    assert "GuiRemminaProfileViewerRoute" in remmina_design_source
+    assert "GuiRemminaProfileFilterRoute" in remmina_design_source
+    assert "GUI_DESIGN_REMMINA_PROFILE_FILTER_ROUTE" in remmina_design_source
+    assert "GuiRemminaClipboardRoute" in remmina_design_source
+    assert "GUI_DESIGN_REMMINA_CLIPBOARD_ROUTE" in remmina_design_source
+    assert "GuiRemminaScreenshotRoute" in remmina_design_source
+    assert "GUI_DESIGN_REMMINA_SCREENSHOT_ROUTE" in remmina_design_source
+    assert "GuiRemminaSftpTransferRoute" in remmina_design_source
+    assert "GUI_DESIGN_REMMINA_SFTP_TRANSFER_ROUTE" in remmina_design_source
+    assert "handler=\"handle_remmina_sftp_transfer_action\"" in remmina_design_source
+    assert "live_triggered_property=\"remminaSftpTransferRouteLiveTriggered\"" in remmina_design_source
+    assert "gui_design_remmina_profile_filter_route" in remmina_design_source
+    assert "gui_design_remmina_clipboard_route" in remmina_design_source
+    assert "gui_design_remmina_screenshot_route" in remmina_design_source
+    assert "gui_design_remmina_sftp_transfer_route" in remmina_design_source
+    assert "gui_design_remmina_profile_viewer_route" in remmina_design_source
+    assert "static_width" in remmina_design_source
+    assert "live_button_height" in remmina_design_source
+    assert "static_row_start_y" in remmina_design_source
+    assert "gui_design_remmina_viewer_controls" in remmina_design_source
+    assert "build_remmina_viewer_controls_evidence" in product_workspace_source
+    assert "remmina_profile_filter" in remmina_source
+    assert "remminaViewerControlKey" in remmina_source
+    assert "remminaViewerControlStaticWidth" in remmina_source
+    assert "remminaViewerControlRenderSource" in remmina_source
+    assert "remminaProfileViewerRouteKey" in remmina_source
+    assert "remminaProfileViewerRouteActive" in remmina_source
+    assert "remminaProfileFilterRouteKey" in remmina_source
+    assert "filter_remmina_profile_rows" in remmina_source
+    assert "filter_input.textChanged.connect" in remmina_source
+    assert "remminaClipboardRouteKey" in remmina_source
+    assert "remminaClipboardRouteActive" in remmina_source
+    assert "remminaClipboardRouteState" in remmina_source
+    assert "remminaScreenshotRouteKey" in remmina_source
+    assert "remminaScreenshotRouteActive" in remmina_source
+    assert "remminaScreenshotRouteArtifact" in remmina_source
+    assert "apply_remmina_screenshot_capture_route_properties" in remmina_source
+    assert "handle_remmina_screenshot_capture" in remmina_source
+    assert "route.live_triggered_property" in remmina_source
+    assert "remminaSftpTransferRouteKey" in remmina_source
+    assert "remminaSftpTransferRoutePath" in remmina_source
+    assert "remminaSftpTransferRouteQueueState" in remmina_source
+    assert "apply_remmina_sftp_transfer_action_route_properties" in remmina_source
+    assert "handle_remmina_sftp_transfer_action" in remmina_source
+    assert "route.live_triggered_property" in remmina_source
+    assert "remminaProfileStaticRowStartY" in remmina_source
+    assert "remminaProfileLiveRowMinHeight" in remmina_source
     assert "remminaProfileFilter" in live_checker_source
     assert "draw_remmina_viewer_control_icon" in renderer_source
     assert "gui_design_remmina_viewer_controls" in renderer_source
@@ -2335,7 +2393,7 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "mRemoteNG-style document filter route" in docs_source
     assert "mRemoteNG-style inheritance route" in docs_source
     assert "draw_mremoteng_config_grid" in renderer_source
-    assert "mRemoteNgDocumentFilter" in gui_source
+    assert "mRemoteNgDocumentFilter" in interaction_source
     assert "mRemoteNgDocumentFilter" in live_checker_source
     assert "document-filter-focus" in visual_metrics_source
     assert "document-external-tool-checked" in visual_metrics_source
@@ -2347,9 +2405,17 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    interaction_source = Path("src/remote_ops_workspace/gui_interaction_states.py").read_text(encoding="utf-8")
+    sidebar_source = Path("src/remote_ops_workspace/gui_sidebar.py").read_text(encoding="utf-8")
+    product_workspace_source = Path("src/remote_ops_workspace/gui_product_workspace.py").read_text(encoding="utf-8")
+    securecrt_source = Path("src/remote_ops_workspace/gui_securecrt.py").read_text(encoding="utf-8")
+    termius_source = Path("src/remote_ops_workspace/gui_termius.py").read_text(encoding="utf-8")
+    toolbar_source = Path("src/remote_ops_workspace/gui_toolbars.py").read_text(encoding="utf-8")
+    tree_source = Path("src/remote_ops_workspace/gui_profile_tree.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
+    securecrt_design_source = Path("src/remote_ops_workspace/gui_preset_securecrt.py").read_text(encoding="utf-8")
+    termius_design_source = Path("src/remote_ops_workspace/gui_preset_termius.py").read_text(encoding="utf-8")
     visual_metrics_source = Path("configs/gui_visual_metrics.json").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
 
@@ -2496,116 +2562,119 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
         assert "termius.files-browser-live-sync-route" in criteria["presets"]["termius"]["dimension_coverage"][
             dimension_key
         ]
-    assert "GuiSecureCrtCommandWindowChrome" in design_source
-    assert "GuiSecureCrtCommandWindowSendRoute" in design_source
-    assert "GUI_DESIGN_SECURECRT_COMMAND_WINDOW_SEND_ROUTE" in design_source
-    assert "static_control_y" in design_source
-    assert "gui_design_securecrt_command_window_chrome" in design_source
-    assert "gui_design_securecrt_command_window_send_route" in design_source
-    assert "GuiSecureCrtSessionManagerChrome" in design_source
-    assert "GuiSecureCrtSessionManagerRoute" in design_source
-    assert "GuiSecureCrtSessionManagerFilterRoute" in design_source
-    assert "GuiSecureCrtSftpTabRoute" in design_source
-    assert "GuiSecureCrtSftpBrowserRoute" in design_source
-    assert "GUI_DESIGN_SECURECRT_SESSION_MANAGER_ROUTE" in design_source
-    assert "GUI_DESIGN_SECURECRT_SESSION_MANAGER_FILTER_ROUTE" in design_source
-    assert "GUI_DESIGN_SECURECRT_SFTP_TAB_ROUTE" in design_source
-    assert "GUI_DESIGN_SECURECRT_SFTP_BROWSER_ROUTE" in design_source
-    assert "static_button_size" in design_source
-    assert "live_button_size" in design_source
-    assert "render_source" in design_source
-    assert "GuiSecureCrtSessionStatusStrip" in design_source
-    assert "static_cell_start_x" in design_source
-    assert "gui_design_securecrt_session_manager_chrome" in design_source
-    assert "gui_design_securecrt_session_manager_route" in design_source
-    assert "gui_design_securecrt_session_manager_filter_route" in design_source
-    assert "gui_design_securecrt_sftp_tab_route" in design_source
-    assert "gui_design_securecrt_sftp_browser_route" in design_source
-    assert "GuiSecureCrtTopChrome" in design_source
-    assert "gui_design_securecrt_top_chrome" in design_source
-    assert "GuiTermiusHeaderChip" in design_source
-    assert "GuiTermiusHostsChrome" in design_source
-    assert "GuiTermiusHostIdentityStrip" in design_source
-    assert "GuiTermiusSyncRoute" in design_source
-    assert "GUI_DESIGN_TERMIUS_SYNC_ROUTE" in design_source
-    assert "GuiTermiusHostSelectionRoute" in design_source
-    assert "GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE" in design_source
-    assert "GuiTermiusPortForwardRoute" in design_source
-    assert "GUI_DESIGN_TERMIUS_PORT_FORWARD_ROUTE" in design_source
-    assert "GuiTermiusSnippetRoute" in design_source
-    assert "GUI_DESIGN_TERMIUS_SNIPPET_ROUTE" in design_source
-    assert "termiusSnippetRunAction" in design_source
-    assert "termiusSnippetRunShortcut" in design_source
-    assert "GuiTermiusFilesBrowserRoute" in design_source
-    assert "GUI_DESIGN_TERMIUS_FILES_BROWSER_ROUTE" in design_source
-    assert "handler=\"handle_termius_files_sync\"" in design_source
-    assert "action_key=\"sync\"" in design_source
-    assert "live_triggered_property=\"termiusFilesRouteLiveTriggered\"" in design_source
-    assert "static_cell_start_x" in design_source
+    assert "GuiSecureCrtCommandWindowChrome" in securecrt_design_source
+    assert "GuiSecureCrtCommandWindowSendRoute" in securecrt_design_source
+    assert "GUI_DESIGN_SECURECRT_COMMAND_WINDOW_SEND_ROUTE" in securecrt_design_source
+    assert "static_control_y" in securecrt_design_source
+    assert "gui_design_securecrt_command_window_chrome" in securecrt_design_source
+    assert "gui_design_securecrt_command_window_send_route" in securecrt_design_source
+    assert "GuiSecureCrtSessionManagerChrome" in securecrt_design_source
+    assert "GuiSecureCrtSessionManagerRoute" in securecrt_design_source
+    assert "GuiSecureCrtSessionManagerFilterRoute" in securecrt_design_source
+    assert "GuiSecureCrtSftpTabRoute" in securecrt_design_source
+    assert "GuiSecureCrtSftpBrowserRoute" in securecrt_design_source
+    assert "GUI_DESIGN_SECURECRT_SESSION_MANAGER_ROUTE" in securecrt_design_source
+    assert "GUI_DESIGN_SECURECRT_SESSION_MANAGER_FILTER_ROUTE" in securecrt_design_source
+    assert "GUI_DESIGN_SECURECRT_SFTP_TAB_ROUTE" in securecrt_design_source
+    assert "GUI_DESIGN_SECURECRT_SFTP_BROWSER_ROUTE" in securecrt_design_source
+    assert "static_button_size" in securecrt_design_source
+    assert "live_button_size" in securecrt_design_source
+    assert "render_source" in securecrt_design_source
+    assert "GuiSecureCrtSessionStatusStrip" in securecrt_design_source
+    assert "static_cell_start_x" in securecrt_design_source
+    assert "gui_design_securecrt_session_manager_chrome" in securecrt_design_source
+    assert "gui_design_securecrt_session_manager_route" in securecrt_design_source
+    assert "gui_design_securecrt_session_manager_filter_route" in securecrt_design_source
+    assert "gui_design_securecrt_sftp_tab_route" in securecrt_design_source
+    assert "gui_design_securecrt_sftp_browser_route" in securecrt_design_source
+    assert "GuiSecureCrtTopChrome" in securecrt_design_source
+    assert "gui_design_securecrt_top_chrome" in securecrt_design_source
+    assert "GuiTermiusHeaderChip" in termius_design_source
+    assert "GuiTermiusHostsChrome" in termius_design_source
+    assert "GuiTermiusHostIdentityStrip" in termius_design_source
+    assert "GuiTermiusSyncRoute" in termius_design_source
+    assert "GUI_DESIGN_TERMIUS_SYNC_ROUTE" in termius_design_source
+    assert "GuiTermiusHostSelectionRoute" in termius_design_source
+    assert "GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE" in termius_design_source
+    assert "GuiTermiusPortForwardRoute" in termius_design_source
+    assert "GUI_DESIGN_TERMIUS_PORT_FORWARD_ROUTE" in termius_design_source
+    assert "GuiTermiusSnippetRoute" in termius_design_source
+    assert "GUI_DESIGN_TERMIUS_SNIPPET_ROUTE" in termius_design_source
+    assert "termiusSnippetRunAction" in termius_design_source
+    assert "termiusSnippetRunShortcut" in termius_design_source
+    assert "GuiTermiusFilesBrowserRoute" in termius_design_source
+    assert "GUI_DESIGN_TERMIUS_FILES_BROWSER_ROUTE" in termius_design_source
+    assert "handler=\"handle_termius_files_sync\"" in termius_design_source
+    assert "action_key=\"sync\"" in termius_design_source
+    assert "live_triggered_property=\"termiusFilesRouteLiveTriggered\"" in termius_design_source
+    assert "static_cell_start_x" in securecrt_design_source
     assert "gui_design_termius_hosts_chrome" in design_source
-    assert "gui_design_termius_header_chips" in design_source
-    assert "gui_design_termius_sync_route" in design_source
-    assert "gui_design_termius_host_selection_route" in design_source
-    assert "gui_design_termius_port_forward_route" in design_source
-    assert "gui_design_termius_snippet_route" in design_source
-    assert "gui_design_termius_files_browser_route" in design_source
-    assert "build_securecrt_command_window_evidence" in gui_source
-    assert "secureCrtCommandStaticControlY" in gui_source
-    assert "secureCrtCommandLiveSendMinWidth" in gui_source
-    assert "secureCrtCommandRouteKey" in gui_source
-    assert "secureCrtCommandRouteCommand" in gui_source
-    assert "secureCrtCommandRouteSendLabel" in gui_source
-    assert "build_securecrt_session_manager_chrome" in gui_source
-    assert "secureCrtSessionManagerLiveButtonSize" in gui_source
-    assert "secureCrtSessionManagerRenderSource" in gui_source
-    assert "secureCrtSessionRouteKey" in gui_source
-    assert "secureCrtSessionRouteActive" in gui_source
-    assert "secureCrtSessionRouteActiveTab" in gui_source
-    assert "secureCrtSessionFilterRouteKey" in gui_source
-    assert "SECURECRT_FILTER_ROUTE_MATCHED_ROLE" in gui_source
-    assert "secureCrtSftpTabRouteKey" in gui_source
-    assert "SECURECRT_SFTP_ROUTE_TAB_ROLE" in gui_source
-    assert "secureCrtSftpTabRouteTransferState" in gui_source
-    assert "secureCrtSftpBrowserRouteKey" in gui_source
-    assert "secureCrtSftpBrowserPath" in gui_source
-    assert "secureCrtSftpBrowserQueueState" in gui_source
-    assert "apply_securecrt_sftp_browser_action_route_properties" in gui_source
-    assert "handle_securecrt_sftp_browser_action" in gui_source
-    assert "route.live_triggered_property" in gui_source
-    assert "securecrt_session_manager_action_icon" in gui_source
-    assert "secureCrtSessionStatusStaticCellStartX" in gui_source
-    assert "secureCrtSessionStatusLiveCellHeight" in gui_source
-    assert "configure_menu_bar_for_design" in gui_source
-    assert "secureCrtTopToolbarIconKey" in gui_source
-    assert "build_termius_hosts_chrome" in gui_source
-    assert "termiusHostSearch" in gui_source
-    assert "build_termius_header_chips_evidence" in gui_source
-    assert "termiusHeaderChipKey" in gui_source
-    assert "termiusHostIdentityStaticCellStartX" in gui_source
-    assert "termiusHostIdentityLiveCellHeight" in gui_source
-    assert "termiusSyncRouteKey" in gui_source
-    assert "termiusSyncRouteState" in gui_source
-    assert "termiusSyncRouteHeaderChipKey" in gui_source
-    assert "termiusHostRouteKey" in gui_source
-    assert "termiusHostRouteActiveTab" in gui_source
-    assert "termiusPortForwardRouteKey" in gui_source
-    assert "termiusPortForwardRouteIdentityValue" in gui_source
-    assert "termiusPortForwardRouteState" in gui_source
-    assert "termiusSnippetRouteKey" in gui_source
-    assert "termiusSnippetRouteCommand" in gui_source
-    assert "termiusSnippetRouteIdentityValue" in gui_source
-    assert "handle_termius_snippet_run" in gui_source
-    assert "route.live_triggered_property" in gui_source
-    assert "route.action_object" in gui_source
-    assert "termiusFilesRouteKey" in gui_source
-    assert "termiusFilesRoutePath" in gui_source
-    assert "termiusFilesRouteQueueState" in gui_source
-    assert "apply_termius_files_sync_route_properties" in gui_source
-    assert "handle_termius_files_sync" in gui_source
-    assert "route.live_triggered_property" in gui_source
-    assert "TERMIUS_HOST_ROUTE_SELECTED_ROLE" in gui_source
-    assert "secureCrtCommandWindowKey" in gui_source
-    assert "secureCrtSessionManagerActionKey" in gui_source
+    assert "gui_design_termius_header_chips" in termius_design_source
+    assert "gui_design_termius_sync_route" in termius_design_source
+    assert "gui_design_termius_host_selection_route" in termius_design_source
+    assert "gui_design_termius_port_forward_route" in termius_design_source
+    assert "gui_design_termius_snippet_route" in termius_design_source
+    assert "gui_design_termius_files_browser_route" in termius_design_source
+    assert "build_securecrt_command_window_evidence" in product_workspace_source
+    assert "secureCrtCommandStaticControlY" in securecrt_source
+    assert "secureCrtCommandLiveSendMinWidth" in securecrt_source
+    assert "secureCrtCommandRouteKey" in securecrt_source
+    assert "secureCrtCommandRouteCommand" in securecrt_source
+    assert "secureCrtCommandRouteSendLabel" in securecrt_source
+    assert "self.build_securecrt_session_manager_chrome()" in sidebar_source
+    assert "secureCrtSessionManagerLiveButtonSize" in securecrt_source
+    assert "secureCrtSessionManagerRenderSource" in securecrt_source
+    assert "secureCrtSessionRouteKey" in securecrt_source
+    assert "secureCrtSessionRouteActive" in securecrt_source
+    assert "secureCrtSessionRouteActiveTab" in securecrt_source
+    assert "secureCrtSessionFilterRouteKey" in securecrt_source
+    assert "SECURECRT_FILTER_ROUTE_MATCHED_ROLE" in tree_source
+    assert "secureCrtSftpTabRouteKey" in product_workspace_source
+    assert "SECURECRT_SFTP_ROUTE_TAB_ROLE" in tree_source
+    assert "secureCrtSftpTabRouteTransferState" in product_workspace_source
+    assert "secureCrtSftpBrowserRouteKey" in securecrt_source
+    assert "secureCrtSftpBrowserPath" in securecrt_source
+    assert "secureCrtSftpBrowserQueueState" in securecrt_source
+    assert "apply_securecrt_sftp_browser_action_route_properties" in securecrt_source
+    assert "handle_securecrt_sftp_browser_action" in securecrt_source
+    assert "route.live_triggered_property" in securecrt_source
+    assert "securecrt_session_manager_action_icon" in securecrt_source
+    assert "secureCrtSessionStatusStaticCellStartX" in securecrt_source
+    assert "secureCrtSessionStatusLiveCellHeight" in securecrt_source
+    menu_source = Path("src/remote_ops_workspace/gui_menus.py").read_text(encoding="utf-8")
+    assert "def configure_menu_bar_for_design" in menu_source
+    activation_source = Path("src/remote_ops_workspace/gui_design_activation.py").read_text(encoding="utf-8")
+    assert "self.configure_menu_bar_for_design(preset)" in activation_source
+    assert "secureCrtTopToolbarIconKey" in toolbar_source
+    assert "self.build_termius_hosts_chrome()" in sidebar_source
+    assert "termiusHostSearch" in interaction_source
+    assert "build_termius_header_chips_evidence" in product_workspace_source
+    assert "termiusHeaderChipKey" in termius_source
+    assert "termiusHostIdentityStaticCellStartX" in termius_source
+    assert "termiusHostIdentityLiveCellHeight" in termius_source
+    assert "termiusSyncRouteKey" in termius_source
+    assert "termiusSyncRouteState" in termius_source
+    assert "termiusSyncRouteHeaderChipKey" in termius_source
+    assert "termiusHostRouteKey" in termius_source
+    assert "termiusHostRouteActiveTab" in termius_source
+    assert "termiusPortForwardRouteKey" in termius_source
+    assert "termiusPortForwardRouteIdentityValue" in termius_source
+    assert "termiusPortForwardRouteState" in termius_source
+    assert "termiusSnippetRouteKey" in product_workspace_source
+    assert "termiusSnippetRouteCommand" in product_workspace_source
+    assert "termiusSnippetRouteIdentityValue" in termius_source
+    assert "handle_termius_snippet_run" in product_workspace_source
+    assert "route.live_triggered_property" in termius_source
+    assert "route.action_object" in product_workspace_source
+    assert "termiusFilesRouteKey" in termius_source
+    assert "termiusFilesRoutePath" in termius_source
+    assert "termiusFilesRouteQueueState" in termius_source
+    assert "apply_termius_files_sync_route_properties" in termius_source
+    assert "handle_termius_files_sync" in termius_source
+    assert "route.live_triggered_property" in termius_source
+    assert "TERMIUS_HOST_ROUTE_SELECTED_ROLE" in tree_source
+    assert "secureCrtCommandWindowKey" in securecrt_source
+    assert "secureCrtSessionManagerActionKey" in securecrt_source
     assert "draw_securecrt_command_window" in renderer_source
     assert "chrome.static_send_width" in renderer_source
     assert "draw_securecrt_session_manager_chrome" in renderer_source
@@ -2701,10 +2770,10 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "securecrt-command-window-live-send-route" in live_checker_source
     assert "EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE" in live_checker_source
     assert "check_securecrt_command_window_live_submission" in live_checker_source
-    assert "handle_securecrt_command_window_send" in gui_source
-    assert "secureCrtCommandRouteLiveSubmitted" in gui_source
+    assert "handle_securecrt_command_window_send" in securecrt_source
+    assert "secureCrtCommandRouteLiveSubmitted" in securecrt_source
     assert "secondary_signal" in renderer_source
-    assert "secureCrtCommandRouteSecondarySignal" in design_source
+    assert "secureCrtCommandRouteSecondarySignal" in securecrt_design_source
     assert "EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE" in live_checker_source
     assert "EXPECTED_SECURECRT_SESSION_MANAGER_FILTER_ROUTE" in live_checker_source
     assert "expected_securecrt_session_manager_route" in live_checker_source
@@ -2758,7 +2827,7 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
 def test_gui_parity_tracks_live_product_workflow_cards() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    product_workspace_source = Path("src/remote_ops_workspace/gui_product_workspace.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
 
@@ -2773,15 +2842,15 @@ def test_gui_parity_tracks_live_product_workflow_cards() -> None:
         assert requirement_id in requirement_ids
     assert "GUI_DESIGN_WORKFLOW_CARDS" in design_source
     assert "gui_design_workflow_cards" in design_source
-    assert "build_product_workflow_evidence" in gui_source
-    assert "productWorkflowEvidence" in gui_source
+    assert "build_product_workflow_evidence" in product_workspace_source
+    assert "productWorkflowEvidence" in product_workspace_source
     assert "check_live_workflow_cards" in live_checker_source
 
 
 def test_gui_parity_tracks_non_moba_reference_state_contracts() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    product_workspace_source = Path("src/remote_ops_workspace/gui_product_workspace.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -2800,8 +2869,8 @@ def test_gui_parity_tracks_non_moba_reference_state_contracts() -> None:
 
     assert "GUI_DESIGN_REFERENCE_STATES" in design_source
     assert "GuiProductReferenceState" in design_source
-    assert "build_product_reference_state_evidence" in gui_source
-    assert "productReferenceStateItem" in gui_source
+    assert "build_product_reference_state_evidence" in product_workspace_source
+    assert "productReferenceStateItem" in product_workspace_source
     assert "draw_product_reference_state" in renderer_source
     assert "check_live_reference_state" in live_checker_source
 
@@ -2810,7 +2879,7 @@ def test_gui_parity_tracks_non_moba_product_identity_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    product_workspace_source = Path("src/remote_ops_workspace/gui_product_workspace.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -2834,9 +2903,9 @@ def test_gui_parity_tracks_non_moba_product_identity_routes() -> None:
     assert "GuiProductIdentityRoute" in design_source
     assert "gui_design_product_identity_route" in design_source
     assert "tree-tab-reference-status-workspace-identity" in design_source
-    assert "productIdentityRouteKey" in gui_source
-    assert "productIdentityActiveTab" in gui_source
-    assert "productIdentityStatusSegments" in gui_source
+    assert "productIdentityRouteKey" in product_workspace_source
+    assert "productIdentityActiveTab" in product_workspace_source
+    assert "productIdentityStatusSegments" in product_workspace_source
     assert "gui_design_product_identity_route" in renderer_source
     assert "product_identity_route.active_tab_label" in renderer_source
     assert "product_identity_route.status_segments" in renderer_source
@@ -2850,7 +2919,8 @@ def test_gui_parity_tracks_reference_tab_activation_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    tabs_source = Path("src/remote_ops_workspace/gui_workspace_tabs.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -2873,9 +2943,9 @@ def test_gui_parity_tracks_reference_tab_activation_routes() -> None:
     assert "PRODUCT_REFERENCE_TAB_PRESET_IDS" in design_source
     assert "gui_design_preset_reference_tab_route" in design_source
     assert "reference-profile-tab-can-be-active-surface" in design_source
-    assert "presetReferenceTabActivatedLabel" in gui_source
-    assert "presetReferenceTabReturnedHomeLabel" in gui_source
-    assert "find_tab_by_label" in gui_source
+    assert "presetReferenceTabActivatedLabel" in preset_properties_source
+    assert "presetReferenceTabReturnedHomeLabel" in preset_properties_source
+    assert "find_tab_by_label" in tabs_source
     assert "preset_reference_tab_route" in renderer_source
     assert "reference_tab_route.active_tab_label" in renderer_source
     assert "reference_tab_route.home_tab_label" in renderer_source
@@ -2889,7 +2959,8 @@ def test_gui_parity_tracks_reference_tab_chrome_evidence_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    reference_tabs_source = Path("src/remote_ops_workspace/gui_reference_tabs.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -2911,8 +2982,8 @@ def test_gui_parity_tracks_reference_tab_chrome_evidence_routes() -> None:
     assert "GuiPresetReferenceTabChromeRoute" in design_source
     assert "gui_design_preset_reference_tab_chrome_route" in design_source
     assert "active-reference-tab-chrome-evidence" in design_source
-    assert "presetReferenceTabChromeTooltip" in gui_source
-    assert "apply_reference_tab_chrome_route_to_terminal_tab" in gui_source
+    assert "presetReferenceTabChromeTooltip" in preset_properties_source
+    assert "apply_reference_tab_chrome_route_to_terminal_tab" in reference_tabs_source
     assert "preset_reference_tab_chrome_route" in renderer_source
     assert "reference_tab_chrome_route.expected_tooltip" in renderer_source
     assert "EXPECTED_PRESET_REFERENCE_TAB_CHROME_ROUTES" in live_checker_source
@@ -2926,7 +2997,8 @@ def test_gui_parity_tracks_reference_status_bar_evidence_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    reference_tabs_source = Path("src/remote_ops_workspace/gui_reference_tabs.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -2948,8 +3020,8 @@ def test_gui_parity_tracks_reference_status_bar_evidence_routes() -> None:
     assert "GuiPresetReferenceStatusBarRoute" in design_source
     assert "gui_design_preset_reference_status_bar_route" in design_source
     assert "active-reference-status-bar-evidence" in design_source
-    assert "presetReferenceStatusSegments" in gui_source
-    assert "apply_reference_status_bar_route_to_terminal_tab" in gui_source
+    assert "presetReferenceStatusSegments" in preset_properties_source
+    assert "apply_reference_status_bar_route_to_terminal_tab" in reference_tabs_source
     assert "preset_reference_status_bar_route" in renderer_source
     assert "reference_status_route.expected_status_segments" in renderer_source
     assert "EXPECTED_PRESET_REFERENCE_STATUS_BAR_ROUTES" in live_checker_source
@@ -2964,6 +3036,7 @@ def test_gui_parity_tracks_product_keyboard_shortcut_routes() -> None:
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -2986,7 +3059,7 @@ def test_gui_parity_tracks_product_keyboard_shortcut_routes() -> None:
     assert "GuiPresetKeyboardShortcutRoute" in design_source
     assert "gui_design_preset_keyboard_shortcut_route" in design_source
     assert "product-preset-keyboard-shortcuts" in design_source
-    assert "presetKeyboardShortcutCapturedSequences" in gui_source
+    assert "presetKeyboardShortcutCapturedSequences" in preset_properties_source
     assert "create_keyboard_shortcuts" in gui_source
     assert "preset_keyboard_shortcut_route" in renderer_source
     assert "keyboard_shortcut_route.expected_sequences" in renderer_source
@@ -3002,6 +3075,7 @@ def test_gui_parity_tracks_product_command_surface_routes() -> None:
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3024,9 +3098,9 @@ def test_gui_parity_tracks_product_command_surface_routes() -> None:
     assert "GuiPresetCommandSurfaceRoute" in design_source
     assert "gui_design_preset_command_surface_route" in design_source
     assert "product-preset-command-surface-route" in design_source
-    assert "presetCommandSurfaceCapturedKeys" in gui_source
+    assert "presetCommandSurfaceCapturedKeys" in preset_properties_source
     assert "apply_command_surface_route_for_design" in gui_source
-    assert "presetCommandSurfaceCapturedStates" in gui_source
+    assert "presetCommandSurfaceCapturedStates" in preset_properties_source
     assert "preset_command_surface_route" in renderer_source
     assert "command_surface_route.expected_action_keys" in renderer_source
     assert "EXPECTED_PRESET_COMMAND_SURFACE_ROUTES" in live_checker_source
@@ -3113,7 +3187,8 @@ def test_gui_parity_tracks_product_focus_interaction_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    interaction_source = Path("src/remote_ops_workspace/gui_interaction_states.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3136,8 +3211,8 @@ def test_gui_parity_tracks_product_focus_interaction_routes() -> None:
     assert "GuiPresetFocusInteractionRoute" in design_source
     assert "gui_design_preset_focus_interaction_route" in design_source
     assert "product-preset-focus-interaction-route" in design_source
-    assert "presetFocusInteractionCapturedFocus" in gui_source
-    assert "apply_focus_interaction_route_for_design" in gui_source
+    assert "presetFocusInteractionCapturedFocus" in preset_properties_source
+    assert "apply_focus_interaction_route_for_design" in interaction_source
     assert "preset_focus_interaction_route" in renderer_source
     assert "focus_interaction_route.focused_control" in renderer_source
     assert "EXPECTED_PRESET_FOCUS_INTERACTION_ROUTES" in live_checker_source
@@ -3151,7 +3226,8 @@ def test_gui_parity_tracks_product_home_search_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    design_activation_source = Path("src/remote_ops_workspace/gui_design_activation.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3174,8 +3250,8 @@ def test_gui_parity_tracks_product_home_search_routes() -> None:
     assert "GuiPresetHomeSearchRoute" in design_source
     assert "gui_design_preset_home_search_route" in design_source
     assert "product-preset-home-search-entry-route" in design_source
-    assert "presetHomeSearchCapturedPlaceholder" in gui_source
-    assert "apply_home_search_route_for_design" in gui_source
+    assert "presetHomeSearchCapturedPlaceholder" in preset_properties_source
+    assert "apply_home_search_route_for_design" in design_activation_source
     assert "preset_home_search_route" in renderer_source
     assert "home_search_route.placeholder_text" in renderer_source
     assert "EXPECTED_PRESET_HOME_SEARCH_ROUTES" in live_checker_source
@@ -3189,7 +3265,8 @@ def test_gui_parity_tracks_reference_session_action_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    reference_tabs_source = Path("src/remote_ops_workspace/gui_reference_tabs.py").read_text(encoding="utf-8")
+    tabs_source = Path("src/remote_ops_workspace/gui_workspace_tabs.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3211,8 +3288,8 @@ def test_gui_parity_tracks_reference_session_action_routes() -> None:
     assert "GuiPresetReferenceSessionActionRoute" in design_source
     assert "gui_design_preset_reference_session_action_route" in design_source
     assert "active-reference-session-actions" in design_source
-    assert "sessionTabContextActionKey" in gui_source
-    assert "apply_reference_session_action_route_to_terminal_tab" in gui_source
+    assert "sessionTabContextActionKey" in tabs_source
+    assert "apply_reference_session_action_route_to_terminal_tab" in reference_tabs_source
     assert "preset_reference_session_action_route" in renderer_source
     assert "reference_session_action_route.expected_action_keys" in renderer_source
     assert "EXPECTED_PRESET_REFERENCE_SESSION_ACTION_ROUTES" in live_checker_source
@@ -3226,7 +3303,8 @@ def test_gui_parity_tracks_reference_surface_evidence_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    reference_tabs_source = Path("src/remote_ops_workspace/gui_reference_tabs.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3248,9 +3326,9 @@ def test_gui_parity_tracks_reference_surface_evidence_routes() -> None:
     assert "GuiPresetReferenceSurfaceRoute" in design_source
     assert "gui_design_preset_reference_surface_route" in design_source
     assert "active-reference-tab-surface-evidence" in design_source
-    assert "presetReferenceSurfaceActualCommand" in gui_source
-    assert "presetReferenceSurfaceActualOutput" in gui_source
-    assert "apply_reference_surface_route_to_terminal_tab" in gui_source
+    assert "presetReferenceSurfaceActualCommand" in preset_properties_source
+    assert "presetReferenceSurfaceActualOutput" in preset_properties_source
+    assert "apply_reference_surface_route_to_terminal_tab" in reference_tabs_source
     assert "preset_reference_surface_route" in renderer_source
     assert "reference_surface_route.command_target_fragment" in renderer_source
     assert "EXPECTED_PRESET_REFERENCE_SURFACE_ROUTES" in live_checker_source
@@ -3264,7 +3342,8 @@ def test_gui_parity_tracks_reference_control_evidence_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    reference_tabs_source = Path("src/remote_ops_workspace/gui_reference_tabs.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     terminal_source = Path("src/remote_ops_workspace/gui_terminal.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
@@ -3288,8 +3367,8 @@ def test_gui_parity_tracks_reference_control_evidence_routes() -> None:
     assert "gui_design_preset_reference_control_route" in design_source
     assert "active-reference-tab-terminal-controls" in design_source
     assert "terminalActionKey" in terminal_source
-    assert "presetReferenceControlCapturedActionKeys" in gui_source
-    assert "apply_reference_control_route_to_terminal_tab" in gui_source
+    assert "presetReferenceControlCapturedActionKeys" in preset_properties_source
+    assert "apply_reference_control_route_to_terminal_tab" in reference_tabs_source
     assert "preset_reference_control_route" in renderer_source
     assert "reference_control_route.action_keys" in renderer_source
     assert "EXPECTED_PRESET_REFERENCE_CONTROL_ROUTES" in live_checker_source
@@ -3303,7 +3382,8 @@ def test_gui_parity_tracks_reference_input_evidence_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    reference_tabs_source = Path("src/remote_ops_workspace/gui_reference_tabs.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3325,8 +3405,8 @@ def test_gui_parity_tracks_reference_input_evidence_routes() -> None:
     assert "GuiPresetReferenceInputRoute" in design_source
     assert "gui_design_preset_reference_input_route" in design_source
     assert "active-reference-tab-terminal-input" in design_source
-    assert "presetReferenceInputEnabled" in gui_source
-    assert "apply_reference_input_route_to_terminal_tab" in gui_source
+    assert "presetReferenceInputEnabled" in preset_properties_source
+    assert "apply_reference_input_route_to_terminal_tab" in reference_tabs_source
     assert "preset_reference_input_route" in renderer_source
     assert "reference_input_route.placeholder_text" in renderer_source
     assert "EXPECTED_PRESET_REFERENCE_INPUT_ROUTES" in live_checker_source
@@ -3340,7 +3420,8 @@ def test_gui_parity_tracks_reference_transcript_evidence_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    reference_tabs_source = Path("src/remote_ops_workspace/gui_reference_tabs.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3362,8 +3443,8 @@ def test_gui_parity_tracks_reference_transcript_evidence_routes() -> None:
     assert "GuiPresetReferenceTranscriptRoute" in design_source
     assert "gui_design_preset_reference_transcript_route" in design_source
     assert "active-reference-tab-terminal-transcript" in design_source
-    assert "presetReferenceTranscriptCommandEcho" in gui_source
-    assert "apply_reference_transcript_route_to_terminal_tab" in gui_source
+    assert "presetReferenceTranscriptCommandEcho" in preset_properties_source
+    assert "apply_reference_transcript_route_to_terminal_tab" in reference_tabs_source
     assert "preset_reference_transcript_route" in renderer_source
     assert "reference_transcript_route.required_fragments" in renderer_source
     assert "EXPECTED_PRESET_REFERENCE_TRANSCRIPT_ROUTES" in live_checker_source
@@ -3377,7 +3458,7 @@ def test_gui_parity_tracks_preset_selection_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3409,9 +3490,9 @@ def test_gui_parity_tracks_preset_selection_routes() -> None:
     assert "GuiPresetSelectionRoute" in design_source
     assert "gui_design_preset_selection_route" in design_source
     assert "selector-to-toolbar-sidebar-tabs-status-workspace" in design_source
-    assert "presetSelectionRouteKey" in gui_source
-    assert "presetSelectionRouteHomeTabLabel" in gui_source
-    assert "presetSelectionRouteStatusSegments" in gui_source
+    assert "presetSelectionRouteKey" in preset_properties_source
+    assert "presetSelectionRouteHomeTabLabel" in preset_properties_source
+    assert "presetSelectionRouteStatusSegments" in preset_properties_source
     assert "gui_design_preset_selection_route" in renderer_source
     assert "preset_selection_route" in renderer_source
     assert "selection_route.home_tab_label" in renderer_source
@@ -3426,7 +3507,7 @@ def test_gui_parity_tracks_preset_catalog_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3449,9 +3530,9 @@ def test_gui_parity_tracks_preset_catalog_routes() -> None:
     assert "GuiPresetCatalogRoute" in design_source
     assert "gui_design_preset_catalog_route" in design_source
     assert "preset-catalog-to-design-selector-options" in design_source
-    assert "presetCatalogRouteOptionIds" in gui_source
-    assert "presetCatalogRouteProductPresetIds" in gui_source
-    assert "presetCatalogRouteDefaultPresetId" in gui_source
+    assert "presetCatalogRouteOptionIds" in preset_properties_source
+    assert "presetCatalogRouteProductPresetIds" in preset_properties_source
+    assert "presetCatalogRouteDefaultPresetId" in preset_properties_source
     assert "gui_design_preset_catalog_route" in renderer_source
     assert "preset_catalog_route" in renderer_source
     assert "catalog_route.option_ids" in renderer_source
@@ -3466,7 +3547,7 @@ def test_gui_parity_tracks_preset_visual_signatures() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3489,9 +3570,9 @@ def test_gui_parity_tracks_preset_visual_signatures() -> None:
     assert "GuiPresetVisualSignature" in design_source
     assert "gui_design_preset_visual_signature" in design_source
     assert "preset-palette-density-to-live-static-style" in design_source
-    assert "presetVisualSignatureDensity" in gui_source
-    assert "presetVisualSignaturePalette" in gui_source
-    assert "presetVisualSignatureRenderSource" in gui_source
+    assert "presetVisualSignatureDensity" in preset_properties_source
+    assert "presetVisualSignaturePalette" in preset_properties_source
+    assert "presetVisualSignatureRenderSource" in preset_properties_source
     assert "gui_design_preset_visual_signature" in renderer_source
     assert "preset_visual_signature" in renderer_source
     assert "visual_signature.palette_items" in renderer_source
@@ -3506,7 +3587,7 @@ def test_gui_parity_tracks_preset_isolation_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3538,9 +3619,9 @@ def test_gui_parity_tracks_preset_isolation_routes() -> None:
     assert "GuiPresetIsolationRoute" in design_source
     assert "gui_design_preset_isolation_route" in design_source
     assert "active-preset-visible-hidden-widget-isolation" in design_source
-    assert "presetIsolationVisibleObjects" in gui_source
-    assert "presetIsolationHiddenObjects" in gui_source
-    assert "presetIsolationRenderSource" in gui_source
+    assert "presetIsolationVisibleObjects" in preset_properties_source
+    assert "presetIsolationHiddenObjects" in preset_properties_source
+    assert "presetIsolationRenderSource" in preset_properties_source
     assert "preset_isolation_route" in renderer_source
     assert "isolation_route.visible_objects" in renderer_source
     assert "isolation_route.hidden_objects" in renderer_source
@@ -3554,7 +3635,7 @@ def test_gui_parity_tracks_preset_transition_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3586,9 +3667,9 @@ def test_gui_parity_tracks_preset_transition_routes() -> None:
     assert "GuiPresetTransitionRoute" in design_source
     assert "gui_design_preset_transition_route" in design_source
     assert "selector-style-switch-resets-inactive-product-chrome" in design_source
-    assert "presetTransitionFromPresetIds" in gui_source
-    assert "presetTransitionResetObjects" in gui_source
-    assert "presetTransitionRenderSource" in gui_source
+    assert "presetTransitionFromPresetIds" in preset_properties_source
+    assert "presetTransitionResetObjects" in preset_properties_source
+    assert "presetTransitionRenderSource" in preset_properties_source
     assert "preset_transition_route" in renderer_source
     assert "transition_route.from_preset_ids" in renderer_source
     assert "transition_route.reset_objects" in renderer_source
@@ -3639,15 +3720,15 @@ def test_gui_parity_tracks_product_specific_interaction_states() -> None:
 
 
 def test_live_and_static_renderers_share_interaction_state_copy() -> None:
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    interaction_source = Path("src/remote_ops_workspace/gui_interaction_states.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     visual_checker_source = Path("scripts/check_gui_visual_metrics.py").read_text(encoding="utf-8")
     visual_metrics_source = Path("configs/gui_visual_metrics.json").read_text(encoding="utf-8")
 
     assert "GUI_DESIGN_INTERACTION_STATES" in design_source
-    assert "gui_design_interaction_state" in gui_source
-    assert "configure_interaction_states_for_design" in gui_source
+    assert "gui_design_interaction_state" in interaction_source
+    assert "configure_interaction_states_for_design" in interaction_source
     assert "interaction_button_colors" in renderer_source
     assert "selected_tree_label" in renderer_source
     assert "check_color_anchor" in visual_checker_source
@@ -3671,12 +3752,12 @@ def test_live_and_static_renderers_share_interaction_state_copy() -> None:
 
 
 def test_live_and_static_renderers_share_status_bar_copy() -> None:
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    chrome_source = Path("src/remote_ops_workspace/gui_window_chrome.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
 
     assert "GUI_DESIGN_STATUS_COPY" in design_source
-    assert "configure_status_bar_for_design" in gui_source
+    assert "configure_status_bar_for_design" in chrome_source
     assert "gui_design_status_segments" in renderer_source
 
 

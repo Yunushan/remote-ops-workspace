@@ -227,25 +227,20 @@ def test_gui_interaction_evidence_snapshots_mutable_dispatch_details() -> None:
 
 
 def test_gui_policy_guards_every_profile_backed_execution_surface() -> None:
-    source = (
-        Path(__file__).resolve().parents[1]
-        / "src"
-        / "remote_ops_workspace"
-        / "gui.py"
-    ).read_text(encoding="utf-8")
+    package = Path(__file__).resolve().parents[1] / "src" / "remote_ops_workspace"
+    lifecycle_source = (package / "gui_terminal_lifecycle.py").read_text(encoding="utf-8")
+    profile_source = (package / "gui_profile_actions.py").read_text(encoding="utf-8")
+    tab_source = (package / "gui_session_tabs.py").read_text(encoding="utf-8")
+    layout_source = (package / "gui_layouts.py").read_text(encoding="utf-8")
 
-    assert 'assert_profile_launch_allowed(profile, surface="gui")' in source
-    assert "sessions = self.layout_launch_sessions(layout)" in source
-    assert "self.open_terminal_tab(pane_plan, profile=profile)" in source
-    assert "pane = TerminalPane(plan, profile=profile)" in source
-    assert "widget.plan,\n                    profile=widget.profile," in source
-    assert "self.open_terminal_tab(\n                        plan,\n                        profile=profile," in source
-    dialog_source = (
-        Path(__file__).resolve().parents[1]
-        / "src"
-        / "remote_ops_workspace"
-        / "gui_dialogs.py"
-    ).read_text(encoding="utf-8")
+    assert 'assert_profile_launch_allowed(profile, surface="gui")' in profile_source
+    assert "sessions = self.layout_launch_sessions(layout)" in layout_source
+    assert 'assert_profile_launch_allowed(profile, surface="gui")' in layout_source
+    assert "self.open_terminal_tab(pane_plan, profile=profile)" in profile_source
+    assert "pane = TerminalPane(plan, profile=profile)" in lifecycle_source
+    assert "widget.plan,\n                profile=widget.profile," in tab_source
+    assert "self.open_terminal_tab(\n                    plan,\n                    profile=profile," in tab_source
+    dialog_source = (package / "gui_dialogs.py").read_text(encoding="utf-8")
     assert 'assert_profile_launch_allowed(self.profile, surface="gui")' in dialog_source
     for required in (
         "allow_insecure_sshv1=true",
@@ -264,15 +259,25 @@ def test_gui_state_transitions_preserve_stable_identity_contracts() -> None:
         / "remote_ops_workspace"
         / "gui.py"
     ).read_text(encoding="utf-8")
+    tab_source = (
+        Path(__file__).resolve().parents[1] / "src" / "remote_ops_workspace" / "gui_session_tabs.py"
+    ).read_text(encoding="utf-8")
 
-    assert "tooltip = self.base_tab_tooltip(current_index) or title" in source
-    assert "if isinstance(widget, MobaConnectedSessionPanel):" in source
+    assert "tooltip = self.base_tab_tooltip(current_index) or title" in tab_source
+    assert "_connected_session_panel_type = MobaConnectedSessionPanel" in source
+    assert "if isinstance(widget, self._connected_session_panel_type):" in tab_source
     assert (
-        "self.current_design_is_moba() and isinstance(widget, MobaConnectedSessionPanel)"
-        not in source
+        "self.current_design_is_moba() and isinstance(widget, self._connected_session_panel_type)"
+        not in tab_source
     )
-    assert "if current is not None and not self.profile_tree_item_is_visible(current):" in source
-    assert "self.profile_list.setCurrentItem(None)" in source
-    assert "and plan.source == f\"profile:{profile.name}\"" in source
-    assert "and self.moba_connected_profile_supported(profile)" in source
-    assert "suffix.startswith((\" ·\", \":\", \" copy\"))" in source
+    tree_source = Path(
+        Path(__file__).resolve().parents[1] / "src" / "remote_ops_workspace" / "gui_profile_tree.py"
+    ).read_text(encoding="utf-8")
+    assert "if current is not None and not self.profile_tree_item_is_visible(current):" in tree_source
+    assert "self.profile_list.setCurrentItem(None)" in tree_source
+    assert "and plan.source == f\"profile:{profile.name}\"" in tab_source
+    assert "and self.moba_connected_profile_supported(profile)" in tab_source
+    layout_source = (
+        Path(__file__).resolve().parents[1] / "src" / "remote_ops_workspace" / "gui_layouts.py"
+    ).read_text(encoding="utf-8")
+    assert "suffix.startswith((\" ·\", \":\", \" copy\"))" in layout_source

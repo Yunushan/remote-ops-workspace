@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
+import io
 import os
 import subprocess
 import sys
@@ -11,7 +13,6 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
-import tomllib
 from check_release_license_compliance import (
     PROTECTED_LINUX_LOCK_DIR,
     ROOT,
@@ -21,6 +22,10 @@ from check_release_license_compliance import (
 RUST_TARGET = "i686-unknown-linux-gnu"
 MAX_SOURCE_BYTES = 16 * 1024 * 1024
 SOURCE_DISTRIBUTIONS = {
+    "cffi": (
+        "https://files.pythonhosted.org/packages/9e/ef/008a1939e372c06329a3fce4279c02f328488f3526744906eeec3da7ad5f/cffi-2.1.1.tar.gz",
+        None,
+    ),
     "bcrypt": (
         "https://files.pythonhosted.org/packages/d4/36/3329e2518d70ad8e2e5817d5a4cac6bba05a47767ec416c7d020a965f408/bcrypt-5.0.0.tar.gz",
         "src/_bcrypt",
@@ -42,7 +47,34 @@ def download_locked_source(url: str, digest: str) -> bytes:
     return data
 
 
+def locked_source(lock: dict[str, tuple[str, set[str]]], name: str) -> tuple[str, str]:
+    version, hashes = lock[name]
+    filename = f"{name}-{version}.tar.gz"
+    if not SOURCE_DISTRIBUTIONS[name][0].endswith(f"/{filename}") or len(hashes) != 1:
+        raise ValueError(f"{name} source URL must match its single protected lock hash and version")
+    return filename, next(iter(hashes))
+
+
+def extract_locked_source(source: Path, digest: str, destination: Path) -> Path:
+    with source.open("rb") as stream:
+        data = stream.read(MAX_SOURCE_BYTES + 1)
+    if not 0 < len(data) <= MAX_SOURCE_BYTES or hashlib.sha256(data).hexdigest() != digest:
+        raise ValueError(f"source archive size or SHA-256 is invalid for {source.name}")
+    package = source.name.removesuffix(".tar.gz")
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
+        members = archive.getmembers()
+        if not members or any(member.name.split("/", 1)[0] != package for member in members):
+            raise ValueError(f"source archive must contain only {package}/")
+        archive.extractall(destination, members=members, filter="data")
+    return destination / package
+
+
 def fetch_locked_crates(manifest: Path, environment: dict[str, str]) -> None:
+    try:
+        import tomllib
+    except ModuleNotFoundError:  # Python 3.10
+        import tomli as tomllib  # type: ignore[no-redef]
+
     cargo_lock = manifest.with_name("Cargo.lock")
     if not manifest.is_file() or not cargo_lock.is_file():
         raise ValueError(f"source archive must contain {manifest.name} and {cargo_lock.name}")
@@ -66,7 +98,7 @@ def fetch_locked_crates(manifest: Path, environment: dict[str, str]) -> None:
             raise ValueError(f"Cargo modified the pinned lockfile beside {manifest}")
 
 
-def prepare_cargo(root: Path) -> None:
+def prepare_cargo(root: Path, source_archives: Path | None = None) -> None:
     cargo_home = os.environ.get("CARGO_HOME")
     if not cargo_home:
         raise ValueError("set CARGO_HOME to a new job-local directory before fetching crates")
@@ -85,24 +117,26 @@ def prepare_cargo(root: Path) -> None:
     environment = {**os.environ, "CARGO_NET_OFFLINE": "false"}
     with tempfile.TemporaryDirectory(prefix="row-protected-linux-cargo-") as temporary:
         temp_dir = Path(temporary)
+        if source_archives is not None:
+            source_archives.mkdir()
         for name, (url, manifest_directory) in SOURCE_DISTRIBUTIONS.items():
-            version, hashes = lock[name]
-            source_name = f"{name}-{version}"
-            filename = f"{source_name}.tar.gz"
-            if not url.endswith(f"/{filename}") or len(hashes) != 1:
-                raise ValueError(f"{name} source URL must match its single i386 lock hash and version")
-            source = temp_dir / filename
-            source.write_bytes(download_locked_source(url, next(iter(hashes))))
-            with tarfile.open(source, mode="r:gz") as archive:
-                archive.extractall(temp_dir, filter="data")
-            manifest = temp_dir / source_name / manifest_directory / "Cargo.toml"
-            fetch_locked_crates(manifest, environment)
-            print(f"Fetched the pinned Cargo dependencies for {source_name}")
+            if manifest_directory is None and source_archives is None:
+                continue
+            filename, digest = locked_source(lock, name)
+            source = (source_archives or temp_dir) / filename
+            source.write_bytes(download_locked_source(url, digest))
+            if manifest_directory is not None:
+                extracted = extract_locked_source(source, digest, temp_dir)
+                fetch_locked_crates(extracted / manifest_directory / "Cargo.toml", environment)
+                print(f"Fetched the pinned Cargo dependencies for {extracted.name}")
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--source-archives", type=Path, help="retain verified i386 source distributions here")
+    args = parser.parse_args()
     try:
-        prepare_cargo(ROOT)
+        prepare_cargo(ROOT, args.source_archives)
     except (KeyError, OSError, ValueError, tarfile.TarError, subprocess.SubprocessError) as exc:
         print(f"protected Linux Cargo inputs: {exc}", file=sys.stderr)
         return 1

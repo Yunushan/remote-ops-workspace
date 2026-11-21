@@ -7,8 +7,6 @@ qualification.
 """
 from __future__ import annotations
 
-import argparse
-import ast
 import base64
 import hashlib
 import json
@@ -19,6 +17,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from remote_ops_workspace import cli, cli_customizer
 from remote_ops_workspace import update_channel as channel
 from remote_ops_workspace import update_staging as staging
 from remote_ops_workspace import windows_private_storage as storage
@@ -38,6 +37,11 @@ def no_actual_tls_or_transport(monkeypatch):
             pytest.fail("pure fixture reached an unmocked HTTP opener")
 
     monkeypatch.setattr(channel.urllib.request, "build_opener", lambda *_args: RefusedOpener())
+
+
+@pytest.fixture(autouse=True)
+def installed_fixture_version(monkeypatch):
+    monkeypatch.setattr(channel, "__version__", "1.0.27")
 
 
 def policy_data():
@@ -111,6 +115,70 @@ def test_new_stage_requires_running_stable_newer_version(accepted_signature, ver
     data["version"] = version
     with pytest.raises(channel.UpdateError):
         channel.authenticate_manifest(manifest_bytes(data), policy(), now=NOW)
+
+
+def test_exact_version_stage_retains_and_recovers_authenticated_prior_bytes(
+    tmp_path, monkeypatch, accepted_signature, private_boundary,
+):
+    data = manifest_data()
+    data["version"] = "1.0.24"
+    raw = manifest_bytes(data)
+    config = policy({**policy_data(), "schema": channel.POLICY_SCHEMA_V2, "minimum_version": "1.0.24"})
+    actual_authenticate = channel.authenticate_manifest
+    private_boundary.stage(tmp_path)
+    monkeypatch.setattr(channel, "exclusive_file_lock", lambda path, **_kwargs: mock_lease(path))
+    monkeypatch.setattr(channel, "authenticate_manifest", lambda body, trust, **kwargs: actual_authenticate(
+        body, trust, now=NOW, **kwargs,
+    ))
+    monkeypatch.setattr(channel, "validate_professional_update_manifest", lambda *_a, **_kw: SimpleNamespace(passed=True))
+
+    def chunks(url, *_args):
+        yield raw if url.endswith("/manifest.json") else ASSETS[url.rsplit("/", 1)[-1]]
+
+    monkeypatch.setattr(channel, "_chunks", chunks)
+    settings = {"current_home": tmp_path / "home", "expected_version": "1.0.24"}
+    assert channel.stage_update(config, tmp_path, **settings)["version"] == "1.0.24"
+    private_boundary.stage(tmp_path)
+    recovered = channel.recover_update(config, tmp_path, **settings)
+    assert recovered["authenticity_checked"] and not recovered["install_permitted"]
+    private_boundary.stage(tmp_path)
+    with pytest.raises(channel.UpdateError, match="update-version-does-not-match"):
+        channel.recover_update(config, tmp_path, **{**settings, "expected_version": "1.0.25"})
+    private_boundary.stage(tmp_path)
+    with pytest.raises(channel.UpdateError, match="update-version-not-newer"):
+        channel.recover_update(config, tmp_path, current_home=settings["current_home"])
+
+
+@pytest.mark.parametrize("minimum", ["1.0.28", "1.0.9"])
+def test_v2_policy_accepts_the_exact_target_set_at_or_above_the_minimum(accepted_signature, minimum):
+    config = policy({**policy_data(), "schema": channel.POLICY_SCHEMA_V2, "minimum_version": minimum})
+    result = channel.authenticate_manifest(manifest_bytes(), config, now=NOW)
+    assert result.version == "1.0.28"
+    assert {row.target for row in result.artifacts} == set(config.settings["approved_targets"])
+
+
+def test_v1_policy_keeps_approved_targets_as_an_allowlist(accepted_signature):
+    data = manifest_data()
+    data["artifacts"].pop()
+    result = channel.authenticate_manifest(manifest_bytes(data), policy(), now=NOW)
+    assert [row.target for row in result.artifacts] == ["linux-x64"]
+
+
+@pytest.mark.parametrize("minimum", [None, 28, "", "v1.0.28", "1.0.028", "1.0.28-rc1"])
+def test_v2_policy_requires_a_canonical_minimum_version(minimum):
+    with pytest.raises(channel.UpdateError, match="^invalid-trust-policy$"):
+        policy({**policy_data(), "schema": channel.POLICY_SCHEMA_V2, "minimum_version": minimum})
+
+
+def test_policy_fields_are_exact_for_each_schema():
+    malformed = [
+        [policy_data()],
+        {**policy_data(), "schema": channel.POLICY_SCHEMA_V2},
+        {**policy_data(), "minimum_version": "1.0.28"},
+    ]
+    for data in malformed:
+        with pytest.raises(channel.UpdateError, match="^invalid-trust-policy$"):
+            policy(data)
 
 
 @pytest.mark.parametrize("stamp", ["2026-10-04T00:00:00Z", "2026-10-07T00:00:00Z",
@@ -255,7 +323,7 @@ class SyntheticPrivateGuard:
             self.events.append(("descriptor-exit", path.name))
 
     @contextmanager
-    def named_file(self, path, *, expected_identity=None):
+    def named_file(self, path, *, expected_identity=None, read_only=False):
         path, identity = self.checked_file(path)
         assert expected_identity is None or expected_identity == identity
         self.named[path.name] = self.named.get(path.name, 0) + 1
@@ -517,6 +585,42 @@ def test_recovery_reauthenticates_current_policy_before_journal_trust(monkeypatc
     assert reached == []
 
 
+@pytest.mark.parametrize("recover", [False, True], ids=["stage", "recover"])
+@pytest.mark.parametrize("failure", ["update-version-below-policy-minimum", "update-target-set-incomplete"])
+def test_stage_and_recovery_refuse_signed_v2_policy_violations(
+    monkeypatch, tmp_path, private_boundary, accepted_signature, recover, failure
+):
+    data = manifest_data()
+    minimum = "1.0.28"
+    if failure == "update-version-below-policy-minimum":
+        minimum = "1.0.29"
+    else:
+        data["artifacts"].pop()
+    raw = manifest_bytes(data)
+    config = policy({**policy_data(), "schema": channel.POLICY_SCHEMA_V2, "minimum_version": minimum})
+    if recover:
+        (tmp_path / staging.MANIFEST).write_bytes(raw)
+    private_boundary.stage(tmp_path)
+    monkeypatch.setattr(channel, "exclusive_file_lock", lambda path, **_kwargs: mock_lease(path))
+    real_authenticate = channel.authenticate_manifest
+    monkeypatch.setattr(channel, "authenticate_manifest", lambda body, trust: real_authenticate(body, trust, now=NOW))
+    requested = []
+
+    def chunks(url, *_args):
+        requested.append(url)
+        assert url == config.settings["manifest_url"]
+        yield raw
+
+    monkeypatch.setattr(channel, "_chunks", chunks)
+    monkeypatch.setattr(channel, "_transaction", lambda *_args, **_kwargs: pytest.fail("refused manifest reached staging"))
+    operation = channel.recover_update if recover else channel.stage_update
+    with pytest.raises(channel.UpdateError, match=f"^{failure}$"):
+        operation(config, tmp_path, current_home=tmp_path / "home")
+    assert len(accepted_signature) == 1
+    assert requested == ([] if recover else [config.settings["manifest_url"]])
+    assert {item.name: item.read_bytes() for item in tmp_path.iterdir()} == ({staging.MANIFEST: raw} if recover else {})
+
+
 def test_stage_closes_all_owned_generators_after_atomic_refusal(monkeypatch, tmp_path, accepted_signature, private_boundary):
     closed, raw = [], manifest_bytes()
     real_authenticate = channel.authenticate_manifest
@@ -553,35 +657,10 @@ def test_stage_closes_all_owned_generators_after_atomic_refusal(monkeypatch, tmp
     assert len(closed) == 3
 
 
-def cli_functions():
-    """Execute only actual parser/three new CLI functions under explicit mocks."""
-    source = (Path(channel.__file__).parent / "cli.py").read_text(encoding="utf-8")
-    tree = ast.parse(source)
-    wanted = {"build_parser", "_customizer_authenticated_stage", "cmd_customizer_update_stage",
-              "cmd_customizer_update_stage_recover"}
-    definitions = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in wanted]
-    assert {node.name for node in definitions} == wanted
-    names = {node.id for item in definitions for node in ast.walk(item)
-             if isinstance(node, ast.Name) and node.id.startswith("cmd_")}
-    namespace = {name: lambda _args: 0 for name in names}
-    namespace.update(__package__="remote_ops_workspace", argparse=argparse, json=json,
-                     Path=Path, __version__=channel.__version__,
-                     DEFAULT_PLUGIN_CHECK_HOST="unrelated-parser-mock.invalid",
-                     DEFAULT_PLUGIN_CHECK_USERNAME="unrelated-parser-mock",
-                     REQUIRED_POLICY_SURFACES=("unrelated-parser-mock",),
-                     SERVER_DEFAULT_PORTS={"unrelated-parser-mock": 1},
-                     SUPPORTED_IMPORT_FORMATS=("unrelated-parser-mock",),
-                     data_dir=lambda: Path("synthetic-row-home"))
-    import sys
-
-    namespace["sys"] = sys
-    exec(compile(ast.Module(body=definitions, type_ignores=[]), "bound-cli-functions", "exec"), namespace)
-    return namespace
-
-
 @pytest.mark.parametrize("recover", [False, True])
 def test_actual_new_cli_parser_and_handler_route_explicit_policy_without_install(monkeypatch, capsys, recover):
-    namespace, calls = cli_functions(), []
+    calls = []
+    monkeypatch.setattr(cli_customizer, "data_dir", lambda: Path("synthetic-row-home"))
     marker = object()
     monkeypatch.setattr(channel, "load_update_policy", lambda path: calls.append(("policy", path)) or marker)
 
@@ -590,24 +669,23 @@ def test_actual_new_cli_parser_and_handler_route_explicit_policy_without_install
         return {"phase": "authenticated-staged", "version": "1.0.28", "artifact_count": 2, "install_permitted": False}
 
     monkeypatch.setattr(channel, "recover_update" if recover else "stage_update", operation)
-    parser = namespace["build_parser"]()
     command = "update-stage-recover" if recover else "update-stage"
-    args = parser.parse_args(["customizer", command, "--policy", "explicit-policy.json", "--stage", "private-stage", "--json"])
-    assert args.func(args) == 0
+    assert cli.main([
+        "customizer", command, "--policy", "explicit-policy.json", "--stage", "private-stage", "--json",
+    ]) == 0
     assert calls == [("policy", Path("explicit-policy.json")),
                      ("operation", marker, Path("private-stage"), Path("synthetic-row-home"))]
     assert json.loads(capsys.readouterr().out)["install_permitted"] is False
 
 
 def test_actual_cli_input_error_does_not_print_secret_received_text(monkeypatch, capsys):
-    namespace = cli_functions()
-
     def refuse(_path):
         raise ValueError("SECRET URL AND KEY CONTENT")
 
     monkeypatch.setattr(channel, "load_update_policy", refuse)
-    args = SimpleNamespace(policy=Path("policy.json"), stage=Path("stage"), json=True)
-    assert namespace["cmd_customizer_update_stage"](args) == 1
+    assert cli.main([
+        "customizer", "update-stage", "--policy", "policy.json", "--stage", "stage", "--json",
+    ]) == 1
     output = capsys.readouterr()
     assert "SECRET" not in output.out + output.err
     assert json.loads(output.out) == {"phase": "refused", "refusal": "update-stage-input-refused", "install_permitted": False}
@@ -832,7 +910,10 @@ def test_stage_io_failure_is_fixed_refusal_and_retains_all_existing_evidence(tmp
     assert list(operation.root.iterdir()) == []
 
 
-def test_recovery_never_follows_asset_urls_and_keeps_outer_lease(tmp_path, monkeypatch, accepted_signature, private_boundary):
+@pytest.mark.parametrize("consumer", ["recovery", "refusal", "external-installation"])
+def test_recovery_never_follows_asset_urls_and_keeps_outer_lease(
+    tmp_path, monkeypatch, accepted_signature, private_boundary, consumer,
+):
     raw, held = manifest_bytes(), [0]
     manifest = channel.authenticate_manifest(raw, policy(), now=NOW)
     root = tmp_path / "stage"
@@ -864,5 +945,20 @@ def test_recovery_never_follows_asset_urls_and_keeps_outer_lease(tmp_path, monke
     monkeypatch.setattr(channel, "exclusive_file_lock", lease)
     monkeypatch.setattr(channel, "_chunks", no_download)
     monkeypatch.setattr(channel, "validate_professional_update_manifest", validate)
-    result = channel.recover_update(policy(), root, current_home=tmp_path / "home")
-    assert result["artifact_count"] == 2 and not result["install_permitted"] and held == [0]
+    if consumer == "refusal":
+        with pytest.raises(channel.UpdateError, match="^synthetic-consumer-refused$"):
+            with channel.verified_recovered_stage(policy(), root, current_home=tmp_path / "home") as observed:
+                assert observed[0] == root and observed[2]["authenticity_checked"] is True
+                assert held == [1] and set(guard.named) == {staging.JOURNAL, staging.MANIFEST, *ASSETS}
+                raise channel.UpdateError("synthetic-consumer-refused")
+    elif consumer == "external-installation":
+        with channel.verified_recovered_stage(
+            policy(), root, current_home=tmp_path / "home", check_consumer_deadline=False,
+        ) as (_, _, result):
+            assert result["authenticity_checked"] is True and held == [1]
+            assert set(guard.named) == {staging.JOURNAL, staging.MANIFEST, *ASSETS}
+            monkeypatch.setattr(channel, "_deadline", lambda _deadline: pytest.fail("stage deadline reapplied to installer"))
+    else:
+        result = channel.recover_update(policy(), root, current_home=tmp_path / "home")
+        assert result["artifact_count"] == 2 and not result["install_permitted"]
+    assert held == [0] and not guard.named

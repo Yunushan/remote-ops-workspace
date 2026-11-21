@@ -125,6 +125,69 @@ def _set_checked(control, checked: bool) -> None:
     control.blockSignals(False)
 
 
+def test_dock_projects_managed_ssh_state_and_defers_automatic_tools(connected_workspace, monkeypatch) -> None:
+    from remote_ops_workspace.gui_ssh_connection import SharedSshConnectionState
+
+    _app, window, panel, dock, profile = connected_workspace
+    pane = panel.terminal_pane
+    key = ssh_connection_key(profile)
+    assert key == dock.state.ssh_connection_key
+    socket_path = Path("/managed/control")
+    pending = SharedSshConnectionState(phase="authenticating", attempt=2)
+    old = SimpleNamespace(
+        ssh_connection_key=key, ssh_control_path="unused", is_running=lambda: False,
+        ssh_connection=SimpleNamespace(state=SharedSshConnectionState(phase="closed", attempt=1)),
+    )
+    connection = SimpleNamespace(state=pending)
+    real_lstat = Path.lstat
+
+    def lstat(path):
+        return SimpleNamespace(st_mode=stat.S_IFSOCK) if path == socket_path else real_lstat(path)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(pane, "ssh_connection_key", key)
+        patch.setattr(pane, "ssh_control_path", str(socket_path))
+        patch.setattr(pane, "ssh_connection", connection)
+        patch.setattr(pane, "is_running", lambda: True)
+        patch.setattr(window, "all_terminal_panes", lambda: [old, pane])
+        patch.setattr(Path, "lstat", lstat)
+        assert dock.shared_ssh_control_path() == ""
+        dock._apply_initial_background_state(start_runtime=False)
+        assert dock.property("mobaBackgroundSshWaitingForTerminalAuth") is True
+        assert dock.sftp_status_badge.property("sshConnectionState") == pending.properties()
+        assert "Waiting for authentication" in dock.sftp_status_badge.toolTip()
+
+        scheduled = []
+        patch.setattr(dock, "schedule_background_state_activation", lambda: scheduled.append(True))
+        window.refresh_moba_shared_ssh_state(pane, pending)
+        assert scheduled == []
+
+        ready = replace(pending, phase="connected")
+        connection.state = ready
+        window.refresh_moba_shared_ssh_state(SimpleNamespace(ssh_connection_key="different"), ready)
+        assert scheduled == []
+        window.refresh_moba_shared_ssh_state(pane, ready)
+        assert scheduled == [True]
+        assert dock.shared_ssh_control_path() == str(socket_path)
+        status = dock.monitoring_control_widgets["remote-monitoring"]
+        assert status.property("sshConnectionState") == ready.properties()
+        assert "Authenticated" in status.toolTip()
+
+        connection.state = replace(ready, phase="closing", disconnect_reason="operator-stop")
+        window.refresh_moba_shared_ssh_state(pane, connection.state)
+        assert scheduled == [True, True]
+        assert dock.shared_ssh_control_path() == ""
+        _set_checked(status, True)
+        dock.request_remote_monitoring_refresh()
+        assert dock.property("mobaRemoteMonitoringRuntimeState") == "auth-required"
+        dock.request_sftp_refresh(reason="path-change")
+        assert dock.property("mobaSftpRuntimeState") == "auth-required"
+        connection.state = replace(connection.state, phase="closed")
+        assert dock.sync_shared_ssh_connection() == connection.state
+        patch.setattr(dock, "sftp_status_badge", None)
+        assert dock.sync_shared_ssh_connection() == connection.state
+
+
 def test_connected_dock_refuses_an_edited_ssh_identity(connected_workspace, monkeypatch) -> None:
     _app, window, _panel, dock, profile = connected_workspace
     relabeled = replace(profile, description="Updated description")
@@ -144,11 +207,11 @@ def test_connected_session_falls_back_when_browser_preferences_are_corrupt(
     connected_workspace,
     monkeypatch,
 ) -> None:
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_moba_sessions
 
     _app, window, _panel, _dock, profile = connected_workspace
     monkeypatch.setattr(
-        gui,
+        gui_moba_sessions,
         "load_moba_ssh_browser_preferences",
         lambda: (_ for _ in ()).throw(ValueError("corrupt browser preferences")),
     )
@@ -171,7 +234,7 @@ def test_monitoring_stale_completion_and_absent_sftp_status_widgets(
     from PyQt6.QtGui import QMouseEvent
     from PyQt6.QtWidgets import QLabel
 
-    from remote_ops_workspace import gui_connected
+    from remote_ops_workspace import gui_remote_monitoring
 
     _app, window, _panel, dock, _profile = connected_workspace
     runtime_calls: list[tuple[bool, bool]] = []
@@ -192,7 +255,7 @@ def test_monitoring_stale_completion_and_absent_sftp_status_widgets(
 
     snapshot = object()
     monkeypatch.setattr(dock, "remote_monitoring_request_is_current", lambda: True)
-    monkeypatch.setattr(gui_connected, "parse_remote_monitoring_output", lambda _output: snapshot)
+    monkeypatch.setattr(gui_remote_monitoring, "parse_remote_monitoring_output", lambda _output: snapshot)
     monkeypatch.setattr(dock, "apply_live_remote_monitoring_snapshot", lambda value: value is snapshot)
     original_last_refresh_label = dock.monitoring_last_refresh_label
     dock.monitoring_last_refresh_label = None
@@ -227,6 +290,48 @@ def test_monitoring_stale_completion_and_absent_sftp_status_widgets(
         Qt.KeyboardModifier.NoModifier,
     )
     label.mouseReleaseEvent(event)
+
+
+def test_manual_sftp_browsing_preserves_each_tabs_listing_without_follow(connected_workspace, monkeypatch):
+    from remote_ops_workspace.file_transfer import build_sftp_list_plan
+    from remote_ops_workspace.moba_connected import RemoteFileEntry
+
+    app, window, first_panel, first_dock, profile = connected_workspace
+    _set_checked(first_dock.monitoring_control_widgets["follow-terminal-folder"], False)
+    requests = []
+    monkeypatch.setattr(first_dock, "request_sftp_refresh", lambda *, reason: requests.append(reason))
+    entries = (RemoteFileEntry("original.txt", "file", 1, ""),)
+    first_dock.apply_live_sftp_entries(entries, request_path="/", plan=build_sftp_list_plan(profile, "/"))
+    assert first_dock.file_table.topLevelItem(1).text(0) == "original.txt"
+    assert first_dock.navigate_moba_sftp_path("/logs")
+    assert first_dock.file_table.topLevelItemCount() == 0
+    assert first_dock.selected_sftp_item() is None
+    assert requests == ["path-change"]
+    first_dock.apply_live_sftp_entries(
+        (RemoteFileEntry("system.log", "file", 2, ""),), request_path="/logs", plan=build_sftp_list_plan(profile, "/logs")
+    )
+    assert first_panel.moba_connected_state.remote_path == "/logs"
+    second_panel = window.open_moba_connected_session_tab(
+        profile, TerminalPanePlan(title="another session", command=[], source="test"), remote_path="/other"
+    )
+    second_dock = window.moba_connected_dock
+    assert second_dock is not first_dock
+    second_dock.apply_live_remote_monitoring_snapshot(second_dock.state.monitoring)
+    assert second_panel.moba_connected_state.remote_path == "/other"
+    assert first_panel.moba_connected_state.remote_path == "/logs"
+    window.tabs.setCurrentWidget(first_panel)
+    app.processEvents()
+    restored = window.moba_connected_dock
+    assert restored.active_remote_path == "/logs"
+    assert restored.file_table.topLevelItem(1).text(0) == "system.log"
+    standalone = type(restored)(second_panel.state)
+    try:
+        standalone.apply_live_sftp_entries(entries, request_path="/other", plan=build_sftp_list_plan(profile, "/other"))
+        assert standalone.file_table.topLevelItem(1).text(0) == "original.txt"
+        assert second_panel.state.file_entries == ()
+    finally:
+        standalone.shutdown_runtime()
+        standalone.deleteLater()
 
 
 def test_live_monitoring_rebuilds_the_bottom_bar_for_extended_metrics(
@@ -414,37 +519,46 @@ def test_background_authentication_and_prompt_submission_edges(
     dock._clear_background_password()
     monitoring = _FakeProcess(running=True, write_result=0)
     sftp = _FakeProcess(running=True)
+    sftp.is_pty = True
     dock.monitoring_process = monitoring
     dock.sftp_refresh_process = sftp
     dock._submit_background_password_if_prompt("monitoring", b"password: ")
     dock._background_password = bytearray(b"pw")
     dock._submit_background_password_if_prompt("unknown", b"password: ")
-    dock._background_auth_password_sent["monitoring"] = True
+    dock._background_auth_prompt_complete["monitoring"] = True
     dock._submit_background_password_if_prompt("monitoring", b"password: ")
-    dock._background_auth_password_sent["monitoring"] = False
+    dock._background_auth_prompt_complete["monitoring"] = False
     dock._submit_background_password_if_prompt("monitoring", b"ordinary output")
     dock._submit_background_password_if_prompt("monitoring", b"password: ")
-    assert dock._background_auth_password_sent["monitoring"] is False
+    assert dock._background_auth_prompt_complete["monitoring"] is False
     monitoring.write_result = None
     dock._submit_background_password_if_prompt(
         "monitoring",
         b"operator@dock-edge.example.invalid's password: ",
     )
-    assert dock._background_auth_password_sent["monitoring"] is True
+    assert dock._background_auth_prompt_complete["monitoring"] is True
 
     forced_batches: list[bool] = []
     dock.write_sftp_refresh_batch = lambda *, force=False: forced_batches.append(force)
-    dock._background_auth_password_sent["sftp"] = False
+    dock._background_auth_prompt_complete["sftp"] = False
     dock._submit_background_password_if_prompt("sftp", b"Passphrase for key: ")
     app.processEvents()
-    assert dock._background_auth_password_sent["sftp"] is False
+    assert dock._background_auth_prompt_complete["sftp"] is False
     assert forced_batches == []
     dock._submit_background_password_if_prompt(
         "sftp",
-        b"operator@dock-edge.example.invalid's password: ",
+        b"\x1b[?25loperator@different.example.invalid's password:\x1b[1C\x1b[?25h",
     )
+    assert sftp.written == b""
+    dock._submit_background_password_if_prompt(
+        "sftp",
+        b"\x1b[?25loperator@dock-edge.example.invalid's password:\x1b[1C\x1b]0;OpenSSH",
+    )
+    assert sftp.written == b""
+    dock._submit_background_password_if_prompt("sftp", b"\x07\x1b[?25h")
     app.processEvents()
-    assert dock._background_auth_password_sent["sftp"] is True
+    assert sftp.written == b"pw\n"
+    assert dock._background_auth_prompt_complete["sftp"] is True
     assert forced_batches == [True]
 
     dock.profile_for_sftp_action = lambda: replace(vault_profile, host="a")
@@ -475,12 +589,12 @@ def test_background_authentication_and_prompt_submission_edges(
         vault_profile,
         options={"proxy_jump": "bastion.example.invalid"},
     )
-    dock._background_auth_password_sent["sftp"] = False
+    dock._background_auth_prompt_complete["sftp"] = False
     dock._submit_background_password_if_prompt(
         "sftp",
         b"operator@dock-edge.example.invalid's password: ",
     )
-    assert dock._background_auth_password_sent["sftp"] is False
+    assert dock._background_auth_prompt_complete["sftp"] is False
     assert monitoring.state() == QProcess.ProcessState.Running
 
 
@@ -498,7 +612,7 @@ def test_background_password_submission_handles_rejected_write_and_missing_profi
 
     dock.profile_for_sftp_action = lambda: profile
     dock._background_password = bytearray(b"pw")
-    dock._background_auth_password_sent["monitoring"] = False
+    dock._background_auth_prompt_complete["monitoring"] = False
     process = _FakeProcess(running=True, write_result=0)
     dock.monitoring_process = process
     dock._submit_background_password_if_prompt(
@@ -506,7 +620,37 @@ def test_background_password_submission_handles_rejected_write_and_missing_profi
         b"operator@dock-edge.example.invalid's password: ",
     )
     assert process.written == b"pw\r"
-    assert dock._background_auth_password_sent["monitoring"] is False
+    assert dock._background_auth_prompt_complete["monitoring"] is False
+
+
+def test_saved_smartcard_waits_for_shared_socket_before_background_sftp(connected_workspace, monkeypatch):
+    from dataclasses import replace
+
+    from remote_ops_workspace import gui_connected
+    from remote_ops_workspace.smartcard_keys import PINNED_SMARTCARD_KEY
+
+    _app, _window, _panel, dock, profile = connected_workspace
+    pinned = replace(profile, options={PINNED_SMARTCARD_KEY: "selected", "identity_agent": "/tmp/agent.sock"})
+    monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: pinned)
+    monkeypatch.setattr(dock, "shared_ssh_control_path", lambda: "")
+    monkeypatch.setattr(gui_connected, "ssh_control_path_for_profile", lambda _profile: "/tmp/future-socket")
+    assert "waiting for the terminal" in dock.background_ssh_auth_detail()
+    assert not dock.authenticate_background_tools()
+    refreshed = []
+    monkeypatch.setattr(dock, "request_sftp_refresh", lambda **_kwargs: refreshed.append(True))
+    dock.activate_initial_background_state()
+    assert not refreshed and dock.background_auth_retry_timer.isActive()
+    dock.background_auth_retry_timer.stop()
+    monkeypatch.setattr(dock, "shared_ssh_control_path", lambda: "/tmp/live-socket")
+    dock.retry_background_authentication()
+    assert refreshed == [True]
+    monkeypatch.setattr(dock, "shared_ssh_control_path", lambda: "")
+    monkeypatch.setattr(gui_connected, "ssh_control_path_for_profile", lambda _profile: "")
+    assert dock.background_ssh_auth_capability(pinned)[0]
+    no_agent = replace(pinned, options={**pinned.options, "identity_agent": "none"})
+    assert not dock.background_ssh_auth_capability(no_agent)[0]
+    invalid = replace(pinned, options={PINNED_SMARTCARD_KEY: "selected", "add_smartcard_to_mobagent": "invalid"})
+    assert "must be true or false" in dock.background_ssh_auth_capability(invalid)[1]
 
 
 def test_background_auth_capability_gate_and_retry_edges(
@@ -705,6 +849,8 @@ def test_sftp_navigation_widget_contract_and_reconnect_guards(
     original_table = dock.file_table
     original_queue = dock.sftp_transfer_queue
     _set_checked(dock.monitoring_control_widgets["follow-terminal-folder"], False)
+    requested = []
+    monkeypatch.setattr(dock, "request_sftp_refresh", lambda *, reason: requested.append(reason))
 
     monkeypatch.setattr(gui_connected, "normalise_remote_path", lambda _path: "relative/path")
     dock.browser = None
@@ -729,6 +875,7 @@ def test_sftp_navigation_widget_contract_and_reconnect_guards(
     dock.file_table = _SparseTable()
     del dock.sftp_transfer_queue
     assert dock.navigate_moba_sftp_path("/sparse") is True
+    assert requested == ["path-change", "path-change"]
     dock.file_table = original_table
     dock.sftp_transfer_queue = original_queue
 
@@ -759,7 +906,7 @@ def test_monitoring_refresh_generation_and_snapshot_edges(
 ) -> None:
     from PyQt6.QtCore import QProcess
 
-    from remote_ops_workspace import gui_connected
+    from remote_ops_workspace import gui_remote_monitoring
 
     _app, window, panel, dock, _profile = connected_workspace
     control = dock.monitoring_control_widgets["remote-monitoring"]
@@ -814,7 +961,7 @@ def test_monitoring_refresh_generation_and_snapshot_edges(
 
     retries: list[str] = []
     dock.schedule_background_auth_retry = lambda: retries.append("retry")
-    monkeypatch.setattr(gui_connected, "parse_remote_monitoring_output", lambda _output: None)
+    monkeypatch.setattr(gui_remote_monitoring, "parse_remote_monitoring_output", lambda _output: None)
     dock.shared_ssh_control_path = lambda: ""
     process.output = b"Permission denied (password).\n"
     dock.monitoring_output_buffer.clear()
@@ -829,7 +976,7 @@ def test_monitoring_refresh_generation_and_snapshot_edges(
     assert retries == ["retry", "retry"]
 
     snapshot = dock.state.monitoring
-    monkeypatch.setattr(gui_connected, "parse_remote_monitoring_output", lambda _output: snapshot)
+    monkeypatch.setattr(gui_remote_monitoring, "parse_remote_monitoring_output", lambda _output: snapshot)
     dock.apply_live_remote_monitoring_snapshot = lambda _snapshot: False
     process.output = b"valid"
     dock.monitoring_output_buffer.clear()
@@ -1280,6 +1427,20 @@ def test_sftp_refresh_and_transfer_workflow_edges(
     dock.write_sftp_refresh_batch(force=True)
     assert process.close_write_calls >= 2
 
+    process.is_pty = True
+    process.written = b""
+    previous_closes = process.close_write_calls
+    dock.write_sftp_refresh_batch(force=True)
+    assert process.written == saved_plan.batch_input().replace("\n", "\r").encode("utf-8") + b"quit\r"
+    assert process.close_write_calls == previous_closes
+    dock._clear_background_password()
+    dock._background_password = bytearray(b"pw")
+    dock._submit_background_password_if_prompt(
+        "sftp", b"operator@dock-edge.example.invalid's password: ",
+    )
+    assert process.written.endswith(b"quit\r")
+    dock._clear_background_password()
+
     pending_calls: list[str] = []
     dock.schedule_pending_sftp_refresh = lambda: pending_calls.append("pending")
     dock.sftp_refresh_request_is_current = lambda: False
@@ -1301,7 +1462,7 @@ def test_sftp_refresh_and_transfer_workflow_edges(
     assert "Waiting for terminal SSH authentication" in window.statusBar().currentMessage()
 
     applied: list[tuple[list[object], str]] = []
-    monkeypatch.setattr(gui_connected, "parse_sftp_ls_output", lambda _output: [])
+    monkeypatch.setattr(gui_connected, "parse_sftp_ls_output", lambda _output, *, directory: [])
     dock.filtered_sftp_entries = lambda entries: list(entries)
     dock.apply_live_sftp_entries = (
         lambda entries, *, request_path, plan: applied.append(
@@ -1461,7 +1622,7 @@ def test_connected_text_editor_open_dirty_save_diff_and_path_edges(
     from PyQt6.QtCore import Qt
     from PyQt6.QtWidgets import QMessageBox, QTreeWidgetItem
 
-    from remote_ops_workspace import gui_connected
+    from remote_ops_workspace import gui_sftp_editor
     from remote_ops_workspace.moba_text import build_moba_text_editor_tab_plan
 
     _app, _window, _panel, dock, profile = connected_workspace
@@ -1472,7 +1633,7 @@ def test_connected_text_editor_open_dirty_save_diff_and_path_edges(
         local_path=cache_path,
     )
     monkeypatch.setattr(
-        gui_connected,
+        gui_sftp_editor,
         "build_moba_text_editor_tab_plan",
         lambda *_args, **_kwargs: plan,
     )
@@ -1545,6 +1706,15 @@ def test_connected_text_editor_open_dirty_save_diff_and_path_edges(
     assert len(started) == started_before_cancelled_open
     assert dock.text_editor_remote_path == "/etc/service.conf"
     assert editor.toPlainText() == "line one\nline two\nunsaved replacement\n"
+
+    def invalidate_open_review(_dialog):
+        dock.cancel_text_editor_sftp_operation()
+        return QMessageBox.StandardButton.Yes
+
+    monkeypatch.setattr(QMessageBox, "exec", invalidate_open_review)
+    dock.handle_moba_text_editor_open_from_item(another_item, 0)
+    assert len(started) == started_before_cancelled_open
+    assert dock.text_editor_remote_path == "/etc/service.conf"
 
     editor.setPlainText("line one\nline two\nline three\n")
     dock.handle_moba_text_editor_changed()
@@ -1674,10 +1844,12 @@ def test_connected_text_editor_refuses_binary_content_and_cleans_probe(
     assert not Path(probe_path).exists()
 
 
+@pytest.mark.parametrize("is_pty", [False, True])
 def test_connected_text_editor_transfer_uses_async_sftp_batch(
     connected_workspace,
     monkeypatch,
     tmp_path,
+    is_pty,
 ) -> None:
     from PyQt6.QtCore import QProcess
 
@@ -1691,6 +1863,7 @@ def test_connected_text_editor_transfer_uses_async_sftp_batch(
         allow_overwrite=True,
     )
     process = _FakeProcess()
+    process.is_pty = is_pty
     dock.text_editor_process = process
     dock.text_editor_remote_path = "/etc/service.conf"
     dock.text_editor_local_path = str(tmp_path / "service.conf.edit")
@@ -1703,8 +1876,12 @@ def test_connected_text_editor_transfer_uses_async_sftp_batch(
     assert dock.text_editor_active_generation != 0
 
     dock.write_text_editor_sftp_batch()
-    assert process.written == plan.batch_input().encode("utf-8")
-    assert process.close_write_calls == 1
+    if is_pty:
+        assert process.written == plan.batch_input().replace("\n", "\r").encode("utf-8") + b"quit\r"
+        assert process.close_write_calls == 0
+    else:
+        assert process.written == plan.batch_input().encode("utf-8")
+        assert process.close_write_calls == 1
 
     dock.cancel_text_editor_sftp_operation()
     assert dock.text_editor_active_generation == 0
@@ -2337,7 +2514,7 @@ def test_connected_terminal_traversal_and_text_editor_guard_edges(
     from PyQt6.QtGui import QKeyEvent
     from PyQt6.QtWidgets import QApplication, QMessageBox, QTreeWidgetItem
 
-    from remote_ops_workspace import gui_connected
+    from remote_ops_workspace import gui_sftp_editor
     from remote_ops_workspace.moba_text import build_moba_text_editor_tab_plan
 
     app, window, panel, dock, profile = connected_workspace
@@ -2382,7 +2559,7 @@ def test_connected_terminal_traversal_and_text_editor_guard_edges(
 
     monkeypatch.setattr(pane, "is_running", lambda: True)
     sent: list[bytes] = []
-    monkeypatch.setattr(pane, "send_raw_input", sent.append)
+    monkeypatch.setattr(pane, "send_raw_input", lambda payload, **_kwargs: sent.append(payload))
     pane.terminal_emulator.feed("\x1b[?2004h")
     pane.paste_text_to_terminal("first\nsecond", gesture="test")
     assert sent == [b"\x1b[200~first\nsecond\x1b[201~"]
@@ -2420,11 +2597,11 @@ def test_connected_terminal_traversal_and_text_editor_guard_edges(
     def reject_plan(*_args, **_kwargs):
         raise ValueError("invalid editor plan")
 
-    monkeypatch.setattr(gui_connected, "build_moba_text_editor_tab_plan", reject_plan)
+    monkeypatch.setattr(gui_sftp_editor, "build_moba_text_editor_tab_plan", reject_plan)
     dock.handle_moba_text_editor_open_from_item(item, 0)
     assert "invalid editor plan" in window.statusBar().currentMessage()
 
-    monkeypatch.setattr(gui_connected, "build_moba_text_editor_tab_plan", lambda *_args, **_kwargs: plan)
+    monkeypatch.setattr(gui_sftp_editor, "build_moba_text_editor_tab_plan", lambda *_args, **_kwargs: plan)
     monkeypatch.setattr(dock, "ensure_background_authentication_for_request", lambda: True)
     started: list[str] = []
     monkeypatch.setattr(
@@ -2465,7 +2642,7 @@ def test_connected_terminal_traversal_and_text_editor_guard_edges(
     monkeypatch.setattr(dock, "ensure_background_authentication_for_request", lambda: False)
     dock.handle_moba_text_editor_save()
     monkeypatch.setattr(dock, "ensure_background_authentication_for_request", lambda: True)
-    monkeypatch.setattr(gui_connected, "build_sftp_get_plan", reject_plan)
+    monkeypatch.setattr(gui_sftp_editor, "build_sftp_get_plan", reject_plan)
     dock.handle_moba_text_editor_save()
     editor.setProperty("mobaTextEditorContentLoaded", False)
     dock.handle_moba_text_editor_diff()
@@ -2483,7 +2660,7 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
     from PyQt6.QtCore import QProcess
     from PyQt6.QtWidgets import QMessageBox
 
-    from remote_ops_workspace import gui_connected
+    from remote_ops_workspace import gui_sftp_editor
     from remote_ops_workspace.file_transfer import build_sftp_get_plan
     from remote_ops_workspace.moba_text import build_moba_text_editor_tab_plan
 
@@ -2570,7 +2747,7 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
     dock.text_editor_process = auth_process
     monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: profile)
     dock._background_password = bytearray(b"session-password")
-    dock._background_auth_password_sent["text-editor"] = False
+    dock._background_auth_prompt_complete["text-editor"] = False
     forced_batches: list[bool] = []
     monkeypatch.setattr(
         dock,
@@ -2584,7 +2761,7 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
     app.processEvents()
     assert forced_batches == [True]
     dock.text_editor_process = None
-    dock._background_auth_password_sent["text-editor"] = False
+    dock._background_auth_prompt_complete["text-editor"] = False
     dock._submit_background_password_if_prompt(
         "text-editor",
         b"operator@dock-edge.example.invalid's password: ",
@@ -2706,7 +2883,7 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
     dock.text_editor_cache_sha256 = dock.text_editor_file_sha256(cache_path)
     dock.text_editor_original_remote_sha256 = "old-digest"
     conflict_probe = tmp_path / "conflict.remote-check"
-    conflict_probe.write_text("remote\n", encoding="utf-8")
+    conflict_probe.write_bytes(b"remote\n")
     dock.text_editor_probe_path = str(conflict_probe)
     dock.text_editor_tab_plan = tab_plan
     monkeypatch.setattr(
@@ -2715,7 +2892,7 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
         lambda _self: QMessageBox.StandardButton.Yes,
     )
     monkeypatch.setattr(
-        gui_connected,
+        gui_sftp_editor,
         "write_text_document",
         lambda *_args, **_kwargs: SimpleNamespace(new_sha256="new-cache-digest"),
     )
@@ -2726,7 +2903,30 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
         lambda operation, _plan: upload_calls.append(operation) or True,
     )
     real_finish_text_editor_save_check(dock)
-    assert upload_calls == ["upload"]
+    assert upload_calls == ["save-check"]
+    Path(dock.text_editor_probe_path).write_bytes(b"remote\n")
+    real_finish_text_editor_save_check(dock)
+    assert upload_calls == ["save-check", "upload"]
+
+    def changed_during_review(_dialog):
+        dock.handle_moba_text_editor_save()
+        dock.cancel_text_editor_sftp_operation()
+        return QMessageBox.StandardButton.Yes
+
+    monkeypatch.setattr(QMessageBox, "exec", changed_during_review)
+    conflict_probe.write_bytes(b"later revision\n")
+    dock.text_editor_probe_path = str(conflict_probe)
+    real_finish_text_editor_save_check(dock)
+    assert upload_calls == ["save-check", "upload"]
+    assert dock.text_editor_approved_remote_sha256 == ""
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(dock, "profile_for_sftp_action", lambda: None)
+        scoped.setattr(QMessageBox, "exec", lambda _dialog: QMessageBox.StandardButton.Yes)
+        conflict_probe.write_bytes(b"another revision\n")
+        dock.text_editor_probe_path = str(conflict_probe)
+        real_finish_text_editor_save_check(dock)
+        assert "connected profile changed during review" in window.statusBar().currentMessage()
 
     clean_probe = tmp_path / "clean.remote-check"
     clean_probe.write_bytes(cache_path.read_bytes())
@@ -2738,7 +2938,7 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
     def reject_cache(*_args, **_kwargs):
         raise OSError("cache unavailable")
 
-    monkeypatch.setattr(gui_connected, "write_text_document", reject_cache)
+    monkeypatch.setattr(gui_sftp_editor, "write_text_document", reject_cache)
     real_finish_text_editor_save_check(dock)
     assert dock.text_editor.property("mobaTextEditorStatus") == "error"
 
@@ -2747,7 +2947,7 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
     dock.text_editor_probe_path = str(no_plan_probe)
     dock.text_editor_original_remote_sha256 = digest
     monkeypatch.setattr(
-        gui_connected,
+        gui_sftp_editor,
         "write_text_document",
         lambda *_args, **_kwargs: SimpleNamespace(new_sha256="updated-cache-digest"),
     )

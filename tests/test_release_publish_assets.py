@@ -12,6 +12,8 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+import pytest
+
 from remote_ops_workspace import __version__
 
 CURRENT_TAG = f"v{__version__}"
@@ -197,6 +199,46 @@ def test_native_manifest_signing_metadata_requires_production_truth(tmp_path: Pa
     )
 
     assert "signing.timestamped must be True" in errors[0]
+
+
+@pytest.mark.parametrize("change", [None, "missing", "other name", "duplicate id", "artifact changed", "other digest"])
+def test_current_macos_manifests_require_receipts_for_both_stapled_assets(tmp_path: Path, change: str | None) -> None:
+    checker = _load_checker()
+    base = "remote-ops-workspace-v1.0.28-macos-arm64"
+    manifest = tmp_path / f"{base}-native-manifest.json"
+    rows = []
+    for index, extension in enumerate(("dmg", "pkg")):
+        artifact = tmp_path / f"{base}.{extension}"
+        artifact.write_bytes(f"verified stapled {extension}".encode())
+        sha256 = checker.sha256_file(artifact)
+        rows.append({
+            "format": extension, "file": f"native-dist/macos/{artifact.name}", "sha256": sha256,
+            "signing": {
+                "release_channel": "production-signed", "production_trusted": True,
+                "developer_id_verified": True, "notarized": True, "stapled": True,
+            },
+            "notarization": {
+                "archive": artifact.name, "status": "Accepted", "submitted_sha256": "1" * 64,
+                "stapled_sha256": sha256, "submission_id": f"22a164ab-54fb-4b39-a349-094d70c323b{index}",
+            },
+        })
+    if change == "missing":
+        del rows[0]["notarization"]
+    elif change == "other name":
+        rows[0]["notarization"]["archive"] = rows[1]["notarization"]["archive"]
+    elif change == "duplicate id":
+        rows[0]["notarization"]["submission_id"] = rows[1]["notarization"]["submission_id"]
+    elif change == "artifact changed":
+        (tmp_path / f"{base}.dmg").write_bytes(b"changed after verification")
+    elif change == "other digest":
+        rows[0]["notarization"]["stapled_sha256"] = "2" * 64
+    manifest.write_text(json.dumps(rows), encoding="utf-8")
+    errors = checker.check_native_release_signing_metadata(
+        tmp_path, {manifest.name}, native_release_channel="production-signed",
+    )
+    assert bool(errors) == bool(change), errors
+    if change:
+        assert any("notarization" in error or "stapled SHA-256" in error for error in errors)
 
 
 def test_expected_release_assets_expand_default_matrix() -> None:

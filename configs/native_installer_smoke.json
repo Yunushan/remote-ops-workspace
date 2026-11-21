@@ -68,9 +68,9 @@
           "format": "pkg",
           "artifact_glob": "remote-ops-workspace-v*-macos-*.pkg",
           "lifecycle": {
-            "install": "sudo installer -pkg <artifact> -target /",
-            "verify": "installed /Applications/Remote Ops Workspace.app passes codesign verification, platforms --json consumes the packaged catalog, and gui --smoke-json proves bounded frozen Cocoa GUI startup, persisted profile selection and painted screenshot digest",
-            "upgrade": "sudo installer -pkg <artifact> -target / over the installed package, reverify its signature, and rerun its executable with platforms --json",
+            "install": "check expanded PKG component identity, root location, and app-scoped BOM, then run sudo installer -pkg <artifact> -target /",
+            "verify": "root-volume receipt identity and app paths match the PKG, installed /Applications/Remote Ops Workspace.app passes codesign verification, platforms --json consumes the packaged catalog, and gui --smoke-json proves bounded frozen Cocoa GUI startup, persisted profile selection and painted screenshot digest",
+            "upgrade": "sudo installer -pkg <artifact> -target / over the installed package, recheck the receipt identity and app paths, reverify its signature, and rerun its executable with platforms --json",
             "uninstall": "remove /Applications/Remote Ops Workspace.app and forget the package receipt"
           }
         }

@@ -188,6 +188,8 @@ def check_coverage_job(workflow: str) -> list[str]:
         "--cov-report=json:artifacts/coverage/coverage.json": "JSON coverage evidence",
         "python scripts/check_coverage_report.py": "aggregate and branch report validator",
         "--report artifacts/coverage/coverage.json": "validated JSON coverage report",
+        "          --report artifacts/coverage/coverage.json\n"
+        "          --source-root src/remote_ops_workspace\n": "complete product module coverage inventory",
         "if: ${{ always() }}": "coverage evidence upload after pass or failure",
         "name: python-branch-aware-coverage": "dedicated coverage artifact name",
         "path: artifacts/coverage/": "dedicated coverage artifact path",

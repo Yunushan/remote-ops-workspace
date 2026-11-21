@@ -846,7 +846,7 @@
           "id": "moba.titlebar-chrome",
           "description": "MobaXterm-style top titlebar uses shared static/live metadata for connected-session title text, generated app mark, compact window controls and titlebar geometry without copying proprietary assets.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaTitlebarChrome",
               "GUI_DESIGN_MOBA_TITLEBAR_CHROME",
               "gui_design_moba_titlebar_chrome"
@@ -856,7 +856,7 @@
               "draw_moba_titlebar_icon",
               "draw_moba_titlebar_control"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "apply_moba_titlebar_chrome",
               "mobaTitlebarTitle",
               "mobaTitlebarControlKeys"
@@ -879,7 +879,7 @@
           "id": "moba.top-stack-geometry",
           "description": "MobaXterm-style top chrome stack pins the titlebar, menu row, ribbon, Quick Connect strip, connected tab strip, terminal content start and left-dock offsets to one shared static/live geometry contract.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaTopStackGeometry",
               "GUI_DESIGN_MOBA_TOP_STACK_GEOMETRY",
               "gui_design_moba_top_stack_geometry"
@@ -889,7 +889,7 @@
               "top_stack.ribbon_y",
               "top_stack.left_dock_y"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "apply_moba_top_stack_geometry",
               "mobaTopStackRibbonHeight",
               "mobaTopStackQuickConnectY"
@@ -914,7 +914,7 @@
           "id": "moba.top-menu-chrome",
           "description": "MobaXterm-style top menu row uses shared static/live metadata for Terminal, Sessions, View, X server, Tools, Games, Settings, Macros and Help, with stable keys and primary actions.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaTopMenuItem",
               "GUI_DESIGN_MOBA_TOP_MENU_ITEMS",
               "gui_design_moba_top_menu_items"
@@ -924,10 +924,11 @@
               "item.label"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "add_moba_top_menu",
-              "gui_design_moba_top_menu_items"
+              "self.build_menu_bar()"
             ],
             "src/remote_ops_workspace/gui_menus.py": [
+              "menu, menu_action = add_moba_top_menu(",
+              "for moba_item in gui_design_moba_top_menu_items()",
               "mobaTopMenuKey",
               "mobaTopMenuLabel"
             ],
@@ -945,7 +946,7 @@
           "id": "moba.top-menu-geometry",
           "description": "MobaXterm-style top menu row pins each menu label x offset, width, y offset, font size and gap through shared static/live geometry metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaTopMenuGeometry",
               "GUI_DESIGN_MOBA_TOP_MENU_GEOMETRY",
               "gui_design_moba_top_menu_geometry_for"
@@ -981,16 +982,16 @@
               "gui_design_moba_ribbon_actions",
               "gui_design_moba_ribbon_edge_actions"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "build_moba_ribbon_buttons",
-              "gui_design_moba_ribbon_edge_actions",
-              "mobaXServerAction",
-              "mobaExitAction"
-            ],
             "configs/gui_visual_metrics.json": [
               "ribbon-right-actions",
               "ribbon-xserver-action",
               "ribbon-exit-action"
+            ],
+            "src/remote_ops_workspace/gui_toolbars.py": [
+              "build_moba_ribbon_buttons",
+              "gui_design_moba_ribbon_edge_actions",
+              "mobaXServerAction",
+              "mobaExitAction"
             ]
           }
         },
@@ -998,7 +999,7 @@
           "id": "moba.ribbon-edge-action-route",
           "description": "MobaXterm-style far-right ribbon edge actions tie the X server and Exit buttons to stable route metadata, generated icons, toolbar placement and live workflow handlers.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaRibbonEdgeActionRoute",
               "GUI_DESIGN_MOBA_RIBBON_EDGE_ACTION_ROUTE",
               "gui_design_moba_ribbon_edge_action_route"
@@ -1008,11 +1009,6 @@
               "moba_ribbon_edge_action_route",
               "xserver_dialog_detail"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "apply_moba_ribbon_edge_action_route",
-              "mobaRibbonEdgeRouteKey",
-              "mobaRibbonEdgeRouteHandler"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_RIBBON_EDGE_ACTION_ROUTE",
               "ribbon-edge-action-route",
@@ -1020,6 +1016,11 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style ribbon edge action route"
+            ],
+            "src/remote_ops_workspace/gui_toolbars.py": [
+              "apply_moba_ribbon_edge_action_route",
+              "mobaRibbonEdgeRouteKey",
+              "mobaRibbonEdgeRouteHandler"
             ]
           }
         },
@@ -1027,7 +1028,7 @@
           "id": "moba.ribbon-pictograms",
           "description": "Static and live MobaXterm-style ribbons use independent drawn pictograms for session, servers, tools, games, sessions, split, multiexec, tunneling, packages, settings, help, X server and exit instead of letter placeholders or copied product assets.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GUI_DESIGN_MOBA_RIBBON_ACTIONS",
               "GuiMobaRibbonAction",
               "gui_design_moba_ribbon_actions"
@@ -1039,10 +1040,14 @@
               "\"exit\""
             ],
             "src/remote_ops_workspace/gui.py": [
-              "moba_ribbon_icon",
-              "draw_moba_ribbon_icon",
-              "mobaIconKey",
-              "gui_design_moba_ribbon_actions"
+              "moba_ribbon_icon"
+            ],
+            "src/remote_ops_workspace/gui_interaction_states.py": [
+              "mobaIconKey"
+            ],
+            "src/remote_ops_workspace/gui_icons.py": [
+              "def draw_moba_ribbon_icon(",
+              "painter.drawRoundedRect"
             ],
             "scripts/check_real_gui_render.py": [
               "mobaIconKey",
@@ -1051,6 +1056,9 @@
             ],
             "configs/gui_visual_metrics.json": [
               "ribbon-right-actions-inside-ribbon"
+            ],
+            "src/remote_ops_workspace/gui_toolbars.py": [
+              "gui_design_moba_ribbon_actions"
             ]
           }
         },
@@ -1058,7 +1066,7 @@
           "id": "moba.ribbon-geometry",
           "description": "MobaXterm-style top ribbon pins each main and right-edge action width, icon offset, label offset, separator span and active-outline bounds through shared static/live geometry metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaRibbonActionGeometry",
               "GUI_DESIGN_MOBA_RIBBON_ACTION_GEOMETRY",
               "gui_design_moba_ribbon_action_geometry_for"
@@ -1067,11 +1075,6 @@
               "gui_design_moba_ribbon_action_geometry_for",
               "geometry.separator_x",
               "geometry.active_outline_x"
-            ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaRibbonStaticX",
-              "mobaRibbonIconX",
-              "mobaRibbonActiveOutlineWidth"
             ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_RIBBON_ACTION_GEOMETRY",
@@ -1085,6 +1088,11 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style ribbon geometry"
+            ],
+            "src/remote_ops_workspace/gui_toolbars.py": [
+              "mobaRibbonStaticX",
+              "mobaRibbonIconX",
+              "mobaRibbonActiveOutlineWidth"
             ]
           }
         },
@@ -1092,7 +1100,7 @@
           "id": "moba.quick-connect-rail",
           "description": "Left chrome includes quick connect plus a role-based vertical icon rail for collapse, sessions, favorites, tools, macros and SFTP.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "rail_icon_key",
               "GUI_DESIGN_MOBA_RAIL_ITEMS"
             ],
@@ -1101,8 +1109,10 @@
               "draw_moba_rail_icon",
               "item.rail_icon_key"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "quickConnect",
+            "src/remote_ops_workspace/gui_quick_connect.py": [
+              "quickConnect"
+            ],
+            "src/remote_ops_workspace/gui_sidebar.py": [
               "mobaRail",
               "create_moba_rail",
               "mobaRailRole",
@@ -1120,7 +1130,7 @@
           "id": "moba.quick-connect-chrome",
           "description": "MobaXterm-style Quick Connect top strip uses shared metadata for placeholder text, dropdown marker, fixed height and focused state across static and live evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaQuickConnectChrome",
               "GUI_DESIGN_MOBA_QUICK_CONNECT_CHROME",
               "gui_design_moba_quick_connect_chrome"
@@ -1130,7 +1140,7 @@
               "gui_design_moba_quick_connect_chrome",
               "dropdown_marker"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_quick_connect.py": [
               "mobaQuickConnectChrome",
               "mobaQuickConnectDropdown",
               "mobaQuickConnectHeight"
@@ -1152,7 +1162,7 @@
           "id": "moba.quick-connect-suggestions",
           "description": "MobaXterm-style Quick Connect suggestion dropdown uses shared metadata for typed query, saved-profile match, direct SSH fallback, row density and stable live item data.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaQuickConnectSuggestionChrome",
               "GUI_DESIGN_MOBA_QUICK_CONNECT_SUGGESTION_CHROME",
               "gui_design_moba_quick_connect_suggestion_chrome"
@@ -1162,7 +1172,7 @@
               "quick_connect_candidates",
               "preview_query"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_quick_connect.py": [
               "quick_connect_suggestions",
               "mobaQuickConnectSuggestionKinds",
               "mobaQuickConnectSuggestionLabels",
@@ -1186,7 +1196,7 @@
           "id": "moba.connected-quick-connect-idle",
           "description": "Connected MobaXterm-style reference keeps Quick Connect idle by default with placeholder text and hidden suggestions so the SFTP/monitoring dock is immediately visible; typed query suggestion evidence remains separate.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "connected_idle_query",
               "connected_suggestions_visible",
               "GUI_DESIGN_MOBA_QUICK_CONNECT_CHROME"
@@ -1196,7 +1206,7 @@
               "connected_suggestions_visible",
               "draw_moba_quick_connect_chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_quick_connect.py": [
               "set_moba_quick_connect_connected_idle",
               "mobaQuickConnectConnectedMode",
               "mobaQuickConnectConnectedSuggestionVisible"
@@ -1215,7 +1225,7 @@
           "id": "moba.rail-section-labels",
           "description": "Connected MobaXterm-style vertical rail includes rotated section labels for Sessions, Tools, Macros and SFTP from shared metadata, matching the reference rail structure without copied assets.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GUI_DESIGN_MOBA_RAIL_ITEMS",
               "GuiMobaRailItem",
               "gui_design_moba_rail_items",
@@ -1226,10 +1236,12 @@
               "draw_moba_rail_label",
               "gui_design_moba_rail_items"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_sidebar.py": [
               "MobaRailLabel",
-              "mobaRailLabel",
               "gui_design_moba_rail_items"
+            ],
+            "src/remote_ops_workspace/gui_workspace.py": [
+              "mobaRailLabel"
             ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_RAIL_LABELS",
@@ -1244,7 +1256,7 @@
           "id": "moba.rail-geometry",
           "description": "MobaXterm-style left rail geometry pins rail width, icon x/y, static and live icon sizes, button bounds, active highlight bounds, rotated label height and generated-icon source through shared metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaRailChrome",
               "GUI_DESIGN_MOBA_RAIL_CHROME",
               "GUI_DESIGN_MOBA_RAIL_ITEM_GEOMETRY",
@@ -1255,7 +1267,7 @@
               "gui_design_moba_rail_item_geometry_for",
               "rail_chrome.static_icon_size"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_sidebar.py": [
               "mobaRailStaticIconY",
               "mobaRailButtonHeight",
               "mobaRailLabelHeight",
@@ -1283,10 +1295,14 @@
               "MobaXterm-style saved user sessions",
               "\"mobaxterm\": ("
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "gui_design_tree_root_copy",
-              "profile_tree_label",
+            "src/remote_ops_workspace/gui_interaction_states.py": [
+              "profile_tree_label"
+            ],
+            "src/remote_ops_workspace/gui_sidebar.py": [
               "show_moba_profile_tree"
+            ],
+            "src/remote_ops_workspace/gui_profile_tree.py": [
+              "gui_design_tree_root_copy"
             ],
             "scripts/render_gui_design_previews.py": [
               "gui_design_tree_rows"
@@ -1297,10 +1313,12 @@
           "id": "moba.session-tree-geometry",
           "description": "MobaXterm-style saved-session tree geometry pins the user-session header, indentation, row heights, generated icon source, group/profile icon offsets, text offsets and selected-row bounds through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSessionTreeChrome",
               "GUI_DESIGN_MOBA_SESSION_TREE_CHROME",
-              "gui_design_moba_session_tree_chrome",
+              "gui_design_moba_session_tree_chrome"
+            ],
+            "src/remote_ops_workspace/gui_designs.py": [
               "GUI_DESIGN_TREE_ROW_ICONS"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -1308,7 +1326,7 @@
               "chrome.profile_target_x",
               "chrome.selected_height"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_profile_tree.py": [
               "mobaSessionTreeProfileRowHeight",
               "TREE_ROW_STATIC_HEIGHT_ROLE",
               "GENERATED_PROFILE_TREE_ICON_PRESETS"
@@ -1329,15 +1347,17 @@
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "density=\"moba-shell\"",
-              "profile_width=395",
-              "tab_padding=\"4px 13px\"",
-              "tree_padding=\"3px 5px\""
+              "profile_width=395"
+            ],
+            "src/remote_ops_workspace/assets/workspace-styles.json": [
+              "\"tab_padding\": \"4px 13px\"",
+              "\"tree_padding\": \"3px 5px\""
             ],
             "scripts/render_gui_design_previews.py": [
               "side_w = frame.side_width",
               "rail_w = frame.rail_width"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_sidebar.py": [
               "root_splitter.setSizes",
               "setMinimumWidth"
             ]
@@ -1402,7 +1422,7 @@
           "id": "moba.connected-dock-frame",
           "description": "Connected MobaXterm-style left dock frame uses shared side width, rail width, dock origin, dock size, workspace boundary, Quick Connect y/height and status y metadata across static preview, live PyQt widgets and real-render checks.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaConnectedDockFrame",
               "GUI_DESIGN_MOBA_CONNECTED_DOCK_FRAME",
               "gui_design_moba_connected_dock_frame"
@@ -1412,7 +1432,7 @@
               "frame.dock_x",
               "frame.dock_width"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_sidebar.py": [
               "mobaConnectedDockSideWidth",
               "mobaConnectedDockRailWidth",
               "mobaConnectedDockWidth"
@@ -1431,12 +1451,14 @@
           "id": "moba.live-dock-switch",
           "description": "Live MobaXterm-style tabs switch the left dock between saved sessions and the active connected-session SFTP/monitoring view.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui.py": [
-              "QStackedWidget",
+            "src/remote_ops_workspace/gui_moba_sessions.py": [
               "show_moba_connected_dock",
-              "show_moba_profile_tree",
               "refresh_moba_left_dock_for_current_tab",
               "moba_connected_state"
+            ],
+            "src/remote_ops_workspace/gui_sidebar.py": [
+              "QStackedWidget",
+              "show_moba_profile_tree"
             ],
             "scripts/check_real_gui_render.py": [
               "prepare_moba_connected_reference",
@@ -1459,10 +1481,8 @@
               "draw_moba_connected_tab",
               "draw_moba_tab_icon"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_moba_sessions.py": [
               "moba_connected_tab_chrome_items",
-              "mobaTabChromeKey",
-              "mobaTabIconKey",
               "apply_moba_tab_chrome"
             ],
             "scripts/check_real_gui_render.py": [
@@ -1472,6 +1492,10 @@
             ],
             "configs/gui_visual_metrics.json": [
               "connected-tab-strip"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "mobaTabChromeKey",
+              "mobaTabIconKey"
             ]
           }
         },
@@ -1489,11 +1513,6 @@
               "geometry.close_right_offset",
               "geometry.gap_after"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaTabStaticWidth",
-              "mobaTabCloseRightOffset",
-              "mobaTabChromeGeometryKeys"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_TAB_CHROME_GEOMETRY",
               "connected-tab-geometry",
@@ -1501,6 +1520,11 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style connected tab geometry"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "mobaTabStaticWidth",
+              "mobaTabCloseRightOffset",
+              "mobaTabChromeGeometryKeys"
             ]
           }
         },
@@ -1535,7 +1559,7 @@
           "id": "moba.sftp-browser-chrome",
           "description": "MobaXterm-style SFTP browser path strip and file-table headers use shared static/live metadata for the remote path placeholder, dropdown marker, selected parent-folder row and keyed Name, Size and Last modified columns.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSftpBrowserChrome",
               "parent_row_label",
               "selected_row_kind",
@@ -1580,7 +1604,7 @@
           "id": "moba.sftp-browser-geometry",
           "description": "MobaXterm-style SFTP path strip, dropdown marker, table header labels and file-row text/icon offsets are pinned through shared static/live geometry metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "path_text_x",
               "dropdown_right_offset",
               "row_modified_x",
@@ -1618,7 +1642,7 @@
           "id": "moba.sftp-follow-folder-route",
           "description": "Moba-style SFTP folder-follow workflow ties the checked control, operator-selected remote path, SFTP list plan and file table state through shared static/live route metadata; it does not claim automatic shell-CWD observation.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSftpFollowFolderRoute",
               "GUI_DESIGN_MOBA_SFTP_FOLLOW_FOLDER_ROUTE",
               "gui_design_moba_sftp_follow_folder_route"
@@ -1678,7 +1702,7 @@
           "id": "moba.sftp-routed-file-rows",
           "description": "MobaXterm-style SFTP file rows carry row-level follow-folder route evidence, active remote path metadata, selected parent-row state and stable row indexes instead of being generic file-list rows.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSftpRoutedFileRows",
               "GUI_DESIGN_MOBA_SFTP_ROUTED_FILE_ROWS",
               "gui_design_moba_sftp_routed_file_rows"
@@ -1708,7 +1732,7 @@
           "id": "moba.sftp-glyphs",
           "description": "MobaXterm-style connected SFTP dock uses independent drawn toolbar, generated file/folder/parent-row and monitoring glyphs instead of bracketed text placeholders in static and live evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSftpFileRowIcon",
               "GUI_DESIGN_MOBA_SFTP_FILE_ROW_ICONS",
               "gui_design_moba_sftp_file_row_icon"
@@ -1724,7 +1748,7 @@
               "sftp-file-row-icons",
               "expected_moba_sftp_file_row_icons"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_profile_tree.py": [
               "generated-pixmap"
             ],
             "src/remote_ops_workspace/gui_connected.py": [
@@ -1739,7 +1763,7 @@
           "id": "moba.sftp-dock-chrome",
           "description": "MobaXterm-style connected SFTP dock uses shared toolbar action metadata, remote path strip, file-table columns, monitoring metric keys and follow-terminal-folder state across static and live render evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSftpDockAction",
               "GUI_DESIGN_MOBA_SFTP_DOCK_ACTIONS",
               "gui_design_moba_monitoring_metrics"
@@ -1771,7 +1795,7 @@
           "id": "moba.sftp-dock-density",
           "description": "MobaXterm-style connected SFTP dock uses shared density metadata for the toolbar, path row, table header, file rows, monitoring panel and divider so static and live evidence keep the reference-like compact left-dock spacing.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSftpDockLayout",
               "GUI_DESIGN_MOBA_SFTP_DOCK_LAYOUT",
               "gui_design_moba_sftp_dock_layout"
@@ -1805,7 +1829,7 @@
           "id": "moba.sftp-toolbar-groups",
           "description": "MobaXterm-style SFTP toolbar actions are grouped into navigation, transfer, manage, mode and terminal clusters with reference-like separator boundaries across static and live evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "group_key",
               "separator_after",
               "navigation",
@@ -1840,7 +1864,7 @@
           "id": "moba.sftp-toolbar-geometry",
           "description": "MobaXterm-style SFTP toolbar pins each connected-dock action button, icon and separator offset through shared static/live geometry metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSftpToolbarActionGeometry",
               "GUI_DESIGN_MOBA_SFTP_TOOLBAR_ACTION_GEOMETRY",
               "gui_design_moba_sftp_toolbar_action_geometry"
@@ -1876,7 +1900,7 @@
           "id": "moba.sftp-toolbar-action-route",
           "description": "MobaXterm-style SFTP toolbar action route proves each connected-dock icon maps to file-transfer workflow metadata, generated icon identity, action grouping, target SFTP path/table objects and a live handler.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSftpToolbarActionRoute",
               "GUI_DESIGN_MOBA_SFTP_TOOLBAR_ACTION_ROUTE",
               "gui_design_moba_sftp_toolbar_action_route"
@@ -1932,7 +1956,7 @@
           "id": "moba.remote-monitoring-compact-dock",
           "description": "MobaXterm-style connected left dock keeps the visible remote-monitoring area compact like the reference while retaining telemetry metric keys, refresh cadence, SSH command evidence, follow-folder SFTP plan metadata and shared control geometry for the bottom telemetry/status surface.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaRemoteMonitoringDockChrome",
               "GUI_DESIGN_MOBA_REMOTE_MONITORING_DOCK_CHROME",
               "GuiMobaMonitoringControlGeometry",
@@ -1969,7 +1993,7 @@
           "id": "moba.monitoring-telemetry-route",
           "description": "MobaXterm-style remote monitoring keeps the dock compact while explicitly routing CPU, memory, disk, network, connection and process evidence into the bottom telemetry bar through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaMonitoringTelemetryRoute",
               "GUI_DESIGN_MOBA_MONITORING_TELEMETRY_ROUTE",
               "gui_design_moba_monitoring_telemetry_route"
@@ -1989,7 +2013,9 @@
             ],
             "src/remote_ops_workspace/gui_connected.py": [
               "mobaMonitoringTelemetryRouteKey",
-              "mobaMonitoringTelemetryMetricCellKeys",
+              "mobaMonitoringTelemetryMetricCellKeys"
+            ],
+            "src/remote_ops_workspace/gui_connected_terminal.py": [
               "mobaMonitoringTelemetryRouted"
             ]
           }
@@ -1998,7 +2024,7 @@
           "id": "moba.remote-monitoring-control-route",
           "description": "MobaXterm-style Remote monitoring control route proves the live toggle exposes checked state, SSH telemetry command, refresh cadence and bottom telemetry route evidence instead of only passive panel chrome.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaRemoteMonitoringControlRoute",
               "GUI_DESIGN_MOBA_REMOTE_MONITORING_CONTROL_ROUTE",
               "gui_design_moba_remote_monitoring_control_route"
@@ -2027,7 +2053,7 @@
           "id": "moba.follow-terminal-folder-control-route",
           "description": "MobaXterm-style Follow terminal folder control route proves the visible checkbox exposes checked state, active remote path, SFTP list plan and target SFTP browser/table linkage as first-class static/live evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaFollowTerminalFolderControlRoute",
               "GUI_DESIGN_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE",
               "gui_design_moba_follow_terminal_folder_control_route"
@@ -2056,7 +2082,7 @@
           "id": "moba.monitoring-control-live-toggle-route",
           "description": "MobaXterm-style monitoring footer controls prove Remote monitoring and Follow terminal folder are live toggles wired through stable signals, handlers and runtime checked/path/plan properties.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "handle_moba_remote_monitoring_toggled",
               "handle_moba_follow_terminal_folder_toggled",
               "mobaRemoteMonitoringControlLiveChecked",
@@ -2089,7 +2115,7 @@
           "id": "moba.remote-monitoring-footer-geometry",
           "description": "MobaXterm-style remote-monitoring footer pins the divider span, footer height, content-left offset, metric gap and live controls frame width so the lower-left monitoring/follow-folder band stays reference-like in static and live evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "static_height",
               "divider_left_inset",
               "live_controls_width"
@@ -2118,7 +2144,7 @@
           "id": "moba.monitoring-controls",
           "description": "MobaXterm-style connected SFTP dock exposes shared keyed controls for Remote monitoring and Follow terminal folder, with checked state, icon keys and tooltips validated in both static and live evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaMonitoringControl",
               "GUI_DESIGN_MOBA_MONITORING_CONTROLS",
               "gui_design_moba_monitoring_controls"
@@ -2151,7 +2177,7 @@
           "id": "moba.monitoring-control-geometry",
           "description": "MobaXterm-style monitoring footer pins the Remote monitoring and Follow terminal folder control baselines, font sizes, checkbox offset, checkmark stroke points and live widget widths through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "label_y_offset",
               "label_font_size",
               "check_y_offset",
@@ -2219,7 +2245,7 @@
               "SSH-browser",
               "X11-forwarding"
             ],
-            "src/remote_ops_workspace/gui_connected.py": [
+            "src/remote_ops_workspace/gui_connected_terminal.py": [
               "mobaSshBanner",
               "mobaSshBannerCapability"
             ]
@@ -2229,7 +2255,7 @@
           "id": "moba.ssh-banner-chrome",
           "description": "MobaXterm-style SSH banner chrome uses shared centered title/subtitle and static/live geometry metadata so the generated preview and live PyQt banner keep the same compact terminal placement.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSshBannerChrome",
               "GUI_DESIGN_MOBA_SSH_BANNER_CHROME",
               "gui_design_moba_ssh_banner_chrome"
@@ -2246,7 +2272,7 @@
             "configs/gui_visual_metrics.json": [
               "ssh-banner-panel"
             ],
-            "src/remote_ops_workspace/gui_connected.py": [
+            "src/remote_ops_workspace/gui_connected_terminal.py": [
               "mobaSshBannerTitle",
               "mobaSshBannerSubtitle",
               "mobaBannerWidth"
@@ -2262,7 +2288,7 @@
               "capability_rows",
               "footer_links"
             ],
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "target_intro",
               "capability_label_width",
               "help_link_label",
@@ -2280,7 +2306,7 @@
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style SSH banner capability card"
             ],
-            "src/remote_ops_workspace/gui_connected.py": [
+            "src/remote_ops_workspace/gui_connected_terminal.py": [
               "mobaSshBannerTargetLine",
               "mobaSshBannerCapabilityKey",
               "mobaSshBannerFooter"
@@ -2291,7 +2317,7 @@
           "id": "moba.ssh-banner-row-geometry",
           "description": "MobaXterm-style SSH banner pins title, subtitle, target, capability and footer row positions plus the live banner slot top/left/gap through shared static/live row geometry metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSshBannerRowGeometry",
               "GUI_DESIGN_MOBA_SSH_BANNER_ROW_GEOMETRY",
               "gui_design_moba_ssh_banner_row_geometry"
@@ -2312,7 +2338,7 @@
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style SSH banner row geometry"
             ],
-            "src/remote_ops_workspace/gui_connected.py": [
+            "src/remote_ops_workspace/gui_connected_terminal.py": [
               "mobaSshBannerSlot",
               "mobaSshBannerRowY",
               "mobaSshBannerRowGeometryKeys"
@@ -2340,7 +2366,7 @@
             "configs/gui_visual_metrics.json": [
               "terminal-transcript"
             ],
-            "src/remote_ops_workspace/gui_connected.py": [
+            "src/remote_ops_workspace/gui_connected_terminal.py": [
               "apply_terminal_transcript_evidence",
               "mobaTerminalTranscriptKeys",
               "mobaTerminalTranscriptTones"
@@ -2351,7 +2377,7 @@
           "id": "moba.terminal-transcript-geometry",
           "description": "MobaXterm-style connected terminal hides generic terminal controls and pins transcript row x/y, cadence and font-size metadata across static preview and live PyQt evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaTerminalTranscriptRowGeometry",
               "GUI_DESIGN_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY",
               "gui_design_moba_terminal_transcript_row_geometry"
@@ -2372,7 +2398,7 @@
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style terminal transcript geometry"
             ],
-            "src/remote_ops_workspace/gui_connected.py": [
+            "src/remote_ops_workspace/gui_connected_terminal.py": [
               "mobaPlainTerminalMode",
               "mobaTerminalTranscriptGeometryKeys",
               "mobaTerminalHeaderVisible"
@@ -2411,7 +2437,9 @@
             "src/remote_ops_workspace/gui_connected.py": [
               "mobaTelemetryCell",
               "mobaTelemetryCellWidth",
-              "mobaTelemetryDisplayText",
+              "mobaTelemetryDisplayText"
+            ],
+            "src/remote_ops_workspace/gui_connected_terminal.py": [
               "telemetry_icon_pixmap",
               "mobaTelemetryIconRender"
             ]
@@ -2444,7 +2472,7 @@
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style bottom telemetry geometry"
             ],
-            "src/remote_ops_workspace/gui_connected.py": [
+            "src/remote_ops_workspace/gui_connected_terminal.py": [
               "mobaTelemetryGeometryKeys",
               "mobaTelemetryCellStaticX",
               "mobaTelemetryLabelX"
@@ -2473,13 +2501,17 @@
               "window title must be connected target label"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "moba_connected_profile_label",
+              "moba_connected_profile_label"
+            ],
+            "src/remote_ops_workspace/gui_moba_sessions.py": [
               "moba_connected_window_title"
             ],
             "src/remote_ops_workspace/gui_connected.py": [
               "mobaTelemetryKey",
-              "mobaTelemetryIcon",
               "mobaTelemetryCell"
+            ],
+            "src/remote_ops_workspace/gui_connected_terminal.py": [
+              "mobaTelemetryIcon"
             ]
           }
         },
@@ -2497,7 +2529,7 @@
               "connected_route.reference_tab_label",
               "connected_route.telemetry_identity_cell_key"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_moba_sessions.py": [
               "mobaConnectedRouteKey",
               "mobaConnectedRouteActiveTabLabel",
               "mobaConnectedRouteTelemetryBarObject"
@@ -2526,10 +2558,12 @@
               "action_route.expected_action_keys",
               "moba_connected_action_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaConnectedSessionActionRouteKey",
+            "src/remote_ops_workspace/gui_moba_sessions.py": [
               "apply_moba_connected_session_action_route_to_tab",
               "route.captured_enabled_keys_property"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "mobaConnectedSessionActionRouteKey"
             ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_CONNECTED_SESSION_ACTION_ROUTE",
@@ -2551,11 +2585,6 @@
               "mobaConnectedSessionTabContextMenu",
               "MobaConnectedSessionActionRoute"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "build_tab_context_menu",
-              "apply_session_action_menu_capture",
-              "session_action_menu_object_name"
-            ],
             "scripts/check_real_gui_render.py": [
               "build_tab_context_menu",
               "connected session action menu",
@@ -2567,6 +2596,11 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style connected session action menu route"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "build_tab_context_menu",
+              "apply_session_action_menu_capture",
+              "session_action_menu_object_name"
             ]
           }
         },
@@ -2584,7 +2618,7 @@
               "identity_route.terminal_prompt",
               "identity_route.telemetry_target"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_moba_sessions.py": [
               "mobaConnectedIdentityRouteKey",
               "mobaConnectedIdentityWindowTitle",
               "mobaConnectedIdentityTelemetryTarget"
@@ -2603,12 +2637,12 @@
           "id": "moba.status-segments",
           "description": "MobaXterm-style window status bar exposes SFTP, CPU monitoring and SSH-browser workflow state.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "SFTP ready",
               "CPU monitor",
               "SSH browser"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "configure_status_bar_for_design",
               "productStatusSegment"
             ],
@@ -2622,7 +2656,7 @@
           "id": "moba.bottom-status-chrome",
           "description": "MobaXterm-style bottom status bar uses shared project-owned notice text, product note, keyed workflow segments and a compact right marker across static and live evidence without copying proprietary wording.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaStatusBarChrome",
               "GUI_DESIGN_MOBA_STATUS_SEGMENTS",
               "gui_design_moba_status_bar_chrome"
@@ -2632,7 +2666,7 @@
               "gui_design_moba_status_segments",
               "chrome.product_note"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "productStatusNotice",
               "productStatusMarker",
               "productStatusKey"
@@ -2651,7 +2685,7 @@
           "id": "moba.bottom-status-geometry",
           "description": "MobaXterm-style bottom edition/status footer pins notice, product-note, segment-start and right-marker coordinates through shared static/live geometry metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "static_height",
               "notice_x",
               "segment_start_right_offset",
@@ -2662,7 +2696,7 @@
               "chrome.segment_start_right_offset",
               "chrome.marker_right_inset"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "mobaStatusStaticHeight",
               "mobaStatusNoticeX",
               "mobaStatusMarkerRightInset"
@@ -2684,7 +2718,7 @@
           "id": "moba.bottom-edge-controls",
           "description": "MobaXterm-style bottom status edge includes compact previous-tab, next-tab and close-active controls from shared metadata, with generated arrows and close glyphs in static and live evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaBottomEdgeControl",
               "GUI_DESIGN_MOBA_BOTTOM_EDGE_CONTROLS",
               "gui_design_moba_bottom_edge_controls"
@@ -2694,9 +2728,11 @@
               "draw_moba_bottom_edge_icon",
               "gui_design_moba_bottom_edge_controls"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "mobaBottomEdgeControls",
-              "mobaBottomEdgeControl",
+              "mobaBottomEdgeControl"
+            ],
+            "src/remote_ops_workspace/gui_session_tabs.py": [
               "activate_adjacent_tab"
             ],
             "scripts/check_real_gui_render.py": [
@@ -2718,12 +2754,12 @@
           "id": "moba.home-welcome-surface",
           "description": "MobaXterm-style home tab exposes a centered welcome surface with generated logo, primary/recover actions, session search, recent sessions and footer from shared metadata in both live GUI evidence and a dedicated static state preview rather than generic workflow cards.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaHomeWelcomeChrome",
               "GUI_DESIGN_MOBA_HOME_WELCOME_CHROME",
               "gui_design_moba_home_welcome_chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_home.py": [
               "build_moba_home_welcome",
               "mobaHomeWelcomeSurface",
               "mobaRecentSession"
@@ -2763,7 +2799,7 @@
           "id": "moba.home-welcome-geometry",
           "description": "MobaXterm-style home welcome geometry pins centered surface margins, hero spacing, logo/title/action/search/recent/footer offsets and live widget sizes through shared metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaHomeWelcomeGeometry",
               "GUI_DESIGN_MOBA_HOME_WELCOME_GEOMETRY",
               "gui_design_moba_home_welcome_geometry"
@@ -2773,7 +2809,7 @@
               "geometry.button_y_offset",
               "geometry.recent_item_step"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_home.py": [
               "mobaHomeActionStaticWidth",
               "mobaHomeSearchHeight",
               "mobaHomeFooterYOffset"
@@ -2797,7 +2833,10 @@
               "gui_design_preset_selection_route",
               "selector-to-toolbar-sidebar-tabs-status-workspace"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
+              "gui_preset_properties.apply_preset_selection_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetSelectionRouteKey",
               "presetSelectionRouteHomeTabLabel",
               "presetSelectionRouteStatusSegments"
@@ -2826,7 +2865,10 @@
               "gui_design_preset_visual_signature",
               "preset-palette-density-to-live-static-style"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
+              "gui_preset_properties.apply_preset_visual_signature_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetVisualSignatureDensity",
               "presetVisualSignaturePalette",
               "presetVisualSignatureRenderSource"
@@ -2855,7 +2897,10 @@
               "gui_design_preset_isolation_route",
               "active-preset-visible-hidden-widget-isolation"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
+              "gui_preset_properties.apply_preset_isolation_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetIsolationVisibleObjects",
               "presetIsolationHiddenObjects",
               "presetIsolationRenderSource"
@@ -2884,7 +2929,10 @@
               "gui_design_preset_transition_route",
               "selector-style-switch-resets-inactive-product-chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
+              "gui_preset_properties.apply_preset_transition_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetTransitionFromPresetIds",
               "presetTransitionResetObjects",
               "presetTransitionRenderSource"
@@ -2914,9 +2962,14 @@
               "product-preset-keyboard-shortcuts"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetKeyboardShortcutCapturedSequences",
-              "create_keyboard_shortcuts",
+              "self.create_keyboard_shortcuts()"
+            ],
+            "src/remote_ops_workspace/gui_menus.py": [
+              "def create_keyboard_shortcuts",
               "presetKeyboardShortcutActionLabel"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetKeyboardShortcutCapturedSequences"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_keyboard_shortcut_route",
@@ -2942,8 +2995,10 @@
               "product-preset-command-surface-route"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "apply_command_surface_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetCommandSurfaceCapturedKeys",
-              "apply_command_surface_route_for_design",
               "presetCommandSurfaceCapturedStates"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -2970,9 +3025,11 @@
               "gui_design_preset_focus_interaction_route",
               "product-preset-focus-interaction-route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_interaction_states.py": [
+              "apply_focus_interaction_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetFocusInteractionCapturedFocus",
-              "apply_focus_interaction_route_for_design",
               "presetFocusInteractionToolbarStates"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -2998,9 +3055,11 @@
               "gui_design_preset_home_search_route",
               "product-preset-home-search-entry-route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_home.py": [
+              "apply_home_search_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetHomeSearchCapturedPlaceholder",
-              "apply_home_search_route_for_design",
               "presetHomeSearchCapturedRecentLabels"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -3026,7 +3085,10 @@
               "gui_design_preset_catalog_route",
               "preset-catalog-to-design-selector-options"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
+              "gui_preset_properties.apply_preset_catalog_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetCatalogRouteOptionIds",
               "presetCatalogRouteProductPresetIds",
               "presetCatalogRouteDefaultPresetId"
@@ -3056,11 +3118,13 @@
               "SFTP rail checked",
               "explicit games support status available"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_moba_sessions.py": [
+              "set_moba_rail_active(\"sftp\")"
+            ],
+            "src/remote_ops_workspace/gui_interaction_states.py": [
               "configure_interaction_states_for_design",
               "set_interaction_state",
-              "interactionState",
-              "set_moba_rail_active(\"sftp\")"
+              "interactionState"
             ],
             "scripts/render_gui_design_previews.py": [
               "gui_design_interaction_state",
@@ -3829,8 +3893,10 @@
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "tab_position=\"north\"",
-              "tab_padding=\"6px 14px\"",
               "Start Page"
+            ],
+            "src/remote_ops_workspace/assets/workspace-styles.json": [
+              "\"tab_padding\": \"6px 14px\""
             ],
             "scripts/render_gui_design_previews.py": [
               "draw_tabs",
@@ -3844,15 +3910,19 @@
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "PowerShell",
-              "SSH2",
               "Start Page"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "gui_design_home_tab_label",
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
+              "SSH2"
+            ],
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "configure_workspace_tabs_for_design"
             ],
             "scripts/render_gui_design_previews.py": [
               "gui_design_tab_items"
+            ],
+            "src/remote_ops_workspace/gui_home.py": [
+              "gui_design_home_tab_label"
             ]
           }
         },
@@ -3864,7 +3934,7 @@
               "\"securecrt\": (\"Session Manager\"",
               "Folders, sessions and terminal tabs"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_sidebar.py": [
               "leftPanelHeader",
               "configure_left_panel_header_for_design"
             ],
@@ -3877,12 +3947,12 @@
           "id": "securecrt.session-manager-chrome",
           "description": "SecureCRT-style Session Manager includes shared filter and action-strip chrome for Connect, New Folder and Properties workflows in static and live evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "GuiSecureCrtSessionManagerChrome",
               "GUI_DESIGN_SECURECRT_SESSION_MANAGER_CHROME",
               "gui_design_securecrt_session_manager_chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "secureCrtSessionManagerChrome",
               "secureCrtSessionFilter",
               "filter_profile_tree"
@@ -3913,12 +3983,12 @@
           "id": "securecrt.session-manager-geometry",
           "description": "SecureCRT-style Session Manager geometry pins measured filter, title, action-button and generated-icon dimensions across static preview, live Qt metadata and CI render checks.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "static_button_size",
               "live_button_size",
               "render_source"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "secureCrtSessionManagerLiveButtonSize",
               "secureCrtSessionManagerRenderSource",
               "securecrt_session_manager_action_icon"
@@ -3942,12 +4012,12 @@
           "id": "securecrt.session-manager-route",
           "description": "SecureCRT-style selected Session Manager row routes to the active SSH2 tab, Connect action and target status-strip cell through shared static and live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "GuiSecureCrtSessionManagerRoute",
               "GUI_DESIGN_SECURECRT_SESSION_MANAGER_ROUTE",
               "gui_design_securecrt_session_manager_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "secureCrtSessionRouteKey",
               "secureCrtSessionRouteActive",
               "secureCrtSessionRouteActiveTab"
@@ -3971,15 +4041,17 @@
           "id": "securecrt.session-manager-filter-route",
           "description": "SecureCRT-style Session Manager filter field routes a sample query to the matched selected SSH2 row through shared static and live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "GuiSecureCrtSessionManagerFilterRoute",
               "GUI_DESIGN_SECURECRT_SESSION_MANAGER_FILTER_ROUTE",
               "gui_design_securecrt_session_manager_filter_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "secureCrtSessionFilterRouteKey",
-              "SECURECRT_FILTER_ROUTE_MATCHED_ROLE",
               "filter_profile_tree"
+            ],
+            "src/remote_ops_workspace/gui_profile_tree.py": [
+              "SECURECRT_FILTER_ROUTE_MATCHED_ROLE"
             ],
             "scripts/render_gui_design_previews.py": [
               "gui_design_securecrt_session_manager_filter_route",
@@ -4000,15 +4072,17 @@
           "id": "securecrt.sftp-tab-route",
           "description": "SecureCRT-style SFTP tab route ties the SFTP workflow card, files-prod SFTP tree row, SFTP tab label and SFTP status-strip cell through shared static and live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "GuiSecureCrtSftpTabRoute",
               "GUI_DESIGN_SECURECRT_SFTP_TAB_ROUTE",
               "gui_design_securecrt_sftp_tab_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "secureCrtSftpTabRouteKey",
-              "SECURECRT_SFTP_ROUTE_TAB_ROLE",
               "secureCrtSftpTabRouteTransferState"
+            ],
+            "src/remote_ops_workspace/gui_profile_tree.py": [
+              "SECURECRT_SFTP_ROUTE_TAB_ROLE"
             ],
             "scripts/render_gui_design_previews.py": [
               "gui_design_securecrt_sftp_tab_route",
@@ -4029,12 +4103,12 @@
           "id": "securecrt.sftp-browser-route",
           "description": "SecureCRT-style SFTP browser route ties the files-prod SFTP tab to a remote path, toolbar actions, transfer queue and selected file row through shared static and live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "GuiSecureCrtSftpBrowserRoute",
               "GUI_DESIGN_SECURECRT_SFTP_BROWSER_ROUTE",
               "gui_design_securecrt_sftp_browser_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "secureCrtSftpBrowserRouteKey",
               "secureCrtSftpBrowserPath",
               "secureCrtSftpBrowserQueueState"
@@ -4058,12 +4132,12 @@
           "id": "securecrt.sftp-browser-live-action-route",
           "description": "SecureCRT-style SFTP browser Refresh toolbar action exposes a real clicked route that updates captured action and refreshed queue status metadata on the browser, toolbar, queue and selected row.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "handler=\"handle_securecrt_sftp_browser_action\"",
               "action_key=\"refresh\"",
               "live_triggered_property=\"secureCrtSftpBrowserRouteLiveTriggered\""
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "handle_securecrt_sftp_browser_action",
               "apply_securecrt_sftp_browser_action_route_properties",
               "route.live_triggered_property"
@@ -4088,11 +4162,13 @@
           "description": "SecureCRT-style tree uses a Session Database root, foldered sessions and SSH2/SFTP terminal entries.",
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
-              "Session Database",
+              "Session Database"
+            ],
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "edge-prod (SSH2)",
               "files-prod (SFTP)"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_profile_tree.py": [
               "profile_group_label",
               "profile_tree_tooltip",
               "Session Manager entry"
@@ -4124,7 +4200,7 @@
               "GUI_DESIGN_TREE_ROW_ICONS",
               "GuiDesignTreeRowIcon"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_profile_tree.py": [
               "apply_profile_tree_icon",
               "profile_tree_generated_icon",
               "TREE_ICON_RENDER_ROLE"
@@ -4145,18 +4221,20 @@
           "id": "securecrt.session-toolbar",
           "description": "SecureCRT-style toolbar uses session-oriented actions such as New Session, Properties, SFTP, Transfer and terminal tiling.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "New Session",
               "Properties",
               "Tile H"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "configure_toolbar_copy_for_design",
+            "src/remote_ops_workspace/gui_interaction_states.py": [
               "gui_design_toolbar_actions"
             ],
             "scripts/render_gui_design_previews.py": [
               "gui_design_toolbar_actions",
               "toolbar_action_icon"
+            ],
+            "src/remote_ops_workspace/gui_toolbars.py": [
+              "configure_toolbar_copy_for_design"
             ]
           }
         },
@@ -4164,17 +4242,16 @@
           "id": "securecrt.top-chrome",
           "description": "SecureCRT-style top menu and toolbar chrome uses shared metadata for File/Edit/View/Options/Transfer/Script/Tools/Window/Help menus plus icon-keyed session toolbar actions in static and live evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "GuiSecureCrtTopChrome",
               "GUI_DESIGN_SECURECRT_TOP_CHROME",
               "gui_design_securecrt_top_chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "configure_menu_bar_for_design",
-              "add_reference_top_menu",
-              "secureCrtTopToolbarIconKey"
+            "src/remote_ops_workspace/gui_design_activation.py": [
+              "self.configure_menu_bar_for_design(preset)"
             ],
             "src/remote_ops_workspace/gui_menus.py": [
+              "menu, menu_action = add_reference_top_menu(",
               "secureCrtTopMenuKey"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -4189,6 +4266,9 @@
             ],
             "docs/GUI_DESIGN.md": [
               "SecureCRT-style top menu and toolbar chrome"
+            ],
+            "src/remote_ops_workspace/gui_toolbars.py": [
+              "secureCrtTopToolbarIconKey"
             ]
           }
         },
@@ -4201,15 +4281,17 @@
               "SFTP tab - files-prod",
               "gui_design_workspace_surface"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "gui_design_workspace_surface",
-              "rebuild_welcome_tab",
-              "workspaceSurfaceSubtitle"
-            ],
             "scripts/render_gui_design_previews.py": [
               "draw_securecrt_workspace",
               "Session / SFTP",
               "draw_product_terminal"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "rebuild_welcome_tab"
+            ],
+            "src/remote_ops_workspace/gui_home.py": [
+              "gui_design_workspace_surface",
+              "workspaceSurfaceSubtitle"
             ]
           }
         },
@@ -4222,7 +4304,7 @@
               "gui_design_securecrt_command_window_chrome",
               "chrome.command"
             ],
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "Command Window",
               "All Sessions",
               "row doctor --json"
@@ -4237,12 +4319,12 @@
           "id": "securecrt.command-window-chrome",
           "description": "SecureCRT-style Command Window chrome is shared metadata and live PyQt evidence with stable keys for target scope, command input, send action and status.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "GuiSecureCrtCommandWindowChrome",
               "GUI_DESIGN_SECURECRT_COMMAND_WINDOW_CHROME",
               "gui_design_securecrt_command_window_chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "build_securecrt_command_window_evidence",
               "secureCrtCommandWindow",
               "secureCrtCommandWindowKey"
@@ -4269,13 +4351,13 @@
           "id": "securecrt.command-window-geometry",
           "description": "SecureCRT-style Command Window uses shared static/live geometry for header height, target selector width, command input origin, send button width and live target/send minimum widths.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "static_control_y",
               "static_target_width",
               "static_input_x",
               "live_send_min_width"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "secureCrtCommandStaticControlY",
               "secureCrtCommandStaticInputX",
               "secureCrtCommandLiveSendMinWidth"
@@ -4299,12 +4381,12 @@
           "id": "securecrt.command-window-send-route",
           "description": "SecureCRT-style Command Window send route ties the target scope, command input, Send control and ready status to one shared live/static workflow contract.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "GuiSecureCrtCommandWindowSendRoute",
               "GUI_DESIGN_SECURECRT_COMMAND_WINDOW_SEND_ROUTE",
               "gui_design_securecrt_command_window_send_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "secureCrtCommandRouteKey",
               "secureCrtCommandRouteCommand",
               "secureCrtCommandRouteSendLabel"
@@ -4328,12 +4410,12 @@
           "id": "securecrt.command-window-live-send-route",
           "description": "SecureCRT-style Command Window send route is backed by a real line edit, Send button, Enter shortcut and handler that capture submitted command, target scope and status in live PyQt evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "signal=\"clicked\"",
               "secondary_signal=\"returnPressed\"",
               "live_submitted_property=\"secureCrtCommandRouteLiveSubmitted\""
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "QLineEdit(chrome.command)",
               "QPushButton(chrome.send_label)",
               "handle_securecrt_command_window_send"
@@ -4357,12 +4439,12 @@
           "id": "securecrt.session-status-strip",
           "description": "SecureCRT-style session status strip uses shared static/live metadata for session, target, protocol, cipher, SFTP tab, log file and connected state so the terminal workspace carries reference-like connected-session context.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "GuiSecureCrtSessionStatusStrip",
               "GUI_DESIGN_SECURECRT_SESSION_STATUS_STRIP",
               "gui_design_securecrt_session_status_strip"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "build_securecrt_session_status_strip_evidence",
               "secureCrtSessionStatusStrip",
               "secureCrtSessionStatusKey"
@@ -4391,13 +4473,13 @@
           "id": "securecrt.session-status-geometry",
           "description": "SecureCRT-style session status strip uses shared static/live geometry for title width, cell start, cell gap, label/value offsets, connected-state role and live cell dimensions.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "static_cell_start_x",
               "static_cell_gap",
               "static_value_x",
               "live_cell_height"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "secureCrtSessionStatusStaticCellStartX",
               "secureCrtSessionStatusStaticValueX",
               "secureCrtSessionStatusLiveCellHeight"
@@ -4423,12 +4505,14 @@
           "description": "Live SecureCRT-style home tab exposes workflow evidence cards for Command Window, Session Manager and SFTP tab behavior.",
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
-              "GUI_DESIGN_WORKFLOW_CARDS",
+              "GUI_DESIGN_WORKFLOW_CARDS"
+            ],
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "Command Window",
               "Session Manager",
               "SFTP tab"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "build_product_workflow_evidence",
               "productWorkflowEvidence",
               "productWorkflowTitle"
@@ -4445,11 +4529,13 @@
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "GUI_DESIGN_REFERENCE_STATES",
-              "GuiProductReferenceState",
+              "GuiProductReferenceState"
+            ],
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "SSH2 + SFTP",
               "edge-prod (SSH2)"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "build_product_reference_state_evidence",
               "productReferenceStateItem",
               "referenceKey"
@@ -4474,7 +4560,7 @@
               "gui_design_product_identity_route",
               "tree-tab-reference-status-workspace-identity"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "productIdentityRouteKey",
               "productIdentityActiveTab",
               "productIdentityStatusSegments"
@@ -4503,10 +4589,9 @@
               "gui_design_preset_reference_tab_route",
               "reference-profile-tab-can-be-active-surface"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceTabActivatedLabel",
-              "presetReferenceTabReturnedHomeLabel",
-              "find_tab_by_label"
+              "presetReferenceTabReturnedHomeLabel"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_tab_route",
@@ -4520,6 +4605,9 @@
             ],
             "docs/GUI_DESIGN.md": [
               "reference tab activation route"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "find_tab_by_label"
             ]
           }
         },
@@ -4533,9 +4621,13 @@
               "active-reference-tab-chrome-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceTabChromeTooltip",
-              "apply_reference_tab_chrome_route_to_terminal_tab",
               "sessionTabBar"
+            ],
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_tab_chrome_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceTabChromeTooltip"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_tab_chrome_route",
@@ -4560,10 +4652,14 @@
               "gui_design_preset_reference_status_bar_route",
               "active-reference-status-bar-evidence"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "presetReferenceStatusSegments",
-              "apply_reference_status_bar_route_to_terminal_tab",
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "productStatusSegment"
+            ],
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_status_bar_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceStatusSegments"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_status_bar_route",
@@ -4588,9 +4684,10 @@
               "gui_design_preset_reference_session_action_route",
               "active-reference-session-actions"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "sessionTabContextActionKey",
-              "apply_reference_session_action_route_to_terminal_tab",
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_session_action_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceSessionActionEnabledKeys"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -4604,6 +4701,9 @@
             ],
             "docs/GUI_DESIGN.md": [
               "reference session action route"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "sessionTabContextActionKey"
             ]
           }
         },
@@ -4616,10 +4716,12 @@
               "gui_design_preset_reference_surface_route",
               "active-reference-tab-surface-evidence"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "presetReferenceSurfaceActualCommand",
-              "presetReferenceSurfaceActualOutput",
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_surface_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceSurfaceActualCommand",
+              "presetReferenceSurfaceActualOutput"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_surface_route",
@@ -4647,9 +4749,11 @@
             "src/remote_ops_workspace/gui_terminal.py": [
               "terminalActionKey"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "presetReferenceControlCapturedActionKeys",
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_control_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceControlCapturedActionKeys"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_control_route",
@@ -4674,10 +4778,14 @@
               "gui_design_preset_reference_input_route",
               "active-reference-tab-terminal-input"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "presetReferenceInputEnabled",
-              "apply_reference_input_route_to_terminal_tab",
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_input_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_terminal.py": [
               "terminalInput"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceInputEnabled"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_input_route",
@@ -4702,10 +4810,14 @@
               "gui_design_preset_reference_transcript_route",
               "active-reference-tab-terminal-transcript"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "presetReferenceTranscriptCommandEcho",
-              "apply_reference_transcript_route_to_terminal_tab",
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_transcript_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_terminal.py": [
               "terminalOutput"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceTranscriptCommandEcho"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_transcript_route",
@@ -4730,7 +4842,10 @@
               "gui_design_preset_selection_route",
               "selector-to-toolbar-sidebar-tabs-status-workspace"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
+              "gui_preset_properties.apply_preset_selection_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetSelectionRouteKey",
               "presetSelectionRouteHomeTabLabel",
               "presetSelectionRouteStatusSegments"
@@ -4759,7 +4874,10 @@
               "gui_design_preset_visual_signature",
               "preset-palette-density-to-live-static-style"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
+              "gui_preset_properties.apply_preset_visual_signature_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetVisualSignatureDensity",
               "presetVisualSignaturePalette",
               "presetVisualSignatureRenderSource"
@@ -4788,7 +4906,10 @@
               "gui_design_preset_isolation_route",
               "active-preset-visible-hidden-widget-isolation"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
+              "gui_preset_properties.apply_preset_isolation_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetIsolationVisibleObjects",
               "presetIsolationHiddenObjects",
               "presetIsolationRenderSource"
@@ -4817,7 +4938,10 @@
               "gui_design_preset_transition_route",
               "selector-style-switch-resets-inactive-product-chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
+              "gui_preset_properties.apply_preset_transition_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetTransitionFromPresetIds",
               "presetTransitionResetObjects",
               "presetTransitionRenderSource"
@@ -4847,9 +4971,14 @@
               "product-preset-keyboard-shortcuts"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetKeyboardShortcutCapturedSequences",
-              "create_keyboard_shortcuts",
+              "self.create_keyboard_shortcuts()"
+            ],
+            "src/remote_ops_workspace/gui_menus.py": [
+              "def create_keyboard_shortcuts",
               "presetKeyboardShortcutActionLabel"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetKeyboardShortcutCapturedSequences"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_keyboard_shortcut_route",
@@ -4875,8 +5004,10 @@
               "product-preset-command-surface-route"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "apply_command_surface_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetCommandSurfaceCapturedKeys",
-              "apply_command_surface_route_for_design",
               "presetCommandSurfaceCapturedStates"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -4903,9 +5034,11 @@
               "gui_design_preset_focus_interaction_route",
               "product-preset-focus-interaction-route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_interaction_states.py": [
+              "apply_focus_interaction_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetFocusInteractionCapturedFocus",
-              "apply_focus_interaction_route_for_design",
               "presetFocusInteractionToolbarStates"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -4931,9 +5064,11 @@
               "gui_design_preset_home_search_route",
               "product-preset-home-search-entry-route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_home.py": [
+              "apply_home_search_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetHomeSearchCapturedPlaceholder",
-              "apply_home_search_route_for_design",
               "presetHomeSearchCapturedRecentLabels"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -4959,7 +5094,10 @@
               "gui_design_preset_catalog_route",
               "preset-catalog-to-design-selector-options"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
+              "gui_preset_properties.apply_preset_catalog_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetCatalogRouteOptionIds",
               "presetCatalogRouteProductPresetIds",
               "presetCatalogRouteDefaultPresetId"
@@ -4988,7 +5126,7 @@
               "SFTP checked",
               "delete follows selection"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_interaction_states.py": [
               "configure_interaction_states_for_design",
               "toolbar_interaction_state",
               "focused_control"
@@ -5017,12 +5155,14 @@
           "id": "securecrt.status-bar",
           "description": "SecureCRT-style status bar exposes SSH2, Session Manager and active-tab state.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "SSH2",
-              "Session Manager",
+              "Session Manager"
+            ],
+            "src/remote_ops_workspace/gui_designs.py": [
               "2 active tabs"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "configure_status_bar_for_design",
               "productStatusSegment"
             ],
@@ -5772,13 +5912,15 @@
               "\"Keys\"",
               "\"New\""
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "gui_design_home_tab_label",
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "configure_workspace_tabs_for_design"
             ],
             "scripts/render_gui_design_previews.py": [
               "draw_vertical_tabs",
               "gui_design_tab_items"
+            ],
+            "src/remote_ops_workspace/gui_home.py": [
+              "gui_design_home_tab_label"
             ]
           }
         },
@@ -5819,7 +5961,7 @@
               "\"termius\": (\"Hosts\"",
               "Vault-backed SSH inventory"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_sidebar.py": [
               "leftPanelTitle",
               "leftPanelSubtitle"
             ],
@@ -5837,7 +5979,7 @@
               "prod-cluster",
               "deploy-check"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_profile_tree.py": [
               "Vault /",
               "Vault host",
               "profile_tree_tooltip"
@@ -5857,7 +5999,7 @@
               "prod-cluster",
               "deploy-check"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_profile_tree.py": [
               "GENERATED_PROFILE_TREE_ICON_PRESETS",
               "profile_tree_generated_icon",
               "generated-pixmap"
@@ -5878,12 +6020,12 @@
           "id": "termius.hosts-sidebar-chrome",
           "description": "Termius-style Hosts sidebar exposes a dedicated search field and Add Host, Keychain and Sync actions, with host-search focus measured against that sidebar field.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "GuiTermiusHostsChrome",
               "GUI_DESIGN_TERMIUS_HOSTS_CHROME",
               "gui_design_termius_hosts_chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_termius.py": [
               "build_termius_hosts_chrome",
               "termiusHostsChrome",
               "termiusHostSearch"
@@ -5915,16 +6057,20 @@
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "New Host",
-              "Port Fwd",
+              "Port Fwd"
+            ],
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "Snippet",
               "Vault"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "configure_toolbar_copy_for_design",
               "product_toolbar_buttons"
             ],
             "scripts/render_gui_design_previews.py": [
               "gui_design_toolbar_actions"
+            ],
+            "src/remote_ops_workspace/gui_toolbars.py": [
+              "configure_toolbar_copy_for_design"
             ]
           }
         },
@@ -5934,18 +6080,20 @@
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "Host terminal workspace",
-              "SFTP",
               "Port fwd : 8080"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "gui_design_workspace_surface",
-              "home_search_placeholder",
-              "recent_columns"
+            "src/remote_ops_workspace/gui_preset_termius.py": [
+              "SFTP"
             ],
             "scripts/render_gui_design_previews.py": [
               "draw_termius_workspace",
               "SFTP",
               "gui_design_termius_header_chips"
+            ],
+            "src/remote_ops_workspace/gui_home.py": [
+              "gui_design_workspace_surface",
+              "home_search_placeholder",
+              "recent_columns"
             ]
           }
         },
@@ -5971,12 +6119,12 @@
           "id": "termius.header-chip-chrome",
           "description": "Termius-style host header chips are shared static/live metadata with stable keys for vault, sync and port-forward state.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "GuiTermiusHeaderChip",
               "GUI_DESIGN_TERMIUS_HEADER_CHIPS",
               "gui_design_termius_header_chips"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_termius.py": [
               "build_termius_header_chips_evidence",
               "termiusHeaderChip",
               "termiusHeaderChipKey"
@@ -6002,12 +6150,12 @@
           "id": "termius.host-identity-strip",
           "description": "Termius-style workspace exposes host, vault identity, jump chain, SFTP, port-forward, snippet and sync state as a shared static/live identity strip.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "GuiTermiusHostIdentityStrip",
               "GUI_DESIGN_TERMIUS_HOST_IDENTITY_STRIP",
               "gui_design_termius_host_identity_strip"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_termius.py": [
               "build_termius_host_identity_strip_evidence",
               "termiusHostIdentityStrip",
               "termiusHostIdentityKey"
@@ -6037,13 +6185,13 @@
           "id": "termius.host-identity-geometry",
           "description": "Termius-style host identity strip uses shared static/live geometry for title width, cell start, cell gap, label/value offsets, status role and live cell dimensions.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "static_cell_start_x",
               "static_cell_gap",
               "static_value_x",
               "live_cell_height"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_termius.py": [
               "termiusHostIdentityStaticCellStartX",
               "termiusHostIdentityStaticValueX",
               "termiusHostIdentityLiveCellHeight"
@@ -6068,12 +6216,12 @@
           "id": "termius.sync-route",
           "description": "Termius-style sync route ties the Hosts sidebar Sync action, Sync current header chip and Host identity Sync status to one shared live/static workflow contract.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "GuiTermiusSyncRoute",
               "GUI_DESIGN_TERMIUS_SYNC_ROUTE",
               "gui_design_termius_sync_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_termius.py": [
               "termiusSyncRouteKey",
               "termiusSyncRouteState",
               "termiusSyncRouteHeaderChipKey"
@@ -6097,12 +6245,12 @@
           "id": "termius.port-forward-route",
           "description": "Termius-style port-forward route ties the Port fwd ready header chip, active host tab and Forward identity cell through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "GuiTermiusPortForwardRoute",
               "GUI_DESIGN_TERMIUS_PORT_FORWARD_ROUTE",
               "gui_design_termius_port_forward_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_termius.py": [
               "termiusPortForwardRouteKey",
               "termiusPortForwardRouteIdentityValue",
               "termiusPortForwardRouteState"
@@ -6126,12 +6274,12 @@
           "id": "termius.snippet-route",
           "description": "Termius-style snippet route ties the Snippet workflow card, active host tab and Host identity Snippet cell through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "GuiTermiusSnippetRoute",
               "GUI_DESIGN_TERMIUS_SNIPPET_ROUTE",
               "gui_design_termius_snippet_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_termius.py": [
               "termiusSnippetRouteKey",
               "termiusSnippetRouteCommand",
               "termiusSnippetRouteIdentityValue"
@@ -6155,12 +6303,12 @@
           "id": "termius.snippet-live-run-route",
           "description": "Termius-style snippet route exposes a real Run action and Return shortcut that update captured command, target profile and run status across the workflow card and Host identity strip.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "action_object=\"termiusSnippetRunAction\"",
               "shortcut_object=\"termiusSnippetRunShortcut\"",
               "handler=\"handle_termius_snippet_run\""
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_termius.py": [
               "handle_termius_snippet_run",
               "route.live_triggered_property",
               "route.action_object"
@@ -6184,12 +6332,12 @@
           "id": "termius.files-browser-route",
           "description": "Termius-style files browser route ties the active host files identity state to a remote path, toolbar actions, sync queue and selected file row through shared static and live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "GuiTermiusFilesBrowserRoute",
               "GUI_DESIGN_TERMIUS_FILES_BROWSER_ROUTE",
               "gui_design_termius_files_browser_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_termius.py": [
               "termiusFilesRouteKey",
               "termiusFilesRoutePath",
               "termiusFilesRouteQueueState"
@@ -6213,12 +6361,12 @@
           "id": "termius.files-browser-live-sync-route",
           "description": "Termius-style files browser Sync toolbar action exposes a real clicked route that updates captured action and synced queue status metadata across the files panel, Host identity strip and selected file row.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "handler=\"handle_termius_files_sync\"",
               "action_key=\"sync\"",
               "live_triggered_property=\"termiusFilesRouteLiveTriggered\""
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_termius.py": [
               "handle_termius_files_sync",
               "apply_termius_files_sync_route_properties",
               "route.live_triggered_property"
@@ -6242,14 +6390,16 @@
           "id": "termius.host-selection-route",
           "description": "Termius-style selected host route ties the selected host tree row, active host tab, Hosts panel and Host identity cell through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "GuiTermiusHostSelectionRoute",
               "GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE",
               "gui_design_termius_host_selection_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_termius.py": [
               "termiusHostRouteKey",
-              "termiusHostRouteActiveTab",
+              "termiusHostRouteActiveTab"
+            ],
+            "src/remote_ops_workspace/gui_profile_tree.py": [
               "TERMIUS_HOST_ROUTE_SELECTED_ROLE"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -6272,12 +6422,14 @@
           "description": "Live Termius-style home tab exposes workflow evidence cards for vault identity, port forwarding and snippets.",
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
-              "GUI_DESIGN_WORKFLOW_CARDS",
+              "GUI_DESIGN_WORKFLOW_CARDS"
+            ],
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "Vault identity",
               "Port forward",
               "Snippet"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "build_product_workflow_evidence",
               "productWorkflowEvidence",
               "workflowKey"
@@ -6295,10 +6447,12 @@
             "src/remote_ops_workspace/gui_designs.py": [
               "GUI_DESIGN_REFERENCE_STATES",
               "GuiProductReferenceState",
-              "SSH + Vault",
               "sidebar_label=\"Hosts\""
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
+              "SSH + Vault"
+            ],
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "build_product_reference_state_evidence",
               "productReferenceStateItem",
               "referenceKey"
@@ -6323,7 +6477,7 @@
               "gui_design_product_identity_route",
               "tree-tab-reference-status-workspace-identity"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "productIdentityRouteKey",
               "productIdentityActiveTab",
               "productIdentityStatusSegments"
@@ -6352,10 +6506,9 @@
               "gui_design_preset_reference_tab_route",
               "reference-profile-tab-can-be-active-surface"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceTabActivatedLabel",
-              "presetReferenceTabReturnedHomeLabel",
-              "find_tab_by_label"
+              "presetReferenceTabReturnedHomeLabel"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_tab_route",
@@ -6369,6 +6522,9 @@
             ],
             "docs/GUI_DESIGN.md": [
               "reference tab activation route"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "find_tab_by_label"
             ]
           }
         },
@@ -6382,9 +6538,13 @@
               "active-reference-tab-chrome-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceTabChromeTooltip",
-              "apply_reference_tab_chrome_route_to_terminal_tab",
               "sessionTabBar"
+            ],
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_tab_chrome_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceTabChromeTooltip"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_tab_chrome_route",
@@ -6409,10 +6569,14 @@
               "gui_design_preset_reference_status_bar_route",
               "active-reference-status-bar-evidence"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "presetReferenceStatusSegments",
-              "apply_reference_status_bar_route_to_terminal_tab",
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "productStatusSegment"
+            ],
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_status_bar_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceStatusSegments"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_status_bar_route",
@@ -6437,9 +6601,10 @@
               "gui_design_preset_reference_session_action_route",
               "active-reference-session-actions"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "sessionTabContextActionKey",
-              "apply_reference_session_action_route_to_terminal_tab",
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_session_action_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceSessionActionEnabledKeys"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -6453,6 +6618,9 @@
             ],
             "docs/GUI_DESIGN.md": [
               "reference session action route"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "sessionTabContextActionKey"
             ]
           }
         },
@@ -6465,10 +6633,12 @@
               "gui_design_preset_reference_surface_route",
               "active-reference-tab-surface-evidence"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "presetReferenceSurfaceActualCommand",
-              "presetReferenceSurfaceActualOutput",
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_surface_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceSurfaceActualCommand",
+              "presetReferenceSurfaceActualOutput"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_surface_route",
@@ -6496,9 +6666,11 @@
             "src/remote_ops_workspace/gui_terminal.py": [
               "terminalActionKey"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "presetReferenceControlCapturedActionKeys",
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_control_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceControlCapturedActionKeys"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_control_route",
@@ -6523,10 +6695,14 @@
               "gui_design_preset_reference_input_route",
               "active-reference-tab-terminal-input"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "presetReferenceInputEnabled",
-              "apply_reference_input_route_to_terminal_tab",
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_input_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_terminal.py": [
               "terminalInput"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceInputEnabled"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_input_route",
@@ -6551,10 +6727,14 @@
               "gui_design_preset_reference_transcript_route",
               "active-reference-tab-terminal-transcript"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "presetReferenceTranscriptCommandEcho",
-              "apply_reference_transcript_route_to_terminal_tab",
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_transcript_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_terminal.py": [
               "terminalOutput"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceTranscriptCommandEcho"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_transcript_route",
@@ -6579,7 +6759,10 @@
               "gui_design_preset_selection_route",
               "selector-to-toolbar-sidebar-tabs-status-workspace"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
+              "gui_preset_properties.apply_preset_selection_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetSelectionRouteKey",
               "presetSelectionRouteHomeTabLabel",
               "presetSelectionRouteStatusSegments"
@@ -6608,7 +6791,10 @@
               "gui_design_preset_visual_signature",
               "preset-palette-density-to-live-static-style"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
+              "gui_preset_properties.apply_preset_visual_signature_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetVisualSignatureDensity",
               "presetVisualSignaturePalette",
               "presetVisualSignatureRenderSource"
@@ -6637,7 +6823,10 @@
               "gui_design_preset_isolation_route",
               "active-preset-visible-hidden-widget-isolation"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
+              "gui_preset_properties.apply_preset_isolation_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetIsolationVisibleObjects",
               "presetIsolationHiddenObjects",
               "presetIsolationRenderSource"
@@ -6666,7 +6855,10 @@
               "gui_design_preset_transition_route",
               "selector-style-switch-resets-inactive-product-chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
+              "gui_preset_properties.apply_preset_transition_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetTransitionFromPresetIds",
               "presetTransitionResetObjects",
               "presetTransitionRenderSource"
@@ -6696,9 +6888,14 @@
               "product-preset-keyboard-shortcuts"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetKeyboardShortcutCapturedSequences",
-              "create_keyboard_shortcuts",
+              "self.create_keyboard_shortcuts()"
+            ],
+            "src/remote_ops_workspace/gui_menus.py": [
+              "def create_keyboard_shortcuts",
               "presetKeyboardShortcutActionLabel"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetKeyboardShortcutCapturedSequences"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_keyboard_shortcut_route",
@@ -6724,8 +6921,10 @@
               "product-preset-command-surface-route"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "apply_command_surface_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetCommandSurfaceCapturedKeys",
-              "apply_command_surface_route_for_design",
               "presetCommandSurfaceCapturedStates"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -6752,9 +6951,11 @@
               "gui_design_preset_focus_interaction_route",
               "product-preset-focus-interaction-route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_interaction_states.py": [
+              "apply_focus_interaction_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetFocusInteractionCapturedFocus",
-              "apply_focus_interaction_route_for_design",
               "presetFocusInteractionToolbarStates"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -6780,9 +6981,11 @@
               "gui_design_preset_home_search_route",
               "product-preset-home-search-entry-route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_home.py": [
+              "apply_home_search_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetHomeSearchCapturedPlaceholder",
-              "apply_home_search_route_for_design",
               "presetHomeSearchCapturedRecentLabels"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -6808,7 +7011,10 @@
               "gui_design_preset_catalog_route",
               "preset-catalog-to-design-selector-options"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
+              "gui_preset_properties.apply_preset_catalog_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetCatalogRouteOptionIds",
               "presetCatalogRouteProductPresetIds",
               "presetCatalogRouteDefaultPresetId"
@@ -6837,7 +7043,7 @@
               "vault checked",
               "remove follows selection"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_interaction_states.py": [
               "configure_interaction_states_for_design",
               "set_interaction_state",
               "focused_control"
@@ -6865,12 +7071,12 @@
           "id": "termius.status-bar",
           "description": "Termius-style status bar exposes vault, port-forwarding and sync state.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "Vault unlocked",
               "Port fwd ready",
               "Sync current"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "configure_status_bar_for_design",
               "productStatusSegment"
             ],
@@ -7607,7 +7813,7 @@
           "id": "remmina.protocol-profiles",
           "description": "Profile tree and renderer include RDP/VNC/SFTP-style protocol targets.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "win-admin",
               "linux-console"
             ],
@@ -7625,7 +7831,7 @@
               "\"remmina\": (\"Connection Profiles\"",
               "RDP, VNC, SSH and SFTP targets"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_sidebar.py": [
               "leftPanelHeader",
               "gui_design_sidebar_copy"
             ],
@@ -7640,10 +7846,12 @@
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "Profile Groups",
-              "lab-desktop",
+              "lab-desktop"
+            ],
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "linux-console"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_profile_tree.py": [
               "Group:",
               "Connection profile",
               "profile_tree_tooltip"
@@ -7660,10 +7868,12 @@
             "src/remote_ops_workspace/gui_designs.py": [
               "GUI_DESIGN_TREE_ROW_ICONS",
               "Profile Groups",
-              "lab-desktop",
+              "lab-desktop"
+            ],
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "linux-console"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_profile_tree.py": [
               "GENERATED_PROFILE_TREE_ICON_PRESETS",
               "profile_tree_generated_icon",
               "generated-pixmap"
@@ -7688,16 +7898,20 @@
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "New Profile",
-              "Shared",
               "Prefs",
               "Tile V"
             ],
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
+              "Shared"
+            ],
             "src/remote_ops_workspace/gui.py": [
-              "configure_toolbar_copy_for_design",
               "product_toolbar_buttons"
             ],
             "scripts/render_gui_design_previews.py": [
               "gui_design_toolbar_actions"
+            ],
+            "src/remote_ops_workspace/gui_toolbars.py": [
+              "configure_toolbar_copy_for_design"
             ]
           }
         },
@@ -7705,12 +7919,12 @@
           "id": "remmina.status-bar",
           "description": "Remmina-style status bar exposes remote desktop protocol readiness, scaling and clipboard state.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "RDP/VNC ready",
               "Scale 100%",
               "Clipboard on"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "configure_status_bar_for_design",
               "productStatusSegment"
             ],
@@ -7723,18 +7937,22 @@
           "id": "remmina.viewer-tabs",
           "description": "Remmina-style tab strip distinguishes RDP, VNC, SFTP and Quick Connect viewer tabs.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "win-admin",
-              "linux-console",
+              "linux-console"
+            ],
+            "src/remote_ops_workspace/gui_designs.py": [
               "Quick Connect"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "gui_design_home_tab_label",
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "configure_workspace_tabs_for_design"
             ],
             "scripts/render_gui_design_previews.py": [
               "draw_tabs",
               "gui_design_tab_items"
+            ],
+            "src/remote_ops_workspace/gui_home.py": [
+              "gui_design_home_tab_label"
             ]
           }
         },
@@ -7744,18 +7962,20 @@
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "Remote desktop viewer",
-              "Scale    : 100%",
-              "Shared   : file workflow ready"
+              "Scale    : 100%"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "gui_design_workspace_surface",
-              "home_search_placeholder",
-              "recent_columns"
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
+              "Shared   : file workflow ready"
             ],
             "scripts/render_gui_design_previews.py": [
               "draw_remmina_workspace",
               "draw_remote_viewer",
               "gui_design_remmina_viewer_controls"
+            ],
+            "src/remote_ops_workspace/gui_home.py": [
+              "gui_design_workspace_surface",
+              "home_search_placeholder",
+              "recent_columns"
             ]
           }
         },
@@ -7781,14 +8001,14 @@
           "id": "remmina.viewer-control-chrome",
           "description": "Remmina-style viewer controls are shared static/live metadata with stable keys, generated icon keys, strip geometry and button sizing for Fit, Scale 100%, Clipboard, Fullscreen and Screenshot actions.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "GuiRemminaViewerControl",
               "GUI_DESIGN_REMMINA_VIEWER_CONTROLS",
               "gui_design_remmina_viewer_controls",
               "static_width",
               "live_button_height"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_remmina.py": [
               "build_remmina_viewer_controls_evidence",
               "remminaViewerControl",
               "remminaViewerControlKey",
@@ -7817,12 +8037,12 @@
           "id": "remmina.profile-list-chrome",
           "description": "Remmina-style profile manager exposes a filterable connection list with stable Name, Protocol and Server columns plus selected RDP/VNC/SFTP rows.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "GuiRemminaProfileListChrome",
               "GUI_DESIGN_REMMINA_PROFILE_LIST_CHROME",
               "gui_design_remmina_profile_list_chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_remmina.py": [
               "build_remmina_profile_list_chrome",
               "remminaProfileListChrome",
               "remminaProfileFilter",
@@ -7853,13 +8073,13 @@
           "id": "remmina.profile-list-geometry",
           "description": "Remmina-style profile list uses shared static/live geometry for filter position, header offset, row start, row height, row step, cell offsets, live filter width and live row height.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "static_row_start_y",
               "static_row_step",
               "live_filter_width",
               "live_row_min_height"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_remmina.py": [
               "remminaProfileStaticRowStartY",
               "remminaProfileStaticRowStep",
               "remminaProfileLiveRowMinHeight"
@@ -7883,12 +8103,12 @@
           "id": "remmina.profile-viewer-route",
           "description": "Remmina-style selected profile route ties the selected RDP profile row, active RDP viewer tab, scale status and Scale 100% viewer control through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "GuiRemminaProfileViewerRoute",
               "GUI_DESIGN_REMMINA_PROFILE_VIEWER_ROUTE",
               "gui_design_remmina_profile_viewer_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_remmina.py": [
               "remminaProfileViewerRouteKey",
               "remminaProfileViewerRouteActive",
               "remminaProfileViewerRouteActiveTab"
@@ -7912,12 +8132,12 @@
           "id": "remmina.profile-filter-route",
           "description": "Remmina-style profile filter routes an editable protocol query to the matched selected profile row and viewer tab through shared static and live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "GuiRemminaProfileFilterRoute",
               "GUI_DESIGN_REMMINA_PROFILE_FILTER_ROUTE",
               "gui_design_remmina_profile_filter_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_remmina.py": [
               "remminaProfileFilterRouteKey",
               "filter_remmina_profile_rows",
               "filter_input.textChanged.connect"
@@ -7941,12 +8161,12 @@
           "id": "remmina.clipboard-route",
           "description": "Remmina-style Clipboard viewer control route ties the Clipboard control, active RDP tab, Clipboard on status segment and clipboard-enabled workspace detail through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "GuiRemminaClipboardRoute",
               "GUI_DESIGN_REMMINA_CLIPBOARD_ROUTE",
               "gui_design_remmina_clipboard_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_remmina.py": [
               "remminaClipboardRouteKey",
               "remminaClipboardRouteActive",
               "remminaClipboardRouteState"
@@ -7970,12 +8190,12 @@
           "id": "remmina.screenshot-route",
           "description": "Remmina-style Screenshot viewer control route ties the Screenshot control, active RDP tab, generic capture artifact and screenshot workspace detail through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "GuiRemminaScreenshotRoute",
               "GUI_DESIGN_REMMINA_SCREENSHOT_ROUTE",
               "gui_design_remmina_screenshot_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_remmina.py": [
               "remminaScreenshotRouteKey",
               "remminaScreenshotRouteActive",
               "remminaScreenshotRouteArtifact"
@@ -7999,12 +8219,12 @@
           "id": "remmina.screenshot-live-capture-route",
           "description": "Remmina-style Screenshot viewer control exposes a real clicked capture route that updates captured state and artifact metadata without embedding a user desktop capture.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "handler=\"handle_remmina_screenshot_capture\"",
               "live_triggered_property=\"remminaScreenshotRouteLiveTriggered\"",
               "signal=\"clicked\""
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_remmina.py": [
               "handle_remmina_screenshot_capture",
               "apply_remmina_screenshot_capture_route_properties",
               "route.live_triggered_property"
@@ -8028,12 +8248,12 @@
           "id": "remmina.sftp-transfer-route",
           "description": "Remmina-style SFTP transfer route ties the Transfer toolbar action, SFTP profile row, SFTP tab, remote path, transfer queue and selected remote file row through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "GuiRemminaSftpTransferRoute",
               "GUI_DESIGN_REMMINA_SFTP_TRANSFER_ROUTE",
               "gui_design_remmina_sftp_transfer_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_remmina.py": [
               "remminaSftpTransferRouteKey",
               "remminaSftpTransferRoutePath",
               "remminaSftpTransferRouteQueueState"
@@ -8057,12 +8277,12 @@
           "id": "remmina.sftp-transfer-live-queue-route",
           "description": "Remmina-style SFTP transfer route exposes a real clicked Queue action that updates captured action/status metadata across the selected SFTP profile, transfer panel, queue, selected file row and routed action.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "handler=\"handle_remmina_sftp_transfer_action\"",
               "action_key=\"queue\"",
               "live_triggered_property=\"remminaSftpTransferRouteLiveTriggered\""
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_remmina.py": [
               "handle_remmina_sftp_transfer_action",
               "apply_remmina_sftp_transfer_action_route_properties",
               "route.live_triggered_property"
@@ -8092,7 +8312,7 @@
               "Scaling controls",
               "Clipboard sync"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "build_product_workflow_evidence",
               "productWorkflowEvidence",
               "productWorkflowPrimary"
@@ -8110,10 +8330,12 @@
             "src/remote_ops_workspace/gui_designs.py": [
               "GUI_DESIGN_REFERENCE_STATES",
               "GuiProductReferenceState",
-              "RDP viewer",
+              "RDP viewer"
+            ],
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "RDP - win-admin"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "build_product_reference_state_evidence",
               "productReferenceStateItem",
               "referenceKey"
@@ -8138,7 +8360,7 @@
               "gui_design_product_identity_route",
               "tree-tab-reference-status-workspace-identity"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "productIdentityRouteKey",
               "productIdentityActiveTab",
               "productIdentityStatusSegments"
@@ -8167,10 +8389,9 @@
               "gui_design_preset_reference_tab_route",
               "reference-profile-tab-can-be-active-surface"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceTabActivatedLabel",
-              "presetReferenceTabReturnedHomeLabel",
-              "find_tab_by_label"
+              "presetReferenceTabReturnedHomeLabel"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_tab_route",
@@ -8184,6 +8405,9 @@
             ],
             "docs/GUI_DESIGN.md": [
               "reference tab activation route"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "find_tab_by_label"
             ]
           }
         },
@@ -8197,9 +8421,13 @@
               "active-reference-tab-chrome-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceTabChromeTooltip",
-              "apply_reference_tab_chrome_route_to_terminal_tab",
               "sessionTabBar"
+            ],
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_tab_chrome_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceTabChromeTooltip"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_tab_chrome_route",
@@ -8224,10 +8452,14 @@
               "gui_design_preset_reference_status_bar_route",
               "active-reference-status-bar-evidence"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "presetReferenceStatusSegments",
-              "apply_reference_status_bar_route_to_terminal_tab",
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "productStatusSegment"
+            ],
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_status_bar_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceStatusSegments"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_status_bar_route",
@@ -8252,9 +8484,10 @@
               "gui_design_preset_reference_session_action_route",
               "active-reference-session-actions"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "sessionTabContextActionKey",
-              "apply_reference_session_action_route_to_terminal_tab",
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_session_action_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceSessionActionEnabledKeys"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -8268,6 +8501,9 @@
             ],
             "docs/GUI_DESIGN.md": [
               "reference session action route"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "sessionTabContextActionKey"
             ]
           }
         },
@@ -8280,10 +8516,12 @@
               "gui_design_preset_reference_surface_route",
               "active-reference-tab-surface-evidence"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "presetReferenceSurfaceActualCommand",
-              "presetReferenceSurfaceActualOutput",
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_surface_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceSurfaceActualCommand",
+              "presetReferenceSurfaceActualOutput"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_surface_route",
@@ -8311,9 +8549,11 @@
             "src/remote_ops_workspace/gui_terminal.py": [
               "terminalActionKey"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "presetReferenceControlCapturedActionKeys",
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_control_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceControlCapturedActionKeys"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_control_route",
@@ -8338,10 +8578,14 @@
               "gui_design_preset_reference_input_route",
               "active-reference-tab-terminal-input"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "presetReferenceInputEnabled",
-              "apply_reference_input_route_to_terminal_tab",
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_input_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_terminal.py": [
               "terminalInput"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceInputEnabled"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_input_route",
@@ -8366,10 +8610,14 @@
               "gui_design_preset_reference_transcript_route",
               "active-reference-tab-terminal-transcript"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "presetReferenceTranscriptCommandEcho",
-              "apply_reference_transcript_route_to_terminal_tab",
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_transcript_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_terminal.py": [
               "terminalOutput"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceTranscriptCommandEcho"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_transcript_route",
@@ -8394,7 +8642,10 @@
               "gui_design_preset_selection_route",
               "selector-to-toolbar-sidebar-tabs-status-workspace"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
+              "gui_preset_properties.apply_preset_selection_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetSelectionRouteKey",
               "presetSelectionRouteHomeTabLabel",
               "presetSelectionRouteStatusSegments"
@@ -8423,7 +8674,10 @@
               "gui_design_preset_visual_signature",
               "preset-palette-density-to-live-static-style"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
+              "gui_preset_properties.apply_preset_visual_signature_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetVisualSignatureDensity",
               "presetVisualSignaturePalette",
               "presetVisualSignatureRenderSource"
@@ -8452,7 +8706,10 @@
               "gui_design_preset_isolation_route",
               "active-preset-visible-hidden-widget-isolation"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
+              "gui_preset_properties.apply_preset_isolation_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetIsolationVisibleObjects",
               "presetIsolationHiddenObjects",
               "presetIsolationRenderSource"
@@ -8481,7 +8738,10 @@
               "gui_design_preset_transition_route",
               "selector-style-switch-resets-inactive-product-chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
+              "gui_preset_properties.apply_preset_transition_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetTransitionFromPresetIds",
               "presetTransitionResetObjects",
               "presetTransitionRenderSource"
@@ -8511,9 +8771,14 @@
               "product-preset-keyboard-shortcuts"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetKeyboardShortcutCapturedSequences",
-              "create_keyboard_shortcuts",
+              "self.create_keyboard_shortcuts()"
+            ],
+            "src/remote_ops_workspace/gui_menus.py": [
+              "def create_keyboard_shortcuts",
               "presetKeyboardShortcutActionLabel"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetKeyboardShortcutCapturedSequences"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_keyboard_shortcut_route",
@@ -8539,8 +8804,10 @@
               "product-preset-command-surface-route"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "apply_command_surface_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetCommandSurfaceCapturedKeys",
-              "apply_command_surface_route_for_design",
               "presetCommandSurfaceCapturedStates"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -8567,9 +8834,11 @@
               "gui_design_preset_focus_interaction_route",
               "product-preset-focus-interaction-route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_interaction_states.py": [
+              "apply_focus_interaction_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetFocusInteractionCapturedFocus",
-              "apply_focus_interaction_route_for_design",
               "presetFocusInteractionToolbarStates"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -8595,9 +8864,11 @@
               "gui_design_preset_home_search_route",
               "product-preset-home-search-entry-route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_home.py": [
+              "apply_home_search_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetHomeSearchCapturedPlaceholder",
-              "apply_home_search_route_for_design",
               "presetHomeSearchCapturedRecentLabels"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -8623,7 +8894,10 @@
               "gui_design_preset_catalog_route",
               "preset-catalog-to-design-selector-options"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
+              "gui_preset_properties.apply_preset_catalog_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetCatalogRouteOptionIds",
               "presetCatalogRouteProductPresetIds",
               "presetCatalogRouteDefaultPresetId"
@@ -8652,9 +8926,11 @@
               "transfer checked",
               "delete follows selection"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_interaction_states.py": [
               "configure_interaction_states_for_design",
-              "interactionState",
+              "interactionState"
+            ],
+            "src/remote_ops_workspace/gui_remmina.py": [
               "remmina_profile_filter"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -9400,15 +9676,19 @@
           "id": "mremoteng.nested-connection-tree",
           "description": "mRemoteNG-style tree uses a Connections root, nested containers and bracketed protocol connection nodes.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "Connections.xml",
-              "edge-prod [SSH]",
+              "edge-prod [SSH]"
+            ],
+            "src/remote_ops_workspace/gui_designs.py": [
               "nested group item"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "Container:",
-              "Connection tree node",
+            "src/remote_ops_workspace/gui_interaction_states.py": [
               "profile_tree_label"
+            ],
+            "src/remote_ops_workspace/gui_profile_tree.py": [
+              "Container:",
+              "Connection tree node"
             ],
             "scripts/render_gui_design_previews.py": [
               "gui_design_tree_rows"
@@ -9420,11 +9700,13 @@
           "description": "mRemoteNG-style tree distinguishes Connections.xml, containers and protocol nodes with shared static/live glyph metadata.",
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
-              "GUI_DESIGN_TREE_ROW_ICONS",
+              "GUI_DESIGN_TREE_ROW_ICONS"
+            ],
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "Connections.xml",
               "edge-prod [SSH]"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_profile_tree.py": [
               "GENERATED_PROFILE_TREE_ICON_PRESETS",
               "profile_tree_generated_icon",
               "generated-pixmap"
@@ -9450,7 +9732,7 @@
               "\"mremoteng\": (\"Connections\"",
               "Nested groups and saved targets"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_sidebar.py": [
               "leftPanelTitle",
               "configure_left_panel_header_for_design"
             ],
@@ -9463,18 +9745,20 @@
           "id": "mremoteng.connection-toolbar",
           "description": "mRemoteNG-style toolbar uses connection-manager actions such as New Conn, Config, Open, External, Script and pane tiling.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "New Conn",
               "Config",
               "External",
               "Script"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "configure_toolbar_copy_for_design",
               "product_toolbar_buttons"
             ],
             "scripts/render_gui_design_previews.py": [
               "gui_design_toolbar_actions"
+            ],
+            "src/remote_ops_workspace/gui_toolbars.py": [
+              "configure_toolbar_copy_for_design"
             ]
           }
         },
@@ -9482,17 +9766,16 @@
           "id": "mremoteng.top-chrome",
           "description": "mRemoteNG-style top menu and toolbar chrome uses shared metadata for File/View/Connections/Tools/Window/Help menus plus icon-keyed connection-manager toolbar actions in static and live evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "GuiMRemoteNgTopChrome",
               "GUI_DESIGN_MREMOTENG_TOP_CHROME",
               "gui_design_mremoteng_top_chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "configure_menu_bar_for_design",
-              "add_reference_top_menu",
-              "mRemoteNgTopToolbarIconKey"
+            "src/remote_ops_workspace/gui_design_activation.py": [
+              "self.configure_menu_bar_for_design(preset)"
             ],
             "src/remote_ops_workspace/gui_menus.py": [
+              "menu, menu_action = add_reference_top_menu(",
               "mRemoteNgTopMenuKey"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -9507,6 +9790,9 @@
             ],
             "docs/GUI_DESIGN.md": [
               "mRemoteNG-style top menu and toolbar chrome"
+            ],
+            "src/remote_ops_workspace/gui_toolbars.py": [
+              "mRemoteNgTopToolbarIconKey"
             ]
           }
         },
@@ -9514,12 +9800,14 @@
           "id": "mremoteng.status-bar",
           "description": "mRemoteNG-style status bar exposes connection file, inheritance and open-pane state.",
           "source_tokens": {
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
+              "Connections.xml"
+            ],
             "src/remote_ops_workspace/gui_designs.py": [
-              "Connections.xml",
               "Inheritance on",
               "2 open panes"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "configure_status_bar_for_design",
               "productStatusSegment"
             ],
@@ -9534,7 +9822,9 @@
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "document_mode=True",
-              "tab_position=\"north\"",
+              "tab_position=\"north\""
+            ],
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "edge-prod [SSH]"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -9549,16 +9839,20 @@
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "win-admin [RDP]",
-              "external",
               "Start Page"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "gui_design_home_tab_label",
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
+              "external"
+            ],
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "configure_workspace_tabs_for_design"
             ],
             "scripts/render_gui_design_previews.py": [
               "draw_tabs",
               "gui_design_tab_items"
+            ],
+            "src/remote_ops_workspace/gui_home.py": [
+              "gui_design_home_tab_label"
             ]
           }
         },
@@ -9571,15 +9865,17 @@
               "Config and inheritance",
               "Inheritance: credentials on"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "gui_design_workspace_surface",
-              "rebuild_welcome_tab",
-              "workspaceSurfaceSubtitle"
-            ],
             "scripts/render_gui_design_previews.py": [
               "draw_mremoteng_workspace",
               "draw_mremoteng_rdp_panel",
               "draw_mremoteng_property_grid"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "rebuild_welcome_tab"
+            ],
+            "src/remote_ops_workspace/gui_home.py": [
+              "gui_design_workspace_surface",
+              "workspaceSurfaceSubtitle"
             ]
           }
         },
@@ -9593,7 +9889,7 @@
               "gui_design_mremoteng_document_controls",
               "embedded document surface"
             ],
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "Connections.xml",
               "Filter connection tree"
             ],
@@ -9610,12 +9906,12 @@
           "id": "mremoteng.document-control-chrome",
           "description": "mRemoteNG-style document toolbar chrome is shared static/live metadata with stable keys for Connections.xml, Save, Reconnect, External tool, Dock view and the connection-tree filter.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "GuiMRemoteNgDocumentControl",
               "GUI_DESIGN_MREMOTENG_DOCUMENT_CONTROLS",
               "gui_design_mremoteng_document_toolbar_chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_mremoteng.py": [
               "build_mremoteng_document_controls_evidence",
               "mRemoteNgDocumentControl",
               "mRemoteNgDocumentControlKey",
@@ -9645,13 +9941,13 @@
           "id": "mremoteng.document-control-geometry",
           "description": "mRemoteNG-style document controls use project-owned generated icons and shared static/live geometry for button width, icon offsets, filter width and toolbar spacing.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "static_icon_x",
               "static_icon_y",
               "live_icon_size",
               "render_source"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_mremoteng.py": [
               "mremoteng_document_control_icon",
               "mRemoteNgDocumentRenderSource",
               "mRemoteNgDocumentStaticFilterWidth",
@@ -9678,12 +9974,12 @@
           "id": "mremoteng.property-grid-chrome",
           "description": "mRemoteNG-style property and inheritance grid is shared static/live metadata with stable columns, inherited row state, effective values and source paths.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "GuiMRemoteNgPropertyGridChrome",
               "GUI_DESIGN_MREMOTENG_PROPERTY_GRID_CHROME",
               "gui_design_mremoteng_property_grid_chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_mremoteng.py": [
               "build_mremoteng_property_grid_evidence",
               "mRemoteNgPropertyGrid",
               "mRemoteNgPropertyRowKey"
@@ -9712,12 +10008,12 @@
           "id": "mremoteng.connection-document-route",
           "description": "mRemoteNG-style selected connection route ties the selected Connections tree item, active SSH document tab, Reconnect document control and Protocol property-grid row through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "GuiMRemoteNgConnectionDocumentRoute",
               "GUI_DESIGN_MREMOTENG_CONNECTION_DOCUMENT_ROUTE",
               "gui_design_mremoteng_connection_document_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_mremoteng.py": [
               "mRemoteNgConnectionRouteKey",
               "mRemoteNgConnectionRouteActive",
               "mRemoteNgConnectionRouteActiveTab"
@@ -9739,17 +10035,22 @@
         },
         {
           "id": "mremoteng.connection-reconnect-live-route",
-          "description": "mRemoteNG-style Reconnect document control exposes a real clicked route that updates captured reconnect state on the tree, controls strip, routed button and property grid.",
+          "description": "Reconnect restarts the active document or the selected connection's existing session and reports a request while the transport starts.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "handler=\"handle_mremoteng_document_reconnect\"",
-              "reconnect_state=\"reconnected\"",
+              "reconnect_state=\"reconnect requested\"",
               "live_triggered_property=\"mRemoteNgConnectionRouteLiveTriggered\""
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_mremoteng.py": [
               "handle_mremoteng_document_reconnect",
+              "pane.restart()",
               "apply_mremoteng_reconnect_route_properties",
               "route.live_triggered_property"
+            ],
+            "tests/test_gui_mremoteng_workflows.py": [
+              "test_reconnect_restarts_only_the_selected_open_document",
+              "wait_for_starts(3)"
             ],
             "scripts/render_gui_design_previews.py": [
               "route.handler",
@@ -9770,14 +10071,16 @@
           "id": "mremoteng.document-filter-route",
           "description": "mRemoteNG-style document filter routes an editable connection-tree query to the selected SSH document row through shared static and live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "GuiMRemoteNgDocumentFilterRoute",
               "GUI_DESIGN_MREMOTENG_DOCUMENT_FILTER_ROUTE",
               "gui_design_mremoteng_document_filter_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_mremoteng.py": [
               "mRemoteNgDocumentFilterRouteKey",
-              "filter_input.textChanged.connect",
+              "filter_input.textChanged.connect"
+            ],
+            "src/remote_ops_workspace/gui_profile_tree.py": [
               "MREMOTENG_FILTER_ROUTE_KEY_ROLE"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -9799,12 +10102,12 @@
           "id": "mremoteng.inheritance-route",
           "description": "mRemoteNG-style inheritance route ties the Config inheritance workflow card, active document tab and inherited Credential property-grid row through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "GuiMRemoteNgInheritanceRoute",
               "GUI_DESIGN_MREMOTENG_INHERITANCE_ROUTE",
               "gui_design_mremoteng_inheritance_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "mRemoteNgInheritanceRouteKey",
               "mRemoteNgInheritanceRouteInheritedValue",
               "mRemoteNgInheritanceRouteState"
@@ -9831,10 +10134,12 @@
             "src/remote_ops_workspace/gui_designs.py": [
               "GUI_DESIGN_WORKFLOW_CARDS",
               "Document toolbar",
-              "RDP document",
+              "RDP document"
+            ],
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "Config inheritance"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "build_product_workflow_evidence",
               "productWorkflowEvidence",
               "productWorkflowSecondary"
@@ -9852,10 +10157,12 @@
             "src/remote_ops_workspace/gui_designs.py": [
               "GUI_DESIGN_REFERENCE_STATES",
               "GuiProductReferenceState",
-              "SSH document",
+              "SSH document"
+            ],
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "edge-prod [SSH]"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "build_product_reference_state_evidence",
               "productReferenceStateItem",
               "referenceKey"
@@ -9880,7 +10187,7 @@
               "gui_design_product_identity_route",
               "tree-tab-reference-status-workspace-identity"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_product_workspace.py": [
               "productIdentityRouteKey",
               "productIdentityActiveTab",
               "productIdentityStatusSegments"
@@ -9909,10 +10216,9 @@
               "gui_design_preset_reference_tab_route",
               "reference-profile-tab-can-be-active-surface"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceTabActivatedLabel",
-              "presetReferenceTabReturnedHomeLabel",
-              "find_tab_by_label"
+              "presetReferenceTabReturnedHomeLabel"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_tab_route",
@@ -9926,6 +10232,9 @@
             ],
             "docs/GUI_DESIGN.md": [
               "reference tab activation route"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "find_tab_by_label"
             ]
           }
         },
@@ -9939,9 +10248,13 @@
               "active-reference-tab-chrome-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceTabChromeTooltip",
-              "apply_reference_tab_chrome_route_to_terminal_tab",
               "sessionTabBar"
+            ],
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_tab_chrome_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceTabChromeTooltip"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_tab_chrome_route",
@@ -9966,10 +10279,14 @@
               "gui_design_preset_reference_status_bar_route",
               "active-reference-status-bar-evidence"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "presetReferenceStatusSegments",
-              "apply_reference_status_bar_route_to_terminal_tab",
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "productStatusSegment"
+            ],
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_status_bar_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceStatusSegments"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_status_bar_route",
@@ -9994,9 +10311,10 @@
               "gui_design_preset_reference_session_action_route",
               "active-reference-session-actions"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "sessionTabContextActionKey",
-              "apply_reference_session_action_route_to_terminal_tab",
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_session_action_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceSessionActionEnabledKeys"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -10010,6 +10328,9 @@
             ],
             "docs/GUI_DESIGN.md": [
               "reference session action route"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "sessionTabContextActionKey"
             ]
           }
         },
@@ -10022,10 +10343,12 @@
               "gui_design_preset_reference_surface_route",
               "active-reference-tab-surface-evidence"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "presetReferenceSurfaceActualCommand",
-              "presetReferenceSurfaceActualOutput",
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_surface_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceSurfaceActualCommand",
+              "presetReferenceSurfaceActualOutput"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_surface_route",
@@ -10053,9 +10376,11 @@
             "src/remote_ops_workspace/gui_terminal.py": [
               "terminalActionKey"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "presetReferenceControlCapturedActionKeys",
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_control_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceControlCapturedActionKeys"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_control_route",
@@ -10080,10 +10405,14 @@
               "gui_design_preset_reference_input_route",
               "active-reference-tab-terminal-input"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "presetReferenceInputEnabled",
-              "apply_reference_input_route_to_terminal_tab",
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_input_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_terminal.py": [
               "terminalInput"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceInputEnabled"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_input_route",
@@ -10108,10 +10437,14 @@
               "gui_design_preset_reference_transcript_route",
               "active-reference-tab-terminal-transcript"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "presetReferenceTranscriptCommandEcho",
-              "apply_reference_transcript_route_to_terminal_tab",
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_transcript_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_terminal.py": [
               "terminalOutput"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceTranscriptCommandEcho"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_transcript_route",
@@ -10136,7 +10469,10 @@
               "gui_design_preset_selection_route",
               "selector-to-toolbar-sidebar-tabs-status-workspace"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
+              "gui_preset_properties.apply_preset_selection_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetSelectionRouteKey",
               "presetSelectionRouteHomeTabLabel",
               "presetSelectionRouteStatusSegments"
@@ -10165,7 +10501,10 @@
               "gui_design_preset_visual_signature",
               "preset-palette-density-to-live-static-style"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
+              "gui_preset_properties.apply_preset_visual_signature_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetVisualSignatureDensity",
               "presetVisualSignaturePalette",
               "presetVisualSignatureRenderSource"
@@ -10194,7 +10533,10 @@
               "gui_design_preset_isolation_route",
               "active-preset-visible-hidden-widget-isolation"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
+              "gui_preset_properties.apply_preset_isolation_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetIsolationVisibleObjects",
               "presetIsolationHiddenObjects",
               "presetIsolationRenderSource"
@@ -10223,7 +10565,10 @@
               "gui_design_preset_transition_route",
               "selector-style-switch-resets-inactive-product-chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
+              "gui_preset_properties.apply_preset_transition_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetTransitionFromPresetIds",
               "presetTransitionResetObjects",
               "presetTransitionRenderSource"
@@ -10253,9 +10598,14 @@
               "product-preset-keyboard-shortcuts"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetKeyboardShortcutCapturedSequences",
-              "create_keyboard_shortcuts",
+              "self.create_keyboard_shortcuts()"
+            ],
+            "src/remote_ops_workspace/gui_menus.py": [
+              "def create_keyboard_shortcuts",
               "presetKeyboardShortcutActionLabel"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetKeyboardShortcutCapturedSequences"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_keyboard_shortcut_route",
@@ -10281,8 +10631,10 @@
               "product-preset-command-surface-route"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "apply_command_surface_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetCommandSurfaceCapturedKeys",
-              "apply_command_surface_route_for_design",
               "presetCommandSurfaceCapturedStates"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -10309,9 +10661,11 @@
               "gui_design_preset_focus_interaction_route",
               "product-preset-focus-interaction-route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_interaction_states.py": [
+              "apply_focus_interaction_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetFocusInteractionCapturedFocus",
-              "apply_focus_interaction_route_for_design",
               "presetFocusInteractionToolbarStates"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -10337,9 +10691,11 @@
               "gui_design_preset_home_search_route",
               "product-preset-home-search-entry-route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_home.py": [
+              "apply_home_search_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetHomeSearchCapturedPlaceholder",
-              "apply_home_search_route_for_design",
               "presetHomeSearchCapturedRecentLabels"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -10365,7 +10721,10 @@
               "gui_design_preset_catalog_route",
               "preset-catalog-to-design-selector-options"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
+              "gui_preset_properties.apply_preset_catalog_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetCatalogRouteOptionIds",
               "presetCatalogRouteProductPresetIds",
               "presetCatalogRouteDefaultPresetId"
@@ -10394,9 +10753,11 @@
               "external tool checked",
               "delete follows selection"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_interaction_states.py": [
               "configure_interaction_states_for_design",
-              "toolbar_interaction_state",
+              "toolbar_interaction_state"
+            ],
+            "src/remote_ops_workspace/gui_mremoteng.py": [
               "focused_control",
               "mremoteng_document_filter"
             ],

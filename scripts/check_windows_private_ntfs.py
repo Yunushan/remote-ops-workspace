@@ -40,6 +40,35 @@ def require_delete_sharing(native, path: Path, *, blocked: bool, directory: bool
     require(not blocked, "delete-access-granted-with-held-handle")
 
 
+def require_read_only_sharing(native, guard, path: Path) -> None:
+    def open_writer():
+        return native.kernel.CreateFileW(str(path), 0x0002, 0x07, None, 3, 0, None)
+
+    invalid = native.c.c_void_p(-1).value
+    writer = open_writer()
+    require(writer != invalid, "read-only-control-write-open-refused")
+    try:
+        try:
+            with guard.named_file(path, read_only=True):
+                raise ValueError("read-only-lease-accepted-existing-writer")
+        except ValueError as exc:
+            require(exc.args == ("native-file-open-refused",) and native.c.get_last_error() == 32,
+                    "unexpected-existing-writer-refusal")
+    finally:
+        native.close(writer)
+    with guard.named_file(path, read_only=True):
+        require(path.read_bytes() == CANARY, "read-only-canary-differs")
+        writer = open_writer()
+        if writer != invalid:
+            native.close(writer)
+            raise ValueError("write-access-granted-with-read-only-lease")
+        require(native.c.get_last_error() == 32, "unexpected-read-only-write-open-error")
+        require_delete_sharing(native, path, blocked=True)
+    writer = open_writer()
+    require(writer != invalid, "write-access-not-restored-after-read-only-lease")
+    native.close(writer)
+
+
 def open_for_access(native, path: Path, access: int, *, denied: bool) -> None:
     handle = native.kernel.CreateFileW(str(path), access, 0x07, None, 3, 0, None)
     if handle == native.c.c_void_p(-1).value:
@@ -223,6 +252,8 @@ def qualify(parent: Path, observed: list[str], account: str, password: str, cont
             partial.rename(final)
             with guard.named_file(final, expected_identity=written.identity):
                 require(final.read_bytes() == CANARY, "staged-canary-differs")
+            require_read_only_sharing(native, guard, final)
+            observed.append("read-only-handle-denies-existing-and-new-writers")
             require(guard.verify_entries(maximum=2) == 1, "unexpected-stage-entry-count")
             observed.append("published-file-identity-and-bytes")
             check_other_identity(native, final, control, account, password)
@@ -281,11 +312,12 @@ def signed_fixture(origin: str = "https://publisher.invalid"):
         "payload_sha256": hashlib.sha256(payload).hexdigest(),
     }
     policy = {
-        "schema": channel.POLICY_SCHEMA,
+        "schema": channel.POLICY_SCHEMA_V2,
         "enabled": True,
         "manifest_url": manifest_url,
         "organization": organization,
         "channel": update_channel,
+        "minimum_version": manifest["version"],
         "selected_target": target,
         "approved_targets": [target],
         "allowed_origins": [origin],
@@ -441,18 +473,21 @@ def qualify_staging_entrypoints(parent: Path, observed: list[str]) -> None:
 
     native = storage._Native()
     with private_fixture(storage, native, parent, "row-entrypoint-ntfs-") as scratch:
+        def load_fixture_policy(name: str, document: bytes):
+            path = scratch / name
+            with storage.private_stage_guard(scratch, _native=native) as guard:
+                with os.fdopen(guard.create_private_file(path), "wb") as stream:
+                    stream.write(document)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            return channel.load_update_policy(path)
+
         stage = scratch / "stage"
         refused_stage = scratch / "untrusted-stage"
         with serve_https_fixture(scratch, bodies, requested) as (origin, cert_path):
             raw, assets, fixture_policy, _wrong_policy = signed_fixture(origin)
             bodies.update({"/manifest.json": raw, **{f"/{name}": body for name, body in assets.items()}})
-            policy_path = scratch / "policy.json"
-            with storage.private_stage_guard(scratch, _native=native) as guard:
-                with os.fdopen(guard.create_private_file(policy_path), "wb") as stream:
-                    stream.write(fixture_policy.document)
-                    stream.flush()
-                    os.fsync(stream.fileno())
-            policy = channel.load_update_policy(policy_path)
+            policy = load_fixture_policy("policy.json", fixture_policy.document)
             require(policy.digest == fixture_policy.digest, "entrypoint-policy-digest-mismatch")
             try:
                 channel.stage_update(policy, refused_stage, current_home=data_dir())
@@ -481,9 +516,30 @@ def qualify_staging_entrypoints(parent: Path, observed: list[str]) -> None:
         )
         for name, body in assets.items():
             require((stage / name).read_bytes() == body, "entrypoint-staged-bytes-mismatch")
+        old_journal = (stage / channel.JOURNAL).read_bytes()
+        raised_floor = policy.settings
+        major, minor, patch_version = map(int, raised_floor["minimum_version"].split("."))
+        raised_floor["minimum_version"] = f"{major}.{minor}.{patch_version + 1}"
+        incomplete_targets = policy.settings
+        incomplete_targets["approved_targets"].append("windows-arm64")
+        for label, settings, refusal in (
+            ("raised-floor", raised_floor, "update-version-below-policy-minimum"),
+            ("required-target", incomplete_targets, "update-target-set-incomplete"),
+        ):
+            updated_policy = load_fixture_policy(f"{label}.json", json.dumps(settings).encode("utf-8"))
+            try:
+                channel.recover_update(updated_policy, stage, current_home=data_dir())
+            except channel.UpdateError as exc:
+                require(exc.args == (refusal,), "entrypoint-updated-policy-refusal-mismatch")
+            else:
+                raise ValueError("entrypoint-updated-policy-accepted")
+            require((stage / channel.JOURNAL).read_bytes() == old_journal,
+                    "entrypoint-refused-recovery-changed-journal")
+        require(requested == list(bodies), "entrypoint-recovery-requested-network")
     observed.extend((
         "windows-policy-stage-and-recovery-entrypoints",
         "windows-verified-https-stage-and-offline-recovery",
+        "windows-recovery-refuses-below-floor-and-missing-target",
     ))
 
 
@@ -532,6 +588,8 @@ FAILURE_CODES = frozenset({
     "entrypoint-policy-digest-mismatch",
     "entrypoint-fixture-request-mismatch", "entrypoint-recovery-requested-network",
     "entrypoint-stage-recovery-mismatch", "entrypoint-staged-bytes-mismatch",
+    "entrypoint-updated-policy-refusal-mismatch", "entrypoint-updated-policy-accepted",
+    "entrypoint-refused-recovery-changed-journal",
     "private-staging-platform-unqualified", "windows-policy-input-refused",
     "windows-private-boundary-refused", "update-stage-refused", "update-stage-io-refused",
     "unexpected-row-home-override", "expected-staging-interruption-missing", "staging-recovery-binding-mismatch",

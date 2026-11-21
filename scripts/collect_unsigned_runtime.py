@@ -30,6 +30,11 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlsplit
 
+try:
+    from compression import zstd
+except ImportError:
+    zstd = None
+
 SCHEMA = "row.unsigned-runtime-observations.v1"
 TARGETS = {
     "windows-x86",
@@ -240,6 +245,20 @@ def decompressed(raw: bytes, method: str, maximum: int) -> bytes:
         result = decoder.decompress(raw, max_length=maximum + 1)
         if not decoder.eof or decoder.unused_data:
             raise Refusal("compressed-bound-or-trailing-data")
+    elif method == "zstd":
+        if zstd is None:
+            raise Refusal("deb-zstd-backend-unavailable")
+        if not raw.startswith(b"\x28\xb5\x2f\xfd"):
+            raise Refusal("deb-zstd-frame-invalid")
+        try:
+            decoder = zstd.ZstdDecompressor(options={zstd.DecompressionParameter.window_log_max: 27})
+            result = decoder.decompress(raw, max_length=maximum + 1)
+        except zstd.ZstdError as exc:
+            raise Refusal("deb-zstd-frame-invalid") from exc
+        if len(result) > maximum:
+            raise Refusal("expanded-byte-bound")
+        if not decoder.eof or decoder.unused_data:
+            raise Refusal("compressed-bound-or-trailing-data")
     elif method == "zlib":
         decoder = zlib.decompressobj()
         result = decoder.decompress(raw, maximum + 1)
@@ -352,6 +371,7 @@ def scan_carchive(raw: bytes, label: str, observations: Observations, depth: int
     ):
         raise Refusal("carchive-cookie-invalid")
     cursor, seen = toc_start, set()
+    runtime_options = []
     while cursor < toc_start + toc_len:
         observations.node()
         if cursor + 18 > toc_start + toc_len:
@@ -361,7 +381,8 @@ def scan_carchive(raw: bytes, label: str, observations: Observations, depth: int
         )
         if length < 19 or cursor + length > toc_start + toc_len or compression not in (0, 1):
             raise Refusal("carchive-toc-invalid")
-        encoded = raw[cursor + 18 : cursor + length].rstrip(b"\0")
+        name_field = raw[cursor + 18 : cursor + length]
+        encoded = name_field.rstrip(b"\0")
         if b"\0" in encoded:
             raise Refusal("carchive-name-invalid")
         try:
@@ -370,7 +391,14 @@ def scan_carchive(raw: bytes, label: str, observations: Observations, depth: int
             raise Refusal("carchive-name-invalid") from exc
         cursor += length
         if kind == b"o":
-            observations.gap("carchive-runtime-option-unclassified", label)
+            # PyInstaller writes options as empty, uncompressed TOC entries.
+            # Retain only the reviewed default; other values can be private.
+            if stored or size or compression or position > toc_offset or not name_field.endswith(b"\0"):
+                raise Refusal("carchive-runtime-option-invalid")
+            if name == "pyi-contents-directory _internal":
+                runtime_options.append(name)
+            else:
+                observations.gap("carchive-runtime-option-unclassified", label)
             continue
         if (
             size > observations.limits.member_bytes
@@ -399,6 +427,7 @@ def scan_carchive(raw: bytes, label: str, observations: Observations, depth: int
             observations.gap("pyz-module-ownership-unclassified", f"{label}::{name}")
     observations.gap("bootloader-version-and-runtime-closure-unverified", label)
     return {
+        "runtime_options_observed": runtime_options,
         "python_cookie_code_observed": python_code,
         "python_library_name_observed": library.split(b"\0", 1)[0].decode(
             "utf-8", errors="replace"
@@ -598,8 +627,10 @@ def zip_members(raw: bytes, observations: Observations):
     yield from checked_members(entries, observations)
 
 
-def tar_members(raw: bytes, observations: Observations):
-    if raw.startswith(b"\x1f\x8b"):
+def tar_members(raw: bytes, observations: Observations, *, deb_zstd: bool = False):
+    if deb_zstd:
+        raw = decompressed(raw, "zstd", observations.limits.expanded_bytes)
+    elif raw.startswith(b"\x1f\x8b"):
         raw = decompressed(raw, "gzip", observations.limits.expanded_bytes)
     elif raw.startswith(b"\xfd7zXZ\0"):
         raw = decompressed(raw, "xz", observations.limits.expanded_bytes)
@@ -666,7 +697,7 @@ def tar_members(raw: bytes, observations: Observations):
     yield from checked_members(entries(), observations)
 
 
-def deb_tar(raw: bytes, observations: Observations) -> bytes:
+def deb_tar(raw: bytes, observations: Observations) -> tuple[str, bytes]:
     if not raw.startswith(b"!<arch>\n"):
         raise Refusal("deb-ar-invalid")
     cursor, data, names = 8, None, set()
@@ -690,7 +721,7 @@ def deb_tar(raw: bytes, observations: Observations) -> bytes:
         if name.startswith("data.tar"):
             if data is not None:
                 raise Refusal("deb-data-duplicate")
-            data = payload
+            data = name, payload
         elif name == "debian-binary" and payload != b"2.0\n":
             raise Refusal("deb-version-invalid")
         end = cursor + 60 + size
@@ -788,7 +819,8 @@ def scan_package(raw: bytes, name: str, observations: Observations):
         entries = tar_members(raw, observations)
         backend = "bounded-tar"
     elif name.endswith(".deb"):
-        entries = tar_members(deb_tar(raw, observations), observations)
+        member_name, payload = deb_tar(raw, observations)
+        entries = tar_members(payload, observations, deb_zstd=member_name == "data.tar.zst")
         backend = "ar-data-tar"
     elif name.endswith(".rpm"):
         entries = cpio_members(rpm_payload(raw, observations.limits), observations)
@@ -798,9 +830,11 @@ def scan_package(raw: bytes, name: str, observations: Observations):
         return {"backend": None, "all_regular_payload_files_observed": False, "license_records": []}
     start = len(observations.files)
     for member, data in entries:
-        observations.observe(member, data, f"{name}::{member}", package=name)
+        row = observations.observe(member, data, f"{name}::{member}", package=name)
         if native_kind(data):
-            scan_carchive(data, f"{name}::{member}", observations)
+            hints = scan_carchive(data, row["reference"], observations)
+            if hints:
+                row["runtime_options_observed"] = hints["runtime_options_observed"]
     return {
         "backend": backend,
         "all_regular_payload_files_observed": True,

@@ -2177,7 +2177,7 @@ def test_mremoteng_connection_document_route_is_shared_metadata() -> None:
     assert route.property_value_property == "mRemoteNgConnectionRoutePropertyValue"
     assert route.signal == "clicked"
     assert route.handler == "handle_mremoteng_document_reconnect"
-    assert route.reconnect_state == "reconnected"
+    assert route.reconnect_state == "reconnect requested"
     assert route.signal_property == "mRemoteNgConnectionRouteSignal"
     assert route.handler_property == "mRemoteNgConnectionRouteHandler"
     assert route.captured_property == "mRemoteNgConnectionRouteCaptured"

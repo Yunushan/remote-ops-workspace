@@ -100,7 +100,7 @@ IMPLEMENTED_ITEMS = (
         completed_snippet="Added profile importers for Remmina, mRemoteNG, Termius-style JSON and MobaXterm session exports.",
         stale_future_snippets=("Add profile importers for Remmina, mRemoteNG, Termius-style JSON and MobaXterm session exports.",),
         evidence=(
-            Evidence("src/remote_ops_workspace/cli.py", 'imp = sub.add_parser("import"'),
+            Evidence("src/remote_ops_workspace/cli_workspace.py", 'imp = sub.add_parser("import"'),
             Evidence("src/remote_ops_workspace/profile_importers.py", "SUPPORTED_IMPORT_FORMATS"),
         ),
     ),
@@ -124,7 +124,7 @@ IMPLEMENTED_ITEMS = (
             "Add sync provider interface.",
         ),
         evidence=(
-            Evidence("src/remote_ops_workspace/cli.py", 'sync = sub.add_parser("sync"'),
+            Evidence("src/remote_ops_workspace/cli_workspace.py", 'sync = sub.add_parser("sync"'),
             Evidence("src/remote_ops_workspace/sync.py", "class DirectorySyncProvider"),
         ),
     ),
@@ -145,7 +145,7 @@ IMPLEMENTED_ITEMS = (
         stale_future_snippets=("Richer layout save/restore with resize persistence.",),
         evidence=(
             Evidence("src/remote_ops_workspace/layouts.py", "def layout_splitter_size_lengths"),
-            Evidence("src/remote_ops_workspace/gui.py", "def persist_layout_resize_state"),
+            Evidence("src/remote_ops_workspace/gui_layouts.py", "def persist_layout_resize_state"),
             Evidence("tests/test_operator_features.py", "test_layout_store_roundtrips_nested_splitter_sizes"),
         ),
     ),
@@ -156,7 +156,7 @@ IMPLEMENTED_ITEMS = (
         evidence=(
             Evidence("src/remote_ops_workspace/gui_editors.py", "PROTOCOL_PRESETS"),
             Evidence("src/remote_ops_workspace/gui_dialogs.py", "class ProfileImportPreviewDialog"),
-            Evidence("src/remote_ops_workspace/gui.py", "def import_profiles_with_preview"),
+            Evidence("src/remote_ops_workspace/gui_profile_actions.py", "def import_profiles_with_preview"),
             Evidence("tests/test_gui_editors.py", "test_protocol_preset_editor_data_uses_safe_protocol_defaults"),
         ),
     ),
@@ -167,7 +167,7 @@ IMPLEMENTED_ITEMS = (
         evidence=(
             Evidence("src/remote_ops_workspace/team_sync.py", "class TeamSyncBackend"),
             Evidence("src/remote_ops_workspace/team_sync.py", "class TeamSyncConflictError"),
-            Evidence("src/remote_ops_workspace/cli.py", 'team_sync = sub.add_parser("team-sync"'),
+            Evidence("src/remote_ops_workspace/cli_workspace.py", 'team_sync = sub.add_parser("team-sync"'),
             Evidence(
                 "tests/test_team_sync.py",
                 "test_team_sync_refuses_a_concurrent_advisory_writer_lock",

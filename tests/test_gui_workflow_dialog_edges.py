@@ -7,13 +7,6 @@ import pytest
 from remote_ops_workspace.models import Profile
 
 
-def _set_closure_value(monkeypatch, function, name: str, value) -> None:
-    index = function.__code__.co_freevars.index(name)
-    closure = function.__closure__
-    assert closure is not None
-    monkeypatch.setattr(closure[index], "cell_contents", value)
-
-
 @pytest.fixture
 def gui_window(monkeypatch, tmp_path):
     if "QT_QPA_PLATFORM" not in os.environ:
@@ -128,16 +121,11 @@ def test_open_transfer_queue_selected_handles_selection_cancel_success_and_error
 ) -> None:
     from PyQt6.QtWidgets import QDialog
 
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_profile_actions
 
     _app, window = gui_window
     messages: list[tuple[object, ...]] = []
-    _set_closure_value(
-        monkeypatch,
-        type(window).open_transfer_queue_selected,
-        "_literal_message_box",
-        lambda *args, **_kwargs: messages.append(args),
-    )
+    monkeypatch.setattr(window, "show_message", lambda *args, **_kwargs: messages.append(args))
     monkeypatch.setattr(window, "selected_profile_name", lambda: None)
     window.open_transfer_queue_selected()
     assert messages
@@ -165,14 +153,14 @@ def test_open_transfer_queue_selected_handles_selection_cancel_success_and_error
 
     window.store = _Store(profile)
     monkeypatch.setattr(
-        gui,
+        gui_profile_actions,
         "assert_profile_launch_allowed",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("policy blocked")),
     )
     window.open_transfer_queue_selected()
     assert len(messages) == 3
 
-    monkeypatch.setattr(gui, "assert_profile_launch_allowed", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(gui_profile_actions, "assert_profile_launch_allowed", lambda *_args, **_kwargs: None)
 
     class _Plan:
         batch_commands = ["get /remote /local"]

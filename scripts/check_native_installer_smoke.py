@@ -204,8 +204,18 @@ def check_runtime_resource_script(platform: str, script: Path, text: str) -> lis
             'verify_app_macos_minimum "$PKG_APP" "PKG verify"': "PKG minimum macOS version check",
             '[[ "$minimum" != "14.4.0" ]]': "macOS 14.4 minimum version assertion",
             'pkgutil --expand "$PKG"': "final PKG distribution readback",
-            'distribution.findall("./volume-check/allowed-os-versions/os-version")': "PKG install-time OS range check",
-            'native installer smoke PKG distribution: macOS 14.4 minimum': "PKG distribution evidence line",
+            '/usr/bin/lsbom -p f "$PKG_EXPANDED/remote-ops-workspace-component.pkg/Bom"': "PKG component bill of materials",
+            'python3 -I "$ROOT/scripts/check_macos_pkg_receipt.py" package': "PKG package metadata and file scope check",
+            'pkgutil --pkg-info "$APP_ID"': "installed PKG receipt metadata",
+            'pkgutil --files "$APP_ID"': "installed PKG receipt paths",
+            'python3 -I "$ROOT/scripts/check_macos_pkg_receipt.py" receipt': "installed PKG receipt-to-BOM comparison",
+            'verify_pkg_receipt "PKG verify"': "PKG receipt check after install",
+            'verify_pkg_receipt "PKG upgrade"': "PKG receipt check after reinstall",
+            'candidate_posix_byte_binding.py bundle': "application bundle byte binding helper",
+            'candidate_check_bundle "$DMG_APP" dmg install': "DMG app bundle after install",
+            'candidate_check_bundle "$DMG_APP" dmg reinstall': "DMG app bundle after reinstall",
+            'candidate_check_bundle "$PKG_APP" pkg install': "PKG app bundle after install",
+            'candidate_check_bundle "$PKG_APP" pkg reinstall': "PKG app bundle after reinstall",
             "release_architectures": "release architecture resource assertion",
             "windows_legacy_targets": "legacy Windows resource assertion",
             "native installer smoke runtime resources:": "resource-probe evidence line",
@@ -218,6 +228,13 @@ def check_runtime_resource_script(platform: str, script: Path, text: str) -> lis
             )
 
     if platform == "macos":
+        package_check = text.find('python3 -I "$ROOT/scripts/check_macos_pkg_receipt.py" package')
+        first_install = text.find('sudo installer -pkg "$PKG" -target /')
+        if not 0 <= package_check < first_install:
+            errors.append(f"{repo_path(script)} must check expanded PKG identity and BOM before installation")
+        verifier = ROOT / "scripts/check_macos_pkg_receipt.py"
+        if not verifier.is_file():
+            errors.append(f"macOS PKG receipt verifier missing: {repo_path(verifier)}")
         build_script = ROOT / "scripts" / "make_macos_native.sh"
         build_text = build_script.read_text(encoding="utf-8") if build_script.exists() else ""
         for snippet, label in {

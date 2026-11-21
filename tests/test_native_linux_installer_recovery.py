@@ -13,6 +13,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from scripts import managed_debian_qualification
+
 REPO = Path.cwd()
 DRAFT = REPO / ".tmp/native-linux-prior-transition-draft-20261002"
 
@@ -40,6 +42,38 @@ def tar_bytes(rows):
             item.size = len(data) if kind == tarfile.REGTYPE else 0
             archive.addfile(item, io.BytesIO(data) if kind == tarfile.REGTYPE else None)
     return result.getvalue()
+
+
+@pytest.mark.parametrize("path_prefix", ["", "native-dist/linux/", "../"])
+def test_linux_recovery_manifest_binds_payload_by_safe_filename(module, tmp_path, path_prefix):
+    version = "1.0.28"
+    prefix = f"remote-ops-workspace-v{version}-linux-x86_64-native-"
+    assets = {}
+    records = []
+    for filename in ("package.deb", "package.rpm", "package.AppImage", "package.tar.gz"):
+        payload = tmp_path / filename
+        payload.write_bytes(filename.encode("ascii"))
+        assets[filename] = payload
+        records.append({
+            "file": path_prefix + filename,
+            "size_bytes": payload.stat().st_size,
+            "sha256": hashlib.sha256(payload.read_bytes()).hexdigest(),
+        })
+    manifest = tmp_path / (prefix + "manifest.json")
+    manifest.write_text(json.dumps(records), encoding="utf-8")
+    assets[manifest.name] = manifest
+    checksums = tmp_path / (prefix + "SHA256SUMS.txt")
+    checksums.write_text(
+        "".join(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {name}\n" for name, path in assets.items()),
+        encoding="ascii",
+    )
+    assets[checksums.name] = checksums
+
+    if path_prefix == "../":
+        with pytest.raises(module.EvidenceError, match="native-manifest-row-set"):
+            module.verify_manifest(assets, version)
+    else:
+        module.verify_manifest(assets, version)
 
 
 PREVIOUS_PAYLOAD_PATHS = (
@@ -151,6 +185,24 @@ def test_genuine_shape_control_and_payload_are_data_only(module):
     assert payload.row_sha256 == hashlib.sha256(b"harmless-fixture:usr/bin/row").hexdigest()
 
 
+@pytest.mark.parametrize(("version", "depends", "accepted"), [
+    ("1.0.28", "libc6 (>= 2.38), zlib1g", True),
+    ("1.0.24", "libc6 (>= 2.38), zlib1g", False),
+    ("1.0.28", "libc6 | zlib1g", False),
+    ("1.0.28", "libc6, unreviewed-package", False),
+    ("1.0.28", "libc6,\n unreviewed-package", False),
+])
+def test_recovery_control_accepts_only_reviewed_candidate_libraries(module, version, depends, accepted):
+    rows = control_rows(version)
+    name, data, kind, mode, owner = rows[1]
+    rows[1] = (name, data + f"Depends: {depends}\n".encode(), kind, mode, owner)
+    if accepted:
+        module.control_identity(tar_bytes(rows), version)
+    else:
+        with pytest.raises(module.EvidenceError):
+            module.control_identity(tar_bytes(rows), version)
+
+
 @pytest.mark.parametrize(
     "extra", ["postinst", "preinst", "prerm", "postrm", "triggers", "conffiles"]
 )
@@ -235,6 +287,29 @@ def test_prior_compatibility_does_not_allow_unpinned_six_file_layout(module):
 def test_candidate_still_requires_third_party_notices(module):
     with pytest.raises(module.EvidenceError, match="files-incomplete"):
         module.payload_inventory(tar_bytes(payload_rows(module, "1.0.24")), "1.0.27")
+
+
+@pytest.mark.parametrize(("version", "component", "kind", "mode", "accepted"), [
+    ("1.0.28", "cpython", tarfile.REGTYPE, 0o644, True),
+    ("1.0.24", "cpython", tarfile.REGTYPE, 0o644, False),
+    ("1.0.28", "unknown", tarfile.REGTYPE, 0o644, False),
+    ("1.0.28", "cpython", tarfile.REGTYPE, 0o755, False),
+    ("1.0.28", "cpython", tarfile.SYMTYPE, 0o644, False),
+])
+def test_package_license_paths_preserve_stock_payload_restrictions(module, version, component, kind, mode, accepted):
+    root = "usr/share/doc/remote-ops-workspace/licenses"
+    license_file = f"{root}/{component}/LICENSE.txt"
+    rows = payload_rows(module, version) + [
+        (root, b"", tarfile.DIRTYPE, 0o755, 0),
+        (f"{root}/{component}", b"", tarfile.DIRTYPE, 0o755, 0),
+        (license_file, b"license fixture", kind, mode, 0),
+    ]
+    if accepted:
+        payload = module.payload_inventory(tar_bytes(rows), version)
+        assert license_file in {row[0] for row in payload.files}
+    else:
+        with pytest.raises(module.EvidenceError):
+            module.payload_inventory(tar_bytes(rows), version)
 
 
 @pytest.mark.parametrize("version", ["1.0.23", "1.0.024", "1.0.24\n"])
@@ -929,7 +1004,7 @@ def test_individual_host_predicates_refuse_pure_data_without_spoofing_run(
         "sys_platform": "linux",
         "machine": "x86_64",
         "implementation": "cpython",
-        "version_info": (3, 14, 7),
+        "version_info": (3, 14, 10),
         "distro_id": "ubuntu",
         "distro_version": "24.04",
         "workspace_absolute": True,
@@ -1055,10 +1130,174 @@ def test_workflow_recovery_needs_x64_and_actual_basic_finish(
     assert (
         "timeout-minutes: 35" in step and "scripts/native_linux_installer_recovery.py run" in step
     )
+    assert "if [[ -f scripts/qualify_managed_debian_update.py ]]; then" in step
+    assert "options+=(--qualify-managed-update)" in step
     upload = section[
         section.index("      - name: Retain unreleased candidate proof and artifacts") :
     ]
     assert ".tmp/" not in upload and "build/native-smoke/linux-${{ matrix.arch }}/" in upload
+
+
+@pytest.mark.parametrize(("bundled", "mismatch"), [
+    (False, None), (True, None), (False, "digest"), (False, "interruption"),
+    (False, "changed-launcher-reason"), (True, "changed-server-manifest-reason"),
+    (True, "changed-server-manifest-missing"),
+    (False, "automatic-missing"), (False, "automatic-manual-action"), (False, "automatic-digest"),
+    (False, "missing-rollback-interruption"), (False, "rollback-exit-code"), (False, "rollback-launcher"),
+    (False, "rollback-repeat"), (False, "native-rollback-repeated"), (False, "rollback-plan-schema"),
+    (False, "old-schema"), (False, "automatic-schema"),
+    (False, "interruption-schema"), (False, "dependency-step-missing"), (False, "dependency-reason"),
+    (False, "dependency-digest"), (False, "dependency-journal"), (False, "dependency-previous"),
+    (False, "upgrade-plan-schema"), (False, "rollback-conflict-missing"),
+    (False, "rollback-conflict-journal"), (False, "rollback-conflict-retry"), (False, "rollback-conflict-digest"),
+])
+def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, monkeypatch, bundled, mismatch):
+    previous = tmp_path / "previous.deb"
+    candidate = tmp_path / "candidate.deb"
+    head = "d" * 40
+    calls = []
+    depends = "libc6 (>= 2.38), libvncserver1" if bundled else ""
+    build_image = "sha256:" + "f" * 64
+    monkeypatch.setenv("GITHUB_RUN_ID", "1234")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+
+    def capture(argv, **kwargs):
+        calls.append(argv)
+        if argv[0] == "/usr/bin/git":
+            return b"candidate archive"
+        if argv[1] == "pull":
+            return b"image pull progress"
+        if argv[1] == "build":
+            context = Path(argv[-1])
+            assert {path.name for path in context.iterdir()} == {"Dockerfile"}
+            dockerfile = (context / "Dockerfile").read_text()
+            assert f"FROM {module.MANAGED_IMAGE}" in dockerfile
+            assert 'satisfy "$ROW_DRILL_DEPENDS"' in dockerfile
+            assert f"ROW_DRILL_DEPENDS={depends}" in argv
+            Path(argv[argv.index("--iidfile") + 1]).write_text(build_image)
+            return b"image build progress"
+        steps = {name: {"phase": phase, "exit_code": code} for name, phase, code in (
+            ("previous", "authenticated-staged", 0), ("candidate", "authenticated-staged", 0),
+            ("failing", "authenticated-staged", 0), ("interrupted", "authenticated-staged", 0),
+            ("candidate-apply", "applied", 0), ("explicit-rollback", "rolled-back", 0),
+            ("failing-apply", "rolled-back", 1),
+            ("interrupted-apply", "applied" if mismatch == "interruption" else "rolled-back", 1),
+        )}
+        steps["changed-launcher-rollback"] = {
+            "phase": "refused", "exit_code": 1,
+            "refusal": "unrelated" if mismatch == "changed-launcher-reason"
+            else "installed-launcher-digest-refused",
+        }
+        if bundled and mismatch != "changed-server-manifest-missing":
+            steps["changed-server-manifest-rollback"] = {
+                "phase": "refused", "exit_code": 1,
+                "refusal": "unrelated" if mismatch == "changed-server-manifest-reason"
+                else "installed-runtime-payload-refused",
+            }
+        for name, action, phase, code, package_digest in (
+            ("automatic-candidate", "update", "applied", 0, "b" * 64),
+            ("automatic-failing", "update", "rolled-back", 1, "f" * 64),
+            ("automatic-explicit-rollback", "rollback", "rolled-back", 0, "b" * 64),
+        ):
+            steps[name] = {"action": action, "phase": phase, "exit_code": code,
+                           "previous_sha256": "a" * 64, "candidate_sha256": package_digest}
+        steps["candidate-apply"].update(action="update", previous_sha256="a" * 64, candidate_sha256="b" * 64)
+        steps["interrupted-apply"].update(action="update", previous_sha256="a" * 64)
+        steps["failing-apply"]["candidate_sha256"] = "f" * 64
+        steps["candidate-apply"]["previous_launcher_sha256"] = "e" * 64
+        rollback = {"action": "rollback", "phase": "rolled-back", "exit_code": 0,
+                    "previous_sha256": "a" * 64, "candidate_sha256": "b" * 64,
+                    "previous_launcher_sha256": "e" * 64}
+        steps["explicit-rollback"] = rollback
+        steps["repeated-rollback"] = dict(rollback)
+        steps["rollback-interruption"] = {
+            **rollback, "phase": "rolling-back", "exit_code": -15,
+            "native_rollback_invocations": 2 if mismatch == "native-rollback-repeated" else 1,
+        }
+        if mismatch == "missing-rollback-interruption":
+            del steps["rollback-interruption"]
+        if mismatch == "rollback-exit-code":
+            steps["rollback-interruption"]["exit_code"] = 0
+        if mismatch == "rollback-launcher":
+            steps["rollback-interruption"]["previous_launcher_sha256"] = "f" * 64
+        if mismatch == "rollback-repeat":
+            steps["repeated-rollback"]["architecture"] = "arm64"
+        if mismatch == "automatic-missing":
+            del steps["automatic-failing"]
+        if mismatch == "automatic-manual-action":
+            steps["interrupted-apply"]["action"] = "apply"
+        if mismatch == "automatic-digest":
+            steps["automatic-candidate"]["candidate_sha256"] = "f" * 64
+        schemas = {"old-schema": managed_debian_qualification.PREVIOUS_SCHEMA,
+                   "automatic-schema": managed_debian_qualification.AUTOMATIC_SCHEMA,
+                   "interruption-schema": managed_debian_qualification.INTERRUPTION_SCHEMA,
+                   "upgrade-plan-schema": managed_debian_qualification.UPGRADE_PLAN_SCHEMA,
+                   "rollback-plan-schema": managed_debian_qualification.ROLLBACK_PLAN_SCHEMA}
+        if mismatch in {"old-schema", "automatic-schema"}:
+            del steps["rollback-interruption"], steps["repeated-rollback"]
+        if mismatch not in schemas or mismatch in {"upgrade-plan-schema", "rollback-plan-schema"}:
+            steps["dependency-blocked"] = {"phase": "authenticated-staged", "exit_code": 0}
+            if mismatch != "dependency-step-missing":
+                steps["dependency-blocked-apply"] = {
+                    "action": "apply", "phase": "refused", "exit_code": 1,
+                    "refusal": "unrelated" if mismatch == "dependency-reason" else "debian-upgrade-plan-refused",
+                    "previous_sha256": "a" * 64,
+                    "candidate_sha256": "b" * 64 if mismatch == "dependency-digest" else "0" * 64,
+                    "previous_installation_unchanged": mismatch != "dependency-previous",
+                    "journal_created": mismatch == "dependency-journal",
+                }
+        if mismatch not in schemas or mismatch == "rollback-plan-schema":
+            if mismatch != "rollback-conflict-missing":
+                steps["dependency-blocked-rollback"] = {
+                    "phase": "refused", "exit_code": 1, "action": "rollback",
+                    "refusal": "debian-rollback-plan-refused", "previous_sha256": "a" * 64,
+                    "candidate_sha256": "0" * 64 if mismatch == "rollback-conflict-digest" else "b" * 64,
+                    "candidate_installation_unchanged": True, "journal_unchanged": mismatch != "rollback-conflict-journal",
+                }
+            steps["dependency-blocked-update-retry"] = dict(steps["candidate-apply"])
+            if mismatch == "rollback-conflict-retry":
+                steps["dependency-blocked-update-retry"]["action"] = "apply"
+        if mismatch == "rollback-plan-schema":
+            del steps["rollback-interruption"]["native_rollback_invocations"]
+        return json.dumps({
+            "schema": schemas.get(mismatch, managed_debian_qualification.SCHEMA),
+            "status": "passed", "target": module.TARGET,
+            "production_acceptance": False, "previous_sha256": "a" * 64,
+            "candidate_sha256": "c" * 64 if mismatch == "digest" else "b" * 64,
+            "controller_sha256": module.digest(module.ROOT / "scripts/managed_linux_update.py"),
+            "download_server_closed_before_apply": True, "workspace_unchanged": True,
+            "candidate_has_server_bundle": bundled,
+            "receipts": steps,
+        }).encode()
+
+    def qualify():
+        return module.managed_debian_report(
+            SimpleNamespace(capture=capture), tmp_path, head, previous, candidate, "a" * 64, "b" * 64,
+            depends=depends,
+        )
+
+    if mismatch is None:
+        report = qualify()
+        assert report["source_sha"] == head and report["run_attempt"] == "2"
+        assert report["source_archive_sha256"] == module.digest(tmp_path / "managed-source.tar")
+    else:
+        with pytest.raises(module.EvidenceError, match="managed-debian-receipt-binding-mismatch"):
+            qualify()
+    assert calls[0] == ["/usr/bin/git", "archive", "--format=tar", head]
+    assert calls[1] == ["/usr/bin/docker", "pull", "--platform", "linux/amd64", module.MANAGED_IMAGE]
+    assert [call[1] for call in calls[2:]] == (["build", "run"] if bundled else ["run"])
+    docker = calls[-1]
+    assert docker[:5] == ["/usr/bin/docker", "run", "--rm", "--network", "none"]
+    assert "--pull=never" in docker and (build_image if bundled else module.MANAGED_IMAGE) in docker
+    mounts = [docker[index + 1] for index, item in enumerate(docker) if item == "--mount"]
+    assert len(mounts) == 4 and all(mount.endswith(",readonly") for mount in mounts)
+
+
+@pytest.mark.parametrize("depends", ["curl", "libssl3t64, libc6", "libc6, libc6"])
+def test_managed_drill_image_requires_audited_package_relationships(module, tmp_path, depends):
+    commands = SimpleNamespace(capture=lambda *_args, **_kwargs: pytest.fail("Docker started"))
+    with pytest.raises((ValueError, module.EvidenceError), match="Debian runtime metadata|outside-library-inventory"):
+        module.managed_drill_image(commands, tmp_path, depends)
 
 
 @pytest.mark.parametrize(

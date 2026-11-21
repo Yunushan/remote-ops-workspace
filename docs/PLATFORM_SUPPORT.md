@@ -2,34 +2,34 @@
 
 ## Release assets
 
-Tagged releases publish one source bundle plus one install-oriented bundle for
-each public target badge:
+The v1.0.28 candidate declares the following release assets. Published
+downloads are available from the [GitHub Releases page](https://github.com/Yunushan/remote-ops-workspace/releases).
 
 | Target | Asset |
 |---|---|
-| Python wheel | `remote_ops_workspace-1.0.27-py3-none-any.whl` |
-| Python sdist | `remote_ops_workspace-1.0.27.tar.gz` |
-| Source | `remote-ops-workspace-v1.0.27-source.zip` |
-| Windows | `remote-ops-workspace-v1.0.27-windows.zip` |
-| Linux | `remote-ops-workspace-v1.0.27-linux.tar.gz` |
-| macOS | `remote-ops-workspace-v1.0.27-macos.tar.gz` |
-| BSD | `remote-ops-workspace-v1.0.27-bsd.tar.gz` |
-| Solaris/illumos | `remote-ops-workspace-v1.0.27-solaris.tar.gz` |
-| Android/Termux | `remote-ops-workspace-v1.0.27-android-termux.tar.gz` |
-| iOS/iPadOS Web/PWA | `remote-ops-workspace-v1.0.27-web-pwa.zip` |
-| Web/PWA | `remote-ops-workspace-v1.0.27-web-pwa.zip` |
-| Windows native | `remote-ops-workspace-v1.0.27-windows-<x86\|x64\|arm64>-setup.exe` |
-| Windows native | `remote-ops-workspace-v1.0.27-windows-<x86\|x64\|arm64>.msi` |
-| Windows native | `remote-ops-workspace-v1.0.27-windows-<x86\|x64\|arm64>-native.zip` |
-| macOS native | `remote-ops-workspace-v1.0.27-macos-<x64\|arm64>.dmg` |
-| macOS native | `remote-ops-workspace-v1.0.27-macos-<x64\|arm64>.pkg` |
-| macOS native | `remote-ops-workspace-v1.0.27-macos-<x64\|arm64>-native-manifest.json` |
-| Linux native | `remote-ops-workspace-v1.0.27-linux-<amd64\|arm64>.deb` |
-| Linux native | `remote-ops-workspace-v1.0.27-linux-<x86_64\|aarch64>.rpm` |
-| Linux native | `remote-ops-workspace-v1.0.27-linux-<x86_64\|aarch64>.AppImage` |
-| Linux native | `remote-ops-workspace-v1.0.27-linux-<x86_64\|aarch64>-native.tar.gz` |
-| Linux native | `remote-ops-workspace-v1.0.27-linux-<x86_64\|aarch64>-native-manifest.json` |
-| Manifests | `remote-ops-workspace-v1.0.27-*-manifest.json` |
+| Python wheel | `remote_ops_workspace-1.0.28-py3-none-any.whl` |
+| Python sdist | `remote_ops_workspace-1.0.28.tar.gz` |
+| Source | `remote-ops-workspace-v1.0.28-source.zip` |
+| Windows | `remote-ops-workspace-v1.0.28-windows.zip` |
+| Linux | `remote-ops-workspace-v1.0.28-linux.tar.gz` |
+| macOS | `remote-ops-workspace-v1.0.28-macos.tar.gz` |
+| BSD | `remote-ops-workspace-v1.0.28-bsd.tar.gz` |
+| Solaris/illumos | `remote-ops-workspace-v1.0.28-solaris.tar.gz` |
+| Android/Termux | `remote-ops-workspace-v1.0.28-android-termux.tar.gz` |
+| iOS/iPadOS Web/PWA | `remote-ops-workspace-v1.0.28-web-pwa.zip` |
+| Web/PWA | `remote-ops-workspace-v1.0.28-web-pwa.zip` |
+| Windows native | `remote-ops-workspace-v1.0.28-windows-<x86\|x64\|arm64>-setup.exe` |
+| Windows native | `remote-ops-workspace-v1.0.28-windows-<x86\|x64\|arm64>.msi` |
+| Windows native | `remote-ops-workspace-v1.0.28-windows-<x86\|x64\|arm64>-native.zip` |
+| macOS native | `remote-ops-workspace-v1.0.28-macos-<x64\|arm64>.dmg` |
+| macOS native | `remote-ops-workspace-v1.0.28-macos-<x64\|arm64>.pkg` |
+| macOS native | `remote-ops-workspace-v1.0.28-macos-<x64\|arm64>-native-manifest.json` |
+| Linux native | `remote-ops-workspace-v1.0.28-linux-<amd64\|arm64>.deb` |
+| Linux native | `remote-ops-workspace-v1.0.28-linux-<x86_64\|aarch64>.rpm` |
+| Linux native | `remote-ops-workspace-v1.0.28-linux-<x86_64\|aarch64>.AppImage` |
+| Linux native | `remote-ops-workspace-v1.0.28-linux-<x86_64\|aarch64>-native.tar.gz` |
+| Linux native | `remote-ops-workspace-v1.0.28-linux-<x86_64\|aarch64>-native-manifest.json` |
+| Manifests | `remote-ops-workspace-v1.0.28-*-manifest.json` |
 
 The platform bundles include source, docs, examples, relevant installer entry
 points, and per-target release notes. They are not native protocol-client
@@ -129,7 +129,7 @@ workflows.
 
 The runner-readiness gate must run immediately before dispatch. It checks only
 sanitized counts for required self-hosted label sets and requires an idle Linux
-i386 runner, an idle Linux armhf runner, and an idle modern `xp-evidence`
+Linux evidence collector on x64 with both target labels and an idle modern `xp-evidence`
 collector. It requires a GitHub token with repository administration read
 access and does not broaden normal release-token permissions.
 those commands must fail until linux-i386, linux-armhf,
@@ -324,8 +324,10 @@ Current readiness:
   `scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha> --builder-evidence <builder-identity.json>`, native
   manifest evidence, checksum sidecars and
   `python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir <target-release-artifact-dir> --tag v<project.version> --strict`.
-  The dispatch-only evidence workflow uses a `[self-hosted, linux, i386]`
-  runner and uploads `extended-linux-evidence-linux-i386-v<project.version>`, including
+  The dispatch-only evidence workflow uses a `[self-hosted, linux, x64, i386]`
+  collector. The native i386 builder runs `scripts/capture_linux_platform_evidence.sh linux-i386`
+  with the collector's exact run identity. The collector validates the staged
+  capture and uploads `extended-linux-evidence-linux-i386-v<project.version>`, including
   `builder-identity-linux-i386.json` and
   `native-smoke-linux-i386.log` inside the review bundle, plus
   `platform-verified-evidence-linux-i386.json` as the reviewed registry-record
@@ -333,15 +335,16 @@ Current readiness:
   and `release_asset_source.run_attempt` must be a positive GitHub Actions run attempt.
   That builder identity must prove `workflow_ref` pointing at `.github/workflows/extended-platform-evidence.yml`, `workflow_sha`, `source_head_sha` and `observed_git_head_sha` matching the release source head SHA, `git_worktree_clean=true`, `workflow_run_attempt` matching the release source run attempt, `dpkg --print-architecture=i386`,
   `getconf LONG_BIT=32`, concrete `rpm`/`rpmbuild` tool paths and `sudo_non_interactive=true`, plus a target/release-scoped review bundle from
-  `python scripts/make_extended_linux_evidence_bundle.py --target linux-i386 --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --runtime-report <target-release-evidence-dir>/candidate-pip-inspect.json --candidate-record <platform-verified-evidence-linux-i386.json> --out-dir <target-release-artifact-dir>`.
+  `python scripts/make_extended_linux_evidence_bundle.py --target linux-i386 --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --runtime-report <target-release-evidence-dir>/candidate-pip-inspect.json --require-source-wheel-inventory --candidate-record <platform-verified-evidence-linux-i386.json> --out-dir <target-release-artifact-dir>`.
 - Linux armhf: 70.0%, script-supported native. Promotion requires a real
   armv7l/armhf release builder, default `linux-native` release matrix
   membership, upload/publish asset coverage, `scripts/make_linux_native.sh`
   output, `scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux --target linux-armhf --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha> --builder-evidence <builder-identity.json>`,
   native manifest evidence, checksum sidecars and
   `python scripts/check_platform_promotion_artifacts.py --target linux-armhf --assets-dir <target-release-artifact-dir> --tag v<project.version> --strict`.
-  The dispatch-only evidence workflow uses a `[self-hosted, linux, armhf]`
-  runner and uploads `extended-linux-evidence-linux-armhf-v<project.version>`, including
+  The dispatch-only evidence workflow uses a `[self-hosted, linux, x64, armhf]`
+  collector. The native build runs `scripts/capture_linux_platform_evidence.sh linux-armhf`.
+  The collector validates the staged capture and uploads `extended-linux-evidence-linux-armhf-v<project.version>`, including
   `builder-identity-linux-armhf.json` and
   `native-smoke-linux-armhf.log` inside the review bundle, plus
   `platform-verified-evidence-linux-armhf.json` as the reviewed registry-record
@@ -349,7 +352,7 @@ Current readiness:
   and `release_asset_source.run_attempt` must be a positive GitHub Actions run attempt.
   That builder identity must prove `workflow_ref` pointing at `.github/workflows/extended-platform-evidence.yml`, `workflow_sha`, `source_head_sha` and `observed_git_head_sha` matching the release source head SHA, `git_worktree_clean=true`, `workflow_run_attempt` matching the release source run attempt, `dpkg --print-architecture=armhf`,
   `getconf LONG_BIT=32`, concrete `rpm`/`rpmbuild` tool paths and `sudo_non_interactive=true`, plus a target/release-scoped review bundle from
-  `python scripts/make_extended_linux_evidence_bundle.py --target linux-armhf --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --runtime-report <target-release-evidence-dir>/candidate-pip-inspect.json --candidate-record <platform-verified-evidence-linux-armhf.json> --out-dir <target-release-artifact-dir>`.
+  `python scripts/make_extended_linux_evidence_bundle.py --target linux-armhf --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --runtime-report <target-release-evidence-dir>/candidate-pip-inspect.json --require-source-wheel-inventory --candidate-record <platform-verified-evidence-linux-armhf.json> --out-dir <target-release-artifact-dir>`.
 - Windows XP native host: 25.0%, remote-target-only as a local operator host
   row. Promotion requires a separate XP-capable legacy toolchain, XP x86 SP3
   and Windows XP Professional x64 Edition SP2 VM or physical-host smoke
@@ -508,6 +511,18 @@ Before packaging, the builder checks the launcher's ELF class and machine
 against the target. For armhf it also checks the hard-float ABI flag.
 The protected i386 and armhf smoke tests repeat the check on the installed
 DEB and RPM launchers and the launcher extracted from the AppImage.
+The DEB declares the minimum glibc version and shared-library packages required
+by its frozen launcher, including libraries inside the PyInstaller archive.
+DEBs with a reviewed server bundle also declare the bundled daemons'
+dependencies. The RPM also declares versioned shared-library requirements from
+inside the archive so the package manager can check them before installation.
+The native release manifest lists `minimum_glibc` for the AppImage and native
+tarball. Run `getconf GNU_LIBC_VERSION` to compare your host with that value.
+The tarball also records the requirement in `RELEASE_TARGET.md`. At launch,
+the AppImage reports when it detects a glibc version below the minimum.
+On a distribution that cannot satisfy those requirements, use the source
+installation with a supported Python interpreter.
+[RPM ELF dependency generator](https://rpm.org/docs/6.1.x/man/elfdeps.1)
 
 Recommended external clients:
 
@@ -575,7 +590,7 @@ row doctor
 Target workflows:
 
 - Web/PWA from Safari or another trusted browser.
-- Static Web/PWA asset from `remote-ops-workspace-v1.0.27-web-pwa.zip`.
+- Static Web/PWA asset from `remote-ops-workspace-v1.0.28-web-pwa.zip`.
 - iOS/iPadOS 15 through 27.x Web/PWA compatibility contract.
 - Live simulator smoke on the current GitHub macOS/Xcode runtime through the
   `ios-simulator-web` job.

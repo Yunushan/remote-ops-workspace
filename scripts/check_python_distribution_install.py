@@ -115,10 +115,22 @@ def project_version() -> str:
 GUI_SOURCE_MODULES = (
     "gui_terminal",
     "gui_processes",
+    "gui_smartcards",
+    "gui_layouts",
+    "gui_designs",
+    "gui_preset_mobaxterm",
+    "gui_preset_mremoteng",
+    "gui_preset_remmina",
+    "gui_preset_securecrt",
+    "gui_preset_termius",
+    "gui_product_workspace",
+    "gui_reference_tabs",
     "gui_values",
     "terminal_output",
     "gui_workspace",
     "gui_connected",
+    "gui_connected_terminal",
+    "gui_sftp_editor",
     "quick_connect",
 )
 GUI_ARCHIVE_LIMIT = 64 * 1024 * 1024

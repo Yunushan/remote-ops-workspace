@@ -168,6 +168,7 @@ def check_preview_manifest_coverage(criteria: dict[str, Any], manifest: dict[str
 
 def check_requirement_evidence(criteria: dict[str, Any]) -> list[str]:
     errors: list[str] = []
+    source_cache: dict[Path, str | None] = {}
     for preset_id, preset_data in criteria.get("presets", {}).items():
         for requirement in preset_data.get("requirements", []):
             requirement_id = str(requirement.get("id", f"{preset_id}.unknown"))
@@ -176,10 +177,10 @@ def check_requirement_evidence(criteria: dict[str, Any]) -> list[str]:
                 continue
             for rel_path, tokens in source_tokens.items():
                 path = ROOT / str(rel_path)
-                if not path.is_file():
+                text = read_evidence_source(path, source_cache)
+                if text is None:
                     errors.append(f"{requirement_id} evidence file missing: {rel_path}")
                     continue
-                text = path.read_text(encoding="utf-8")
                 if not isinstance(tokens, list) or not tokens:
                     errors.append(f"{requirement_id} evidence tokens for {rel_path} must be a non-empty list")
                     continue
@@ -532,6 +533,7 @@ def check_reference_view_visual_evidence(
 
 def check_dimension_coverage(criteria: dict[str, Any]) -> list[str]:
     errors: list[str] = []
+    source_cache: dict[Path, str | None] = {}
     dimensions = required_dimensions(criteria)
     presets = criteria.get("presets", {})
     if not dimensions or not isinstance(presets, dict):
@@ -570,7 +572,7 @@ def check_dimension_coverage(criteria: dict[str, Any]) -> list[str]:
                     errors.append(
                         f"{preset_id}.{dimension} references unknown requirement id: {requirement_id}"
                     )
-                elif not requirement_satisfied(requirement):
+                elif not requirement_satisfied(requirement, source_cache=source_cache):
                     errors.append(
                         f"{preset_id}.{dimension} references unsatisfied requirement id: {requirement_id}"
                     )
@@ -779,6 +781,7 @@ def gui_parity_report(
     verifier_source: str | None = None,
     docs: dict[str, str] | None = None,
 ) -> dict[str, Any]:
+    source_cache: dict[Path, str | None] = {}
     target = float(criteria.get("target_percent", 100))
     dimensions = required_dimensions(criteria)
     presets = criteria.get("presets", {})
@@ -813,8 +816,12 @@ def gui_parity_report(
             preset_data = presets[preset_id]
             requirements = preset_data.get("requirements", []) if isinstance(preset_data, dict) else []
             count = len(requirements) if isinstance(requirements, list) else 0
-            met = sum(1 for requirement in requirements if requirement_satisfied(requirement)) if isinstance(requirements, list) else 0
-            dimension_count, dimensions_met = dimension_counts(preset_data, dimensions)
+            met = (
+                sum(requirement_satisfied(requirement, source_cache=source_cache) for requirement in requirements)
+                if isinstance(requirements, list)
+                else 0
+            )
+            dimension_count, dimensions_met = dimension_counts(preset_data, dimensions, source_cache=source_cache)
             reference_view_count, reference_dimension_count, reference_dimensions_met = reference_view_counts(
                 preset_data,
                 dimensions,
@@ -1008,9 +1015,16 @@ def parity_row(
     }
 
 
-def dimension_counts(preset_data: Any, dimensions: list[str]) -> tuple[int, int]:
+def dimension_counts(
+    preset_data: Any,
+    dimensions: list[str],
+    *,
+    source_cache: dict[Path, str | None] | None = None,
+) -> tuple[int, int]:
     if not isinstance(preset_data, dict):
         return len(dimensions), 0
+    if source_cache is None:
+        source_cache = {}
     requirements = preset_data.get("requirements", [])
     requirement_map = {
         str(requirement.get("id", "")): requirement
@@ -1031,7 +1045,7 @@ def dimension_counts(preset_data: Any, dimensions: list[str]) -> tuple[int, int]
                 dimension_met = False
                 break
             requirement = requirement_map.get(requirement_id)
-            if requirement is None or not requirement_satisfied(requirement):
+            if requirement is None or not requirement_satisfied(requirement, source_cache=source_cache):
                 dimension_met = False
                 break
         if dimension_met:
@@ -1142,7 +1156,15 @@ def live_render_proof_counts(preset_id: str, live_render_proof_ok: bool) -> tupl
     return 1, 1 if live_render_proof_ok else 0
 
 
-def requirement_satisfied(requirement: Any) -> bool:
+def read_evidence_source(path: Path, source_cache: dict[Path, str | None]) -> str | None:
+    if path not in source_cache:
+        source_cache[path] = path.read_text(encoding="utf-8") if path.is_file() else None
+    return source_cache[path]
+
+
+def requirement_satisfied(
+    requirement: Any, *, source_cache: dict[Path, str | None] | None = None
+) -> bool:
     if not isinstance(requirement, dict):
         return False
     source_tokens = requirement.get("source_tokens")
@@ -1152,13 +1174,14 @@ def requirement_satisfied(requirement: Any) -> bool:
         return False
     if not has_non_package_evidence_source(source_tokens):
         return False
+    if source_cache is None:
+        source_cache = {}
     for rel_path, tokens in source_tokens.items():
-        path = ROOT / str(rel_path)
-        if not path.is_file():
-            return False
         if not isinstance(tokens, list) or not tokens:
             return False
-        text = path.read_text(encoding="utf-8")
+        text = read_evidence_source(ROOT / str(rel_path), source_cache)
+        if text is None:
+            return False
         for token in tokens:
             if not isinstance(token, str) or not token or token not in text:
                 return False

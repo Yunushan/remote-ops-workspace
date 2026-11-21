@@ -7,7 +7,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-. (Join-Path $PSScriptRoot "find_windows_signtool.ps1")
+$ArtifactSigner = Join-Path $PSScriptRoot "sign_windows_artifact.ps1"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 
 function Get-ProjectVersion {
@@ -46,27 +46,19 @@ function Get-Sha256([string]$Path) {
 }
 
 function Sign-XpExecutable([string]$Path) {
+  if (![string]::IsNullOrWhiteSpace($env:ROW_WINDOWS_CERTIFICATE_THUMBPRINT)) {
+    & $ArtifactSigner -ArtifactPath $Path
+    return
+  }
   foreach ($Name in @("ROW_WINDOWS_CERTIFICATE_BASE64", "ROW_WINDOWS_CERTIFICATE_PASSWORD", "ROW_WINDOWS_TIMESTAMP_URL")) {
     if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($Name))) {
       throw "XP release signing requires $Name in the protected release environment."
     }
   }
-  $SignTool = Find-WindowsSignTool
-  $Timestamp = [uri]$env:ROW_WINDOWS_TIMESTAMP_URL
-  if (!$Timestamp.IsAbsoluteUri -or $Timestamp.Scheme -notin @("http", "https") -or !$Timestamp.Host -or $Timestamp.UserInfo) {
-    throw "XP release timestamping requires a credential-free HTTP or HTTPS URL."
-  }
   $Certificate = Join-Path $env:RUNNER_TEMP "row-xp-$Arch-$([guid]::NewGuid()).pfx"
   try {
     [System.IO.File]::WriteAllBytes($Certificate, [Convert]::FromBase64String($env:ROW_WINDOWS_CERTIFICATE_BASE64))
-    & $SignTool sign /q /fd SHA256 /tr $Timestamp.AbsoluteUri /td SHA256 /f $Certificate /p $env:ROW_WINDOWS_CERTIFICATE_PASSWORD $Path
-    if ($LASTEXITCODE -ne 0) {
-      throw "XP executable Authenticode signing failed."
-    }
-    & $SignTool verify /pa /all /tw $Path
-    if ($LASTEXITCODE -ne 0) {
-      throw "XP executable Authenticode or timestamp verification failed."
-    }
+    & $ArtifactSigner -ArtifactPath $Path -CertificatePath $Certificate
   } finally {
     if (Test-Path -LiteralPath $Certificate) {
       Remove-Item -LiteralPath $Certificate -Force

@@ -87,19 +87,73 @@ Sync backends, terminal widgets, vault backends and network-tool plugins remain
 future extension points. They should not be represented as active integrations
 until they have a caller path equivalent to the protocol-launch path above.
 
+## Command-line interface
+
+`cli.py` registers the root commands and handles argument parsing and error
+reporting. `cli_reports.py` formats diagnostic, platform, and feature reports.
+`cli_transfers.py` registers the `files` and `ssh-browser` commands and renders
+their results. The underlying transfer plans and browser preferences live in
+`file_transfer.py` and `moba_ssh_browser.py`.
+`cli_customizer.py` registers the `customizer` commands for enterprise bundles,
+deployment evidence, and authenticated update staging. It delegates manifest
+verification and staging to `moba_customizer.py` and `update_channel.py`.
+`cli_managed_runtime.py` registers the `servers` and `x11` commands and
+renders their results. Runtime planning, lifecycle, and evidence validation
+live in `moba_servers.py` and `x11.py`.
+
 ## Desktop GUI subsystem
 
 The PyQt6 desktop shell is split across a family of `gui_*` modules so that the
 main window stays a composition layer rather than a monolith:
 
-- `gui.py` owns the `MainWindow` shell: menus, toolbars, the profile tree,
-  tab/split-pane layout, activity log and the top-level event wiring.
-- `gui_designs.py` holds the six view presets (Native, MobaXterm-style,
-  SecureCRT-style, Termius-style, Remmina-style, mRemoteNG-style) and their
-  shared stylesheet/geometry metadata. The same metadata feeds both the live
-  window and the static preview renderer.
-- `gui_workspace.py` and `gui_connected.py` build the connected-session
-  workspace and its monitoring panels.
+- `gui.py` composes the `MainWindow` shell, workspace, and activity log.
+- `gui_design_activation.py` applies desktop presets and coordinates paint,
+  geometry, and terminal input policy during preset switches.
+- `gui_interaction_states.py` applies each preset's focus, toolbar, tree
+  selection, and tab status to the live widgets.
+- `gui_home.py` builds the welcome page, routes home actions and search,
+  and keeps the page within the scroll area during window resizing.
+- `gui_mremoteng.py`, `gui_remmina.py`, `gui_securecrt.py`, and
+  `gui_termius.py` build their presets' workspace surfaces and handle their
+  document, viewer, session, and file controls. The main window selects and
+  mounts those surfaces.
+- `gui_toolbars.py` builds the action and layout toolbars, connects their
+  buttons to window workflows, and keeps the controls reachable on resize.
+- `gui_sidebar.py` builds the sidebar and its rail, routes sessions, favorites,
+  and SFTP actions, and remembers sidebar widths per preset.
+- `gui_profile_tree.py` renders saved profiles and groups, applies preset
+  row metadata and icons, and maintains filtering and visible selection.
+- `gui_profile_actions.py` handles profile context menus, edits,
+  import previews, connection launches and file and transfer queue actions.
+- `gui_session_tabs.py` handles terminal splitting, tab navigation,
+  duplication and recent-session recovery.
+- `gui_workspace_tabs.py` handles workspace page selection, terminal paint
+  guards, deferred pane startup, and tab context menus.
+- `gui_terminal_lifecycle.py` opens terminal panes, handles process and SSH
+  callbacks, and coordinates tab shutdown and session status.
+- `gui_operator_workflows.py` builds operator workflow dialogs for server
+  configuration, smart cards, MultiExec and related workspace tools.
+- `gui_layouts.py` owns saved layout actions, launch planning, splitter
+  restoration and resize persistence. It uses the main window to open tabs
+  and start terminal panes.
+- `gui_designs.py` assembles the six view presets and defines the rules they
+  share. Each product preset has a `gui_preset_*.py` module for its geometry,
+  controls, labels, and workflow routes. The live window and static preview
+  renderer use the same definitions through `gui_designs.py`, which renders
+  `assets/workspace.qss` with values from `assets/workspace-styles.json`.
+- `gui_workspace.py` and `gui_connected.py` assemble the connected SSH
+  workspace, SFTP browser, and monitoring controls. The dock coordinates
+  background SSH authentication and owns the active SFTP path.
+- `gui_remote_monitoring.py` manages the telemetry process, refresh timer,
+  and cancellation of stale requests. The dock applies live data to the
+  matching connected terminal tabs.
+- `gui_reference_tabs.py` composes connected preset documents and supplies
+  the live tab, terminal, and status properties used by the render checks.
+- `gui_connected_terminal.py` builds the terminal panel, SSH banner, and
+  telemetry bar with window-local services. `gui_sftp_editor.py` owns the
+  remote editor and its open, diff, and save operations.
+- `gui_icons.py` paints the generated toolbar, profile tree, and control icons.
+  The window selects icons and sets their device pixel ratio.
 - `gui_terminal.py` and `qt_terminal_process.py` render terminal panes and bind
   each process-backed session to a transport (general `QProcess`, or the
   dependency-free Windows ConPTY transport for direct OpenSSH SSH/SFTP).

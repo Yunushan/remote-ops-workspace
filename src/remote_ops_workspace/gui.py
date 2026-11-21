@@ -447,20 +447,10 @@ def create_main_window(
             )
             _application_instance().focusChanged.connect(self.remember_terminal_focus)
             self.keyboard_shortcuts = self.create_keyboard_shortcuts()
-            # These workspace traversal keys apply to every visual preset and
-            # must win before a focused terminal translates Ctrl+Tab into a
-            # remote tab byte. They intentionally remain outside the preset
-            # command-shortcut evidence catalog.
-            self.next_workspace_tab_shortcut = QShortcut(
-                QKeySequence("Ctrl+Tab"),
-                self,
-            )
+            self.next_workspace_tab_shortcut = QShortcut(self)
             self.next_workspace_tab_shortcut.setObjectName("nextWorkspaceTabShortcut")
             self.next_workspace_tab_shortcut.activated.connect(self.activate_next_tab)
-            self.previous_workspace_tab_shortcut = QShortcut(
-                QKeySequence("Ctrl+Shift+Tab"),
-                self,
-            )
+            self.previous_workspace_tab_shortcut = QShortcut(self)
             self.previous_workspace_tab_shortcut.setObjectName(
                 "previousWorkspaceTabShortcut"
             )

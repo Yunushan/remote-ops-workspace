@@ -1489,6 +1489,60 @@ def test_profile_filter_adjacent_tab_and_missing_dock_edges(
     assert quick_runs == ["run"]
 
 
+@pytest.mark.parametrize("preset", ["termius", "mobaxterm"])
+def test_saved_tree_icons_respect_group_and_profile_kinds_despite_example_names(gui_window, preset) -> None:
+    from remote_ops_workspace.gui_profile_tree import TREE_ICON_KEY_ROLE, TREE_ROW_KIND_ROLE
+    from remote_ops_workspace.models import Profile
+
+    _app, window = gui_window
+    window.setProperty("guiPreviewSamples", False)
+    window.store.save([Profile(name="prod", protocol="rdp", host="desk.invalid", group="edge-prod/prod-cluster")])
+    window.set_design_preset(preset)
+    window.refresh_profiles()
+    window.select_profile("prod")
+    item = window.profile_list.currentItem()
+    assert (item.data(0, TREE_ROW_KIND_ROLE), item.data(0, TREE_ICON_KEY_ROLE)) == ("profile", "rdp")
+    for folder in (item.parent(), item.parent().parent()):
+        assert (folder.data(0, TREE_ROW_KIND_ROLE), folder.data(0, TREE_ICON_KEY_ROLE)) == ("group", "folder")
+
+
+def test_native_profile_icons_are_shared_per_refresh_and_follow_the_current_style(gui_window, monkeypatch) -> None:
+    from collections import Counter
+
+    from PyQt6.QtGui import QColor, QIcon, QPixmap
+    from PyQt6.QtWidgets import QStyle
+
+    from remote_ops_workspace import gui_profile_tree
+    from remote_ops_workspace.models import Profile
+
+    _app, window = gui_window
+    window.set_design_preset("native")
+    window.store.save([
+        Profile(name="east-shell", group="east", protocol="ssh", host="east.invalid"),
+        Profile(name="west-shell", group="west", protocol="ssh", host="west.invalid"),
+        Profile(name="west-desktop", group="west", protocol="rdp", host="west.invalid"),
+    ])
+    calls = []
+
+    class TreeStyle:
+        def standardIcon(self, key):  # noqa: N802
+            calls.append(key)
+            pixmap = QPixmap(16, 16)
+            pixmap.fill(QColor(color))
+            return QIcon(pixmap)
+
+    monkeypatch.setattr(gui_profile_tree, "_widget_style", lambda _widget: TreeStyle())
+    for color in ("#d02040", "#2850a0"):
+        calls.clear()
+        window.refresh_profiles()
+        assert Counter(calls) == Counter([
+            QStyle.StandardPixmap.SP_DirHomeIcon, QStyle.StandardPixmap.SP_DirIcon,
+            QStyle.StandardPixmap.SP_FileDialogContentsView, QStyle.StandardPixmap.SP_ComputerIcon,
+        ])
+        for item in window.iter_profile_tree_items():
+            assert item.icon(0).pixmap(16, 16).toImage().pixelColor(8, 8) == QColor(color)
+
+
 def test_toolbar_shortcut_profile_and_context_contract_edges(
     gui_window,
     monkeypatch,

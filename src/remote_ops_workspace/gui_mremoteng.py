@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
-from PyQt6.QtCore import QSize, Qt
-from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import QSize, Qt, QTimer
+from PyQt6.QtGui import QIcon, QShortcut
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -14,6 +16,7 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSizePolicy,
+    QStyledItemDelegate,
     QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
@@ -31,19 +34,64 @@ from .gui_designs import (
     gui_design_mremoteng_property_grid_chrome,
 )
 from .gui_dialogs import _literal_label
+from .gui_editors import profile_editor_protocols
 from .gui_icons import draw_mremoteng_document_control_icon
 from .gui_profile_tree import MREMOTENG_CONFIG_ROLE
 from .gui_values import _safe_tooltip_html
+from .models import Profile
 from .paths import ensure_data_dir
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from PyQt6.QtCore import QAbstractItemModel, QLocale, QModelIndex
     from PyQt6.QtGui import QPainter
-    from PyQt6.QtWidgets import QStatusBar, QTextEdit, QWidget
+    from PyQt6.QtWidgets import QStatusBar, QStyleOptionViewItem, QTextEdit, QWidget
 
     from .gui_terminal import TerminalPane
-    from .models import Profile
+    from .storage import ProfileStore
+
+
+class _ConfigValueDelegate(QStyledItemDelegate):
+    def __init__(self, grid: QTreeWidget, save_value: Callable[[str, str, str, str], None]) -> None:
+        super().__init__(grid)
+        self.save_value = save_value
+
+    def displayText(self, value: object, locale: QLocale) -> str:  # noqa: N802
+        return str(value or "—")
+
+    def createEditor(  # noqa: N802
+        self, parent: QWidget | None, option: QStyleOptionViewItem, index: QModelIndex,
+    ) -> QWidget:
+        context = index.data(Qt.ItemDataRole.UserRole)
+        editor: QComboBox | QLineEdit
+        if context[1] == "protocol":
+            editor = QComboBox(parent)
+            editor.addItems([protocol.upper() for protocol in profile_editor_protocols()])
+            editor.setCurrentText(context[2])
+
+            def accept_protocol() -> None:
+                self.commitData.emit(editor)
+                self.closeEditor.emit(editor, QStyledItemDelegate.EndEditHint.NoHint)
+
+            editor.activated.connect(accept_protocol)
+        else:
+            editor = QLineEdit(context[2], parent)
+            editor.selectAll()
+        editor.setProperty("configProperty", context)
+        return editor
+
+    def setEditorData(self, editor: QWidget | None, index: QModelIndex) -> None:  # noqa: N802
+        """Keep in-progress input when a preceding cell's save refreshes this row."""
+
+    def setModelData(  # noqa: N802
+        self, editor: QWidget | None, model: QAbstractItemModel | None, index: QModelIndex,
+    ) -> None:
+        cell = cast("QLineEdit | QComboBox", editor)
+        name, field, original = cell.property("configProperty")
+        value = (cell.currentText() if isinstance(cell, QComboBox) else cell.text()).strip()
+        if value != original:
+            self.save_value(name, field, original, value)
 
 
 class MRemoteNgWorkspace:
@@ -54,6 +102,7 @@ class MRemoteNgWorkspace:
         profile_list: QTreeWidget
         mremoteng_left_property_grid_panel: QFrame
         mremoteng_protocol_label: QLabel
+        store: ProfileStore
 
         def active_terminal_pane(self) -> TerminalPane | None: ...
         def property(self, name: str) -> object: ...
@@ -61,6 +110,8 @@ class MRemoteNgWorkspace:
         def selected_profile_name(self) -> str | None: ...
         def create_profile(self) -> None: ...
         def edit_selected_profile(self) -> None: ...
+        def refresh_profiles(self) -> None: ...
+        def select_profile(self, name: str) -> None: ...
         def filter_profile_tree(self, text: str) -> None: ...
         def generated_icon(
             self, size: int, draw: Callable[[QPainter, int], None], *, antialias: bool = True,
@@ -70,6 +121,28 @@ class MRemoteNgWorkspace:
         def set_interaction_state(self, widget: QWidget, state: str) -> None: ...
         def show_external_tools_status(self, *_args: object) -> None: ...
         def statusBar(self) -> QStatusBar: ...
+
+    def save_mremoteng_property(self, name: str, field: str, original: str, value: str) -> str:
+        def update(profiles: list[Profile], defaults: dict[str, dict[str, object]]) -> list[Profile]:
+            positions = {profile.name: i for i, profile in enumerate(profiles)}
+            position = positions[name]
+            profile = profiles[position]
+            data = profile.to_dict()
+            effective = data[field] or defaults.get(profile.group, {}).get(field, "")
+            expected = original.lower() if field == "protocol" else original
+            if str(effective) != expected:
+                raise ValueError("This property changed since editing began.")
+            if field == "name" and value in positions:
+                raise ValueError(f"profile already exists: {value}")
+            profiles[position] = Profile.from_dict({**data, field: value})
+            return profiles
+
+        try:
+            self.store.update_profiles(update, surface="profile-editor", action="replace")
+        except (KeyError, OSError, ValueError) as exc:
+            self.statusBar().showMessage(f"Cannot save {field}: {exc}", 8000)
+            return name
+        return value if field == "name" else name
 
     def build_mremoteng_config_dock(self) -> QFrame:
         panel = QFrame()
@@ -95,10 +168,39 @@ class MRemoteNgWorkspace:
         grid.setRootIsDecorated(False)
         grid.setUniformRowHeights(True)
         grid.setAccessibleName("Effective connection properties")
-        rows = [QTreeWidgetItem(grid, [field, ""]) for field in (
-            "Name", "Protocol", "Hostname", "Port", "Username", "Group",
-        )]
+        grid.setToolTip("Click a value or press Enter to edit it. Enter applies the value. Escape cancels.")
+        fields = {
+            "Name": "name", "Protocol": "protocol", "Hostname": "host",
+            "Port": "port", "Username": "username", "Group": "group",
+        }
+        rows = [QTreeWidgetItem(grid, [label, ""]) for label in fields]
+        for row in rows:
+            row.setFlags(row.flags() | Qt.ItemFlag.ItemIsEditable)
+        grid.setCurrentItem(rows[0], 1)
         grid.resizeColumnToContents(0)
+        refresh_timer = QTimer(grid)
+        refresh_timer.setSingleShot(True)
+        renames: dict[str, str] = {}
+        refreshing = False
+
+        def save_value(name: str, field: str, original: str, value: str) -> None:
+            if name != self.selected_profile_name():
+                return
+            current_name = renames.get(name, name)
+            new_name = self.save_mremoteng_property(current_name, field, original, value)
+            if new_name != current_name:
+                renames[name] = new_name
+            refresh_timer.start(0)
+
+        delegate = _ConfigValueDelegate(grid, save_value)
+        grid.setItemDelegateForColumn(1, delegate)
+        grid.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+
+        edit_key = QShortcut(grid)
+        edit_key.setKeys([Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_F2])
+        edit_key.setContext(Qt.ShortcutContext.WidgetShortcut)
+        edit_key.activated.connect(lambda: grid.editItem(grid.currentItem(), 1))
+        grid.itemClicked.connect(lambda row, column: grid.editItem(row, 1) if column == 1 else None)
         grid.setMaximumHeight(145)
         layout.addWidget(grid)
         empty = QLabel("Select a connection to view its properties.")
@@ -109,15 +211,40 @@ class MRemoteNgWorkspace:
             self.mremoteng_protocol_label.setToolTip("Selected connection protocol")
 
         def update_config(current: QTreeWidgetItem | None) -> None:
+            if refreshing:
+                return
             values = current.data(0, MREMOTENG_CONFIG_ROLE) if current is not None else None
+            active = grid.indexWidget(grid.currentIndex())
+            if active is not None:
+                name, field, original = active.property("configProperty")
+                if values and renames.get(name, name) == values[0]:
+                    active.setProperty("configProperty", (values[0], field, original))
+                else:
+                    delegate.closeEditor.emit(active, QStyledItemDelegate.EndEditHint.RevertModelCache)
             if not preview:
                 self.mremoteng_protocol_label.setText(values[1] if values else "")
             edit.setEnabled(bool(values))
             grid.setVisible(bool(values))
             empty.setVisible(not values)
-            for row, value in zip(rows, values or [""] * len(rows), strict=True):
-                row.setText(1, value or "—")
+            for row, field, value in zip(rows, fields.values(), values or [""] * len(rows), strict=True):
+                row.setText(1, value)
+                row.setData(1, Qt.ItemDataRole.UserRole, (values[0], field, value) if values else None)
 
+        def refresh() -> None:
+            nonlocal refreshing
+            selected = self.selected_profile_name()
+            refreshing = True
+            try:
+                self.refresh_profiles()
+                new_name = renames.get(selected or "")
+                if new_name is not None:
+                    self.select_profile(new_name)
+            finally:
+                refreshing = False
+            update_config(self.profile_list.currentItem())
+            renames.clear()
+
+        refresh_timer.timeout.connect(refresh)
         self.profile_list.currentItemChanged.connect(update_config)
         update_config(self.profile_list.currentItem())
         return panel

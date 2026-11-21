@@ -24,7 +24,7 @@ from .moba_connected import (
 
 if TYPE_CHECKING:
     from PyQt6.QtCore import QPoint
-    from PyQt6.QtGui import QIcon
+    from PyQt6.QtGui import QIcon, QShortcut
     from PyQt6.QtWidgets import QComboBox
 
     from .gui_designs import GuiDesignPreset, GuiInteractionState
@@ -40,6 +40,8 @@ class WorkspaceTabs:
         design_select: QComboBox
         moba_tab_bar: MobaWorkspaceTabBar
         moba_tab_guard: bool
+        next_workspace_tab_shortcut: QShortcut
+        previous_workspace_tab_shortcut: QShortcut
         _tab_transition_generation: int
         _tab_prepaint_guard_generation: int
 
@@ -73,6 +75,12 @@ class WorkspaceTabs:
         return QTabWidget.TabPosition.North
 
     def configure_workspace_tabs_for_design(self, is_moba: bool) -> None:
+        self.next_workspace_tab_shortcut.setKeys(
+            ("Ctrl+Tab", "Ctrl+Alt+Right") if is_moba else ("Ctrl+Tab",)
+        )
+        self.previous_workspace_tab_shortcut.setKeys(
+            ("Ctrl+Shift+Tab", "Ctrl+Alt+Left") if is_moba else ("Ctrl+Shift+Tab",)
+        )
         tab_bar = self.moba_tab_bar
         tab_bar.setProperty("mobaCompactTabWidths", bool(is_moba))
         tab_bar.setProperty(

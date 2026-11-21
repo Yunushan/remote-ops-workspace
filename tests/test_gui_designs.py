@@ -3151,3 +3151,5 @@ def test_gui_design_tree_icon_key_classifies_remaining_profile_types() -> None:
     assert gui_design_tree_row_icon_key("native", "Temporary VNC target", "", False) == "vnc"
     assert gui_design_tree_row_icon_key("termius", "Temporary target", "", False) == "host"
     assert gui_design_tree_row_icon_key("native", "Temporary SSH2 target", "", False) == "ssh2"
+    assert gui_design_tree_row_icon("termius", "edge-prod", "", True).row_kind == "group"
+    assert gui_design_tree_row_icon("mobaxterm", "prod", "rdp", False).icon_key == "rdp"

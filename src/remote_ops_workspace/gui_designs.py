@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
+from functools import lru_cache
 from importlib.resources import files
 from string import Template
 
@@ -387,6 +388,11 @@ GUI_DESIGN_TREE_ROOT_ICONS: dict[str, GuiDesignTreeRowIcon] = {
     "mremoteng": GuiDesignTreeRowIcon("Connections", "database", "root", 16),
 }
 
+_SAVED_PROTOCOL_ICONS = {
+    "custom": "command", "ftp": "sftp", "local": "shell", "local-shell": "shell",
+    "rdp": "rdp", "scp": "sftp", "sftp": "sftp", "shell": "shell",
+    "ssh1": "ssh", "sshv1": "ssh", "vnc": "vnc",
+}
 
 GUI_DESIGN_TREE_ROW_ICONS: dict[str, tuple[GuiDesignTreeRowIcon, ...]] = {
     "mobaxterm": (
@@ -2472,6 +2478,7 @@ def gui_design_tree_rows(preset_id: str) -> tuple[tuple[str, str, bool], ...]:
     return GUI_DESIGN_TREE_ROWS.get(preset_id, GUI_DESIGN_TREE_ROWS[DEFAULT_GUI_DESIGN_ID])
 
 
+@lru_cache(maxsize=len(GUI_DESIGN_TREE_ROWS))
 def gui_design_tree_row_icons(preset_id: str) -> tuple[GuiDesignTreeRowIcon, ...]:
     explicit = GUI_DESIGN_TREE_ROW_ICONS.get(preset_id)
     if explicit is not None:
@@ -2481,14 +2488,25 @@ def gui_design_tree_row_icons(preset_id: str) -> tuple[GuiDesignTreeRowIcon, ...
 
 def gui_design_tree_row_icon(preset_id: str, name: str, target: str, group: bool) -> GuiDesignTreeRowIcon:
     label = name.strip()
+    row_kind = "group" if group else "profile"
     for row_icon in gui_design_tree_row_icons(preset_id):
-        if row_icon.label == label:
+        if row_icon.label == label and row_icon.row_kind == row_kind:
             return row_icon
     return _tree_row_icon_from_values(preset_id, name, target, group)
 
 
 def gui_design_tree_row_icon_key(preset_id: str, name: str, target: str, group: bool) -> str:
     return gui_design_tree_row_icon(preset_id, name, target, group).icon_key
+
+
+def gui_design_saved_tree_row_icon(preset_id: str, label: str, protocol: str | None = None) -> GuiDesignTreeRowIcon:
+    if protocol is None:
+        return GuiDesignTreeRowIcon(label, "folder", "group", 15 if preset_id == "mobaxterm" else 14)
+    if protocol == "ssh":
+        icon_key = {"securecrt": "ssh2", "termius": "host"}.get(preset_id, "ssh")
+    else:
+        icon_key = _SAVED_PROTOCOL_ICONS.get(protocol, "host")
+    return GuiDesignTreeRowIcon(label, icon_key, "profile", 14)
 
 
 def _tree_row_icon_from_values(preset_id: str, name: str, target: str, group: bool) -> GuiDesignTreeRowIcon:

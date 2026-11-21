@@ -748,6 +748,56 @@ def test_terminal_tab_shortcuts_prepare_prepaint_guard_before_switch(
         widget.deleteLater()
 
 
+def test_moba_arrow_shortcuts_cycle_sessions_without_writing_to_terminal(gui_window) -> None:
+    from PyQt6.QtCore import QProcess, Qt
+    from PyQt6.QtTest import QTest
+
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    app, window = gui_window
+    window.set_design_preset("mobaxterm")
+    panes = []
+    for title in ("first-local-tab", "second-local-tab"):
+        pane = window.new_terminal_pane(
+            TerminalPanePlan(title=title, command=[], source="test"), autostart=False
+        )
+        window.add_workspace_tab(pane, title, role="terminal")
+        pane.process = _FakeProcess(pane)
+        pane.process.process_state = QProcess.ProcessState.Running
+        panes.append(pane)
+
+    def press_arrow(key):
+        app.processEvents()
+        current = window.tabs.currentWidget()
+        current.output.setFocus()
+        assert app.focusWidget() is current.output
+        QTest.keyClick(
+            current.output, key,
+            Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier,
+        )
+
+    first, second = panes
+    try:
+        window.activateWindow()
+        for key, expected in (
+            (Qt.Key.Key_Left, first),
+            (Qt.Key.Key_Left, second),
+            (Qt.Key.Key_Right, first),
+            (Qt.Key.Key_Right, second),
+        ):
+            press_arrow(key)
+            assert window.tabs.currentWidget() is expected
+        assert first.process.written == second.process.written == b""
+
+        window.set_design_preset("native")
+        press_arrow(Qt.Key.Key_Left)
+        assert window.tabs.currentWidget() is second
+        assert second.process.written == b"\x1b[1;7D"
+    finally:
+        for pane in panes:
+            pane.process.finish()
+
+
 def test_non_moba_terminal_uses_context_menu_instead_of_plain_right_click(
     gui_window,
 ) -> None:

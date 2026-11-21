@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
-from PyQt6.QtCore import QSize, Qt
+from PyQt6.QtCore import QSignalBlocker, QSize, Qt
 from PyQt6.QtWidgets import QFrame, QLineEdit, QMessageBox, QTreeWidgetItem
 
 from .gui_designs import (
     gui_design_moba_session_tree_chrome,
     gui_design_mremoteng_connection_document_route,
     gui_design_mremoteng_document_filter_route,
+    gui_design_saved_tree_row_icon,
     gui_design_securecrt_session_manager_filter_route,
     gui_design_securecrt_session_manager_route,
     gui_design_securecrt_sftp_tab_route,
@@ -95,8 +97,22 @@ TERMIUS_HOST_ROUTE_SELECTED_ROLE = int(Qt.ItemDataRole.UserRole) + 87
 GENERATED_PROFILE_TREE_ICON_PRESETS = {"mobaxterm", "securecrt", "termius", "remmina", "mremoteng"}
 
 
+@dataclass
+class _RemminaSearchTree:
+    groups: list[tuple[QTreeWidgetItem, bool]]
+    rows: list[tuple[QTreeWidgetItem, QTreeWidgetItem, int]]
+    selection: QTreeWidgetItem | None
+
+    @staticmethod
+    def selection_key(item: QTreeWidgetItem) -> tuple[bool, str]:
+        name = item.data(0, Qt.ItemDataRole.UserRole)
+        return (True, name) if name is not None else (False, item.toolTip(0))
+
+
 class ProfileTree:
     """Project saved profiles into the Qt tree and maintain its selection."""
+
+    _remmina_search: _RemminaSearchTree | None = None
 
     if TYPE_CHECKING:
         _profile_icons: dict[tuple[str, bool, int, float], QIcon]
@@ -134,6 +150,16 @@ class ProfileTree:
         except (OSError, ValueError) as exc:
             self.show_message(QMessageBox.Icon.Warning, "Profile refresh failed", str(exc))
             return
+        previous_search = self._remmina_search
+        collapsed = (
+            {group.toolTip(0) for group, expanded in previous_search.groups if not expanded}
+            if previous_search else set()
+        )
+        selection_key = (
+            previous_search.selection_key(previous_search.selection)
+            if previous_search and previous_search.selection is not None else None
+        )
+        self._remmina_search = None
         self.profile_list.clear()
         preview = bool(cast("QWidget", self).property("guiPreviewSamples"))
         self._saved_profile_names = {profile.name for profile in profiles}
@@ -172,43 +198,52 @@ class ProfileTree:
         self._apply_mremoteng_tree_routes(mremoteng_route, mremoteng_filter_route)
         self._apply_securecrt_tree_routes(securecrt_route, securecrt_filter_route, securecrt_sftp_route)
         self._apply_termius_tree_route(termius_host_route)
-        root_label, root_tooltip = gui_design_tree_root_copy(self.current_design_id())
-        root = QTreeWidgetItem([root_label])
-        root.setData(0, Qt.ItemDataRole.UserRole, None)
-        self.apply_profile_tree_icon(root, gui_design_tree_root_icon(self.current_design_id()))
-        self.apply_moba_profile_tree_geometry(root, "root")
-        root.setToolTip(0, _safe_tooltip_html(root_tooltip))
-        self.profile_list.addTopLevelItem(root)
+        platform_icons: dict[tuple[str, str], QIcon] = {}
+        root = cast(QTreeWidgetItem, self.profile_list.invisibleRootItem())
+        if self.current_design_id() != "remmina" or preview:
+            root_label, root_tooltip = gui_design_tree_root_copy(self.current_design_id())
+            root = QTreeWidgetItem([root_label])
+            root.setData(0, Qt.ItemDataRole.UserRole, None)
+            self.apply_profile_tree_icon(root, gui_design_tree_root_icon(self.current_design_id()), platform_icons)
+            self.apply_moba_profile_tree_geometry(root, "root")
+            root.setToolTip(0, _safe_tooltip_html(root_tooltip))
+            self.profile_list.addTopLevelItem(root)
         group_nodes: dict[tuple[str, ...], QTreeWidgetItem] = {}
         for profile in profiles:
             parent = root
             path: list[str] = []
-            for part in self.profile_group_parts(profile):
+            group_parts = self.profile_group_parts(profile, preview=preview)
+            for part in group_parts:
                 path.append(part)
                 key = tuple(path)
                 if key not in group_nodes:
-                    group_item = QTreeWidgetItem([self.profile_group_label(part)])
+                    group_item = QTreeWidgetItem([self.profile_group_label(part, preview=preview)])
                     group_item.setData(0, Qt.ItemDataRole.UserRole, None)
-                    group_icon = gui_design_tree_row_icon(self.current_design_id(), part, "", True)
-                    self.apply_profile_tree_icon(group_item, group_icon)
+                    group_icon = (
+                        gui_design_tree_row_icon(self.current_design_id(), part, "", True)
+                        if preview else gui_design_saved_tree_row_icon(self.current_design_id(), part)
+                    )
+                    self.apply_profile_tree_icon(group_item, group_icon, platform_icons)
                     self.apply_moba_profile_tree_geometry(group_item, "group")
                     group_item.setToolTip(0, _safe_tooltip_html(self.profile_group_tooltip(path)))
                     parent.addChild(group_item)
                     group_nodes[key] = group_item
                 parent = group_nodes[key]
-            label = self.profile_tree_label(profile)
+            label = self.profile_tree_label(profile, preview=preview)
             tooltip = self.profile_tree_tooltip(profile)
             item = QTreeWidgetItem([label])
             item.setData(0, Qt.ItemDataRole.UserRole, profile.name)
             item.setData(0, TREE_CONNECT_ENDPOINT_ROLE, (profile.protocol, profile.host or "", profile.display_target))
-            item.setData(0, TREE_SEARCH_TEXT_ROLE, " ".join((label, tooltip, profile.group, *profile.tags)).casefold())
-            profile_icon = gui_design_tree_row_icon(
-                self.current_design_id(),
-                label,
-                tooltip,
-                False,
+            search_text = " ".join((
+                label, profile.protocol, profile.display_target, profile.group, "/".join(group_parts),
+                profile.description, *profile.tags,
+            ))
+            item.setData(0, TREE_SEARCH_TEXT_ROLE, search_text.casefold())
+            profile_icon = (
+                gui_design_tree_row_icon(self.current_design_id(), label, tooltip, False)
+                if preview else gui_design_saved_tree_row_icon(self.current_design_id(), label, profile.protocol)
             )
-            self.apply_profile_tree_icon(item, profile_icon, protocol=profile.protocol)
+            self.apply_profile_tree_icon(item, profile_icon, platform_icons, protocol=profile.protocol)
             self.apply_moba_profile_tree_geometry(item, "profile")
             if mremoteng_route is not None:
                 item.setData(0, MREMOTENG_CONFIG_ROLE, [
@@ -299,6 +334,10 @@ class ProfileTree:
             item.setToolTip(0, _safe_tooltip_html(tooltip))
             parent.addChild(item)
         self.profile_list.expandAll()
+        if collapsed:
+            for folder in group_nodes.values():
+                if folder.toolTip(0) in collapsed:
+                    folder.setExpanded(False)
         if selected_name:
             self.select_profile(selected_name)
         design_id = self.current_design_id()
@@ -307,6 +346,11 @@ class ProfileTree:
             self.filter_profile_tree(str(self.profile_list.property("nativeHomeFilterText")))
         if design_id == "remmina" and not window.property("guiPreviewSamples"):
             self.filter_profile_tree(self.remmina_profile_filter.text())
+            if self._remmina_search and selection_key is not None:
+                search = self._remmina_search
+                search.selection = next(
+                    (item for item in self.iter_profile_tree_items() if search.selection_key(item) == selection_key), None,
+                )
         if design_id == "securecrt":
             session_filter = window.findChild(QLineEdit, "secureCrtSessionFilter")
             if session_filter is not None:
@@ -695,8 +739,8 @@ class ProfileTree:
         self.profile_list.setIndentation(indentation)
         self.profile_list.setProperty("responsiveTreeIndentation", indentation)
 
-    def profile_group_parts(self, profile_or_group) -> list[str]:
-        if isinstance(profile_or_group, Profile):
+    def profile_group_parts(self, profile_or_group: Profile | str, *, preview: bool = False) -> list[str]:
+        if preview and isinstance(profile_or_group, Profile):
             design_id = self.current_design_id()
             protocol = profile_or_group.protocol.lower()
             if design_id == "securecrt":
@@ -714,21 +758,19 @@ class ProfileTree:
                     return ["VNC"]
                 if protocol in {"ssh", "sftp", "scp"}:
                     return ["SSH/SFTP"]
-            group = profile_or_group.group
-        else:
-            group = str(profile_or_group)
+        group = profile_or_group.group if isinstance(profile_or_group, Profile) else profile_or_group
         parts = [part.strip() for part in group.replace("\\", "/").split("/") if part.strip()]
         return parts or ["default"]
 
-    def profile_group_label(self, part: str) -> str:
+    def profile_group_label(self, part: str, *, preview: bool) -> str:
         design_id = self.current_design_id()
         if design_id == "securecrt":
             return f"Folder: {part}"
         if design_id == "termius":
             return f"Vault / {part}"
-        if design_id == "remmina":
+        if design_id == "remmina" and preview:
             return f"Group: {part}"
-        if design_id == "mremoteng":
+        if design_id == "mremoteng" and preview:
             return f"Container: {part}"
         return part
 
@@ -745,7 +787,7 @@ class ProfileTree:
             return f"mRemoteNG-style nested container: {joined}"
         return f"Session folder: {joined}"
 
-    def profile_tree_label(self, profile: Profile) -> str:
+    def profile_tree_label(self, profile: Profile, *, preview: bool) -> str:
         design_id = self.current_design_id()
         if design_id == "mobaxterm":
             return profile.name
@@ -757,9 +799,9 @@ class ProfileTree:
         if design_id == "termius":
             return f"{profile.name}  {protocol.lower()} host"
         if design_id == "remmina":
-            return f"{protocol} - {profile.name}"
+            return f"{protocol} - {profile.name}" if preview else profile.name
         if design_id == "mremoteng":
-            return f"{profile.name} [{protocol}]"
+            return f"{profile.name} [{protocol}]" if preview else profile.name
         return f"[{protocol}] {profile.name}  {target}" if target else f"[{protocol}] {profile.name}"
 
     def profile_tree_tooltip(self, profile: Profile) -> str:
@@ -776,7 +818,10 @@ class ProfileTree:
             return f"Connection tree node\nProtocol: {protocol}\nTarget: {target}"
         return f"{protocol}  {target}\nProfile: {profile.name}"
 
-    def apply_profile_tree_icon(self, item: QTreeWidgetItem, row_icon: GuiDesignTreeRowIcon, *, protocol: str = "") -> None:
+    def apply_profile_tree_icon(
+        self, item: QTreeWidgetItem, row_icon: GuiDesignTreeRowIcon,
+        platform_icons: dict[tuple[str, str], QIcon], *, protocol: str = "",
+    ) -> None:
         item.setData(0, TREE_ICON_KEY_ROLE, row_icon.icon_key)
         item.setData(0, TREE_ROW_KIND_ROLE, row_icon.row_kind)
         item.setData(0, TREE_ICON_SIZE_ROLE, row_icon.static_size)
@@ -792,14 +837,15 @@ class ProfileTree:
             )
             return
         item.setData(0, TREE_ICON_RENDER_ROLE, "platform")
-        if row_icon.row_kind in {"root", "group"}:
-            icon_name = "SP_DirHomeIcon" if row_icon.row_kind == "root" else "SP_DirIcon"
-            item.setIcon(
-                0,
-                _widget_style(cast("QMainWindow", self)).standardIcon(self.standard_icon(icon_name)),
-            )
-            return
-        item.setIcon(0, self.profile_icon_for_protocol(protocol))
+        key = (row_icon.row_kind, protocol)
+        if key not in platform_icons:
+            if row_icon.row_kind in {"root", "group"}:
+                icon_name = "SP_DirHomeIcon" if row_icon.row_kind == "root" else "SP_DirIcon"
+                icon = _widget_style(cast("QMainWindow", self)).standardIcon(self.standard_icon(icon_name))
+            else:
+                icon = self.profile_icon_for_protocol(protocol)
+            platform_icons[key] = icon
+        item.setIcon(0, platform_icons[key])
 
     def apply_moba_profile_tree_geometry(self, item: QTreeWidgetItem, row_kind: str) -> None:
         if self.current_design_id() != "mobaxterm":
@@ -902,6 +948,10 @@ class ProfileTree:
 
     def filter_profile_tree(self, text: str) -> None:
         needle = text.strip().casefold()
+        if self.current_design_id() == "remmina" and not cast("QWidget", self).property("guiPreviewSamples"):
+            self._filter_remmina_saved_profiles(needle)
+            self.update_profile_action_states()
+            return
 
         def apply_filter(item) -> bool:
             own_text = item.data(0, TREE_SEARCH_TEXT_ROLE) or item.text(0).casefold()
@@ -921,6 +971,49 @@ class ProfileTree:
             self.profile_list.setCurrentItem(None)
             self.profile_list.clearSelection()
         self.update_profile_action_states()
+
+    def _filter_remmina_saved_profiles(self, needle: str) -> None:
+        tree = self.profile_list
+        state = self._remmina_search
+        if not needle and state is None:
+            return
+        current = tree.currentItem()
+        with QSignalBlocker(tree):
+            if state is None:
+                groups = []
+                rows = []
+                for item in self.iter_profile_tree_items():
+                    if item.data(0, Qt.ItemDataRole.UserRole):
+                        parent = cast(QTreeWidgetItem, item.parent())  # Every saved profile has a folder.
+                        rows.append((item, parent, parent.indexOfChild(item)))
+                    else:
+                        groups.append((item, item.isExpanded()))
+                self._remmina_search = state = _RemminaSearchTree(groups, rows, current)
+                for group, _ in groups:
+                    group.setHidden(True)
+                for item, parent, _ in rows:
+                    parent.removeChild(item)
+                tree.addTopLevelItems(sorted((item for item, _, _ in rows), key=lambda item: item.text(0).casefold()))
+                tree.setRootIsDecorated(False)
+            if needle:
+                for item, _, _ in state.rows:
+                    item.setHidden(needle not in item.data(0, TREE_SEARCH_TEXT_ROLE))
+                if current is not None and current.isHidden():
+                    current = None
+            else:
+                # The flat rows follow the hidden top-level groups. Move the same items back in order.
+                for _ in state.rows:
+                    tree.takeTopLevelItem(tree.topLevelItemCount() - 1)
+                for item, parent, index in state.rows:
+                    parent.insertChild(index, item)
+                    item.setHidden(False)
+                for group, expanded in state.groups:
+                    group.setHidden(False)
+                    group.setExpanded(expanded)
+                tree.setRootIsDecorated(True)
+                current = current or state.selection
+                self._remmina_search = None
+            tree.setCurrentItem(current)
 
     def filter_profile_tree_names(self, allowed_names: set[str] | None) -> None:
         """Show all profile rows, or only an explicit Moba rail name set."""

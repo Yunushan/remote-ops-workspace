@@ -15,7 +15,7 @@ def test_pyqt6_policy_records_612_forward_target() -> None:
     assert policy.minimum_version == (6, 11, 0)
     assert policy.target_version == (6, 12, 0)
     assert policy.maximum_version_exclusive == (7, 0, 0)
-    assert policy.release_binding_version == (6, 12, 0)
+    assert policy.release_binding_version == (6, 12, 1)
 
 
 def test_pyqt6_version_parser_accepts_prerelease_prefix() -> None:
@@ -195,9 +195,9 @@ def test_pyqt6_check_runtime_accepts_target(monkeypatch) -> None:
 @pytest.mark.parametrize(
     ("distribution", "binding", "expected_valid"),
     [
-        ("6.12.0", "6.12.0", False),
-        ("6.12.1.dev2611091437", "6.12.0", False),
-        ("6.12.1.dev2611091437", "6.12.1", True),
+        ("6.12.1", "6.12.1", False),
+        ("6.12.2.dev1", "6.12.1", False),
+        ("6.12.2.dev1", "6.12.2", True),
     ],
 )
 def test_forward_runtime_requires_binding_newer_than_release_pin(

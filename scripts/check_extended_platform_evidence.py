@@ -20,6 +20,7 @@ WORKFLOW_SCRIPT_DEPENDENCIES = (
     Path("scripts") / "check_linux_native_elf.py",
     Path("scripts") / "check_protected_linux_build_inputs.py",
     Path("scripts") / "prepare_protected_linux_cargo.py",
+    Path("scripts") / "build_protected_i386_wheels.py",
     Path("scripts") / "protected_linux_cargo.sh",
     Path("scripts") / "make_linux_native.sh",
     Path("scripts") / "smoke_linux_native.sh",
@@ -462,10 +463,24 @@ def check_native_capture(shell: str, target: str) -> list[str]:
     ).replace(" \\\n", " ")
     cargo = (
         ("locked offline Cargo configuration", 'export CARGO_NET_OFFLINE=true MATURIN_NO_INSTALL_RUST=true MATURIN_PEP517_ARGS="--locked --offline"'),
-        ("locked Cargo prefetch", "python3 scripts/prepare_protected_linux_cargo.py"),
+        ("locked Cargo prefetch", 'python3 scripts/prepare_protected_linux_cargo.py --source-archives "$I386_BUILD_ROOT/source-archives"'),
         ("locked Cargo wrapper", 'export CARGO="$CARGO_HOME/locked-cargo"'),
     ) if target == "linux-i386" else ()
-    source_packages = "bcrypt,cffi,cryptography,pyftpdlib" if target == "linux-i386" else "cffi,pyftpdlib,pyinstaller"
+    workspace = (
+        ("stable private i386 build workspace", 'mkdir -m 0700 -- "$I386_BUILD_ROOT"'),
+        ("exact tagged source archive", 'git archive --format=tar "$SOURCE_HEAD_SHA" | tar -xf - -C "$I386_BUILD_ROOT/source"'),
+    ) if target == "linux-i386" else ()
+    runtime = (
+        ("locked source-wheel build", 'python scripts/build_protected_i386_wheels.py --workspace "$I386_BUILD_ROOT" '
+         '--inventory "$WORKSPACE/$EVIDENCE_DIR/i386-source-wheel-inventory.json"'),
+        ("remaining protected runtime lock", "pip install --require-hashes --no-cache-dir --no-build-isolation "
+         '--only-binary=:all: --no-binary=pyftpdlib --requirement "$I386_BUILD_ROOT/remaining-i386-requirements.txt"'),
+    ) if target == "linux-i386" else (
+        ("protected CFFI lock", "pip install --require-hashes --no-cache-dir --no-build-isolation "
+         f"--only-binary=:all: --no-binary=cffi --requirement {NATIVE_LOCK_DIR}/linux-32bit-cffi.txt"),
+        ("protected runtime lock", "pip install --require-hashes --no-cache-dir --no-build-isolation "
+         f"--only-binary=:all: --no-binary=cffi,pyftpdlib,pyinstaller --requirement {NATIVE_LOCK_DIR}/{target}.txt"),
+    )
     required = (
         ("strict shell safety", "#!/usr/bin/env bash\nset -euo pipefail\numask 077"),
         ("dispatch input preflight", 'python3 scripts/check_extended_platform_dispatch_inputs.py --target "$TARGET"'),
@@ -475,17 +490,15 @@ def check_native_capture(shell: str, target: str) -> list[str]:
          '--release-tag "$RELEASE_TAG" --workflow-run-url "$WORKFLOW_RUN_URL" '
          '--workflow-run-attempt "$SOURCE_RUN_ATTEMPT" --source-head-sha "$SOURCE_HEAD_SHA" '
          '--out "$EVIDENCE_DIR/builder-identity-$TARGET.json"'),
+        *workspace,
         ("isolated release environment", "python3 -m venv .venv-native"),
         ("artifact architectures", f"readonly ARCH={arch} RPM_ARCH={rpm_arch} APPIMAGE_ARCH={appimage_arch}"),
         *cargo,
         ("protected bootstrap lock", "pip install --require-hashes --force-reinstall --only-binary=:all: "
          f"--requirement {NATIVE_LOCK_DIR}/{target}-bootstrap.txt"),
-        ("protected CFFI lock", "pip install --require-hashes --no-cache-dir --no-build-isolation "
-         f"--only-binary=:all: --no-binary=cffi --requirement {NATIVE_LOCK_DIR}/linux-32bit-cffi.txt"),
-        ("protected runtime lock", "pip install --require-hashes --no-cache-dir --no-build-isolation "
-         f"--only-binary=:all: --no-binary={source_packages} --requirement {NATIVE_LOCK_DIR}/{target}.txt"),
+        *runtime,
         ("exact runtime lock verification", 'python scripts/check_release_dependency_locks.py '
-         '--runtime-report "$EVIDENCE_DIR/candidate-pip-inspect.json" '
+         '--runtime-report "$WORKSPACE/$EVIDENCE_DIR/candidate-pip-inspect.json" '
          f'--lock "{NATIVE_LOCK_DIR}/$TARGET.txt"'),
         ("native artifact build", 'TARGET_ARCH="$ARCH" PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh'),
         ("native smoke run identity", 'bash scripts/smoke_linux_native.sh --arch "$ARCH" --dist native-dist/linux --target "$TARGET" '

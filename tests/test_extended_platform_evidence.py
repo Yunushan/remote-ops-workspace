@@ -91,13 +91,30 @@ def test_extended_platform_evidence_requires_locked_offline_cargo_builds() -> No
     checker = _load_script("check_extended_platform_evidence")
     capture = (checker.ROOT / checker.LINUX_CAPTURE_PATH).read_text(encoding="utf-8")
     for required, message in (
+        ('git archive --format=tar "$SOURCE_HEAD_SHA"', "exact tagged source archive"),
         ("export CARGO_NET_OFFLINE=true", "locked offline Cargo configuration"),
         ("python3 scripts/prepare_protected_linux_cargo.py", "locked Cargo prefetch"),
+        ("python scripts/build_protected_i386_wheels.py", "locked source-wheel build"),
     ):
         changed = capture.replace(required, f"# {required}", 1)
         assert f"native i386 capture missing {message}" in checker.check_extended_platform_evidence(
             native_capture=changed,
         )
+
+
+def test_protected_linux_source_extraction_rejects_unlocked_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
+    preparer = _load_script("prepare_protected_linux_cargo")
+    archive = tmp_path / "cffi-2.1.1.tar.gz"
+    archive.write_bytes(b"modified source archive")
+    output = tmp_path / "unpacked"
+
+    with pytest.raises(ValueError, match="source archive size or SHA-256 is invalid"):
+        preparer.extract_locked_source(archive, "0" * 64, output)
+
+    assert not output.exists()
 
 
 def test_extended_platform_evidence_requires_exact_runtime_lock_before_packaging() -> None:

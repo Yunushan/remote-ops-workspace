@@ -10,6 +10,7 @@ fi
 readonly TARGET="$1" RELEASE_TAG="$2" RELEASE_ASSET_BASE_URL="$3" WORKFLOW_RUN_URL="$4"
 readonly SOURCE_HEAD_SHA="$5" SOURCE_RUN_ATTEMPT="$6"
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
+readonly WORKSPACE="$(pwd -P)"
 python3 scripts/check_extended_platform_dispatch_inputs.py --target "$TARGET" \
   --release-tag "$RELEASE_TAG" --release-asset-base-url "$RELEASE_ASSET_BASE_URL" \
   --workflow-run-url "$WORKFLOW_RUN_URL" --workflow-ref-name "$RELEASE_TAG" \
@@ -37,6 +38,19 @@ python3 scripts/check_extended_platform_builder.py --target "$TARGET" \
 
 export RELEASE_TAG SOURCE_DATE_EPOCH=1704067200 PYTHONHASHSEED=0
 export PIP_CONFIG_FILE=/dev/null PIP_REQUIRE_VIRTUALENV=1 PIP_DISABLE_PIP_VERSION_CHECK=1
+if [[ "$TARGET" == linux-i386 ]]; then
+  # Source paths are embedded in the compiled extensions and their metadata.
+  readonly I386_BUILD_ROOT=/tmp/row-protected-i386-build
+  if [[ -L native-dist || -e native-dist/linux || -L native-dist/linux ]]; then
+    echo 'The native checkout already contains a Linux distribution path' >&2
+    exit 1
+  fi
+  mkdir -m 0700 -- "$I386_BUILD_ROOT"
+  trap 'rm -rf -- "$I386_BUILD_ROOT"' EXIT
+  mkdir -- "$I386_BUILD_ROOT/source" "$I386_BUILD_ROOT/cargo-home"
+  git archive --format=tar "$SOURCE_HEAD_SHA" | tar -xf - -C "$I386_BUILD_ROOT/source"
+  cd -- "$I386_BUILD_ROOT/source"
+fi
 python3 -m venv .venv-native
 # shellcheck disable=SC1091
 . .venv-native/bin/activate
@@ -44,15 +58,14 @@ case "$TARGET" in
   linux-i386)
     readonly ARCH=i386 RPM_ARCH=i686 APPIMAGE_ARCH=i686
     export CARGO_NET_OFFLINE=true MATURIN_NO_INSTALL_RUST=true MATURIN_PEP517_ARGS="--locked --offline"
-    CARGO_HOME="$(mktemp -d "${TMPDIR:-/tmp}/row-protected-linux-cargo.XXXXXXXX")"
-    export CARGO_HOME
-    trap 'rm -rf -- "$CARGO_HOME"' EXIT
-    python3 scripts/prepare_protected_linux_cargo.py
+    export CARGO_HOME="$I386_BUILD_ROOT/cargo-home"
+    python3 scripts/prepare_protected_linux_cargo.py --source-archives "$I386_BUILD_ROOT/source-archives"
     install -m 0700 scripts/protected_linux_cargo.sh "$CARGO_HOME/locked-cargo"
     export CARGO="$CARGO_HOME/locked-cargo"
     python -m pip install --require-hashes --force-reinstall --only-binary=:all: --requirement requirements-locks/protected-linux/linux-i386-bootstrap.txt
-    python -m pip install --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=cffi --requirement requirements-locks/protected-linux/linux-32bit-cffi.txt
-    python -m pip install --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=bcrypt,cffi,cryptography,pyftpdlib --requirement requirements-locks/protected-linux/linux-i386.txt
+    python scripts/build_protected_i386_wheels.py --workspace "$I386_BUILD_ROOT" \
+      --inventory "$WORKSPACE/$EVIDENCE_DIR/i386-source-wheel-inventory.json"
+    python -m pip install --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=pyftpdlib --requirement "$I386_BUILD_ROOT/remaining-i386-requirements.txt"
     ;;
   linux-armhf)
     readonly ARCH=armhf RPM_ARCH=armv7hl APPIMAGE_ARCH=armhf
@@ -66,10 +79,22 @@ case "$TARGET" in
 esac
 python -m pip install --no-deps --no-build-isolation ".[security,package,servers]"
 python -m pip check
-python -X utf8 -m pip inspect --local > "$EVIDENCE_DIR/candidate-pip-inspect.json"
-python scripts/check_release_dependency_locks.py --runtime-report "$EVIDENCE_DIR/candidate-pip-inspect.json" \
+python -X utf8 -m pip inspect --local > "$WORKSPACE/$EVIDENCE_DIR/candidate-pip-inspect.json"
+python scripts/check_release_dependency_locks.py --runtime-report "$WORKSPACE/$EVIDENCE_DIR/candidate-pip-inspect.json" \
   --lock "requirements-locks/protected-linux/$TARGET.txt"
-TARGET_ARCH="$ARCH" PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh
+(
+  if [[ "$TARGET" == linux-i386 ]]; then
+    umask 022
+  fi
+  TARGET_ARCH="$ARCH" PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh
+)
+
+if [[ "$TARGET" == linux-i386 ]]; then
+  mkdir -p -- "$WORKSPACE/native-dist"
+  mkdir -- "$WORKSPACE/native-dist/linux"
+  cp -p -- native-dist/linux/* "$WORKSPACE/native-dist/linux/"
+  cd -- "$WORKSPACE"
+fi
 
 bash scripts/smoke_linux_native.sh --arch "$ARCH" --dist native-dist/linux --target "$TARGET" \
   --workflow-run-url "$WORKFLOW_RUN_URL" --workflow-run-attempt "$SOURCE_RUN_ATTEMPT" \

@@ -245,13 +245,18 @@ identity or compiling dependencies.
 Armhf also compiles the PyInstaller bootloader, needs its native C and zlib
 development tools, and needs glibc 2.31 or newer for the pinned crypto wheels.
 i386 compiles bcrypt and cryptography and needs a native
-`i686-unknown-linux-gnu` Rust toolchain and OpenSSL headers. The workflow
-verifies both source archives against the i386 Python lock, then runs
-`cargo fetch --locked` against their upstream `Cargo.lock` files in a new
-job-local cache. The build backends use locked, offline Cargo commands. The
-Python lock hashes cover the Python distributions and build backends. Host
-toolchains and the resulting native binaries still require review and smoke
-evidence from the matching builders.
+`i686-unknown-linux-gnu` Rust toolchain and OpenSSL headers. The capture
+command verifies the CFFI, bcrypt and cryptography source archives against
+the i386 Python lock. It runs `cargo fetch --locked` against the upstream
+`Cargo.lock` files in a new job-local cache. The build backends use locked,
+offline Cargo commands. The i386 capture reserves
+`/tmp/row-protected-i386-build` exclusively and builds the exact release
+commit there so embedded source paths are consistent across builds. The
+directory must be available at capture start and is removed when capture
+exits. Retain `i386-source-wheel-inventory.json` with the native build
+records to review the source archive and derived wheel SHA-256 digests.
+Host toolchains and the resulting native binaries still require review and
+smoke evidence from the matching builders.
 Strict promotion also requires each accepted record to include the review bundle
 manifest, review bundle archive and review bundle SHA-256 sidecar digests
 created by `python scripts/finalize_platform_verified_evidence_record.py`.

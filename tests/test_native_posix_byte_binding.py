@@ -466,6 +466,33 @@ def bash_run(tmp_path, code, env):
 
 
 @pytest.mark.skipif(BASH is None, reason="actual Bash native fixture requires POSIX host")
+@pytest.mark.parametrize("signed", (False, True))
+def test_macos_smoke_binds_installers_in_signed_mode(tmp_path, signed):
+    script = (SCRIPTS / "smoke_macos_native.sh").read_text()
+    setup = script[script.index('BINDING_TARGET="macos-') : script.index("\ncandidate_check_app()")]
+    completion = script.split('require_pkg_absent "PKG uninstall"\n', 1)[1].split('\necho ', 1)[0]
+    env = {
+        **os.environ,
+        "ARCH": "arm64",
+        "ROOT": "/build root",
+        "SMOKE_ROOT": "/smoke root",
+        "DMG": "/build root/candidate image.dmg",
+        "PKG": "/build root/candidate installer.pkg",
+        "REQUIRE_RELEASE_SIGNING": "true" if signed else "false",
+    }
+    # Capture the actual argv, including paths with spaces, at both ends of the smoke.
+    capture = r'''python3() { printf '%s\0' "$@"; printf '\n'; }'''
+    result = bash_run(tmp_path, "\n".join((capture, setup, completion)), env)
+    assert result.returncode == 0, result.stderr
+    arguments = [line.removesuffix("\0").split("\0") for line in result.stdout.splitlines()]
+    common = ["--target", "macos-arm64", "--report", "/smoke root/candidate-runtime-byte-binding.json"]
+    if signed:
+        common.extend(("--installer", env["DMG"], "--installer", env["PKG"]))
+    helper = "scripts/candidate_posix_byte_binding.py"
+    assert arguments == [[helper, "init", "--root", env["ROOT"], *common], [helper, "complete", *common]]
+
+
+@pytest.mark.skipif(BASH is None, reason="actual Bash native fixture requires POSIX host")
 @pytest.mark.parametrize("changed", (False, True))
 def test_macos_smoke_bundle_check_stops_before_running_a_modified_app(helpers, tmp_path, changed):
     report, _, executable, env, code = shell_fixture(tmp_path, "macos-x64", helpers)

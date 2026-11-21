@@ -9,7 +9,6 @@ import sys
 import sysconfig
 from importlib.metadata import Distribution, PackageNotFoundError, distribution
 from pathlib import Path, PurePosixPath
-from typing import NamedTuple
 
 FROZEN_DISTRIBUTIONS = (
     "bcrypt", "cffi", "cryptography", "pyasynchat", "pyasyncore", "pycparser",
@@ -21,12 +20,6 @@ LICENSE_PROFILES = {
     "windows-x86": ("pyinstaller",),
 }
 LICENSE_PATH_PART = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
-
-
-class RuntimeLicense(NamedTuple):
-    path: str
-    data: bytes
-    component: str
 
 
 def copy_license(source: Path, destination: Path) -> None:

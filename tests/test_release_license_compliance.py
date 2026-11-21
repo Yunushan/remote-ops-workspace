@@ -315,6 +315,9 @@ def _positive_fixture(
             "python-distribution",
         ),
     ]
+    components[1]["license_files"] = [_write_record(
+        evidence_root, "licenses/LICENSE", (checker.ROOT / "LICENSE").read_bytes(), path="docs/LICENSE",
+    )]
     all_licenses = [
         license_file
         for component in components
@@ -354,6 +357,10 @@ def _positive_fixture(
     if notice_fault == "wrong-runtime-component":
         components[0]["license_files"], components[2]["license_files"] = (
             components[2]["license_files"], components[0]["license_files"],
+        )
+    if notice_fault == "wrong-application-component":
+        components[0]["license_files"], components[1]["license_files"] = (
+            components[1]["license_files"], components[0]["license_files"],
         )
     inventory = {
         "schema_version": 1,
@@ -549,14 +556,18 @@ def test_signed_approval_must_match_notices_read_from_the_package(tmp_path: Path
     assert "signed license scan differs from the required packaged notices" in capsys.readouterr().err
 
 
-def test_signed_approval_binds_runtime_licenses_to_their_bundled_components(tmp_path: Path, capsys) -> None:
+@pytest.mark.parametrize(("fault", "component"), [
+    ("wrong-runtime-component", "pyinstaller"),
+    ("wrong-application-component", "remote-ops-workspace"),
+])
+def test_signed_approval_binds_licenses_to_their_bundled_components(tmp_path: Path, capsys, fault, component) -> None:
     checker = _load_checker()
-    args = _positive_fixture(tmp_path, checker, notice_fault="wrong-runtime-component")
+    args = _positive_fixture(tmp_path, checker, notice_fault=fault)
 
     assert checker.main(args) == 1
     errors = capsys.readouterr().err
-    assert "signed bundled component cpython does not bind its packaged runtime licenses" in errors
-    assert "signed bundled component pyinstaller does not bind its packaged runtime licenses" in errors
+    assert "signed bundled component cpython does not bind its packaged licenses" in errors
+    assert f"signed bundled component {component} does not bind its packaged licenses" in errors
 
 
 def test_published_compliance_passes_the_authenticated_bundle_to_provenance(tmp_path, monkeypatch) -> None:

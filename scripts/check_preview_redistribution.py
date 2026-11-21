@@ -76,6 +76,12 @@ class EmbeddedFile(NamedTuple):
     data: bytes
 
 
+class ComponentLicense(NamedTuple):
+    path: str
+    data: bytes
+    component: str
+
+
 def check_packaged_legal_material(package: Path, expected: dict[str, str]) -> list[EmbeddedFile]:
     """Verify the packaged files and return their member paths and exact bytes."""
     verified = []

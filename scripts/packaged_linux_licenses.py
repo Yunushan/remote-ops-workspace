@@ -1,4 +1,4 @@
-"""Read frozen runtime license files from Linux release packages."""
+"""Read application and frozen runtime licenses from Linux release packages."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 
 from check_preview_redistribution import (
     MAX_LICENSE_BYTES,
+    ComponentLicense,
     appimage_squashfs_offset,
     deb_tar_payload,
     rpm_cpio_payload,
@@ -18,8 +19,8 @@ from check_preview_redistribution import (
 from check_release_license_compliance import path_is_reparse
 from collect_unsigned_runtime import DEFAULT_LIMITS, Observations, cpio_members
 from stage_linux_runtime_licenses import LICENSE_COMPONENTS, LICENSE_ROOT, is_runtime_license_member
-from stage_runtime_licenses import RuntimeLicense
 
+APPLICATION_LICENSE_PATH = LICENSE_ROOT.parent / "LICENSE"
 REQUIRED_LICENSE_PATHS = {
     LICENSE_ROOT / "cpython/LICENSE.txt",
     LICENSE_ROOT / "cryptography/LICENSE",
@@ -33,11 +34,11 @@ def tar_license_members(archive: tarfile.TarFile) -> Iterator[tuple[PurePosixPat
         path = PurePosixPath(member.name)
         if path in LICENSE_ROOT.parents and not member.isdir():
             raise ValueError(f"invalid Linux runtime license directory: {member.name}")
-        if not path.is_relative_to(LICENSE_ROOT):
+        if path != APPLICATION_LICENSE_PATH and not path.is_relative_to(LICENSE_ROOT):
             continue
-        if not is_runtime_license_member(path, directory=member.isdir()):
+        if path != APPLICATION_LICENSE_PATH and not is_runtime_license_member(path, directory=member.isdir()):
             raise ValueError(f"unexpected Linux runtime license path: {member.name}")
-        if member.isdir():
+        if member.isdir() and path != APPLICATION_LICENSE_PATH:
             continue
         if not member.isfile() or not 0 < member.size <= MAX_LICENSE_BYTES:
             raise ValueError(f"invalid Linux runtime license file: {member.name}")
@@ -53,7 +54,7 @@ def appimage_license_members(archive: Path) -> Iterator[tuple[PurePosixPath, byt
         destination = Path(temporary) / "filesystem"
         command = [
             "unsquashfs", "-dest", str(destination), "-offset", str(appimage_squashfs_offset(archive)),
-            "-no-wildcards", str(archive), LICENSE_ROOT.as_posix(),
+            "-no-wildcards", str(archive), LICENSE_ROOT.as_posix(), APPLICATION_LICENSE_PATH.as_posix(),
         ]
         try:
             result = subprocess.run(command, capture_output=True, timeout=300, check=False)
@@ -75,6 +76,13 @@ def appimage_license_members(archive: Path) -> Iterator[tuple[PurePosixPath, byt
                 if not entry.is_file() or not 0 < entry.stat().st_size <= MAX_LICENSE_BYTES:
                     raise ValueError(f"invalid Linux runtime license file: {path}")
                 yield path, entry.read_bytes()
+        application_license = destination / APPLICATION_LICENSE_PATH
+        if path_is_reparse(application_license):
+            raise ValueError(f"{archive.name} has a linked application license")
+        if application_license.exists():
+            if not application_license.is_file() or not 0 < application_license.stat().st_size <= MAX_LICENSE_BYTES:
+                raise ValueError(f"{archive.name} has an invalid application license")
+            yield APPLICATION_LICENSE_PATH, application_license.read_bytes()
 
 
 def license_members(archive: Path) -> Iterator[tuple[PurePosixPath, bytes]]:
@@ -82,7 +90,7 @@ def license_members(archive: Path) -> Iterator[tuple[PurePosixPath, bytes]]:
     if suffix == ".rpm":
         for name, data in cpio_members(rpm_cpio_payload(archive), Observations(DEFAULT_LIMITS)):
             path = PurePosixPath(name)
-            if path.is_relative_to(LICENSE_ROOT):
+            if path == APPLICATION_LICENSE_PATH or path.is_relative_to(LICENSE_ROOT):
                 yield path, data
     elif suffix == ".deb":
         with tarfile.open(fileobj=io.BytesIO(deb_tar_payload(archive)), mode="r:") as payload:
@@ -96,13 +104,19 @@ def license_members(archive: Path) -> Iterator[tuple[PurePosixPath, bytes]]:
         raise ValueError(f"unsupported Linux license package: {archive.name}")
 
 
-def read_runtime_licenses(archive: Path) -> list[RuntimeLicense]:
+def read_linux_component_licenses(archive: Path) -> list[ComponentLicense]:
     records = {}
     for path, data in license_members(archive):
-        if path in records or not is_runtime_license_member(path) or not 0 < len(data) <= MAX_LICENSE_BYTES:
+        if (
+            path in records or not 0 < len(data) <= MAX_LICENSE_BYTES
+            or (path != APPLICATION_LICENSE_PATH and not is_runtime_license_member(path))
+        ):
             raise ValueError(f"{archive.name} has an invalid or duplicate runtime license: {path}")
         records[path] = data
 
+    if APPLICATION_LICENSE_PATH not in records:
+        raise ValueError(f"{archive.name} is missing its installed application license")
+    application_license = records.pop(APPLICATION_LICENSE_PATH)
     components = {path.relative_to(LICENSE_ROOT).parts[0] for path in records}
     missing_components = LICENSE_COMPONENTS - components
     missing_paths = REQUIRED_LICENSE_PATHS - records.keys()
@@ -112,6 +126,9 @@ def read_runtime_licenses(archive: Path) -> list[RuntimeLicense]:
             f"(components {sorted(missing_components)}, files {sorted(map(str, missing_paths))})"
         )
     return [
-        RuntimeLicense(path.as_posix(), data, path.relative_to(LICENSE_ROOT).parts[0])
-        for path, data in sorted(records.items())
+        ComponentLicense(APPLICATION_LICENSE_PATH.as_posix(), application_license, "remote-ops-workspace"),
+        *(
+            ComponentLicense(path.as_posix(), data, path.relative_to(LICENSE_ROOT).parts[0])
+            for path, data in sorted(records.items())
+        ),
     ]

@@ -942,7 +942,7 @@ def check_packaged_notice_scans(
     approved: dict[str, ApprovedPackageNotices],
 ) -> list[str]:
     from check_packaged_release_notices import observe_notices
-    from stage_runtime_licenses import RuntimeLicense
+    from check_preview_redistribution import ComponentLicense
 
     missing = expected_packages - approved.keys()
     if missing:
@@ -955,12 +955,12 @@ def check_packaged_notice_scans(
                 errors.append(f"{package.name} inspected package differs from the signed native manifest")
                 continue
             observed = set()
-            runtime_licenses: dict[str, set[tuple[str, str, int]]] = {}
+            component_licenses: dict[str, set[tuple[str, str, int]]] = {}
             for item in package.files:
                 key = (item.path, hashlib.sha256(item.data).hexdigest(), len(item.data))
                 observed.add(key)
-                if isinstance(item, RuntimeLicense):
-                    runtime_licenses.setdefault(item.component, set()).add(key)
+                if isinstance(item, ComponentLicense):
+                    component_licenses.setdefault(item.component, set()).add(key)
             required_paths = {path for path, _, _ in observed}
             declared = [license_record_key(item) for item in scans if item["path"] in required_paths]
             if len(declared) != len(observed) or set(declared) != observed:
@@ -969,7 +969,7 @@ def check_packaged_notice_scans(
                 normalize_component_name(component["name"]): component["license_files"]
                 for component in components if component["scope"] == "bundled"
             }
-            for name, required in runtime_licenses.items():
+            for name, required in component_licenses.items():
                 declared_for_component = {
                     (
                         record.get("artifact_paths", {}).get(package.name, record["path"]),
@@ -980,7 +980,7 @@ def check_packaged_notice_scans(
                 }
                 if not required <= declared_for_component:
                     errors.append(
-                        f"{package.name} signed bundled component {name} does not bind its packaged runtime licenses"
+                        f"{package.name} signed bundled component {name} does not bind its packaged licenses"
                     )
     except (OSError, ValueError, tarfile.TarError, zipfile.BadZipFile) as exc:
         errors.append(f"exact native package notices: {exc}")

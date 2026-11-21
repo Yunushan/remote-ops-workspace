@@ -58,6 +58,7 @@ def test_production_notices_cover_protected_linux_and_require_exact_bytes(
 ) -> None:
     monkeypatch.syspath_prepend(str(ROOT / "scripts"))
     import check_packaged_release_notices as notices
+    from check_release_license_compliance import ApprovedPackageNotices, check_packaged_notice_scans
 
     tag = "v2.3.4"
     names = notices.expected_production_packages(tag)
@@ -75,10 +76,13 @@ def test_production_notices_cover_protected_linux_and_require_exact_bytes(
     monkeypatch.setattr(notices, "expected_production_packages", lambda _tag: {package.name, gui_package.name})
     with zipfile.ZipFile(package, "w") as archive:
         archive.write(material, "docs/THIRD_PARTY_NOTICES.md")
+        project_license = (ROOT / "LICENSE").read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+        archive.writestr("docs/LICENSE", project_license)
         for path, data in runtime_license_fixture("windows-x86").items():
             archive.writestr(f"docs/licenses/runtime/{path}", data)
     with zipfile.ZipFile(gui_package, "w") as archive:
         archive.write(material, "docs/THIRD_PARTY_NOTICES.md")
+        archive.write(ROOT / "LICENSE", "docs/LICENSE")
         for name in ("PyQt6-GPL-3.0.txt", "Qt-LGPL-3.0.txt", "Qt-Relinking.md"):
             archive.write(material_dir / name, f"docs/licenses/{name}")
         for path, data in runtime_license_fixture("desktop").items():
@@ -91,12 +95,16 @@ def test_production_notices_cover_protected_linux_and_require_exact_bytes(
     capture = json.loads((output / "notice-extraction.json").read_bytes())
     assert capture["release_tag"] == tag
     assert set(capture["packages"]) == {package.name, gui_package.name}
-    assert len(list((output / "files").iterdir())) == 18
+    expected_gui_licenses = {
+        "docs/licenses/PyQt6-GPL-3.0.txt": "pyqt6", "docs/licenses/Qt-LGPL-3.0.txt": "pyqt6-qt6",
+    }
+    approved = {}
     for artifact in (package, gui_package):
         found = capture["packages"][artifact.name]
         assert found["sha256"] == hashlib.sha256(artifact.read_bytes()).hexdigest()
         assert found["size_bytes"] == artifact.stat().st_size
-        assert len(found["notice_files"]) == (3 if artifact == package else 18)
+        assert len(found["notice_files"]) == (4 if artifact == package else 19)
+        components = {}
         with zipfile.ZipFile(artifact) as archive:
             for record in found["notice_files"]:
                 packaged = archive.read(record["path"])
@@ -105,8 +113,29 @@ def test_production_notices_cover_protected_linux_and_require_exact_bytes(
                 assert record["size_bytes"] == len(packaged)
                 if record["path"].startswith("docs/licenses/runtime/"):
                     assert record["component"] == record["path"].split("/")[3]
+                elif record["path"] == "docs/LICENSE":
+                    assert record["component"] == "remote-ops-workspace"
+                elif record["path"] in expected_gui_licenses:
+                    assert record["component"] == expected_gui_licenses[record["path"]]
                 else:
                     assert "component" not in record
+                if component := record.get("component"):
+                    components.setdefault(component, []).append(record)
+        approved[artifact.name] = ApprovedPackageNotices(
+            found, found["notice_files"],
+            [
+                {"name": name, "scope": "bundled", "license_files": license_files}
+                for name, license_files in components.items()
+            ],
+        )
+    assert check_packaged_notice_scans(assets, set(approved), approved) == []
+    gui_evidence = approved[gui_package.name]
+    for component in gui_evidence.components:
+        if component["name"] == "pyqt6-qt6":
+            component["license_files"] = components["pyqt6"]
+    assert check_packaged_notice_scans(assets, set(approved), approved) == [
+        f"{gui_package.name} signed bundled component pyqt6-qt6 does not bind its packaged licenses",
+    ]
     with pytest.raises(ValueError, match="no packaged-notices output"):
         notices.verify_notices(assets, tag, evidence_root=bundle)
     assert json.loads((output / "notice-extraction.json").read_bytes()) == capture
@@ -134,29 +163,31 @@ def test_notice_capture_refuses_package_changed_after_extraction(
     material = ROOT / "redistribution-evidence" / "THIRD_PARTY_NOTICES.md"
     with zipfile.ZipFile(package, "w") as archive:
         archive.write(material, "docs/THIRD_PARTY_NOTICES.md")
+        archive.write(ROOT / "LICENSE", "docs/LICENSE")
         for path, data in runtime_license_fixture("windows-x86").items():
             archive.writestr(f"docs/licenses/runtime/{path}", data)
     monkeypatch.setattr(notices, "expected_production_packages", lambda _tag: {package.name})
-    inspect = notices.read_desktop_runtime_licenses
+    inspect = notices.read_desktop_component_licenses
 
     def replace_after_inspection(artifact, target):
         verified = inspect(artifact, target)
         artifact.write_bytes(b"replacement bytes")
         return verified
 
-    monkeypatch.setattr(notices, "read_desktop_runtime_licenses", replace_after_inspection)
+    monkeypatch.setattr(notices, "read_desktop_component_licenses", replace_after_inspection)
     with pytest.raises(ValueError, match="changed during notice extraction"):
         notices.verify_notices(assets, tag, evidence_root=bundle)
     assert not list(bundle.iterdir())
 
 
-@pytest.mark.parametrize("fault", ["", "missing-license", "duplicate-license", "linked-license"])
+@pytest.mark.parametrize("fault", ["", "missing-license", "duplicate-license", "linked-license",
+                                  "missing-application-license", "changed-application-license"])
 def test_production_captures_runtime_licenses_by_installed_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str,
 ) -> None:
     monkeypatch.syspath_prepend(str(ROOT / "scripts"))
     import check_packaged_release_notices as notices
-    from packaged_linux_licenses import REQUIRED_LICENSE_PATHS
+    from packaged_linux_licenses import APPLICATION_LICENSE_PATH, REQUIRED_LICENSE_PATHS
     from stage_linux_runtime_licenses import LICENSE_COMPONENTS, LICENSE_ROOT
 
     tag = "v2.3.4"
@@ -173,6 +204,13 @@ def test_production_captures_runtime_licenses_by_installed_path(
     affected = (LICENSE_ROOT / "cryptography/LICENSE.APACHE").as_posix()
     with tarfile.open(package, "w:gz") as archive:
         archive.add(ROOT / "redistribution-evidence/THIRD_PARTY_NOTICES.md", arcname="docs/THIRD_PARTY_NOTICES.md")
+        if fault != "missing-application-license":
+            application_license = (ROOT / "LICENSE").read_bytes()
+            if fault == "changed-application-license":
+                application_license += b"changed license"
+            member = tarfile.TarInfo(APPLICATION_LICENSE_PATH.as_posix())
+            member.size = len(application_license)
+            archive.addfile(member, io.BytesIO(application_license))
         for path, data in contents.items():
             if path == affected and fault == "missing-license":
                 continue
@@ -188,13 +226,19 @@ def test_production_captures_runtime_licenses_by_installed_path(
                 archive.addfile(member, io.BytesIO(data))
 
     if fault:
-        with pytest.raises(ValueError, match="runtime license"):
+        with pytest.raises(ValueError, match="application license" if fault.endswith("application-license") else "runtime license"):
             notices.verify_notices(assets, tag, evidence_root=bundle)
         assert not list(bundle.iterdir())
         return
 
     assert notices.verify_notices(assets, tag, evidence_root=bundle) == 1
     report = json.loads((bundle / "packaged-notices/notice-extraction.json").read_bytes())
+    application_record = next(
+        record for record in report["packages"][package.name]["notice_files"]
+        if record["path"] == APPLICATION_LICENSE_PATH.as_posix()
+    )
+    assert application_record["component"] == "remote-ops-workspace"
+    assert (bundle / application_record["file"]).read_bytes() == application_license
     records = {
         record["path"]: (record["component"], (bundle / record["file"]).read_bytes())
         for record in report["packages"][package.name]["notice_files"]
@@ -207,7 +251,7 @@ def test_production_captures_runtime_licenses_by_installed_path(
 
 
 @pytest.mark.parametrize("suffix", [".dmg", ".pkg"])
-@pytest.mark.parametrize("fault", ["", "wrong-root", "linked-member"])
+@pytest.mark.parametrize("fault", ["", "wrong-root", "linked-member", "missing-application-license"])
 def test_macos_runtime_licenses_require_regular_members_at_the_installed_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: str, fault: str,
 ) -> None:
@@ -223,6 +267,10 @@ def test_macos_runtime_licenses_require_regular_members_at_the_installed_path(
         f"{member_prefix}{member_root.as_posix()}/{path}": data
         for path, data in runtime_license_fixture("desktop").items()
     }
+    if fault != "missing-application-license":
+        contents[f"{member_prefix}{member_root.parent.as_posix()}/LICENSE"] = b"application license"
+    if suffix == ".dmg":
+        contents["LICENSE"] = b"volume license"
     members = [
         {"Path": name, "Mode": "-rw-r--r--", "Size": str(len(data)), "Links": "1"}
         for name, data in contents.items()
@@ -241,13 +289,13 @@ def test_macos_runtime_licenses_require_regular_members_at_the_installed_path(
     monkeypatch.setattr(desktop, "seven_zip_members", list_members)
     monkeypatch.setattr(desktop, "seven_zip_read", lambda _archive, name, **_kwargs: contents[name])
     if fault:
-        with pytest.raises(ValueError, match="runtime license"):
-            desktop.read_desktop_runtime_licenses(package, "macos-x64")
+        with pytest.raises(ValueError, match="application license" if fault == "missing-application-license" else "runtime license"):
+            desktop.read_desktop_component_licenses(package, "macos-x64")
         return
 
-    result = desktop.read_desktop_runtime_licenses(package, "macos-x64")
+    result = desktop.read_desktop_component_licenses(package, "macos-x64")
     assert {member.path: member.data for member in result} == {
-        name.removeprefix("./"): data for name, data in contents.items()
+        name.removeprefix("./"): data for name, data in contents.items() if name != "LICENSE"
     }
 
 

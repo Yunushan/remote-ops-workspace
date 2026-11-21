@@ -13,7 +13,7 @@ import tempfile
 import zipfile
 from collections.abc import Iterator
 from contextlib import suppress
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, NamedTuple
 
 from check_preview_redistribution import (
@@ -22,6 +22,7 @@ from check_preview_redistribution import (
     NATIVE_PACKAGE,
     ROOT,
     TAG,
+    ComponentLicense,
     EmbeddedFile,
     check_packaged_legal_material,
     expected_native_assets,
@@ -29,21 +30,24 @@ from check_preview_redistribution import (
     regular_child,
 )
 from check_release_license_compliance import path_is_reparse, safe_relative_path
-from packaged_desktop_licenses import read_desktop_runtime_licenses
-from packaged_linux_licenses import read_runtime_licenses
-from stage_runtime_licenses import RuntimeLicense
+from packaged_desktop_licenses import read_desktop_component_licenses
+from packaged_linux_licenses import read_linux_component_licenses
 
 PROTECTED_LINUX_PACKAGE = re.compile(
     r"remote-ops-workspace-v\d+\.\d+\.\d+-linux-(?:i386|i686|armhf|armv7hl)"
     r"(?:-native)?\.(?:deb|rpm|AppImage|tar\.gz)\Z"
 )
+GUI_LICENSE_COMPONENTS = {
+    "PyQt6-GPL-3.0.txt": "pyqt6",
+    "Qt-LGPL-3.0.txt": "pyqt6-qt6",
+}
 
 
 class PackageNotices(NamedTuple):
     name: str
     sha256: str
     size_bytes: int
-    files: list[EmbeddedFile | RuntimeLicense]
+    files: list[EmbeddedFile | ComponentLicense]
 
 
 def expected_production_packages(tag: str, *, matrix: dict[str, Any] | None = None) -> set[str]:
@@ -98,6 +102,7 @@ def observe_notices(assets_dir: Path, expected: set[str]) -> Iterator[PackageNot
             f"(missing {sorted(expected - actual)}, unexpected {sorted(actual - expected)})"
         )
     material_dir = ROOT / "redistribution-evidence"
+    project_license = regular_child(ROOT, "LICENSE", "application license").read_bytes().replace(b"\r\n", b"\n")
     notices = {
         "THIRD_PARTY_NOTICES.md": file_hash(
             regular_child(material_dir, "THIRD_PARTY_NOTICES.md", "third-party notices"),
@@ -107,22 +112,30 @@ def observe_notices(assets_dir: Path, expected: set[str]) -> Iterator[PackageNot
         **notices,
         **{
             filename: file_hash(regular_child(material_dir, filename, "GUI redistribution material"))
-            for filename in ("PyQt6-GPL-3.0.txt", "Qt-LGPL-3.0.txt", "Qt-Relinking.md")
+            for filename in (*GUI_LICENSE_COMPONENTS, "Qt-Relinking.md")
         },
     }
     for name in sorted(expected):
         package = regular_child(assets_dir, name, "native package")
         package_sha = file_hash(package)
         package_size = package.stat().st_size
-        embedded: list[EmbeddedFile | RuntimeLicense] = list(
-            check_packaged_legal_material(package, gui if GUI_TARGET.search(name) else notices),
-        )
+        embedded: list[EmbeddedFile | ComponentLicense] = []
+        for member in check_packaged_legal_material(package, gui if GUI_TARGET.search(name) else notices):
+            component = GUI_LICENSE_COMPONENTS.get(PurePosixPath(member.path).name)
+            embedded.append(ComponentLicense(member.path, member.data, component) if component else member)
         if "-linux-" in name:
-            embedded.extend(read_runtime_licenses(package))
+            component_licenses = read_linux_component_licenses(package)
         else:
             target = NATIVE_PACKAGE.fullmatch(name)
             assert target is not None
-            embedded.extend(read_desktop_runtime_licenses(package, target[2]))
+            component_licenses = read_desktop_component_licenses(package, target[2])
+        for license_file in component_licenses:
+            if (
+                license_file.component == "remote-ops-workspace"
+                and license_file.data.replace(b"\r\n", b"\n") != project_license
+            ):
+                raise ValueError(f"{name} contains different bytes for the application license")
+        embedded.extend(component_licenses)
         if package.stat().st_size != package_size or file_hash(package) != package_sha:
             raise ValueError(f"{name} changed during notice extraction")
         if any(not safe_relative_path(member.path) for member in embedded):
@@ -157,7 +170,7 @@ def verify_notices(assets_dir: Path, tag: str, *, evidence_root: Path | None = N
                     "sha256": digest,
                     "size_bytes": len(member.data),
                 }
-                if isinstance(member, RuntimeLicense):
+                if isinstance(member, ComponentLicense):
                     record["component"] = member.component
                 records.append(record)
             packages[package.name] = {

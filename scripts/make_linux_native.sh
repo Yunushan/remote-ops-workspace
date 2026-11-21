@@ -31,6 +31,9 @@ if [[ -n "${GITHUB_REF_NAME:-}" && "${GITHUB_REF_NAME}" == v* && "${GITHUB_REF_N
   exit 1
 fi
 
+SOURCE_DATE_EPOCH="$("$PYTHON_BIN" -c 'from scripts.make_release import source_date_epoch; print(source_date_epoch())')"
+export SOURCE_DATE_EPOCH
+
 HOST_ARCH="$(uname -m)"
 UNAME_ARCH="${TARGET_ARCH:-$HOST_ARCH}"
 case "$UNAME_ARCH" in
@@ -219,6 +222,7 @@ cp "$PKGROOT/usr/share/doc/remote-ops-workspace/NOTICE" %{buildroot}/usr/share/d
 cp "$PKGROOT/usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md" %{buildroot}/usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md
 cp "$PKGROOT/usr/share/doc/remote-ops-workspace/README.md" %{buildroot}/usr/share/doc/remote-ops-workspace/README.md
 cp "$PKGROOT/usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md" %{buildroot}/usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md
+find "%{buildroot}" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 
 %check
 cmp "$PKGROOT/usr/bin/row" %{buildroot}/usr/bin/row
@@ -233,7 +237,13 @@ cmp "$PKGROOT/usr/bin/row" %{buildroot}/usr/bin/row
 /usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md
 EOF
 
-rpmbuild --define "_topdir $RPMBUILD" --define "_build_id_links none" -bb "$SPEC"
+# Use the release timestamp and a stable BuildHost across runners.
+rpmbuild --define "_topdir $RPMBUILD" \
+  --define "_build_id_links none" \
+  --define "_buildhost reproducible" \
+  --define "source_date_epoch_from_changelog 0" \
+  --define "use_source_date_epoch_as_buildtime 1" \
+  -bb "$SPEC"
 RPM_SOURCE="$(find "$RPMBUILD/RPMS" -name '*.rpm' -type f | head -n 1)"
 RPM="$OUT_DIR/remote-ops-workspace-v${VERSION}-linux-${RPM_ARCH}.rpm"
 cp "$RPM_SOURCE" "$RPM"
@@ -355,7 +365,8 @@ ARCH="$APPIMAGE_ARCH" "$APPIMAGETOOL" --appimage-extract-and-run \
   --runtime-file "$APPIMAGE_RUNTIME" "$APPDIR" "$APPIMAGE"
 
 TARBALL="$OUT_DIR/remote-ops-workspace-v${VERSION}-linux-${APPIMAGE_ARCH}-native.tar.gz"
-tar -C "$PKGROOT" -czf "$TARBALL" usr
+LC_ALL=C tar -C "$PKGROOT" --sort=name --mtime="@$SOURCE_DATE_EPOCH" \
+  --numeric-owner --owner=0 --group=0 -cf - usr | gzip -n > "$TARBALL"
 
 "$PYTHON_BIN" - "$ROOT" "$VERSION" "$OUT_DIR" "$DEB" "$RPM" "$APPIMAGE" "$TARBALL" "$DEB_ARCH" "$RPM_ARCH" "$APPIMAGE_ARCH" "$UNAME_ARCH" "$HOST_ARCH" "$minimum_glibc" <<'PY'
 from __future__ import annotations

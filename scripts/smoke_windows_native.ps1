@@ -274,11 +274,34 @@ function Test-RowVersion([string]$Path, [string]$ExpectedVersion) {
   }
 }
 
+function Test-InstalledRuntimeLicenses([string]$InstallDir, [string]$Label) {
+  $RelativeDir = "docs\licenses\runtime"
+  $Staged = Get-Item -LiteralPath (Join-Path $Root "build\native\windows\stage\$RelativeDir")
+  $Installed = Join-Path $InstallDir $RelativeDir
+  $ExpectedFiles = @(Get-ChildItem -LiteralPath $Staged.FullName -File -Recurse -Force)
+  $ActualFiles = @(Get-ChildItem -LiteralPath $Installed -File -Recurse -Force)
+  if ($ExpectedFiles.Count -eq 0 -or $ExpectedFiles.Count -ne $ActualFiles.Count) {
+    throw "$Label installed runtime license inventory differs from staging"
+  }
+  foreach ($File in $ExpectedFiles) {
+    $RelativePath = $File.FullName.Substring($Staged.FullName.Length + 1)
+    $Actual = Join-Path $Installed $RelativePath
+    if (!(Test-Path -LiteralPath $Actual -PathType Leaf) -or
+        ((Get-Item -LiteralPath $Actual).Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+        (Get-FileHash -LiteralPath $Actual -Algorithm SHA256).Hash -cne
+        (Get-FileHash -LiteralPath $File.FullName -Algorithm SHA256).Hash) {
+      throw "$Label installed runtime license differs from staging: $RelativePath"
+    }
+  }
+  Write-Host "native installer smoke runtime licenses: $Label"
+}
+
 function Test-RowRuntimeResources([string]$Path, [string]$Label) {
   Assert-CandidateExecutableBytes $Path "cli" "$Label platforms --json"
   if (!(Test-Path $Path)) {
     throw "expected installed row executable missing: $Path"
   }
+  Test-InstalledRuntimeLicenses (Split-Path -Parent (Split-Path -Parent $Path)) $Label
   $Output = & $Path platforms --json
   if ($LASTEXITCODE -ne 0) {
     throw "$Label platforms --json failed for $Path"

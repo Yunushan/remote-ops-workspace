@@ -3,15 +3,16 @@ from pathlib import Path
 
 import pytest
 
-from scripts.stage_linux_runtime_licenses import copy_distribution_licenses
+from scripts.stage_runtime_licenses import copy_distribution_licenses
 
 
-def install_fixture(root: Path, recorded: list[str], declared: list[str]) -> PathDistribution:
+def install_fixture(root: Path, recorded: list[str], declared: list[str], *, legacy: bool = False) -> PathDistribution:
     info = root / "test_component-1.0.dist-info"
     info.mkdir(parents=True)
     declarations = "".join(f"License-File: {entry}\n" for entry in declared)
     (info / "METADATA").write_text(f"Metadata-Version: 2.4\nName: test-component\nVersion: 1.0\n{declarations}")
-    paths = [f"{info.name}/licenses/{entry}" for entry in recorded]
+    license_dir = info.name if legacy else f"{info.name}/licenses"
+    paths = [f"{license_dir}/{entry}" for entry in recorded]
     (info / "RECORD").write_text("".join(f"{path},,\n" for path in [*paths, "test_component/__init__.py"]))
     for path in paths:
         license_path = root / path
@@ -40,3 +41,13 @@ def test_refuses_missing_declared_license_before_copying(tmp_path: Path) -> None
         copy_distribution_licenses(installed, destination)
 
     assert not destination.exists()
+
+
+def test_copies_legacy_wheel_license_named_in_metadata(tmp_path: Path) -> None:
+    installed = install_fixture(tmp_path / "installed", ["LICENSE", "README"], ["LICENSE"], legacy=True)
+    destination = tmp_path / "staged"
+
+    copy_distribution_licenses(installed, destination)
+
+    assert {path.name for path in destination.iterdir()} == {"LICENSE"}
+    assert (destination / "LICENSE").read_bytes() == b"test_component-1.0.dist-info/LICENSE"

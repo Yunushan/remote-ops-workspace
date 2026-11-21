@@ -129,6 +129,35 @@ def test_every_recursive_native_smoke_removal_uses_the_verified_helper():
 
 
 
+@pytest.mark.skipif(os.name != "nt", reason="installed Windows license checks use PowerShell")
+@pytest.mark.parametrize("changed", [False, True])
+def test_windows_smoke_checks_installed_runtime_license_bytes(tmp_path, changed):
+    source = (ROOT / "scripts/smoke_windows_native.ps1").read_text(encoding="utf-8")
+    function = source.split("function Test-InstalledRuntimeLicenses(", 1)[1].split("\n}", 1)[0]
+    relative = Path("docs/licenses/runtime/bcrypt/LICENSE")
+    for location, payload in (("build/native/windows/stage", b"expected"), ("installed", b"changed!" if changed else b"expected")):
+        target = tmp_path / location / relative
+        target.parent.mkdir(parents=True)
+        target.write_bytes(payload)
+    commands = (
+        "$ErrorActionPreference = 'Stop'\n"
+        + "$Root = " + _ps_quote(tmp_path) + "\n"
+        + "function Test-InstalledRuntimeLicenses(" + function + "\n}\n"
+        + "Test-InstalledRuntimeLicenses " + _ps_quote(tmp_path / "installed") + " 'EXE verify'"
+    )
+    result = subprocess.run(
+        [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-Command", commands],
+        env={**os.environ, "PSMODULEPATH": str(POWERSHELL.parent / "Modules")},
+        capture_output=True, text=True, timeout=30, check=False,
+    )
+    if changed:
+        assert result.returncode != 0
+        assert "installed runtime license differs from staging" in result.stderr
+    else:
+        assert result.returncode == 0, result.stderr
+        assert "native installer smoke runtime licenses: EXE verify" in result.stdout
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows smoke hashing uses PowerShell")
 @pytest.mark.parametrize("changed", [False, True])
 def test_signed_windows_smoke_binds_zip_exe_and_msi_bytes(tmp_path, changed):

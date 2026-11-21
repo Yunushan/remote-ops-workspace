@@ -275,6 +275,7 @@ function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir, [string
   $PyQtLicenseSource = XmlEscape (Join-Path $Stage "docs\licenses\PyQt6-GPL-3.0.txt")
   $QtLicenseSource = XmlEscape (Join-Path $Stage "docs\licenses\Qt-LGPL-3.0.txt")
   $QtRelinkSource = XmlEscape (Join-Path $Stage "docs\licenses\Qt-Relinking.md")
+  $RuntimeLicenseSource = XmlEscape (Join-Path $Stage "docs\licenses\runtime")
   $IconSource = XmlEscape $IconPath
   $ProductName = XmlEscape $Branding.name
   $Publisher = XmlEscape $Branding.publisher
@@ -337,6 +338,7 @@ $WelcomeComponent
             <Component Id="QtRelinkComponent" Guid="D7D26461-21E9-4B15-94B1-EF8AA8EF0C37">
               <File Id="QtRelinkFile" Source="$QtRelinkSource" KeyPath="yes" />
             </Component>
+            <Directory Id="RUNTIMELICENSESDIR" Name="runtime" />
           </Directory>
         </Directory>
       </Directory>
@@ -352,6 +354,7 @@ $RowGuiReference
       <ComponentRef Id="PyQtLicenseComponent" />
       <ComponentRef Id="QtLicenseComponent" />
       <ComponentRef Id="QtRelinkComponent" />
+      <Files Directory="RUNTIMELICENSESDIR" Include="$RuntimeLicenseSource\**" />
 $WelcomeReference
     </Feature>
   </Package>
@@ -582,6 +585,11 @@ Copy-Item (Join-Path $Root "redistribution-evidence\THIRD_PARTY_NOTICES.md") (Jo
 Copy-Item (Join-Path $Root "redistribution-evidence\PyQt6-GPL-3.0.txt") (Join-Path $Stage "docs\licenses\PyQt6-GPL-3.0.txt")
 Copy-Item (Join-Path $Root "redistribution-evidence\Qt-LGPL-3.0.txt") (Join-Path $Stage "docs\licenses\Qt-LGPL-3.0.txt")
 Copy-Item (Join-Path $Root "redistribution-evidence\Qt-Relinking.md") (Join-Path $Stage "docs\licenses\Qt-Relinking.md")
+$RuntimeLicenseProfile = if ($BuildGuiLauncher) { "desktop" } else { "windows-x86" }
+& $Python (Join-Path $PSScriptRoot "stage_runtime_licenses.py") (Join-Path $Stage "docs\licenses\runtime") --profile $RuntimeLicenseProfile
+if ($LASTEXITCODE -ne 0) {
+  throw "Could not stage the frozen runtime licenses"
+}
 Copy-Item (Join-Path $Root "README.md") (Join-Path $Stage "docs\README.md")
 Copy-Item (Join-Path $Root "README.tr.md") (Join-Path $Stage "docs\README.tr.md")
 

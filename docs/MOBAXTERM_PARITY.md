@@ -88,7 +88,10 @@ python scripts/check_candidate_mobaxterm_parity.py \
 
 The preflight verifies the inventory attestation, staged asset bytes, original
 Actions archives, captured evidence, GitHub reviews, and hosted Professional
-update bytes. The retention flag saves each verified original ZIP in
+update bytes. For a schema 13 inventory, keep the staged manifests and
+checksum sidecars for the builds that own the reviewed assets. The preflight
+checks those indexes before verifying the workflow evidence.
+The retention flag saves each verified original ZIP in
 `workflow-artifacts/` under the evidence root. Keep that directory with the
 reviewed evidence so finalization can reuse the exact bytes if the Actions
 downloads expire. The accepted registry is written during finalization after

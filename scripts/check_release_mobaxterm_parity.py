@@ -55,6 +55,7 @@ from scripts.release_candidate_inventory import (  # noqa: E402
     MAX_JSON_BYTES,
     MAX_MEMBERS,
     GitHubClient,
+    require_candidate_archive_indexes,
     safe_name,
 )
 from scripts.release_evidence_file import stream_sha256  # noqa: E402
@@ -519,6 +520,7 @@ def audit_reviewed_records(
     evidence_root: Path,
     professional_update_origins: list[str],
     sealed_assets: dict[str, str] | None = None,
+    sealed_archives: list[dict[str, Any]] | None = None,
     retain_workflow_artifacts: bool = False,
 ) -> list[str]:
     evidence_root = evidence_root.absolute()
@@ -527,6 +529,21 @@ def audit_reviewed_records(
     assets, errors = local_release_assets(assets_dir)
     if errors:
         return errors
+    if sealed_archives is not None:
+        reviewed_assets = {name for record in records for name in record["artifact_sha256"]}
+        archives = [
+            archive for archive in sealed_archives if any(file["path"] in reviewed_assets for file in archive["files"])
+        ]
+        indexes = {
+            file["path"] for archive in archives for file in archive["files"]
+            if file["path"].endswith(("-manifest.json", "-SHA256SUMS.txt"))
+        }
+        if missing := indexes - assets.keys():
+            return [f"staged candidate is missing sealed archive indexes: {sorted(missing)}"]
+        try:
+            require_candidate_archive_indexes(assets_dir, archives)
+        except (OSError, ValueError) as exc:
+            return [str(exc)]
 
     digests: dict[str, str] = {}
     checked_runs: dict[tuple[str, int, EvidenceWorkflow | None], EvidenceAttempt] = {}

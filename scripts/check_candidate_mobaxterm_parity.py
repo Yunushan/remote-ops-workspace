@@ -28,6 +28,7 @@ from scripts.check_release_license_compliance import (  # noqa: E402
 from scripts.check_release_mobaxterm_parity import audit_reviewed_records  # noqa: E402
 from scripts.finalize_mobaxterm_parity_evidence_record import release_source  # noqa: E402
 from scripts.release_candidate_inventory import (  # noqa: E402
+    ARCHIVE_FILE_SCOPE_SCHEMA_VERSION,
     MAX_JSON_BYTES,
     GitHubClient,
     normalize_repository,
@@ -124,12 +125,13 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("sealed candidate verification requires a GitHub token")
         client = GitHubClient(repository, token, api_url="https://api.github.com")
         with TemporaryDirectory(prefix="row-parity-candidate-") as directory:
-            records, _ = read_attested_inventory(client, repository, Path(directory), tag, sha, pointer)
+            records, inventory = read_attested_inventory(client, repository, Path(directory), tag, sha, pointer)
         errors = audit_reviewed_records(
             candidates, repository=repository, tag=tag, release_sha=sha, assets_dir=args.assets_dir, evidence_root=root,
             professional_update_origins=(args.professional_update_origin or
                                          os.environ.get("RELEASE_PROFESSIONAL_UPDATE_ORIGINS", "").split()),
             sealed_assets=sealed_asset_hashes(records),
+            sealed_archives=records if inventory["schema_version"] >= ARCHIVE_FILE_SCOPE_SCHEMA_VERSION else None,
             retain_workflow_artifacts=args.retain_workflow_artifacts,
         )
     except (OSError, RuntimeError, ValueError, zipfile.BadZipFile) as exc:

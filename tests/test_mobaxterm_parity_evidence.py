@@ -22,6 +22,7 @@ from scripts import check_candidate_mobaxterm_parity as candidate_parity
 from scripts import check_moba_server_release_evidence as server_evidence
 from scripts import check_release_mobaxterm_parity as release_parity
 from scripts import finalize_mobaxterm_parity_release as batch_finalize
+from scripts import release_candidate_inventory as candidate_inventory
 from scripts.check_mobaxterm_parity_evidence import (
     PROFESSIONAL_POLICY_SURFACES,
     SOURCE_BOUND_ARTICLES,
@@ -1051,8 +1052,50 @@ def reviewed_parity_inputs(reviewed_release):
     return reviewed_release
 
 
+def make_staged_parity_archives(assets_dir: Path, tag: str, fault: str) -> list[dict]:
+    groups = candidate_inventory.expected_candidate_archive_files(tag)
+    staged_assets = {path.name for path in assets_dir.iterdir()}
+    payloads, checksums = {}, {}
+    for owner, files in groups.items():
+        manifest, = (name for name in files if name.endswith("-manifest.json"))
+        checksum, = (name for name in files if name.endswith("-SHA256SUMS.txt"))
+        payload = {}
+        for name in sorted(files - {manifest, checksum}):
+            payload[name] = (assets_dir / name).read_bytes() if name in staged_assets else name.encode()
+        rows = [
+            {"file": name, "size_bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+            for name, data in payload.items()
+        ]
+        payload[manifest] = json.dumps({"artifacts": rows} if owner == "release-source-python" else rows).encode()
+        payload[checksum] = "".join(
+            f"{hashlib.sha256(data).hexdigest()}  {name}\n" for name, data in payload.items()
+        ).encode()
+        payloads[owner], checksums[owner] = payload, checksum
+    source, linux = "release-source-python", "release-linux-native-x86_64"
+    if fault == "current-swapped-checksums":
+        first, second = payloads[source], payloads[linux]
+        left, right = checksums[source], checksums[linux]
+        first[left], second[right] = second[right], first[left]
+
+    records = []
+    for owner, payload in payloads.items():
+        files = []
+        for name, data in payload.items():
+            files.append({"path": name, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+            if (
+                groups[owner] & staged_assets and name.endswith(("-manifest.json", "-SHA256SUMS.txt"))
+                and not (fault == "current-missing-index" and name == checksums[source])
+            ):
+                (assets_dir / name).write_bytes(data)
+        records.append({"name": owner, "files": files})
+    return records
+
+
 @pytest.mark.parametrize(("fault", "detail"), [
     ("none", ""),
+    ("current-valid-indexes", ""),
+    ("current-swapped-checksums", "foreign, repeated or mismatched checksum"),
+    ("current-missing-index", "missing sealed archive indexes"),
     ("missing-review", "must index all eight"),
     ("foreign-review", "review_url repository must match"),
     ("wrong-source", "candidate must match the exact release repository, tag, and source SHA"),
@@ -1139,7 +1182,11 @@ def test_parity_preflight_uses_staged_bytes_original_archives_and_live_reviews(
         assert directory.is_dir() and pointer.run_id == 31 and pointer.artifact_id == 32
         assert pointer.archive_digest == "sha256:" + "7" * 64
         seen.append(pointer)
-        return [{"files": files}], {}
+        if fault.startswith("current-"):
+            return make_staged_parity_archives(args["assets_dir"], tag, fault), {
+                "schema_version": candidate_inventory.ARCHIVE_FILE_SCOPE_SCHEMA_VERSION,
+            }
+        return [{"files": files}], {"schema_version": candidate_inventory.LEGACY_SCHEMA_VERSION}
 
     monkeypatch.setattr(candidate_parity, "read_attested_inventory", read_attested)
     before = {path: path.read_bytes() for path in root.rglob("*.json")}
@@ -1155,6 +1202,8 @@ def test_parity_preflight_uses_staged_bytes_original_archives_and_live_reviews(
     if detail:
         assert status == 1 and detail in output.err and not output.out
         assert not reviewed_release.delivery_calls
+        if fault.startswith("current-"):
+            assert not reviewed_release.validator_calls
     else:
         assert status == 0 and "8/8 reviewed candidates verified" in output.out and not output.err
         assert len(seen) == 1 and set(reviewed_release.validator_calls) == set(release_parity.ARTICLE_SPECS)

@@ -185,6 +185,24 @@ def test_genuine_shape_control_and_payload_are_data_only(module):
     assert payload.row_sha256 == hashlib.sha256(b"harmless-fixture:usr/bin/row").hexdigest()
 
 
+@pytest.mark.parametrize(("version", "depends", "accepted"), [
+    ("1.0.28", "libc6 (>= 2.38), zlib1g", True),
+    ("1.0.24", "libc6 (>= 2.38), zlib1g", False),
+    ("1.0.28", "libc6 | zlib1g", False),
+    ("1.0.28", "libc6, unreviewed-package", False),
+    ("1.0.28", "libc6,\n unreviewed-package", False),
+])
+def test_recovery_control_accepts_only_reviewed_candidate_libraries(module, version, depends, accepted):
+    rows = control_rows(version)
+    name, data, kind, mode, owner = rows[1]
+    rows[1] = (name, data + f"Depends: {depends}\n".encode(), kind, mode, owner)
+    if accepted:
+        module.control_identity(tar_bytes(rows), version)
+    else:
+        with pytest.raises(module.EvidenceError):
+            module.control_identity(tar_bytes(rows), version)
+
+
 @pytest.mark.parametrize(
     "extra", ["postinst", "preinst", "prerm", "postrm", "triggers", "conffiles"]
 )

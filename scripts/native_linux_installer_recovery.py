@@ -651,9 +651,10 @@ def control_identity(raw: bytes, version: str) -> None:
         control = members[names.index("control")]
         text = archive.extractfile(control).read().decode("utf-8")
     fields = {}
+    key = None
     for line in text.splitlines():
         if line.startswith(" "):
-            if "Description" not in fields:
+            if key != "Description":
                 raise EvidenceError("malformed-control-continuation")
             continue
         if not line or ": " not in line:
@@ -662,6 +663,11 @@ def control_identity(raw: bytes, version: str) -> None:
         if key in fields:
             raise EvidenceError("duplicate-control-field")
         fields[key] = value
+    depends = fields.pop("Depends", None)
+    if depends is not None:
+        if version == PREVIOUS:
+            raise EvidenceError("unexpected-package-control-identity")
+        validate_library_dependencies(depends)
     if set(fields) != {
         "Package",
         "Version",
@@ -1045,12 +1051,21 @@ def bound_deb_hashes(pins: dict, finish: dict, version: str) -> tuple[str, str]:
     return old[0], new[0]
 
 
+def validate_library_dependencies(depends: str) -> None:
+    rows = depends.split(", ")
+    refusal = "managed-debian-dependencies-outside-library-inventory"
+    try:
+        canonical = dependency_field(rows)
+    except ValueError as error:
+        raise EvidenceError(refusal) from error
+    if canonical != depends or {row.split()[0] for row in rows} - {"libc6", *LIBRARY_PACKAGES.values()}:
+        raise EvidenceError(refusal)
+
+
 def managed_drill_image(commands: Commands, private: Path, depends: str) -> str:
     if not depends:
         return MANAGED_IMAGE
-    rows = depends.split(", ")
-    if dependency_field(rows) != depends or {row.split()[0] for row in rows} - {"libc6", *LIBRARY_PACKAGES.values()}:
-        raise EvidenceError("managed-debian-dependencies-outside-library-inventory")
+    validate_library_dependencies(depends)
     context = private / "apt-image"
     context.mkdir()
     (context / "Dockerfile").write_text(

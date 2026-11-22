@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Protocol
 
 from PyQt6.QtCore import (
+    QMetaObject,
     QPoint,
     QProcess,
     QSize,
@@ -2780,15 +2781,17 @@ def create_moba_connected_classes(
                 self.show_sftp_status("Reconnect unavailable: no terminal pane is attached")
                 return False
             pane.restart()
-            terminal_output = pane.output
-            terminal_output.setProperty("mobaTerminalFocusRequested", True)
-            terminal_output.setFocus(Qt.FocusReason.OtherFocusReason)
-            QTimer.singleShot(
-                0,
-                lambda: terminal_output.setFocus(Qt.FocusReason.OtherFocusReason),
-            )
+            self._focus_sftp_terminal_output(pane.output)
             self.show_sftp_status(f"Reconnecting {self.state.profile_name}")
             return True
+
+        @staticmethod
+        def _focus_sftp_terminal_output(output: QWidget) -> None:
+            output.setProperty("mobaTerminalFocusRequested", True)
+            output.setFocus(Qt.FocusReason.OtherFocusReason)
+            # QWidget's setFocus() slot uses OtherFocusReason. Qt drops the
+            # queued call if closing the tab destroys its receiver first.
+            QMetaObject.invokeMethod(output, "setFocus", Qt.ConnectionType.QueuedConnection)
 
         def focus_moba_sftp_terminal(self) -> bool:
             main_window = self.main_window()
@@ -2796,13 +2799,7 @@ def create_moba_connected_classes(
             if pane is None:
                 self.show_sftp_status("Terminal unavailable: no active session pane")
                 return False
-            terminal_output = pane.output
-            terminal_output.setProperty("mobaTerminalFocusRequested", True)
-            terminal_output.setFocus(Qt.FocusReason.OtherFocusReason)
-            QTimer.singleShot(
-                0,
-                lambda: terminal_output.setFocus(Qt.FocusReason.OtherFocusReason),
-            )
+            self._focus_sftp_terminal_output(pane.output)
             self.show_sftp_status(f"Terminal focused at {self.active_remote_path}")
             return True
 

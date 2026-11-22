@@ -125,6 +125,38 @@ def _set_checked(control, checked: bool) -> None:
     control.blockSignals(False)
 
 
+@pytest.mark.parametrize("action", ["connect", "terminal"])
+def test_sftp_toolbar_queues_focus_only_while_terminal_exists(
+    connected_workspace, monkeypatch, action,
+) -> None:
+    import sys
+
+    from PyQt6 import sip
+    from PyQt6.QtCore import QCoreApplication, QEvent
+
+    app, window, panel, dock, _profile = connected_workspace
+    output = panel.terminal_pane.output
+    tab_bar = window.tabs.tabBar()
+    tab_bar.setFocus()
+    assert dock.dispatch_moba_sftp_toolbar_action(action)
+    assert window.focusWidget() is output
+    tab_bar.setFocus()
+    assert window.focusWidget() is tab_bar
+    app.processEvents()
+    assert window.focusWidget() is output
+
+    errors = []
+    with monkeypatch.context() as capture:
+        capture.setattr(sys, "excepthook", lambda _type, error, _trace: errors.append(error))
+        assert dock.dispatch_moba_sftp_toolbar_action(action)
+        window.set_workspace_tab_index(window.find_tab_by_role("home"))
+        window.close_tab(window.tabs.indexOf(panel))
+        QCoreApplication.sendPostedEvents(panel, QEvent.Type.DeferredDelete)
+        assert sip.isdeleted(output)
+        app.processEvents()
+    assert errors == []
+
+
 def test_dock_projects_managed_ssh_state_and_defers_automatic_tools(connected_workspace, monkeypatch) -> None:
     from remote_ops_workspace.gui_ssh_connection import SharedSshConnectionState
 
@@ -840,11 +872,9 @@ def test_sftp_navigation_widget_contract_and_reconnect_guards(
     connected_workspace,
     monkeypatch,
 ) -> None:
-    from PyQt6.QtWidgets import QWidget
-
     from remote_ops_workspace import gui_connected
 
-    app, window, _panel, dock, profile = connected_workspace
+    app, window, panel, dock, _profile = connected_workspace
     original_browser = dock.browser
     original_table = dock.file_table
     original_queue = dock.sftp_transfer_queue
@@ -879,25 +909,22 @@ def test_sftp_navigation_widget_contract_and_reconnect_guards(
     dock.file_table = original_table
     dock.sftp_transfer_queue = original_queue
 
-    monkeypatch.setattr(dock, "main_window", lambda: None)
-    assert dock.reconnect_moba_sftp_session() is False
-    monkeypatch.setattr(dock, "main_window", lambda: window)
-    monkeypatch.setattr(window, "terminal_panes_in", lambda _current: [])
-    assert dock.reconnect_moba_sftp_session() is False
+    with monkeypatch.context() as unavailable:
+        unavailable.setattr(dock, "main_window", lambda: None)
+        assert dock.reconnect_moba_sftp_session() is False
+        unavailable.setattr(dock, "main_window", lambda: window)
+        unavailable.setattr(window, "terminal_panes_in", lambda _current: [])
+        assert dock.reconnect_moba_sftp_session() is False
 
-    output = QWidget(window)
+    pane = panel.terminal_pane
     restart_calls: list[str] = []
-    pane = SimpleNamespace(
-        profile=profile,
-        output=output,
-        restart=lambda: restart_calls.append("restart"),
-        is_running=lambda: False,
-    )
-    monkeypatch.setattr(window, "terminal_panes_in", lambda _current: [pane])
+    monkeypatch.setattr(pane, "restart", lambda: restart_calls.append("restart"))
     assert dock.reconnect_moba_sftp_session() is True
     app.processEvents()
     assert restart_calls == ["restart"]
-    assert output.property("mobaTerminalFocusRequested") is True
+    assert pane.output.property("mobaTerminalFocusRequested") is True
+    window.remember_terminal_focus(None, pane.output)
+    assert window._last_terminal_pane is pane
 
 
 def test_monitoring_refresh_generation_and_snapshot_edges(

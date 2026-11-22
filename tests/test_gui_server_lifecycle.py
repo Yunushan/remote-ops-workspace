@@ -129,6 +129,24 @@ def test_unused_manager_close_does_not_start_a_worker(manager, monkeypatch):
     submit.assert_not_called()
 
 
+def test_visible_sample_preview_does_not_start_cron(tmp_path, monkeypatch):
+    from remote_ops_workspace.gui import create_main_window
+
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("ROW_HOME", str(tmp_path))
+    (tmp_path / "server-preferences.json").write_text('{"cron":{"start_with_app":true}}')
+    start = Mock()
+    monkeypatch.setattr(controls.ServerLifecycleManager, "start", start)
+    app, preview = create_main_window(["preview"], show=True, preview_samples=True)
+    try:
+        app.processEvents()
+        assert preview.isVisible()
+        start.assert_not_called()
+    finally:
+        preview.close()
+        app.processEvents()
+
+
 def test_application_shutdown_can_precede_last_window_release(tmp_path, monkeypatch):
     from PyQt6.QtCore import QObject
 

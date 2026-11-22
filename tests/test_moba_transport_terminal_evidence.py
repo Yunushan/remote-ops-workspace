@@ -495,7 +495,7 @@ def test_article_eight_finalizer_binds_validated_source_run(tmp_path: Path) -> N
     )
 
     assert accepted == {}
-    assert any("source_head_sha must match accepted release provenance" in error for error in errors)
+    assert any("release_source.head_sha must match validation summary provenance" in error for error in errors)
 
 
 def test_article_eight_finalizer_accepts_exact_validated_source_run(tmp_path: Path) -> None:

@@ -345,11 +345,10 @@ def check_article_record(
     return errors
 
 
-def check_acceptance_provenance(article_id: str, release_tag: str, row: dict[str, Any]) -> list[str]:
+def check_release_source(
+    article_id: str, release_tag: str, source: dict[str, Any], asset_urls: Any,
+) -> tuple[list[str], str]:
     errors: list[str] = []
-    source = row.get("release_source")
-    if not isinstance(source, dict):
-        return [f"{article_id} release_source must be an object"]
     repository = source.get("repository")
     if not isinstance(repository, str) or not GITHUB_REPOSITORY_RE.fullmatch(repository):
         errors.append(f"{article_id} release_source.repository must be an exact GitHub owner/name value")
@@ -383,13 +382,21 @@ def check_acceptance_provenance(article_id: str, release_tag: str, row: dict[str
     if not isinstance(run_attempt, int) or isinstance(run_attempt, bool) or run_attempt < 1:
         errors.append(f"{article_id} release_source.run_attempt must be a positive integer")
 
-    asset_repositories = release_asset_repositories(row.get("release_asset_urls"))
+    asset_repositories = release_asset_repositories(asset_urls)
     if repository and asset_repositories != {repository}:
         errors.append(
             f"{article_id} release asset repository must exactly match "
             f"release_source.repository {repository}, got {sorted(asset_repositories)}"
         )
 
+    return errors, repository
+
+
+def check_acceptance_provenance(article_id: str, release_tag: str, row: dict[str, Any]) -> list[str]:
+    source = row.get("release_source")
+    if not isinstance(source, dict):
+        return [f"{article_id} release_source must be an object"]
+    errors, repository = check_release_source(article_id, release_tag, source, row.get("release_asset_urls"))
     review_errors, reviewer, reviewed_at = check_review_provenance(article_id, repository, row.get("acceptance_review"))
     errors.extend(review_errors)
     byte_proof = row.get("release_asset_bytes")

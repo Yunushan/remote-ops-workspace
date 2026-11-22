@@ -1694,22 +1694,42 @@ def test_certification_binds_review_time_to_completed_attempt_jobs(
     assert all(expected in error for error in errors)
 
 
-def test_finalizer_prints_the_same_review_line_before_acceptance(reviewed_release, tmp_path, capsys) -> None:
+@pytest.mark.parametrize(("field", "wrong_value", "expected_error"), [
+    (None, None, None),
+    ("repository", "other/remote-ops-workspace", "repository"),
+    ("head_sha", "a" * 40, "head_sha"),
+    ("tag_source_head_sha", "a" * 40, "tag_source_head_sha"),
+    ("workflow_run_url", "https://github.com/example/remote-ops-workspace/actions/runs/777", "workflow_run_url"),
+    ("run_attempt", 3, "run_attempt"),
+])
+def test_finalizer_prints_review_line_only_for_exact_capture(
+    reviewed_release, tmp_path, capsys, field, wrong_value, expected_error,
+) -> None:
     record = reviewed_release.records[0]
     candidate = {key: value for key, value in record.items()
                  if key not in {"release_source", "acceptance_review", "release_asset_bytes"}}
     candidate["status"] = "candidate"
     candidate_path = tmp_path / "candidate.json"
     candidate_path.write_text(json.dumps(candidate), encoding="utf-8")
-    source = record["release_source"]
+    source = dict(record["release_source"])
+    if field:
+        source[field] = wrong_value
 
-    assert _load_finalizer().main([
+    result = _load_finalizer().main([
         "--candidate-record", str(candidate_path), "--repository", source["repository"],
         "--source-head-sha", source["head_sha"], "--tag-source-head-sha", source["tag_source_head_sha"],
         "--workflow-run-url", source["workflow_run_url"], "--run-attempt", str(source["run_attempt"]),
         "--print-review-line",
-    ]) == 0
-    assert capsys.readouterr().out.strip() == release_parity.review_acceptance_line(record)
+    ])
+    output = capsys.readouterr()
+    if expected_error:
+        assert result == 1
+        assert output.out == ""
+        assert expected_error in output.err
+    else:
+        assert result == 0
+        assert output.out == release_parity.review_acceptance_line(record) + "\n"
+        assert output.err == ""
 
 
 def test_certification_rejects_review_body_that_only_accepts_another_article(reviewed_release) -> None:

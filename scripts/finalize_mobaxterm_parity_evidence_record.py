@@ -17,6 +17,8 @@ from scripts.check_mobaxterm_parity_evidence import (  # noqa: E402
     check_candidate_record,
     check_mobaxterm_parity_evidence,
     check_record,
+    check_release_source,
+    check_validation_source_identity,
     review_acceptance_line,
 )
 from scripts.make_mobaxterm_parity_evidence_record import registry_policy  # noqa: E402
@@ -29,15 +31,15 @@ def main(argv: list[str] | None = None) -> int:
         if args.append_registry or args.out is not None:
             print("--print-review-line cannot write or append a record", file=sys.stderr)
             return 1
-        errors = read_errors or check_candidate_record(candidate)
-        if errors:
-            for error in errors:
-                print(f"mobaxterm parity evidence finalizer: {error}", file=sys.stderr)
-            return 1
         source = release_source(
             candidate, args.repository, args.source_head_sha, args.tag_source_head_sha,
             args.workflow_run_url, args.run_attempt,
         )
+        errors = read_errors or check_candidate_for_review(candidate, source)
+        if errors:
+            for error in errors:
+                print(f"mobaxterm parity evidence finalizer: {error}", file=sys.stderr)
+            return 1
         print(review_acceptance_line({**candidate, "release_source": source}))
         return 0
     if args.append_registry and args.out is None:
@@ -142,6 +144,19 @@ def release_source(
     }
 
 
+def check_candidate_for_review(candidate: dict[str, Any], source: dict[str, Any]) -> list[str]:
+    errors = check_candidate_record(candidate)
+    if errors:
+        return errors
+    article = candidate["article_id"]
+    errors, _ = check_release_source(article, candidate["release_tag"], source, candidate["release_asset_urls"])
+    if article in SOURCE_BOUND_ARTICLES:
+        errors.extend(check_validation_source_identity(
+            {**candidate, "release_source": source}, require_acceptance_provenance=True,
+        ))
+    return errors
+
+
 def finalize_candidate(
     candidate: dict[str, Any],
     *,
@@ -155,31 +170,8 @@ def finalize_candidate(
     reviewed_at: str,
     published_assets: dict[str, Path],
 ) -> tuple[list[str], dict[str, Any]]:
-    errors = check_candidate_record(candidate)
-    article_id = candidate.get("article_id")
-    if isinstance(article_id, str) and article_id in SOURCE_BOUND_ARTICLES:
-        validation = candidate.get("validation_summary")
-        summary = validation.get("summary") if isinstance(validation, dict) else None
-        if not isinstance(summary, dict):
-            errors.append(
-                f"{article_id} validation_summary.summary "
-                "must contain source provenance"
-            )
-        else:
-            expected_source = {
-                "repository": repository,
-                "release_tag": candidate.get("release_tag"),
-                "release_target": candidate.get("release_target"),
-                "source_head_sha": source_head_sha,
-                "workflow_run_url": workflow_run_url,
-                "run_attempt": run_attempt,
-            }
-            for key, value in expected_source.items():
-                if summary.get(key) != value:
-                    errors.append(
-                        f"{article_id} validation_summary.summary."
-                        f"{key} must match accepted release provenance {value!r}"
-                    )
+    source = release_source(candidate, repository, source_head_sha, tag_source_head_sha, workflow_run_url, run_attempt)
+    errors = check_candidate_for_review(candidate, source)
     expected_hashes = candidate.get("artifact_sha256")
     if not isinstance(expected_hashes, dict):
         expected_hashes = {}
@@ -207,9 +199,7 @@ def finalize_candidate(
 
     record = accepted_record({
         **candidate,
-        "release_source": release_source(
-            candidate, repository, source_head_sha, tag_source_head_sha, workflow_run_url, run_attempt,
-        ),
+        "release_source": source,
         "acceptance_review": {
             "reviewer": reviewer,
             "review_url": review_url,

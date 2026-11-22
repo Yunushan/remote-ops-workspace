@@ -1247,7 +1247,8 @@ def _require_replaceable_server_record(service: str, state_dir: Path | None) -> 
         if record.state == "stopped" and stored.get("running", False) is False:
             return
         raise ValueError("managed embedded server state is active or ambiguous; stop or recover it before starting again")
-    if record.running:
+    # A stored "stopped" label can still carry a live process identity.
+    if _server_process_running(record.pid, record.process_identity, record.cron_generation, Path(record.state_path)):
         raise ValueError("managed embedded server is already running; stop it before starting again")
     if record.cron_generation:
         reap_exited_owned_process(record.pid, record.process_identity)

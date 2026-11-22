@@ -165,8 +165,9 @@ Before opening the previous application, restore the encrypted backup into a
 private sibling workspace if the newer version used `ROW_HOME`. Follow the data
 restore and validation steps below.
 
-The x86-64 all-modern native candidate job also runs an automated update drill
-using the byte-verified previous release and exact candidate DEBs. It stages the
+The all-modern candidate workflow runs the managed update on native x86-64
+and ARM64 Linux runners. It uses the corresponding published v1.0.24 DEB and
+the exact smoke-tested candidate DEB for each architecture. It stages the
 packages through certificate-validated HTTPS inside an isolated Debian
 container and exercises `update` from fresh staging directories, including a
 controlled `dpkg` failure that restores the previous installer. It then shuts
@@ -189,8 +190,10 @@ The drill also installs a package that requires the candidate version. A
 blocked rollback must preserve the installed candidate, workspace, and
 applied journal. After removing the fixture, the drill continues the same
 rollback offline.
-The retained `managed-debian-update.json` records the package digests,
-candidate source SHA, run attempt, and observed outcomes. The drill uses an
+Each target's `build/native-smoke/<target>/managed-debian-update.json` records
+the Debian architecture, kernel machine, package digests, candidate source SHA,
+run attempt and observed outcomes. For the ARM64 runner the artifact target is
+`linux-aarch64` and the update policy selects `linux-arm64`. The drill uses an
 ephemeral test signer. Production approval uses the release-bound evidence in
 the [release promotion runbook](RELEASE_PROMOTION.md).
 

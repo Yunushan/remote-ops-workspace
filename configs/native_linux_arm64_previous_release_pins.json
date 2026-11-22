@@ -1,0 +1,31 @@
+{
+  "assets": [
+    {
+      "browser_download_url": "https://github.com/Yunushan/remote-ops-workspace/releases/download/v1.0.24/remote-ops-workspace-v1.0.24-linux-arm64.deb",
+      "digest": "sha256:8f5da332318532d7ac931f54b93db690c42e97a1213c7ae15522a3f9b91ba3a2",
+      "id": 544041426,
+      "name": "remote-ops-workspace-v1.0.24-linux-arm64.deb",
+      "size": 26888494
+    },
+    {
+      "browser_download_url": "https://github.com/Yunushan/remote-ops-workspace/releases/download/v1.0.24/remote-ops-workspace-v1.0.24-linux-aarch64-native-manifest.json",
+      "digest": "sha256:d4edf0ffb9071fa5c597eb3e4ae0ddf2c8041ab708988239d3545d96b97f1b55",
+      "id": 544041421,
+      "name": "remote-ops-workspace-v1.0.24-linux-aarch64-native-manifest.json",
+      "size": 2556
+    },
+    {
+      "browser_download_url": "https://github.com/Yunushan/remote-ops-workspace/releases/download/v1.0.24/remote-ops-workspace-v1.0.24-linux-aarch64-native-SHA256SUMS.txt",
+      "digest": "sha256:b598e8fdf007809e6aff49cb4a2ea523298408ccbb6fcacd96ae0f3f6b61e591",
+      "id": 544041424,
+      "name": "remote-ops-workspace-v1.0.24-linux-aarch64-native-SHA256SUMS.txt",
+      "size": 595
+    }
+  ],
+  "published_at": "2026-09-04T08:39:52Z",
+  "release_id": 382583184,
+  "repository": "Yunushan/remote-ops-workspace",
+  "schema": "row.previous-native-release-pins.v1",
+  "tag": "v1.0.24",
+  "tag_commit": "2165989ca9f3ffbd59a8f27a296cda3fb295a404"
+}

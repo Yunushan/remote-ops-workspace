@@ -7,6 +7,7 @@ import base64
 import hashlib
 import json
 import os
+import platform
 import re
 import shlex
 import signal
@@ -34,11 +35,10 @@ from remote_ops_workspace.moba_customizer import canonical_update_manifest_paylo
 from remote_ops_workspace.update_channel import (  # noqa: E402
     MOBA_PROFESSIONAL_UPDATE_MANIFEST_SCHEMA,
 )
-from scripts.managed_debian_qualification import SCHEMA  # noqa: E402
+from scripts.managed_debian_qualification import DEBIAN_TARGETS, SCHEMA  # noqa: E402
 from scripts.release_evidence_file import stream_sha256  # noqa: E402
 
 PACKAGE = "remote-ops-workspace"
-TARGET = "linux-x86_64"
 MANAGER = ROOT / "scripts/managed_linux_update.py"
 SERVER_MANIFEST = Path("/usr/lib/remote-ops-workspace/servers/servers-runtime.json")
 ROLLBACK_BLOCKER = "row-qualification-rollback-blocker"
@@ -59,25 +59,28 @@ def checked(*args: str | Path) -> str:
     return result.stdout.strip()
 
 
-def validate_container() -> None:
+def validate_container(target: str) -> tuple[str, str]:
     if (sys.platform != "linux" or os.geteuid() != 0 or not Path("/.dockerenv").is_file()
             or {entry.name for entry in Path("/sys/class/net").iterdir()} != {"lo"}):
         raise RuntimeError("Run this drill as root in a fresh Docker container with --network none")
-    if checked("/usr/bin/dpkg", "--print-architecture") != "amd64":
-        raise RuntimeError("The managed Debian drill uses amd64 installers")
+    architecture = checked("/usr/bin/dpkg", "--print-architecture")
+    machine = platform.machine()
+    if (architecture, machine) != DEBIAN_TARGETS[target]:
+        raise RuntimeError(f"The managed Debian drill requires a native {target} container")
     query = command("/usr/bin/dpkg-query", "--show", PACKAGE)
     if query.returncode != 1 or Path("/usr/bin/row").exists():
         raise RuntimeError("The drill needs a fresh container without a prior package installation")
+    return architecture, machine
 
 
-def validate_deb(path: Path, expected: str) -> str:
+def validate_deb(path: Path, expected: str, native_architecture: str) -> str:
     if sha256(path) != expected:
         raise ValueError(f"Package SHA-256 mismatch for {path.name}")
     package, version, architecture = checked(
         "/usr/bin/dpkg-deb", "--show", "--showformat=${Package}\t${Version}\t${Architecture}", path,
     ).split("\t")
-    if (package != PACKAGE or architecture != "amd64" or not re.fullmatch(r"\d+\.\d+\.\d+", version)
-            or path.name != f"{PACKAGE}-v{version}-linux-amd64.deb"):
+    if (package != PACKAGE or architecture != native_architecture or not re.fullmatch(r"\d+\.\d+\.\d+", version)
+            or path.name != f"{PACKAGE}-v{version}-linux-{native_architecture}.deb"):
         raise ValueError(f"Unexpected package identity for {path.name}")
     return version
 
@@ -130,7 +133,8 @@ def https_feed(root: Path, payloads: dict[str, bytes], now: datetime, *, request
 
 
 def stage_policy(root: Path, name: str, package: Path, version: str, minimum: str, *,
-                 origin: str, now: datetime, signer: Ed25519PrivateKey, payloads: dict[str, bytes]):
+                 origin: str, now: datetime, signer: Ed25519PrivateKey, payloads: dict[str, bytes],
+                 target: str = "linux-x86_64"):
     url_path = f"/{name}/manifest.json"
     package_path = f"/{name}/{package.name}"
     body = package.read_bytes()
@@ -139,7 +143,7 @@ def stage_policy(root: Path, name: str, package: Path, version: str, minimum: st
         "organization": "Disposable qualification", "channel": "test-only",
         "version": version, "generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "update_url": origin + url_path,
-        "artifacts": [{"target": TARGET, "file": package.name, "name": package.name,
+        "artifacts": [{"target": target, "file": package.name, "name": package.name,
                        "url": origin + package_path, "size_bytes": len(body),
                        "sha256": hashlib.sha256(body).hexdigest()}],
     }
@@ -153,8 +157,8 @@ def stage_policy(root: Path, name: str, package: Path, version: str, minimum: st
     policy = json.loads((ROOT / "configs/update-trust-policy.example.json").read_bytes())
     public_key = base64.b64encode(signer.public_key().public_bytes_raw()).decode()
     policy.update(enabled=True, manifest_url=manifest["update_url"], public_key="ed25519:" + public_key,
-                  organization=manifest["organization"], channel=manifest["channel"], selected_target=TARGET,
-                  approved_targets=[TARGET], allowed_origins=[origin], minimum_version=minimum)
+                  organization=manifest["organization"], channel=manifest["channel"], selected_target=target,
+                  approved_targets=[target], allowed_origins=[origin], minimum_version=minimum)
     policy_file = root / f"{name}-policy.json"
     policy_file.write_text(json.dumps(policy), encoding="utf-8")
     stage = root / f"{name}-stage"
@@ -283,9 +287,9 @@ def pause_dpkg_rollback(root: Path):
         config.unlink()
 
 
-def qualify(args, root: Path) -> dict:
-    previous = validate_deb(args.previous_deb, args.previous_sha256)
-    candidate = validate_deb(args.candidate_deb, args.candidate_sha256)
+def qualify(args, root: Path, architecture: str, machine: str) -> dict:
+    previous = validate_deb(args.previous_deb, args.previous_sha256, architecture)
+    candidate = validate_deb(args.candidate_deb, args.candidate_sha256, architecture)
     if tuple(map(int, candidate.split("."))) <= tuple(map(int, previous.split("."))):
         raise ValueError("The candidate installer must be newer than the previous installer")
     broken = package_fixture(args.candidate_deb, root / "failure", postinst="exit 42\n")
@@ -335,7 +339,7 @@ def qualify(args, root: Path) -> dict:
                                     ("interrupted", suspended, candidate),
                                     ("dependency-blocked", blocked, candidate)):
             policy, stage = stage_policy(root, name, path, version, previous, origin=origin,
-                                         now=now, signer=signer, payloads=payloads)
+                                         now=now, signer=signer, payloads=payloads, target=args.target)
             stages[name] = (policy, stage)
             is_previous = name == "previous"
             action = "stage-previous" if is_previous else "stage-candidate"
@@ -476,7 +480,8 @@ def qualify(args, root: Path) -> dict:
         if sha256(sentinel) != original:
             raise RuntimeError("The package transition changed the retained workspace data")
 
-    return {"schema": SCHEMA, "status": "passed", "target": TARGET,
+    return {"schema": SCHEMA, "status": "passed", "target": args.target,
+            "debian_architecture": architecture, "kernel_machine": machine,
             "controller_sha256": sha256(MANAGER), "previous_sha256": args.previous_sha256,
             "candidate_sha256": args.candidate_sha256, "download_server_closed_before_apply": True,
             "workspace_unchanged": True, "candidate_has_server_bundle": bundled_servers,
@@ -485,14 +490,15 @@ def qualify(args, root: Path) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--target", choices=tuple(DEBIAN_TARGETS), default="linux-x86_64")
     parser.add_argument("--previous-deb", required=True, type=Path)
     parser.add_argument("--previous-sha256", required=True)
     parser.add_argument("--candidate-deb", required=True, type=Path)
     parser.add_argument("--candidate-sha256", required=True)
     args = parser.parse_args()
-    validate_container()
+    architecture, machine = validate_container(args.target)
     with TemporaryDirectory(prefix="row-managed-update-", dir="/root") as workdir:
-        report = qualify(args, Path(workdir))
+        report = qualify(args, Path(workdir), architecture, machine)
     print(json.dumps(report, indent=2, sort_keys=True))
 
 

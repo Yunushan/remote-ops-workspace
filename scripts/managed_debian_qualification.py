@@ -7,6 +7,7 @@ from signal import SIGTERM
 
 REPORT_NAME = "managed-debian-update.json"
 MANAGED_IMAGE = "python:3.14.10-slim-trixie@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f"
+DEBIAN_TARGETS = {"linux-x86_64": ("amd64", "x86_64"), "linux-arm64": ("arm64", "aarch64")}
 HASH = re.compile(r"[0-9a-f]{64}")
 SCHEMA = "row.managed-debian-qualification.v6"
 ROLLBACK_PLAN_SCHEMA = "row.managed-debian-qualification.v5"
@@ -18,7 +19,7 @@ PREVIOUS_SCHEMA = "row.managed-debian-qualification.v1"
 
 def validate_receipt(
     receipt: object, *, previous_sha: str, candidate_sha: str,
-    require_automatic: bool = False, require_current: bool = False,
+    require_automatic: bool = False, require_current: bool = False, expected_target: str = "linux-x86_64",
 ) -> None:
     error = "managed-debian-receipt-binding-mismatch"
     if (
@@ -29,7 +30,8 @@ def validate_receipt(
         or require_automatic and receipt.get("schema") == PREVIOUS_SCHEMA
         or require_current and receipt.get("schema") != SCHEMA
         or receipt.get("status") != "passed"
-        or receipt.get("target") != "linux-x86_64"
+        or expected_target not in DEBIAN_TARGETS
+        or receipt.get("target") != expected_target
         or receipt.get("production_acceptance") is not False
         or receipt.get("previous_sha256") != previous_sha or receipt.get("candidate_sha256") != candidate_sha
         or receipt.get("download_server_closed_before_apply") is not True
@@ -79,6 +81,18 @@ def validate_receipt(
         for name, expected in expected_steps.items()
     ) or any(steps[name].get("refusal") != expected for name, expected in refusals.items()):
         raise ValueError(error)
+    # Historical x86-64 reports predate the explicit dpkg and kernel fields.
+    # A new ARM64 report must bind the host, signed staging target and dpkg transactions.
+    if expected_target == "linux-arm64" or "debian_architecture" in receipt or "kernel_machine" in receipt:
+        architecture, machine = DEBIAN_TARGETS[expected_target]
+        if (receipt["schema"] != SCHEMA
+                or (receipt.get("debian_architecture"), receipt.get("kernel_machine")) != (architecture, machine)):
+            raise ValueError(error)
+        for step in steps.values():
+            if step["phase"] == "authenticated-staged" and step.get("selected_target") != expected_target:
+                raise ValueError(error)
+            if step["phase"] in ("applied", "rolled-back") and step.get("architecture") != architecture:
+                raise ValueError(error)
     for name, action in automatic_actions.items():
         if steps[name].get("action") != action or steps[name].get("previous_sha256") != previous_sha:
             raise ValueError(error)

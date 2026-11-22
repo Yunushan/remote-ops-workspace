@@ -558,6 +558,20 @@ jobs:
             --sha "${{ needs.candidate-source.outputs.candidate_sha }}" --proof-dir "build/candidate-proof/linux-${{ matrix.arch }}" \
             --stage-dir build/native/linux/pyinstaller-dist \
             --output "candidate-runtime-inventory/linux-${{ matrix.arch }}"
+      - name: Qualify ARM64 managed Debian upgrade and rollback
+        if: ${{ matrix.arch == 'aarch64' && steps.native-build.outcome == 'success' && steps.native-smoke.outcome == 'success' && steps.candidate-proof.outcome == 'success' }}
+        timeout-minutes: 25
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CANDIDATE_SOURCE_SHA: ${{ needs.candidate-source.outputs.candidate_sha }}
+          REQUESTED_SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          if [[ -n "$REQUESTED_SOURCE_SHA" && ! -f configs/native_linux_arm64_previous_release_pins.json ]]; then
+            echo 'This historical checkout predates the ARM64 managed Debian drill.'
+            exit 0
+          fi
+          python scripts/native_linux_installer_recovery.py managed-candidate \
+            --arch aarch64 --candidate-source-sha "$CANDIDATE_SOURCE_SHA"
       - name: Verify previous Linux DEB native upgrade and recovery
         id: native-recovery
         if: ${{ matrix.arch == 'x86_64' && steps.native-build.outcome == 'success' && steps.native-smoke.outcome == 'success' && steps.candidate-proof.outcome == 'success' }}

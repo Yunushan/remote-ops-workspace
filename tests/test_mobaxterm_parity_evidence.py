@@ -96,6 +96,16 @@ def test_mobaxterm_parity_evidence_catalog_tracks_all_eight_articles() -> None:
     }
 
 
+@pytest.mark.parametrize("article", sorted(release_parity.ARTICLE_SPECS))
+def test_release_parity_workflow_declares_each_reviewed_job(article: str) -> None:
+    workflow = release_parity.EVIDENCE_WORKFLOWS[article]
+    source = Path(workflow.path).read_text(encoding="utf-8")
+    job_lines = source.split("\njobs:\n", 1)[1].splitlines()
+    expected_names = [workflow.job, *(name for name, _labels in workflow.prerequisite_jobs)]
+    for name in expected_names:
+        assert job_lines.count(f"    name: {name}") == 1, f"{workflow.path} must declare exactly one job named {name!r}"
+
+
 def test_mobaxterm_record_generator_registers_eighth_article_validator() -> None:
     generator = _load_generator()
 

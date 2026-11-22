@@ -19,7 +19,7 @@ env:
 
 jobs:
   qualify-macro:
-    name: Qualify saved macro playback in the release wheel
+    name: Qualify the published wheel's timed macro replay
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:

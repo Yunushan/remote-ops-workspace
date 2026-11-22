@@ -251,10 +251,14 @@ jobs:
       - name: Verify frozen Cron schedules once and releases its Windows worker
         shell: powershell
         timeout-minutes: 4
-        run: >-
-          python scripts/candidate_windows_owned.py --timeout 175 --drain-descendants
-          --out "build/candidate-proof/windows-${{ matrix.arch }}/owned-cron.json"
-          -- python scripts/check_native_frozen_cron.py --target "windows-${{ matrix.arch }}"
+        run: |
+          python scripts/candidate_windows_owned.py --timeout 175 --drain-descendants --out "build/candidate-proof/windows-${{ matrix.arch }}/owned-cron.json" -- python scripts/check_native_frozen_cron.py --target "windows-${{ matrix.arch }}"
+          if ($LASTEXITCODE -ne 0) {
+            $probeExit = $LASTEXITCODE
+            $log = "build/candidate-proof/windows-${{ matrix.arch }}/owned-cron.log"
+            if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log }
+            exit $probeExit
+          }
       - name: Capture exact Windows redistribution inventory
         shell: bash
         run: >-

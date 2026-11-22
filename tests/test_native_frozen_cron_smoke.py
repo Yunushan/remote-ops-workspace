@@ -135,7 +135,45 @@ def test_native_targets_require_frozen_cron_and_windows_job_drain():
     assert "candidate_windows_owned.py --timeout 175 --drain-descendants" in step
     assert 'windows-${{ matrix.arch }}/owned-cron.json' in step
     assert 'check_native_frozen_cron.py --target "windows-${{ matrix.arch }}"' in step
+    assert 'windows-${{ matrix.arch }}/owned-cron.log' in step
+    assert 'Get-Content -LiteralPath $log' in step and 'exit $probeExit' in step
     job = native.split("  macos-native:", 1)[1].split("  linux-native:", 1)[0]
     step = job.split("      - name: Verify frozen Cron", 1)[1].split("      - name:", 1)[0]
     assert "if:" not in step
     assert 'check_native_frozen_cron.py --target "macos-${{ matrix.arch }}"' in step
+
+
+@pytest.mark.parametrize(("shift", "failure"), [
+    (0.0, ""), (-0.125, ""), (0.125, ""),
+    (-60.0, "did not reach the next minute"), (60.0, "jumped forward"),
+])
+def test_quiet_minute_handles_early_wakes_and_bounded_clock_adjustment(tmp_path, monkeypatch, shift, failure):
+    marker = tmp_path / "marker"
+    marker.write_bytes(b"one\n")
+    elapsed = 0.0
+    calls = 0
+
+    def wall():
+        return 58.0 + elapsed + (shift if calls else 0.0)
+
+    def wake_early(duration):
+        nonlocal elapsed, calls
+        # Match an early wake without allowing synthetic time to stand still.
+        elapsed += duration - 0.01 if duration >= 0.05 else duration
+        calls += 1
+
+    monkeypatch.setattr(smoke, "time", SimpleNamespace(time=wall, monotonic=lambda: elapsed, sleep=wake_early))
+    if failure:
+        with pytest.raises(RuntimeError, match=failure):
+            smoke.verify_quiet_minute(marker, "one")
+    else:
+        smoke.verify_quiet_minute(marker, "one")
+        assert elapsed >= 3.5 and wall() >= 61.5 and calls > 1
+    assert elapsed <= 6.5
+
+
+def test_quiet_minute_rejects_extra_job_before_observation_starts(tmp_path):
+    marker = tmp_path / "marker"
+    marker.write_bytes(b"one\none\n")
+    with pytest.raises(RuntimeError, match="unexpected scheduled effects before"):
+        smoke.verify_quiet_minute(marker, "one")

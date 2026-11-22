@@ -62,6 +62,34 @@ def darwin_process(pid: int) -> str:
     return seen.stdout.strip()
 
 
+def verify_quiet_minute(marker: Path, token: str) -> None:
+    original = marker.read_bytes()
+    if original.split() != [token.encode("ascii")]:
+        raise RuntimeError("unexpected scheduled effects before the quiet-minute observation")
+
+    started = time.monotonic()
+    wall_start = time.time()
+    boundary = (int(wall_start) // 60 + 1) * 60 + 1.5
+    duration = boundary - wall_start
+    # A real wait can wake early, and disciplined clocks can slew slightly.
+    # Require both clocks to cover the observation and bound a stalled wall clock.
+    clock_allowance = 3.0
+    deadline = started + duration + clock_allowance
+    while True:
+        now = time.monotonic()
+        wall = time.time()
+        if marker.read_bytes() != original:
+            raise RuntimeError("frozen Cron continued scheduling after stop")
+        if wall - wall_start > (now - started) + clock_allowance:
+            raise RuntimeError("wall clock jumped forward during the quiet-minute observation")
+        if wall >= boundary and now - started >= duration:
+            return
+        if now >= deadline:
+            raise RuntimeError("wall clock did not reach the next minute before the observation deadline")
+        wait = max(boundary - wall, duration - (now - started), 0.05)
+        time.sleep(min(wait, deadline - now, 1.0))
+
+
 def capture(row: Path, home: Path, *, mac: bool) -> dict:
     # All supported shells resolve the relative job output inside the disposable home.
     extraction = home / "temp"
@@ -123,11 +151,7 @@ def capture(row: Path, home: Path, *, mac: bool) -> dict:
             raise RuntimeError("frozen Cron stop did not revoke its original generation")
     elif recorded_process_is_running(pid, identity):
         raise RuntimeError("frozen Cron stop did not release the recorded process")
-    before = marker.read_bytes()
-    next_minute = (int(time.time()) // 60 + 1) * 60 + 1.5
-    time.sleep(max(0.0, min(62.0, next_minute - time.time())))
-    if time.time() < next_minute or marker.read_bytes() != before or before.decode("ascii").split() != [token]:
-        raise RuntimeError("frozen Cron continued scheduling or the next minute boundary was not observed")
+    verify_quiet_minute(marker, token)
     # lstart has five fields. A command name can change when a process becomes
     # a zombie; the birth time also distinguishes a newly reused PID.
     if mac and darwin_process(pid).split(maxsplit=5)[:5] == process.split(maxsplit=5)[:5]:

@@ -396,13 +396,20 @@ def test_rpm_paths_and_database_uncertainty_refuse(module, case, tmp_path, monke
 def test_inventory_preserves_unknown_nested_locks_opaque_and_empty_dirs(module, tmp_path):
     home = tmp_path / "home"
     (home / "plugins/empty").mkdir(parents=True)
+    (home / "servers").mkdir()
     (home / ".profiles.json.lock").write_bytes(b"known advisory")
     (home / "plugins/.plugin.lock").write_bytes(b"opaque\x00\xff")
     (home / "plugins/.profiles.json.lock").write_bytes(b"nested known basename is plugin state")
+    (home / "plugins/.cron-server-state.worker.lock").write_bytes(b"plugin state")
+    (home / "servers/crontab").write_bytes(b"# persistent schedule\n")
     before = module.inventory(home)
     (home / ".profiles.json.lock").write_bytes(b"changed advisory")
+    for name in ("servers/.cron-server-state.json.lock", "servers/.iperf-server-state.json.lock",
+                 "servers/.cron-server-state.worker.lock", "servers/.cron-server-state.control.lock",
+                 "servers/.crontab.lock", ".server-preferences.json.lock"):
+        (home / name).write_bytes(b"advisory")
     assert module.inventory(home) == before
-    for name in ("plugins/.plugin.lock", "plugins/.profiles.json.lock"):
+    for name in ("plugins/.plugin.lock", "plugins/.profiles.json.lock", "plugins/.cron-server-state.worker.lock", "servers/crontab"):
         value = (home / name).read_bytes()
         (home / name).write_bytes(b"mutation")
         assert module.inventory(home) != before

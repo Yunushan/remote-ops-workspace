@@ -244,6 +244,9 @@ def test_main_failure_report_contains_only_sanitized_failure_type(tmp_path, monk
     "servers/.tftp-server-state.json.lock", "servers/.ssh-server-state.json.lock",
     "servers/.sftp-server-state.json.lock", "servers/.telnet-server-state.json.lock",
     "servers/.vnc-server-state.json.lock", "servers/.nfs-server-state.json.lock",
+    ".server-preferences.json.lock", "servers/.crontab.lock",
+    "servers/.cron-server-state.json.lock", "servers/.iperf-server-state.json.lock",
+    "servers/.cron-server-state.control.lock", "servers/.cron-server-state.worker.lock",
     ".PROFILES.JSON.LOCK",
 ])
 def test_tree_oracle_ignores_only_known_advisory_relative_lock_files(tmp_path, relative):
@@ -263,6 +266,9 @@ def test_tree_oracle_ignores_only_known_advisory_relative_lock_files(tmp_path, r
     ".plugin.lock", "plugins/unrecognized/.plugin.lock",
     "plugins/unrecognized/.profiles.json.lock",
     "plugins/servers/.http-server-state.json.lock",
+    "plugins/servers/.cron-server-state.worker.lock", "servers/.crontab.rollback.fixture.tmp",
+    "servers/cron-server-state.control", "servers/cron-server-state.json", "servers/iperf-server-state.json",
+    "server-preferences.json", "servers/crontab",
 ])
 @pytest.mark.parametrize("change", ["same-size-mutation", "loss"])
 def test_tree_oracle_detects_unknown_and_nested_known_basename_lock_changes(tmp_path, relative, change):

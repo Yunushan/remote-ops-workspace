@@ -23,6 +23,7 @@ import tarfile
 import tempfile
 import threading
 import time
+import unicodedata
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -83,22 +84,6 @@ DIRECTORIES = {
     "usr/share",
     "usr/share/doc",
     "usr/share/doc/remote-ops-workspace",
-}
-STORES = (
-    "profiles.json",
-    "vault.json",
-    "layouts.json",
-    "snippets.json",
-    "moba-macros.json",
-    "xserver-state.json",
-    *(
-        f"servers/{name}-server-state.json"
-        for name in ("http", "ftp", "tftp", "ssh", "sftp", "telnet", "vnc", "nfs")
-    ),
-)
-KNOWN_LOCKS = {
-    (PurePosixPath(name).parent / ("." + PurePosixPath(name).name + ".lock")).as_posix()
-    for name in STORES
 }
 PLAN = (
     "Refuse local/self-hosted/non-Ubuntu24.04/non-x64 execution and preexisting dpkg/RPM/path ownership before mutation.",
@@ -821,7 +806,7 @@ def inventory(home: Path) -> dict:
         if stat.S_ISDIR(metadata.st_mode):
             directories.append(name)
         elif stat.S_ISREG(metadata.st_mode):
-            if name not in KNOWN_LOCKS:
+            if unicodedata.normalize("NFC", name).casefold() not in recovery.KNOWN_ADVISORY_LOCK_PATHS:
                 data = regular(path, MAX_FILE)
                 rows.append([name, len(data), hashlib.sha256(data).hexdigest()])
         else:

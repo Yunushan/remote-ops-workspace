@@ -104,6 +104,36 @@ def test_generation_compare_and_worker_readiness(tmp_path, monkeypatch):
     cron.wait_for_cron_ready(control, token, SimpleNamespace(poll=lambda: None))
 
 
+def test_worker_activation_survives_same_generation_atomic_replacement(tmp_path, monkeypatch):
+    control = tmp_path / "cron.control"
+    generation = "test-generation"
+    cron.change_cron_phase(control, generation, (), "pending")
+    actual_open = cron.os.open
+    replaced = False
+
+    def open_after_parent_activates(path, flags, *args, **kwargs):
+        nonlocal replaced
+        if path == control and not replaced and control.read_text() == f"ready {generation}":
+            # The worker already took its pre-read stat. Publish the parent's
+            # normal transition before it opens the descriptor for that read.
+            replaced = True
+            assert cron.change_cron_phase(control, generation, ("ready",), "active")
+        return actual_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(cron.os, "open", open_after_parent_activates)
+    assert cron._activate_worker(control, generation)
+    assert replaced and cron.cron_phase(control) == f"active {generation}"
+
+
+@pytest.mark.parametrize("phase", ["", "revoked gen", "active different"])
+def test_activation_requires_positive_own_generation_before_deadline(tmp_path, monkeypatch, phase):
+    monkeypatch.setattr(cron, "change_cron_phase", lambda *_args: True)
+    monkeypatch.setattr(cron, "cron_phase", lambda _control: phase)
+    monkeypatch.setattr(cron, "CRON_START_TIMEOUT", 0 if not phase else 30)
+    monkeypatch.setattr(cron.time, "sleep", lambda _delay: pytest.fail("activation should have ended"))
+    assert not cron._activate_worker(tmp_path / "control", "gen")
+
+
 def test_owned_only_posix_worker_lease_proves_same_generation(tmp_path, monkeypatch):
     import threading
     control = tmp_path / "cron.control"

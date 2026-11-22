@@ -42,11 +42,18 @@ def test_known_managed_record_locks_are_excluded_and_unknown_plugin_locks_restor
     assert (restored / "servers/http-server-state.json").read_bytes() == records[1].read_bytes()
 
 
-def test_existing_managed_record_lock_contention_refuses_backup_and_preserves_output(tmp_path):
+@pytest.mark.parametrize(("name", "payload"), [
+    ("xserver-state.json", b'{"state":"stopped","pid":null}'),
+    ("servers/cron-server-state.json", None), ("servers/iperf-server-state.json", None),
+    ("servers/cron-server-state.worker", None),
+    ("servers/cron-server-state.control", b"revoked " + b"0" * 32),
+])
+def test_existing_managed_record_lock_contention_refuses_backup_and_preserves_output(tmp_path, name, payload):
     source = tmp_path / "home"
-    source.mkdir()
-    state = source / "xserver-state.json"
-    state.write_text(json.dumps({"state": "stopped", "pid": None, "running": False}), encoding="utf-8")
+    state = source / name
+    state.parent.mkdir(parents=True)
+    if payload is not None:
+        state.write_bytes(payload)
     acquired, release = threading.Event(), threading.Event()
 
     def hold_record():
@@ -317,7 +324,7 @@ def test_authenticated_bad_inner_manifest_creates_no_restore_directory(home, tmp
     assert not (tmp_path / "restored").exists() and not list(tmp_path.glob(".restored.row-restore-*"))
 
 
-@pytest.mark.parametrize("name", ["XSERVER-STATE.JSON", "SERVERS/HTTP-SERVER-STATE.JSON"])
+@pytest.mark.parametrize("name", ["XSERVER-STATE.JSON", "SERVERS/HTTP-SERVER-STATE.JSON", "SERVERS/CRON-SERVER-STATE.JSON", "SERVERS/IPERF-SERVER-STATE.JSON"])
 def test_managed_state_case_aliases_are_refused_in_source_and_authenticated_restore(home, tmp_path, name):
     payload = b'{"state":"started","pid":424242,"running":true}'
     path = home / name
@@ -333,6 +340,77 @@ def test_managed_state_case_aliases_are_refused_in_source_and_authenticated_rest
     assert recovery._excluded(".PROFILES.JSON.LOCK") is True
     assert recovery._excluded(".PROFILES.JSON.TRANSACTION.TMP") is True
     assert recovery._excluded(".PROFILES.JSON.ROLLBACK.ORIGINAL.TMP") is False
+
+
+@pytest.mark.parametrize(("phase", "stopped_record"), [("pending", False), ("ready", True), ("active", False), ("revoked bad-token", True)])
+def test_orphan_cron_control_refuses_new_backup_and_authenticated_v1_restore(home, tmp_path, phase, stopped_record):
+    servers = home / "servers"
+    servers.mkdir()
+    files = {"servers/cron-server-state.control": f"{phase} {'a' * 32}".encode()}
+    if stopped_record:
+        files["servers/cron-server-state.json"] = b'{"state":"stopped","pid":null}'
+    for name, payload in files.items():
+        (home / name).write_bytes(payload)
+    archive = tmp_path / "original.json"
+    archive.write_bytes(b"previous backup")
+    with pytest.raises(recovery.WorkspaceBackupError, match="Cron control is active or ambiguous"):
+        recovery.create_workspace_backup(home, archive, PASSPHRASE, offline_confirmed=True)
+    assert archive.read_bytes() == b"previous backup"
+    older = _write_archive(tmp_path / "old.json", _manifest([_file(name, data) for name, data in files.items()], ["servers"]))
+    destination = tmp_path / "restored"
+    with pytest.raises(recovery.WorkspaceBackupError, match="Cron control is active or ambiguous"):
+        recovery.restore_workspace_backup(older, destination, PASSPHRASE, current_home=home, offline_confirmed=True)
+    assert not destination.exists()
+
+
+def test_stopped_servers_restore_durable_settings_and_older_v1_advisory_files(home, tmp_path):
+    (home / "servers").mkdir()
+    durable = {
+        "servers/cron-server-state.json": b'{"state":"stopped","pid":null}',
+        "servers/iperf-server-state.json": b'{"state":"dry-run","pid":null}',
+        "servers/cron-server-state.control": b"revoked " + b"7" * 32,
+        "server-preferences.json": b'{"cron":{"auto_stop_seconds":360,"start_with_app":true}}',
+        "servers/crontab": b"# schedule retained\n",
+        "servers/.crontab.rollback.predecessor.tmp": b"original schedule",
+        "servers/cron-server-state.json.bak": b"prior state",
+        "servers/.plugin.lock": b"private plugin data",
+    }
+    transient = {
+        "servers/.cron-server-state.json.lock", "servers/.iperf-server-state.json.lock",
+        "servers/.cron-server-state.control.lock", "servers/.cron-server-state.worker.lock",
+        "servers/.cron-server-state.json.txn.tmp", "servers/.crontab.edit.tmp", ".server-preferences.json.lock",
+    }
+    for name, payload in durable.items():
+        (home / name).write_bytes(payload)
+    for name in transient:
+        (home / name).write_bytes(b"\0")
+    archive = tmp_path / "new.json"
+    recovery.create_workspace_backup(home, archive, PASSPHRASE, offline_confirmed=True)
+    older_files = [_file(name, data) for name, data in durable.items()] + [_file(name, b"\0") for name in sorted(transient)]
+    older = _write_archive(tmp_path / "old.json", _manifest(older_files, ["servers"]))
+    for source in (archive, older):
+        dest = tmp_path / source.stem
+        recovery.restore_workspace_backup(source, dest, PASSPHRASE, current_home=home, offline_confirmed=True)
+        assert all((dest / name).read_bytes() == data for name, data in durable.items())
+        assert not any((dest / name).exists() for name in transient)
+
+
+@pytest.mark.parametrize("problem", ["hash", "total_bytes", "collision", "missing parent"])
+def test_older_server_transients_must_validate_before_they_are_dropped(problem):
+    name = "servers/.cron-server-state.control.lock"
+    files = [_file(name, b"historical advisory lock")]
+    dirs = ["servers"]
+    limit = 1000
+    if problem == "hash":
+        files[0]["sha256"] = "f" * 64
+    elif problem == "total_bytes":
+        limit = 1
+    elif problem == "collision":
+        files.append(_file(name.upper(), b"alias"))
+    else:
+        dirs = []
+    with pytest.raises(recovery.WorkspaceBackupError):
+        recovery._validate_manifest(_manifest(files, dirs), limit, 100)
 
 
 def test_bounds_apply_to_manifest_total_files_bytes_and_envelope_before_json(home, tmp_path):

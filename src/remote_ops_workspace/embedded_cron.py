@@ -195,7 +195,10 @@ def _activate_worker(control: Path, generation: str) -> bool:
         phase = cron_phase(control)
         if phase == f"active {generation}":
             return True
-        if phase != f"ready {generation}" or time.monotonic() >= deadline:
+        # The parent's atomic replacement can change the file identity during
+        # this read. An empty observation grants no authority; retry until the
+        # original deadline. A different published phase ends activation.
+        if phase not in ("", f"ready {generation}") or time.monotonic() >= deadline:
             return False
         time.sleep(0.1)
 

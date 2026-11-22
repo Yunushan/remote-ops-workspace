@@ -6,7 +6,11 @@ capture or move full workspace state.
 
 ## Backup
 
-1. Close every Remote Ops Workspace window, terminal and managed helper.
+1. Close every Remote Ops Workspace window and terminal, and stop the Web
+   process and any managed helpers. Run `row servers status --json`
+   to check the managed services. For a running Cron or Iperf service, use
+   `row servers stop cron --json` or `row servers stop iperf --json`.
+   A CLI-started service can outlive a desktop window.
 2. Write the snapshot to a path outside `ROW_HOME`. Supply the passphrase through
    an environment variable to avoid an interactive prompt.
 
@@ -48,5 +52,10 @@ capture or move full workspace state.
 - The snapshot is authenticated-encrypted with scrypt key derivation (n=2^15,
   r=8, p=3) and Fernet. Treat the passphrase and snapshot as secret material.
   See [`../SECURITY_MODEL.md`](../SECURITY_MODEL.md).
+- Restore preserves the desktop crontab, server settings and stopped lifecycle
+  records. It refuses an archive that records a running service or a Cron
+  startup still in progress. Older archives of a stopped workspace remain
+  usable. If an archive contains an active record, stop the service in the
+  original workspace and take a fresh backup.
 - The CI recovery drill (`scripts/smoke_workspace_recovery.py`) exercises this
   path; see [`../PRODUCTION_READINESS.md`](../PRODUCTION_READINESS.md).

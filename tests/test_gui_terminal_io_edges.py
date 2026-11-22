@@ -2015,6 +2015,7 @@ def test_remaining_terminal_window_lifecycle_and_deferred_transition_edges(
             self.profile = profile
             self.autostart = autostart
             self.process = _ErrorProcess()
+            self.macroRecordingChanged = _Signal()
             self.properties: dict[str, object] = {}
 
         def setProperty(self, key: str, value) -> None:  # noqa: N802
@@ -2042,6 +2043,7 @@ def test_remaining_terminal_window_lifecycle_and_deferred_transition_edges(
             autostart=False,
         )
     assert fake_pane.process.errorString()
+    assert fake_pane.macroRecordingChanged.callbacks == [window.refresh_moba_recording_ribbon]
     assert status_updates == ["updated"]
 
     class _DisposedPane:

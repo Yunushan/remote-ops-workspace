@@ -57,6 +57,24 @@ def require(condition, refusal: str) -> None:
         raise UpdateError(refusal)
 
 
+def require_disjoint(*paths: Path) -> None:
+    normalized = (Path(os.path.abspath(path)) for path in paths)
+    require(not any(left.is_relative_to(right) or right.is_relative_to(left)
+                    for left, right in combinations(normalized, 2)), "managed-update-directories-overlap")
+
+
+@contextmanager
+def transaction_locks(system_lock: Path, journal: Path, *, rollback: bool):
+    require(not os.path.lexists(system_lock.parent / STAGE_LOCK), "managed-update-directories-overlap")
+    with exclusive_file_lock(system_lock):
+        if not os.path.lexists(journal):
+            require(not rollback, "managed-update-journal-missing")
+            # A misidentified authenticated stage must keep its closed file inventory.
+            require(not os.path.lexists(journal.parent / STAGE_LOCK), "managed-update-directories-overlap")
+        with exclusive_file_lock(journal):
+            yield
+
+
 def trusted_path(path: Path, *, directory=False, private=False) -> Path:
     path = Path(os.path.abspath(path))
     for parent in reversed(path.parents):
@@ -399,12 +417,9 @@ def upgrade_preflight(args, architecture: str, *, expected_previous: str | None 
     return previous, policy, previous_policy
 
 
-def prepare_upgrade(args, workspace: Path, transaction: Path, architecture: str) -> str:
+def prepare_upgrade(args, workspace: Path, architecture: str) -> str:
     stage = trusted_path(args.stage, directory=True, private=True)
     previous_stage = trusted_path(args.previous_stage, directory=True, private=True)
-    require(not any(left.is_relative_to(right) or right.is_relative_to(left)
-                    for left, right in combinations((stage, previous_stage, transaction, workspace), 2)),
-            "managed-update-directories-overlap")
     previous, policy, previous_policy = upgrade_preflight(args, architecture)
     # Recover occupied stages under the current trust policy. Incomplete or
     # changed input is retained for inspection rather than downloaded over.
@@ -467,15 +482,19 @@ def run(args) -> dict:
     root = trusted_path(args.transaction, directory=True, private=True)
     workspace = Path(os.path.abspath(args.workspace))
     require(not root.is_relative_to(workspace), "transaction-must-be-outside-workspace")
+    journal = root / JOURNAL
+    if args.action in {"apply", "update"} and not os.path.lexists(journal):
+        stages = (Path(os.path.abspath(args.stage)), Path(os.path.abspath(args.previous_stage)))
+        require_disjoint(root, workspace, *stages)
+        require(SYSTEM_LOCK_ROOT not in stages, "managed-update-directories-overlap")
     trusted_path(SYSTEM_LOCK_ROOT.parent, directory=True)
     SYSTEM_LOCK_ROOT.mkdir(mode=0o700, exist_ok=True)
     system_root = trusted_path(SYSTEM_LOCK_ROOT, directory=True, private=True)
-    journal = root / JOURNAL
-    with exclusive_file_lock(system_root / JOURNAL), exclusive_file_lock(journal):
+    with transaction_locks(system_root / JOURNAL, journal, rollback=args.action == "rollback"):
         previous = None
         if args.action == "update" and not (journal.exists() or journal.is_symlink()):
             # Leave the package manager available during network transfers.
-            previous = prepare_upgrade(args, workspace, root, architecture)
+            previous = prepare_upgrade(args, workspace, architecture)
         with debian_frontend_lock():
             if args.action in {"apply", "update"}:
                 return apply(args, journal, architecture, expected_previous=previous)

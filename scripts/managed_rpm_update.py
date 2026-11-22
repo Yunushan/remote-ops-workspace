@@ -9,13 +9,11 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass
-from itertools import combinations
 from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "src"), str(ROOT)]
 
-from remote_ops_workspace.state_lock import exclusive_file_lock  # noqa: E402
 from remote_ops_workspace.update_channel import (  # noqa: E402
     UpdateError,
     _decode,
@@ -37,6 +35,8 @@ from scripts.managed_linux_update import (  # noqa: E402
     load_policy,
     native_command,
     require,
+    require_disjoint,
+    transaction_locks,
     trusted_path,
     verify_bytes,
 )
@@ -199,7 +199,6 @@ def update(args, journal: Path, workspace: Path) -> dict:
 
     old_stage = trusted_path(args.previous_stage, directory=True, private=True)
     stage = trusted_path(args.stage, directory=True, private=True)
-    require_disjoint(workspace, journal.parent, old_stage, stage, SYSTEM_LOCK_ROOT)
     installed = installed_header()
     require(_release_version(args.version) > _release_version(installed.version), "update-version-not-newer")
     policy, previous_policy = load_policy(args.policy), load_policy(args.previous_policy)
@@ -228,22 +227,18 @@ def update(args, journal: Path, workspace: Path) -> dict:
     return journal_write(journal, state, "applied")
 
 
-def require_disjoint(*paths: Path) -> None:
-    require(not any(left.is_relative_to(right) or right.is_relative_to(left) for left, right in combinations(paths, 2)),
-            "managed-update-directories-overlap")
-
-
 def run(args) -> dict:
     require(sys.platform == "linux" and os.getuid() == 0 and os.geteuid() == 0, "linux-root-required")
     require(native_command(RPM, "--eval", "%{_arch}").stdout.strip() == ARCH, "unsupported-rpm-architecture")
     workspace = Path(os.path.abspath(args.workspace))
     transaction = trusted_path(args.transaction, directory=True, private=True)
-    require_disjoint(workspace, transaction, SYSTEM_LOCK_ROOT)
+    journal = transaction / JOURNAL
+    stages = (args.previous_stage, args.stage) if args.action == "update" and not os.path.lexists(journal) else ()
+    require_disjoint(workspace, transaction, SYSTEM_LOCK_ROOT, *stages)
     trusted_path(SYSTEM_LOCK_ROOT.parent, directory=True)
     SYSTEM_LOCK_ROOT.mkdir(mode=0o700, exist_ok=True)
     system = trusted_path(SYSTEM_LOCK_ROOT, directory=True, private=True)
-    journal = transaction / JOURNAL
-    with exclusive_file_lock(system / SYSTEM_LOCK), exclusive_file_lock(journal):
+    with transaction_locks(system / SYSTEM_LOCK, journal, rollback=args.action == "rollback"):
         if args.action == "update":
             return update(args, journal, workspace)
         return rollback(journal, read_journal(journal))

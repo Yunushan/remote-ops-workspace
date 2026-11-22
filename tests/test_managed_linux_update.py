@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from scripts import managed_linux_update as updater
+from scripts import managed_rpm_update as rpm_updater
 
 
 def state(phase: str) -> dict[str, object]:
@@ -28,8 +29,8 @@ def test_manager_refuses_non_root_or_other_platform_before_package_commands(monk
 
 @pytest.mark.parametrize("previous_stage_state", ["empty", "prepared", "interrupted"])
 def test_update_prepares_the_rollback_installer_before_the_candidate(tmp_path, monkeypatch, previous_stage_state):
-    previous, candidate, transaction, workspace = [tmp_path / name for name in ("previous", "candidate", "tx", "home")]
-    for directory in (previous, candidate, transaction, workspace):
+    previous, candidate, workspace = [tmp_path / name for name in ("previous", "candidate", "home")]
+    for directory in (previous, candidate, workspace):
         directory.mkdir()
     marker = previous / (updater.STAGE_LOCK if previous_stage_state == "empty" else "manifest.json")
     marker.write_bytes(b"staging canary")
@@ -50,10 +51,10 @@ def test_update_prepares_the_rollback_installer_before_the_candidate(tmp_path, m
     monkeypatch.setattr(updater, "recover_update", recover)
     if previous_stage_state == "interrupted":
         with pytest.raises(updater.UpdateError, match="update-stage-refused"):
-            updater.prepare_upgrade(args, workspace, transaction, "amd64")
+            updater.prepare_upgrade(args, workspace, "amd64")
         assert observations == [("recover", "previous-policy", previous, workspace, "1.0.24")]
     else:
-        assert updater.prepare_upgrade(args, workspace, transaction, "amd64") == "1.0.24"
+        assert updater.prepare_upgrade(args, workspace, "amd64") == "1.0.24"
         assert observations == [
             ("download" if previous_stage_state == "empty" else "recover", "previous-policy", previous, workspace, "1.0.24"),
             ("download", "candidate-policy", candidate, workspace, "1.0.28"),
@@ -68,7 +69,11 @@ def test_update_downloads_before_the_dpkg_lease_or_recovers_offline(tmp_path, mo
     journal = transaction / updater.JOURNAL
     if journal_exists:
         journal.touch()
-    args = SimpleNamespace(action="update", transaction=transaction, workspace=tmp_path / "home")
+    args = SimpleNamespace(action="update", transaction=transaction, workspace=tmp_path / "home",
+                           stage=tmp_path / "candidate", previous_stage=tmp_path / "previous")
+    if journal_exists:
+        # Recovery uses its retained installers even when the supplied stages are gone.
+        args.stage = args.previous_stage = tmp_path / "missing"
     monkeypatch.setattr(updater.sys, "platform", "linux")
     monkeypatch.setattr(updater.os, "getuid", lambda: 0, raising=False)
     monkeypatch.setattr(updater.os, "geteuid", lambda: 0, raising=False)
@@ -90,9 +95,9 @@ def test_update_downloads_before_the_dpkg_lease_or_recovers_offline(tmp_path, mo
     monkeypatch.setattr(updater, "debian_frontend_lock", lock)
     updater_locks = [global_root / updater.JOURNAL, journal]
 
-    def prepare(inputs, workspace, root, architecture):
+    def prepare(inputs, workspace, architecture):
         assert not journal_exists and active == updater_locks
-        assert (inputs, workspace, root, architecture) == (args, args.workspace, transaction, "amd64")
+        assert (inputs, workspace, architecture) == (args, args.workspace, "amd64")
         return "1.0.24"
 
     def apply(inputs, path, architecture, *, expected_previous):
@@ -105,6 +110,61 @@ def test_update_downloads_before_the_dpkg_lease_or_recovers_offline(tmp_path, mo
     monkeypatch.setattr(updater, "apply", apply)
     assert updater.run(args)["phase"] == ("rolled-back" if journal_exists else "applied")
     assert active == []
+
+
+@pytest.mark.parametrize(("manager", "action"), [(updater, "apply"), (updater, "update"), (rpm_updater, "update")])
+@pytest.mark.parametrize("overlap", ["candidate", "previous", "nested", "system"])
+def test_manager_rejects_overlapping_directories_before_locks(tmp_path, monkeypatch, manager, action, overlap):
+    transaction, system = tmp_path / "transaction", tmp_path / "system"
+    transaction.mkdir()
+    candidate, previous = tmp_path / "candidate", tmp_path / "previous"
+    if overlap == "candidate":
+        candidate = tmp_path / "unused" / ".." / transaction.name
+    elif overlap == "previous":
+        previous = transaction
+    elif overlap == "nested":
+        candidate = transaction / "stage"
+    else:
+        candidate = system
+    args = SimpleNamespace(action=action, transaction=transaction, workspace=tmp_path / "home",
+                           stage=candidate, previous_stage=previous)
+    monkeypatch.setattr(manager.sys, "platform", "linux")
+    monkeypatch.setattr(manager.os, "getuid", lambda: 0, raising=False)
+    monkeypatch.setattr(manager.os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setattr(manager, "SYSTEM_LOCK_ROOT", system)
+    monkeypatch.setattr(manager, "trusted_path", lambda path, **_kw: path)
+    def architecture(*argv):
+        assert argv in (("/usr/bin/dpkg", "--print-architecture"), ("/usr/bin/rpm", "--eval", "%{_arch}"))
+        return SimpleNamespace(stdout="amd64" if manager is updater else "x86_64")
+    monkeypatch.setattr(manager, "native_command", architecture)
+    monkeypatch.setattr(manager, "transaction_locks", lambda *a, **kw: pytest.fail("manager started a transaction"))
+    with pytest.raises(updater.UpdateError, match="managed-update-directories-overlap"):
+        manager.run(args)
+    assert not system.exists() and list(transaction.iterdir()) == []
+
+
+@pytest.mark.parametrize("rollback", [False, True])
+@pytest.mark.parametrize("stage_location", ["system", "transaction"])
+def test_wrong_stage_keeps_its_inventory_when_transaction_is_missing(tmp_path, monkeypatch, rollback, stage_location):
+    system, transaction = tmp_path / "system", tmp_path / "transaction"
+    for directory in (system, transaction):
+        directory.mkdir()
+    stage = system if stage_location == "system" else transaction
+    marker = stage / updater.STAGE_LOCK
+    marker.write_bytes(b"stage lock")
+    locks = []
+    @contextmanager
+    def lock(path):
+        locks.append(path)
+        yield
+    monkeypatch.setattr(updater, "exclusive_file_lock", lock)
+    refusal = "managed-update-journal-missing" if rollback and stage_location == "transaction" else "managed-update-directories-overlap"
+    with pytest.raises(updater.UpdateError, match=refusal), updater.transaction_locks(
+        system / updater.JOURNAL, transaction / updater.JOURNAL, rollback=rollback
+    ):
+        pytest.fail("manager started a transaction")
+    assert locks == ([system / updater.JOURNAL] if stage_location == "transaction" else [])
+    assert list(stage.iterdir()) == [marker] and marker.read_bytes() == b"stage lock"
 
 
 def test_update_refuses_a_package_replacement_between_staging_and_installing(tmp_path, monkeypatch):

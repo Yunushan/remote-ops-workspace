@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from scripts import managed_linux_update
 from scripts import managed_rpm_update as updater
 
 OLD = updater.Header("1.0.27", "a" * 64, "b" * 64)
@@ -14,6 +15,45 @@ FOREIGN = updater.Header("1.0.28", "e" * 64, "f" * 64)
 INSTALLED_ROW = "/usr/bin/row\t-rwxr-xr-x\troot\troot\t" + OLD.launcher_sha256
 OLD_METADATA = "\t".join((updater.PACKAGE, "0", OLD.version, "1", updater.ARCH, "8", OLD.header_sha256))
 RPM_LICENSE_ROOT = "/usr/share/doc/remote-ops-workspace/licenses"
+
+
+@pytest.mark.parametrize(("action", "phase", "expected"), [
+    ("update", "applied", NEW), ("rollback", "rolled-back", OLD),
+])
+def test_existing_rpm_transaction_uses_only_retained_installers(tmp_path, monkeypatch, action, phase, expected):
+    transaction = tmp_path / "transaction"
+    transaction.mkdir()
+    journal = transaction / updater.JOURNAL
+    journal.touch()
+    system = tmp_path / "system-lock"
+    monkeypatch.setattr(updater, "SYSTEM_LOCK_ROOT", system)
+    monkeypatch.setattr(updater.sys, "platform", "linux")
+    monkeypatch.setattr(updater.os, "getuid", lambda: 0, raising=False)
+    monkeypatch.setattr(updater.os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setattr(updater, "trusted_path", lambda path, **kw: path)
+    def query(*argv):
+        assert argv == (updater.RPM, "--eval", "%{_arch}")
+        return SimpleNamespace(stdout=updater.ARCH)
+    monkeypatch.setattr(updater, "native_command", query)
+    locks = []
+    @contextmanager
+    def lock(path):
+        locks.append(path)
+        yield
+    monkeypatch.setattr(managed_linux_update, "exclusive_file_lock", lock)
+    state = {"phase": phase, "previous": {"version": OLD.version}, "candidate": {"version": NEW.version}}
+    monkeypatch.setattr(updater, "read_journal", lambda path: state if path == journal else pytest.fail("wrong journal"))
+    package = updater.CANDIDATE if action == "update" else updater.PREVIOUS
+    def retained(path, record):
+        assert path == transaction / package and record == {"version": expected.version}
+        return expected
+    monkeypatch.setattr(updater, "retained_header", retained)
+    verified = []
+    monkeypatch.setattr(updater, "verify_installation", verified.append)
+    args = SimpleNamespace(action=action, version=NEW.version, workspace=tmp_path / "home", transaction=transaction,
+                           stage=tmp_path / "unavailable", previous_stage=tmp_path / "unavailable")
+    assert updater.run(args) is state
+    assert locks == [system / updater.SYSTEM_LOCK, journal] and verified == [expected]
 
 
 @pytest.mark.parametrize(("header", "files", "refusal"), [

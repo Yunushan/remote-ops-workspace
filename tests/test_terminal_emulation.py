@@ -166,6 +166,41 @@ def test_dec_and_csi_share_the_saved_position_only_on_the_same_screen() -> None:
     assert terminal.take_pending_responses() == (b"\x1b[2;5R", b"\x1b[3;4R")
 
 
+@pytest.mark.parametrize(("save", "restore"), [("\x1b7", "\x1b8"), ("\x1b[s", "\x1b[u")])
+def test_pipe_addresses_and_restores_real_cells_after_linear_output(save: str, restore: str) -> None:
+    terminal = AnsiTerminalTranscript(reflow_on_cursor_address=True)
+    terminal.set_screen_size(20, 9)
+    long_line = "x" * 24
+    assert terminal.feed(long_line + "\r\n") == long_line + "\n"
+    terminal.feed("\x1b[?1049h\x1b[4;5H\x1b[?1049l")
+    assert terminal.text() == long_line + "\n"
+    assert not terminal.primary_reflow
+
+    terminal.feed("\x1b[3;")
+    terminal.feed("4H\x1b[6n" + save + "\x1b[8;12f\x1b[6nB")
+    terminal.feed(restore + "\x1b[6nA\x1b[1D!")
+    assert terminal.take_pending_responses() == (b"\x1b[3;4R", b"\x1b[8;12R", b"\x1b[3;4R")
+    assert terminal.text().splitlines() == ["x" * 20, "xxxx", "   !", "", "", "", "", " " * 11 + "B"]
+    terminal.feed("\x1b[;6fZ\x1b[8;H\x1b[6n\x1b[H\x1b[6n")
+    assert terminal.take_pending_responses() == (b"\x1b[8;1R", b"\x1b[1;1R")
+    transcript = terminal.text()
+    assert transcript.startswith("xxxxxZ") and SOFT_LINE_BREAK in transcript
+    assert terminal.end_of_stream() == transcript
+    terminal.set_screen_size(25, 9)
+    assert terminal.text().splitlines()[1] == "   !"
+    terminal.reset()
+    assert terminal.feed(long_line * 3) == long_line * 3
+    assert not terminal.primary_reflow
+
+
+def test_pipe_saved_cursor_survives_line_eviction_before_first_vertical_address() -> None:
+    terminal = AnsiTerminalTranscript(reflow_on_cursor_address=True, max_scrollback_lines=4)
+    terminal.set_screen_size(20, 5)
+    terminal.feed("old\nline\nmark\x1b7\nthird\nfourth\nfifth")
+    terminal.feed("\x1b[5d\x1b8!")
+    assert terminal.text().splitlines() == ["line", "mark!", "third", "fourth", "fifth"]
+
+
 def test_ansi_transcript_replaces_normal_readline_history_rows() -> None:
     terminal = AnsiTerminalTranscript()
 

@@ -56,6 +56,35 @@ def _new_pane(window):
     )
 
 
+@pytest.mark.parametrize(("platform", "program", "source", "fallback"), [
+    ("win32", "python.exe", "test", "terminalWindowsConsoleSuppressed"),
+    ("win32", "ssh.exe", "ssh", "terminalOpenSshPipeFallback"),
+    ("win32", "powershell.exe", "shell", "terminalLineInputFallback"),
+    ("darwin", "ssh", "ssh", None),
+    ("linux", "python", "test", None),
+])
+def test_pipe_pane_renders_restored_primary_cursor(gui_window, monkeypatch, platform, program, source, fallback) -> None:
+    from PyQt6.QtCore import QProcess
+
+    from remote_ops_workspace import gui_processes, windows_conpty
+
+    _app, window = gui_window
+    monkeypatch.setattr(gui_processes.sys, "platform", platform)
+    monkeypatch.setattr(windows_conpty, "conpty_support", lambda: SimpleNamespace(supported=False, reason="test"))
+    pane = window.new_terminal_pane(TerminalPanePlan("pipe", [program], source), autostart=False)
+    if fallback:
+        assert pane.process.property(fallback) is True
+    else:
+        assert isinstance(pane.process, QProcess)
+    assert not pane.terminal_emulator.primary_reflow
+    pane.terminal_emulator.set_screen_size(40, 10)
+    pane.append_process_text("\x1b[3;4H\x1b7\x1b[8;12H.\x1b8\x1b[6n!")
+    assert pane.output.property("terminalLastEmulatorResponse") == b"\x1b[3;4R"
+    assert pane.output.toPlainText().split("\n") == ["", "", "   !", "", "", "", "", " " * 11 + "."]
+    assert pane.output.property("terminalRemoteCursorRow") == 2
+    assert pane.output.property("terminalRemoteCursorColumn") == 4
+
+
 def test_unicode_terminal_append_selection_and_grid_cursor(gui_window) -> None:
     from PyQt6.QtGui import QTextCursor
 

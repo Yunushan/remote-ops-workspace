@@ -143,6 +143,7 @@ class AnsiTerminalTranscript:
 
     max_scrollback_lines: int = 10_000
     primary_reflow: bool = False
+    reflow_on_cursor_address: bool = field(default=False, kw_only=True)
     _lines: list[list[str]] = field(default_factory=list)
     _line_styles: list[list[AnsiTextStyle]] = field(default_factory=list)
     _line: list[str] = field(default_factory=list)
@@ -205,6 +206,8 @@ class AnsiTerminalTranscript:
 
     def reset(self) -> None:
         self._invalidate_render_cache()
+        if self.reflow_on_cursor_address:
+            self.primary_reflow = False
         self._lines.clear()
         self._line_styles.clear()
         self._line.clear()
@@ -624,8 +627,11 @@ class AnsiTerminalTranscript:
             # Keep just the rows still present in the display and scrollback.
             for index in range(len(self._lines), -1, -1):
                 cells, _ = self._primary_source_row(index)
-                tail = deque(self._primary_row_spans(cells, index), maxlen=limit - len(rows))
-                rows.extendleft(reversed(tail))
+                if len(cells) <= self._screen_columns:
+                    rows.appendleft(_PrimaryRow(index, 0, len(cells)))
+                else:
+                    tail = deque(self._primary_row_spans(cells, index), maxlen=limit - len(rows))
+                    rows.extendleft(reversed(tail))
                 if len(rows) == limit:
                     break
             self._primary_rows_cache = tuple(rows)
@@ -668,7 +674,10 @@ class AnsiTerminalTranscript:
             visible_end = self._primary_view_top() + self._screen_rows
             for span in self._primary_rows()[:visible_end]:
                 cells, styles = self._primary_source_row(span.source_row)
-                projected.append(_display_cells(cells[span.start:span.end], styles[span.start:span.end]))
+                if span.start or span.end < len(cells):
+                    cells = cells[span.start:span.end]
+                    styles = styles[span.start:span.end]
+                projected.append(_display_cells(cells, styles))
             self._render_rows_cache = tuple(projected)
         if self._render_rows_cache is None:
             self._render_rows_cache = tuple(
@@ -799,10 +808,11 @@ class AnsiTerminalTranscript:
             return
         private = params.startswith("?")
         raw_params = params[1:] if private else params
+        keep_coordinate_slots = bool(raw_params) and command in {"H", "f"}
         values = [
             int(value) if value.isdigit() else 0
             for value in raw_params.split(";")
-            if value != ""
+            if value or keep_coordinate_slots
         ]
         # CSI controls that address existing cells or change the active
         # screen need a complete frame rebuild.  SGR only changes the style
@@ -848,6 +858,11 @@ class AnsiTerminalTranscript:
                     if enabled or self._mouse_encoding == mode:
                         self._mouse_encoding = mode if enabled else 0
             return
+        # A pipe may carry ordinary unwrapped output until the child addresses
+        # the primary viewport. Project the retained cells into the existing
+        # grid at that point and keep its layout until the transcript resets.
+        if self.reflow_on_cursor_address and not self._alternate_screen and not private and command in {"H", "f", "d"}:
+            self.primary_reflow = True
         if command == "n":
             if first == 5 and not private:
                 self._pending_responses.append(b"\x1b[0n")
@@ -1586,7 +1601,7 @@ class AnsiTerminalTranscript:
             top_row, top_column = self._primary_view_start
             self._primary_view_start = (top_row - overflow, top_column) if top_row >= overflow else (0, 0)
             self._normal_cursor_row -= overflow
-            if self.primary_reflow and self._normal_saved_cursor is not None:
+            if (self.primary_reflow or self.reflow_on_cursor_address) and self._normal_saved_cursor is not None:
                 row, column = self._normal_saved_cursor
                 self._normal_saved_cursor = (row - overflow, column) if row >= overflow else (0, 0)
 

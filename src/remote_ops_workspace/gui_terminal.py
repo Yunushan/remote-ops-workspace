@@ -464,6 +464,7 @@ class TerminalPane(QWidget):
             # Linux delivers the PTY byte stream. ConPTY also emits console
             # repaint frames during resize, which need separate handling.
             primary_reflow=getattr(self.process, "transport_backend", None) == "linux-pty",
+            reflow_on_cursor_address=not getattr(self.process, "is_pty", False),
         )
         self._terminal_mouse_mode = 0
         self._terminal_mouse_buttons: list[Qt.MouseButton] = []

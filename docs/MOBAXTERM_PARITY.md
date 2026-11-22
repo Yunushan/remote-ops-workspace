@@ -414,9 +414,10 @@ reviews, and the downloaded release assets. See the
    position on each screen, including the primary screen. The 26.4 Home
    reference moved from row 3, column 4 to row 8, column 12 and restored
    row 3, column 4. ROW reproduced those coordinates over OpenSSH on Windows
-   ConPTY and Linux PTY. The plain Windows pipe fallback supports absolute
-   cursor addressing on its alternate screen only. Saved cursor
-   positions and scrolling regions stay
+   ConPTY and Linux PTY. Pipe-backed terminal tabs keep ordinary command
+   output in a linear transcript until the child addresses the primary
+   screen. They then use the viewport grid for cursor movement and
+   restoration. Saved cursor positions and scrolling regions stay
    within the resized grid. Index and reverse index scroll only at the
    configured region boundaries. Cursor-position reports respect origin mode
    and keep delayed wrap within the visible columns.

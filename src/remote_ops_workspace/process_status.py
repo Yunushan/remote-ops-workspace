@@ -283,7 +283,8 @@ def _match_identity(actual: Mapping[str, Any], expected: Mapping[str, Any]) -> N
         raise ProcessIdentityError("process identity changed; refusing to use a reused PID")
 
 
-def _reap_owned(pid: int, identity: Mapping[str, Any]) -> None:
+def reap_exited_owned_process(pid: int, identity: Mapping[str, Any] | None) -> None:
+    """Reap the exact retained Popen after observing exit, without sending a signal."""
     with _owned_lock:
         entry = _owned.get(pid)
     if entry is not None and entry[1] == identity:
@@ -447,4 +448,4 @@ def terminate_recorded_process(
             return
     except ProcessLookupError:
         pass
-    _reap_owned(pid, identity)
+    reap_exited_owned_process(pid, identity)

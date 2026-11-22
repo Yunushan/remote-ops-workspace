@@ -18,7 +18,8 @@ def test_managed_server_and_x11_start_forward_security_options(monkeypatch, tmp_
     monkeypatch.setattr(cli_managed_runtime, "start_moba_x_server", lambda _plan, **_kwargs: record)
     authority = tmp_path / "private authority"
     assert cli.main(["servers", "start", "ftp", "--require-tls", "--hardening-profile", "tls-authenticated", "--dry-run", "--json"]) == 0
-    assert calls[0] == ("ftp", {"host": "127.0.0.1", "port": None, "root": None, "allow_public_bind": False, "require_tls": True, "hardening_profile": "tls-authenticated"})
+    assert calls[0] == ("ftp", {"host": "127.0.0.1", "port": None, "root": None, "allow_public_bind": False,
+                                "require_tls": True, "hardening_profile": "tls-authenticated", "crontab": None, "iperf_version": None})
     assert cli.main(["x11", "start", "--display", ":8", "--allow-tcp", "--authority-file", str(authority), "--dry-run", "--json"]) == 0
     assert calls[1] == ("x11", {"display": ":8", "allow_tcp": True, "authority_path": authority})
 

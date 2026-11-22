@@ -9,19 +9,34 @@ import os
 import platform
 import re
 import shutil
+import socket
+import subprocess
 import sys
+import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, cast
+from uuid import uuid4
 
 from . import command_safety as safe
+from .embedded_cron import (
+    CRON_STOP_TIMEOUT,
+    change_cron_phase,
+    cron_worker_lease_held,
+    default_crontab_path,
+    prepare_crontab,
+    uses_cron_worker_lease,
+    wait_for_cron_ready,
+)
 from .file_safety import write_json_atomic
 from .paths import ensure_data_dir
 from .process_launch import popen_hidden
 from .process_status import (
+    ProcessIdentityError,
     process_is_running,
+    reap_exited_owned_process,
     recorded_process_is_running,
     register_process,
     terminate_owned_process,
@@ -52,6 +67,9 @@ SERVER_DEFAULT_PORTS: dict[str, int] = {
     "vnc": 5901,
     "nfs": 2049,
 }
+# The v1 release evidence contract covers the eight network protocols above.
+# Cron is a scheduler; its lifecycle record has no network endpoint.
+SERVER_CONTROL_PORTS = {**SERVER_DEFAULT_PORTS, "cron": 0, "iperf": 5001}
 
 FILE_ROOT_SERVICES = {"http", "ftp", "tftp"}
 AUTH_CAPABLE_SERVICES = {"ftp", "ssh", "sftp", "telnet", "vnc", "nfs"}
@@ -367,6 +385,7 @@ class MobaEmbeddedServerLifecycleRecord:
     state_path: str = ""
     running: bool = False
     process_identity: dict[str, Any] | None = None
+    cron_generation: str = ""
 
     @classmethod
     def from_dict(
@@ -378,10 +397,11 @@ class MobaEmbeddedServerLifecycleRecord:
     ) -> MobaEmbeddedServerLifecycleRecord:
         pid_value = data.get("pid")
         pid = int(str(pid_value)) if pid_value not in (None, "") else None
+        service = _service_key(str(data.get("service") or "http"))
         return cls(
-            service=_service_key(str(data.get("service") or "http")),
-            host=safe.host(str(data.get("host") or "127.0.0.1"), "server bind host"),
-            port=safe.port(int(data.get("port") or SERVER_DEFAULT_PORTS["http"]), "server port"),
+            service=service,
+            host="" if service == "cron" else safe.host(str(data.get("host") or "127.0.0.1"), "server bind host"),
+            port=0 if service == "cron" else safe.port(int(data.get("port") or SERVER_DEFAULT_PORTS["http"]), "server port"),
             runtime_key=safe.option_value(str(data.get("runtime_key") or "unknown"), "server runtime key"),
             command=safe.argv_list([str(item) for item in data.get("command", [])], "embedded server command"),
             state=safe.option_value(str(data.get("state") or "unknown"), "embedded server state"),
@@ -392,6 +412,7 @@ class MobaEmbeddedServerLifecycleRecord:
             state_path=str(state_path or data.get("state_path") or ""),
             running=bool(running) if running is not None else bool(data.get("running", False)),
             process_identity=_record_process_identity(data),
+            cron_generation=str(data.get("cron_generation") or "") if service == "cron" else "",
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -409,6 +430,7 @@ class MobaEmbeddedServerLifecycleRecord:
             "state_path": self.state_path,
             "running": self.running,
             "process_identity": self.process_identity,
+            **({"cron_generation": self.cron_generation} if self.cron_generation else {}),
         }
 
 
@@ -430,7 +452,7 @@ def build_moba_server_suite_status(
             state_dir=state_dir,
             pid_probe=pid_probe,
         )
-        for service in SERVER_DEFAULT_PORTS
+        for service in SERVER_CONTROL_PORTS
     )
     notes = [
         "The embedded server suite includes built-in HTTP, optional Python FTP support and local daemon adapters.",
@@ -491,10 +513,10 @@ def build_moba_server_runtime_status(
     resolved_roots = moba_server_runtime_roots(roots)
     runtimes = tuple(
         runtime
-        for service in SERVER_DEFAULT_PORTS
+        for service in SERVER_CONTROL_PORTS
         for runtime in discover_packaged_moba_server_runtimes(service, system=system_key, roots=resolved_roots)
     )
-    coverage = {service: any(runtime.service == service and runtime.available for runtime in runtimes) for service in SERVER_DEFAULT_PORTS}
+    coverage = {service: any(runtime.service == service and runtime.available for runtime in runtimes) for service in SERVER_CONTROL_PORTS}
     notes = [
         f"Scanned {len(resolved_roots)} embedded server runtime root(s).",
         f"Set {SERVER_RUNTIME_DIR_ENV} to a release-owned daemon runtime directory to prefer packaged server binaries.",
@@ -528,6 +550,8 @@ def build_moba_server_runtime_bundle_plan(
     allow_placeholder: bool = False,
 ) -> MobaEmbeddedServerRuntimeBundlePlan:
     service_key = _service_key(service)
+    if service_key == "cron":
+        raise ValueError("Cron uses the built-in ROW scheduler")
     system_key = safe.option_value(system or platform.system(), "system").lower()
     key, label, default_executable, _bundled, _builtin, _notes = _runtime_definition_by_key(
         service_key,
@@ -637,6 +661,8 @@ def discover_packaged_moba_server_runtimes(
     roots: Iterable[Path] | None = None,
 ) -> tuple[MobaEmbeddedServerRuntime, ...]:
     service_key = _service_key(service)
+    if service_key == "cron":
+        return ()
     system_key = safe.option_value(system or platform.system(), "system").lower()
     found: list[MobaEmbeddedServerRuntime] = []
     for root in moba_server_runtime_roots(roots):
@@ -705,25 +731,33 @@ def build_moba_server_plan(
     packaged_roots: Iterable[Path] | None = None,
     require_tls: bool = False,
     hardening_profile: str = "loopback-private",
+    crontab: Path | None = None,
+    iperf_version: int | None = None,
 ) -> MobaEmbeddedServerPlan:
     service_key = _service_key(service)
     system_key = safe.option_value(system or platform.system(), "system").lower()
-    host = validate_server_bind(host, allow_public_bind=allow_public_bind)
-    resolved_port = safe.port(port or SERVER_DEFAULT_PORTS[service_key], "server port")
     resolved_root = _resolve_root(service_key, root)
     config = build_moba_server_config_plan(
-        service_key, host=host, port=resolved_port, root=resolved_root,
+        service_key, host=host, port=port, root=resolved_root,
         hardening_profile=hardening_profile, require_tls=require_tls,
-        allow_public_bind=allow_public_bind,
+        allow_public_bind=allow_public_bind, crontab=crontab, iperf_version=iperf_version,
     )
+    host, resolved_port = config.host, config.port
     runtimes = discover_moba_server_runtimes(
         service_key,
         system=system_key,
         which=which,
         packaged_roots=packaged_roots,
     )
+    if service_key == "iperf":
+        runtimes = tuple(item for item in runtimes if item.key == f"iperf{config.settings['iperf_version']}")
     runtime = _select_runtime(runtimes)
-    command = _runtime_command(runtime, host, resolved_port, resolved_root)
+    if service_key == "cron":
+        command = [*(_frozen_server_command("cron", "Cron") if getattr(sys, "frozen", False)
+                     else [sys.executable, "-m", "remote_ops_workspace", "servers", "_cron-runtime"]),
+                   "--crontab", config.settings["crontab"]]
+    else:
+        command = _runtime_command(runtime, host, resolved_port, resolved_root)
     notes = _plan_notes(service_key, runtime, host, resolved_root)
     environment = {"ROW_SERVER_SERVICE": service_key}
     environment["ROW_SERVER_AUTH_REQUIRED"] = "1" if config.auth_required else "0"
@@ -742,7 +776,7 @@ def build_moba_server_plan(
         command=command,
         runtime=runtime,
         environment=environment,
-        public_bind=not _is_loopback_host(host.lower()),
+        public_bind=bool(config.settings["network"]["public_bind_active"]),
         notes=notes,
     )
 
@@ -757,16 +791,25 @@ def build_moba_server_config_plan(
     require_auth: bool | None = None,
     require_tls: bool = False,
     allow_public_bind: bool = False,
+    crontab: Path | None = None,
+    iperf_version: int | None = None,
 ) -> MobaEmbeddedServerConfigPlan:
     service_key = _service_key(service)
     profile = _hardening_profile(hardening_profile)
     bind_host = validate_server_bind(host, allow_public_bind=allow_public_bind)
-    resolved_port = safe.port(port or SERVER_DEFAULT_PORTS[service_key], "server port")
+    if crontab is not None and service_key != "cron":
+        raise ValueError("--crontab applies only to Cron")
+    if iperf_version is not None and (service_key != "iperf" or iperf_version not in {2, 3}):
+        raise ValueError("--iperf-version must select Iperf 2 or 3")
+    if service_key == "cron" and (port not in (None, 0) or allow_public_bind or bind_host != "127.0.0.1" or require_auth or require_tls):
+        raise ValueError("Cron runs locally without a network listener or network authentication")
+    default_port = 5201 if iperf_version == 3 else SERVER_CONTROL_PORTS[service_key]
+    resolved_port = 0 if service_key == "cron" else safe.port(port or default_port, "server port")
     resolved_root = _resolve_root(service_key, root)
     auth_required = bool(require_auth) if require_auth is not None else service_key in AUTH_CAPABLE_SERVICES
     public_bind = not _is_loopback_host(bind_host.lower())
     settings: dict[str, Any] = {
-        "bind_host": bind_host,
+        "bind_host": "" if service_key == "cron" else bind_host,
         "port": resolved_port,
         "service": service_key,
         "root": str(resolved_root) if resolved_root else "",
@@ -787,14 +830,18 @@ def build_moba_server_config_plan(
         "MobaXterm-style embedded server configuration plan.",
         "Secrets are referenced through external stores or system accounts; generated config does not contain passwords.",
     ]
+    if service_key == "cron":
+        settings["crontab"] = os.path.abspath((crontab or default_crontab_path()).expanduser())
+    if service_key == "iperf":
+        settings["iperf_version"] = iperf_version or 2
     if public_bind:
         notes.append("Public bind is active; use only on trusted networks and pair with authentication.")
     if profile == "strict-private":
         if public_bind:
             raise ValueError("strict-private hardening requires a loopback bind host")
         settings["network"]["public_bind_allowed"] = False
-        settings["auth"]["required"] = True
-        notes.append("Strict-private hardening forces authentication and loopback-only network exposure.")
+        settings["auth"]["required"] = service_key != "cron"
+        notes.append("Strict-private hardening restricts network listeners to authenticated loopback connections.")
     if service_key == "ftp":
         settings["auth"] = {
             "required": True, "source": "ROW_FTP_USERNAME/ROW_FTP_PASSWORD environment",
@@ -818,7 +865,7 @@ def build_moba_server_config_plan(
     return MobaEmbeddedServerConfigPlan(
         schema=SERVER_POLICY_SCHEMA,
         service=service_key,
-        host=bind_host,
+        host=settings["bind_host"],
         port=resolved_port,
         root=str(resolved_root) if resolved_root else "",
         hardening_profile=profile,
@@ -946,6 +993,8 @@ def validate_moba_server_release_evidence(
         if service_key:
             try:
                 service_key = _service_key(service_key)
+                if service_key not in SERVER_DEFAULT_PORTS:
+                    raise ValueError(f"{service_key} is outside the v1 eight-service evidence contract")
                 covered_services.add(service_key)
             except ValueError as exc:
                 errors.append(f"{label}.service is invalid: {exc}")
@@ -1013,6 +1062,8 @@ def start_moba_server(
     if not plan.runtime.available:
         raise ValueError(f"embedded server runtime is not available: {plan.runtime.label}")
     verify_packaged_runtime_integrity(plan.runtime)
+    if plan.service == "cron":
+        prepare_crontab(Path(plan.command[-1]))
     if plan.service == "ftp":
         from .embedded_ftp import validate_ftp_environment
 
@@ -1023,7 +1074,7 @@ def start_moba_server(
             raise ValueError("FTPS requires pyOpenSSL in the ROW Python runtime")
     if plan.environment.get("ROW_SERVER_TLS_REQUIRED") == "1" and plan.service != "ftp":
         raise ValueError("the selected server adapter cannot enforce the required TLS transport; use a host-managed TLS service")
-    if plan.environment.get("ROW_SERVER_AUTH_REQUIRED") == "1" and plan.service in {"http", "tftp"}:
+    if plan.environment.get("ROW_SERVER_AUTH_REQUIRED") == "1" and plan.service in {"http", "tftp", "iperf"}:
         raise ValueError("the selected server adapter cannot enforce required authentication; use a host-managed authenticated service")
     if plan.service == "vnc":
         password_file = plan.command[-1] if "-rfbauth" in plan.command else ""
@@ -1031,7 +1082,23 @@ def start_moba_server(
             raise ValueError("managed VNC requires x11vnc and an existing ROW_VNC_PASSWORD_FILE (created with x11vnc -storepasswd)")
     with exclusive_file_lock(target_state_path, timeout_seconds=lock_timeout_seconds):
         _require_replaceable_server_record(plan.service, state_dir)
+        if plan.service == "iperf":
+            _require_available_iperf_port(plan.host, plan.port)
         return _start_moba_server_locked(plan, target_state_path, popen_factory, identity_factory)
+
+
+def _require_available_iperf_port(host: str, port: int) -> None:
+    # Older Windows Iperf can stay alive after a collision. Check before
+    # spawning it; the native program must acquire the actual listener itself.
+    for family, kind, proto, _name, address in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM):
+        with socket.socket(family, kind, proto) as probe:
+            exclusive = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
+            if exclusive is not None:
+                probe.setsockopt(socket.SOL_SOCKET, exclusive, 1)
+            try:
+                probe.bind(address)
+            except OSError as exc:
+                raise ValueError(f"Iperf cannot bind {host}:{port}: {exc}") from exc
 
 
 def _start_moba_server_locked(
@@ -1042,12 +1109,20 @@ def _start_moba_server_locked(
 ) -> MobaEmbeddedServerLifecycleRecord:
     factory = popen_hidden if popen_factory is None else popen_factory
     environment = {**os.environ, **plan.environment}
-    if getattr(sys, "frozen", False) and plan.runtime.key in {"python-http", "pyftpdlib"}:
+    if getattr(sys, "frozen", False) and plan.runtime.key in {"python-http", "pyftpdlib", "row-cron"}:
         # The server outlives the CLI that starts it. A one-file PyInstaller
         # child needs its own extraction directory after that CLI exits.
         environment["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
-    process = factory(plan.command, env=environment)
+    # Never leave a CLI caller's capture pipe open in the scheduler or Iperf.
+    streams = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) if plan.service in {"cron", "iperf"} else {}
+    generation = uuid4().hex if plan.service == "cron" else ""
+    control = target_state_path.with_suffix(".control")
+    if generation:
+        change_cron_phase(control, generation, (), "pending")
+        environment.update(ROW_CRON_GENERATION=generation, ROW_CRON_CONTROL_FILE=str(control.absolute()))
+    process = None
     try:
+        process = factory(plan.command, env=environment, **streams)
         identity = (identity_factory or register_process)(process)
         if process.poll() is not None:
             raise ProcessLookupError("managed embedded server exited before its lifecycle state could be saved")
@@ -1063,12 +1138,31 @@ def _start_moba_server_locked(
             state_path=str(target_state_path),
             running=True,
             process_identity=identity,
+            cron_generation=generation,
         )
+        # Retain the verified PID for recovery even if a slow frozen worker
+        # times out. The pending generation cannot dispatch a single job.
         write_json_atomic(target_state_path, record.to_dict(), private=True)
+        if generation:
+            wait_for_cron_ready(control, generation, process)
+            if not change_cron_phase(control, generation, ("ready",), "active"):
+                raise ValueError("the Cron startup generation changed")
     except BaseException:
-        terminate_owned_process(process)
+        if generation:
+            change_cron_phase(control, generation, ("pending", "ready", "active"), "revoked")
+            if process is not None:
+                try:
+                    process.wait(timeout=CRON_STOP_TIMEOUT)
+                except subprocess.TimeoutExpired as exc:
+                    raise ValueError("Cron startup was cancelled; retry stop to confirm the process exited") from exc
+        elif process is not None:
+            terminate_owned_process(process)
         raise
     return record
+
+
+class ServerOwnershipChanged(ValueError):
+    """Another invocation replaced or stopped the server this caller started."""
 
 
 def stop_moba_server(
@@ -1078,11 +1172,12 @@ def stop_moba_server(
     pid_probe: PidProbe | None = None,
     terminator: ProcessTerminator | None = None,
     lock_timeout_seconds: float = DEFAULT_LOCK_TIMEOUT_SECONDS,
+    expected_record: MobaEmbeddedServerLifecycleRecord | None = None,
 ) -> MobaEmbeddedServerLifecycleRecord:
     service_key = _service_key(service)
     target_state_path = moba_server_state_path(service_key, state_dir=state_dir)
     with exclusive_file_lock(target_state_path, timeout_seconds=lock_timeout_seconds):
-        return _stop_moba_server_locked(service_key, target_state_path, state_dir, pid_probe, terminator)
+        return _stop_moba_server_locked(service_key, target_state_path, state_dir, pid_probe, terminator, expected_record)
 
 
 def _stop_moba_server_locked(
@@ -1091,13 +1186,34 @@ def _stop_moba_server_locked(
     state_dir: Path | None,
     pid_probe: PidProbe | None,
     terminator: ProcessTerminator | None,
+    expected_record: MobaEmbeddedServerLifecycleRecord | None = None,
 ) -> MobaEmbeddedServerLifecycleRecord:
     record = load_moba_server_record(service_key, state_dir=state_dir, pid_probe=pid_probe)
+    if expected_record is not None and (
+        record is None or record.service != expected_record.service or record.state != "started"
+        or record.pid != expected_record.pid or record.started_at != expected_record.started_at
+        or record.cron_generation != expected_record.cron_generation
+        or not expected_record.process_identity or record.process_identity != expected_record.process_identity
+    ):
+        raise ServerOwnershipChanged(f"the {service_key} instance is no longer owned by this caller")
     if record is None:
         raise ValueError(f"no managed embedded server state found at {target_state_path}")
+    if record.cron_generation and record.pid is not None:
+        # A one-file launcher owns the actual Python worker. Ending its
+        # generation lets that worker exit and its launcher clean up normally.
+        change_cron_phase(target_state_path.with_suffix(".control"), record.cron_generation,
+                          ("pending", "ready", "active"), "revoked")
+        if terminator is None:
+            deadline = time.monotonic() + CRON_STOP_TIMEOUT
+            while _server_process_running(record.pid, record.process_identity, record.cron_generation, target_state_path):
+                if time.monotonic() >= deadline:
+                    raise ValueError("Cron shutdown is pending; retry to confirm the original process exited")
+                time.sleep(0.1)
     if terminator is not None:
         if record.pid is not None and record.running:
             terminator(record.pid)
+    elif record.cron_generation and record.pid is not None:
+        reap_exited_owned_process(record.pid, record.process_identity)
     elif record.pid is not None:
         terminate_recorded_process(record.pid, record.process_identity)
     elif record.state != "stopped":
@@ -1131,9 +1247,24 @@ def _require_replaceable_server_record(service: str, state_dir: Path | None) -> 
         if record.state == "stopped" and stored.get("running", False) is False:
             return
         raise ValueError("managed embedded server state is active or ambiguous; stop or recover it before starting again")
-    if recorded_process_is_running(record.pid, record.process_identity):
+    if record.running:
         raise ValueError("managed embedded server is already running; stop it before starting again")
-    terminate_recorded_process(record.pid, record.process_identity)
+    if record.cron_generation:
+        reap_exited_owned_process(record.pid, record.process_identity)
+    else:
+        terminate_recorded_process(record.pid, record.process_identity)
+
+
+def _server_process_running(pid: int, identity: dict[str, Any] | None, generation: str, state_path: Path) -> bool:
+    try:
+        return recorded_process_is_running(pid, identity)
+    except ProcessIdentityError:
+        # An independent macOS CLI has no Popen handle. The private generation
+        # and kernel-held worker lease can confirm its scheduler without a PID signal.
+        if (not generation or not uses_cron_worker_lease() or not identity or identity.get("kind") != "owned"
+                or identity.get("pid") != pid or identity.get("version") != 1 or not identity.get("token")):
+            raise
+        return cron_worker_lease_held(state_path.with_suffix(".control"), generation)
 
 
 def load_moba_server_record(
@@ -1153,7 +1284,9 @@ def load_moba_server_record(
     running = False
     if pid_value not in (None, "") and str(data.get("state", "")) == "started":
         pid = int(str(pid_value))
-        running = pid_probe(pid) if pid_probe is not None else recorded_process_is_running(pid, _record_process_identity(data))
+        generation = str(data.get("cron_generation") or "") if service_key == "cron" else ""
+        running = pid_probe(pid) if pid_probe is not None else _server_process_running(
+            pid, _record_process_identity(data), generation, target_state_path)
     return MobaEmbeddedServerLifecycleRecord.from_dict(data, state_path=target_state_path, running=running)
 
 
@@ -1208,8 +1341,13 @@ def _service_status(
         which=which,
         packaged_roots=packaged_roots,
     )
-    runtime = _select_runtime(runtimes)
     lifecycle = load_moba_server_record(service, state_dir=state_dir, pid_probe=pid_probe)
+    if service == "iperf":
+        # Show the actual running protocol, including an explicit CLI v3 start.
+        key = "iperf3" if lifecycle and lifecycle.running and lifecycle.runtime_key == "iperf3" else "iperf2"
+        runtime = _select_runtime(tuple(item for item in runtimes if item.key == key))
+    else:
+        runtime = _select_runtime(runtimes)
     notes = list(runtime.notes)
     if not runtime.available:
         notes.append("Install or bundle a compatible daemon before starting this service.")
@@ -1222,7 +1360,7 @@ def _service_status(
     return MobaEmbeddedServerServiceStatus(
         key=service,
         label=_service_label(service),
-        default_port=SERVER_DEFAULT_PORTS[service],
+        default_port=SERVER_CONTROL_PORTS[service],
         available=runtime.available,
         startable=startable,
         selected_runtime=runtime.key,
@@ -1249,7 +1387,7 @@ def _gui_config_row(
         port=service.default_port,
         root=service_root or None,
         hardening_profile=hardening_profile,
-        require_tls=require_tls,
+        require_tls=require_tls and service.key != "cron",
     )
     return MobaEmbeddedServerGuiConfigRow(
         service=service.key,
@@ -1447,6 +1585,12 @@ def _runtime_definitions(
     system: str,
 ) -> tuple[tuple[str, str, str, bool, bool, tuple[str, ...]], ...]:
     external = ("Host-provided daemon adapter; not yet a bundled ROW runtime.",)
+    if service == "cron":
+        return (("row-cron", "Current-user crontab scheduler", "python", False, True,
+                 ("Five-field user crontab; jobs run under the current account.",)),)
+    if service == "iperf":
+        return (("iperf2", "Iperf 2 throughput server", "iperf", False, False, external),
+                ("iperf3", "Iperf 3 throughput server", "iperf3", False, False, external))
     if service == "http":
         return (
             (
@@ -1494,6 +1638,9 @@ def _runtime_command(
     root: Path | None,
 ) -> list[str]:
     executable = safe.path_arg(runtime.executable, "embedded server executable")
+    if runtime.key in {"iperf2", "iperf3"}:
+        ipv6 = ["-V"] if runtime.key == "iperf2" and ":" in host else []
+        return [executable, "-s", *ipv6, "-B", host, "-p", str(port)]
     if runtime.key == "python-http":
         if root is None:
             raise ValueError("http server requires a root directory")
@@ -1690,6 +1837,8 @@ def _plan_notes(
     host: str,
     root: Path | None,
 ) -> list[str]:
+    if service == "cron":
+        return list(runtime.notes)
     notes = [
         f"MobaXterm-style embedded {service} server workflow.",
         "Server binds to loopback by default; public binds require --allow-public-bind.",
@@ -1726,6 +1875,8 @@ def _server_config_action(
     hardening_profile: str,
     require_tls: bool,
 ) -> str:
+    if service == "cron":
+        return "row servers config-plan cron"
     command = [
         "row",
         "servers",
@@ -1744,6 +1895,8 @@ def _server_config_action(
 
 
 def _server_start_action(service: str, port: int, root: str) -> str:
+    if service == "cron":
+        return "row servers start cron"
     command = ["row", "servers", "start", service, "--port", str(port)]
     if root:
         command.extend(["--root", root])
@@ -1762,14 +1915,16 @@ def _resolve_root(service: str, root: Path | str | None) -> Path | None:
 
 def _service_key(value: str) -> str:
     key = safe.option_value(value, "embedded server service").lower()
-    if key not in SERVER_DEFAULT_PORTS:
-        allowed = ", ".join(SERVER_DEFAULT_PORTS)
+    if key not in SERVER_CONTROL_PORTS:
+        allowed = ", ".join(SERVER_CONTROL_PORTS)
         raise ValueError(f"unsupported embedded server service: {key}; expected one of: {allowed}")
     return key
 
 
 def _service_label(service: str) -> str:
     return {
+        "cron": "Cron server",
+        "iperf": "Iperf server",
         "http": "HTTP static file server",
         "ftp": "FTP file server",
         "tftp": "TFTP file server",

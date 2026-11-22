@@ -248,6 +248,13 @@ jobs:
         shell: powershell
         timeout-minutes: 15
         run: python scripts/candidate_windows_diagnostic.py --target "windows-${{ matrix.arch }}"
+      - name: Verify frozen Cron schedules once and releases its Windows worker
+        shell: powershell
+        timeout-minutes: 4
+        run: >-
+          python scripts/candidate_windows_owned.py --timeout 175 --drain-descendants
+          --out "build/candidate-proof/windows-${{ matrix.arch }}/owned-cron.json"
+          -- python scripts/check_native_frozen_cron.py --target "windows-${{ matrix.arch }}"
       - name: Capture exact Windows redistribution inventory
         shell: bash
         run: >-
@@ -384,6 +391,9 @@ jobs:
       - name: Run macOS native installer smoke tests
         id: native-smoke
         run: bash scripts/smoke_macos_native.sh --arch "${{ matrix.arch }}" --dist native-dist/macos
+      - name: Verify frozen Cron start, status and stop on macOS
+        timeout-minutes: 3
+        run: python scripts/check_native_frozen_cron.py --target "macos-${{ matrix.arch }}"
       - name: Capture exact macOS redistribution inventory
         run: >-
           python scripts/check_preview_redistribution.py

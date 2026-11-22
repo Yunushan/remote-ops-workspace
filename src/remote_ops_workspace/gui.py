@@ -163,6 +163,7 @@ def create_main_window(
     from .gui_reference_tabs import ReferenceTabs
     from .gui_remmina import RemminaWorkspace
     from .gui_securecrt import SecureCrtWorkspace
+    from .gui_server_lifecycle import ServerLifecycleManager
     from .gui_session_tabs import SessionTabActions
     from .gui_sidebar import WindowSidebar
     from .gui_smartcards import SmartCardDialog
@@ -345,6 +346,9 @@ def create_main_window(
                 surface="gui",
             )
             self.layout_store = LayoutStore()
+            self.server_lifecycle, self.release_server_lifecycle = ServerLifecycleManager.attach_window(
+                _application_instance(), self,
+            )
             self._last_terminal_pane: TerminalPane | None = None
             self._closing_tab_widgets: list[QWidget] = []
             self._status_message_override: str | None = None
@@ -1061,6 +1065,7 @@ def create_main_window(
                 close_process = getattr(pane.process, "close", None)
                 if callable(close_process):
                     close_process()
+            self.release_server_lifecycle()
             event.accept()
 
     set_windows_taskbar_app_id()
@@ -1082,6 +1087,8 @@ def create_main_window(
     window = MainWindow(preview_samples=preview_samples)
     if show:
         window.show()
+        if not preview_samples:
+            QTimer.singleShot(0, window.server_lifecycle.startup)
     return app, window
 
 

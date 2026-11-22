@@ -154,6 +154,8 @@ row servers bundle-runtime ssh --out dist/servers --runtime sshd --source vendor
 row servers config-plan ftp --root . --json
 row servers evidence-verify --evidence artifacts/servers-release-evidence.json --assets-dir artifacts --json
 row servers start http --root . --dry-run --json
+row servers start cron --crontab ./my-crontab --dry-run --json
+row servers start iperf --dry-run --json
 row features --coverage
 row files ls lab-ssh /var/log --dry-run
 row files get lab-ssh /etc/hosts --local ./hosts.copy --dry-run
@@ -403,7 +405,7 @@ The JSON report includes `workflow_parity_contract` and `workflow_parity_evidenc
 | Tabs and split panes | ✅ | ✅ | ✅ | ✅ | multi-session | GUI shell + executable saved layouts and editor |
 | Terminal syntax highlighting | ✅ | — | — | — | — | GUI terminal highlighter for prompts, notes, errors, warnings, IP addresses, paths and custom keyword rules |
 | MobApt / Unix tools | ✅ | — | — | local shell | — | `row mobapt status` inventories Unix tools/package managers, `row mobapt runtime-status` scans ROW-owned Unix runtime/cache roots, `row mobapt bundle-runtime` assembles SHA-bound runtime/cache bundles, `row mobapt search/install/update` builds explicit host package-manager plans and `row mobapt cache-verify` validates offline package and terminal-use evidence |
-| Embedded servers | ✅ | — | — | — | — | `row servers status/start/stop` covers loopback-safe HTTP serving plus SSH/SFTP, FTP, TFTP, Telnet, VNC and NFS daemon adapter lifecycle state; `row servers runtime-status/bundle-runtime/config-plan/evidence-verify` adds packaged daemon assembly/discovery, auth/hardening configuration plans, PyQt Servers dialog routing and client-proof release evidence validation |
+| Embedded servers | ✅ | — | — | — | — | `row servers status/start/stop` covers loopback-safe HTTP serving plus SSH/SFTP, FTP, TFTP, Telnet, VNC and NFS daemon adapter lifecycle state. The Servers window also controls a per-user Cron scheduler and loopback Iperf 2 with optional stop timers. `row servers runtime-status/bundle-runtime/config-plan/evidence-verify` adds packaged daemon assembly/discovery, auth/hardening configuration plans, PyQt Servers dialog routing and client-proof release evidence validation |
 | Broadcast input / command fanout | MultiExec | — | — | ✅ | snippets | Broadcast/fanout CLI with Moba-style MultiExec preview and per-target result reporting |
 | Macros / snippets | ✅ | — | — | shortcuts | ✅ | Snippet model plus `row macro record/list/show/remove/replay/capture-plan/live-plan/evidence-bundle/evidence-verify` typed-event recording, SSH replay plans, PyQt terminal Record/Stop/Cancel/Replay controls, operator input capture, connected-pane timing plans, cancel prompts and SHA-bound live replay release evidence |
 | Encrypted vault | passwords | password store | credential store | — | ✅ | Optional cryptography-based local vault |

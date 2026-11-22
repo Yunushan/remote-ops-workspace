@@ -6,8 +6,9 @@ import argparse
 import json
 from pathlib import Path
 
+from .embedded_cron import run_cron
 from .moba_servers import (
-    SERVER_DEFAULT_PORTS,
+    SERVER_CONTROL_PORTS,
     build_moba_server_config_plan,
     build_moba_server_plan,
     build_moba_server_runtime_bundle_plan,
@@ -44,7 +45,7 @@ def add_managed_runtime_commands(sub: argparse._SubParsersAction[argparse.Argume
     servers_runtime.add_argument("--json", action="store_true")
     servers_runtime.set_defaults(func=cmd_servers_runtime_status)
     servers_bundle = servers_sub.add_parser("bundle-runtime", help="assemble a packaged embedded server daemon root")
-    servers_bundle.add_argument("service", choices=list(SERVER_DEFAULT_PORTS))
+    servers_bundle.add_argument("service", choices=[service for service in SERVER_CONTROL_PORTS if service != "cron"])
     servers_bundle.add_argument("--out", required=True, type=Path, help="output packaged daemon runtime directory")
     servers_bundle.add_argument("--runtime", help="runtime key such as sshd, tftpd, x11vnc or nfsd")
     servers_bundle.add_argument("--source", type=Path, help="source daemon executable to copy into the bundle")
@@ -55,7 +56,7 @@ def add_managed_runtime_commands(sub: argparse._SubParsersAction[argparse.Argume
     servers_bundle.add_argument("--json", action="store_true")
     servers_bundle.set_defaults(func=cmd_servers_bundle_runtime)
     servers_config = servers_sub.add_parser("config-plan", help="build an embedded server auth/hardening configuration plan")
-    servers_config.add_argument("service", choices=list(SERVER_DEFAULT_PORTS))
+    servers_config.add_argument("service", choices=list(SERVER_CONTROL_PORTS))
     servers_config.add_argument("--host", default="127.0.0.1")
     servers_config.add_argument("--port", type=int)
     servers_config.add_argument("--root", type=Path)
@@ -71,7 +72,7 @@ def add_managed_runtime_commands(sub: argparse._SubParsersAction[argparse.Argume
     servers_verify.add_argument("--json", action="store_true")
     servers_verify.set_defaults(func=cmd_servers_evidence_verify)
     servers_start = servers_sub.add_parser("start", help="start or inspect a managed local server")
-    servers_start.add_argument("service", choices=list(SERVER_DEFAULT_PORTS))
+    servers_start.add_argument("service", choices=list(SERVER_CONTROL_PORTS))
     servers_start.add_argument("--host", default="127.0.0.1")
     servers_start.add_argument("--port", type=int)
     servers_start.add_argument("--root", type=Path)
@@ -81,6 +82,13 @@ def add_managed_runtime_commands(sub: argparse._SubParsersAction[argparse.Argume
     servers_start.add_argument("--dry-run", action="store_true")
     servers_start.add_argument("--json", action="store_true")
     servers_start.set_defaults(func=cmd_servers_start)
+    for parser in (servers_config, servers_start):
+        parser.add_argument("--crontab", type=Path, help="Cron schedule file (default: the workspace crontab)")
+        parser.add_argument("--iperf-version", type=int, choices=(2, 3), help="select Iperf protocol (default: 2)")
+
+    cron_runtime = servers_sub.add_parser("_cron-runtime", help=argparse.SUPPRESS)
+    cron_runtime.add_argument("--crontab", type=Path, required=True)
+    cron_runtime.set_defaults(func=cmd_servers_cron_runtime)
 
     http_runtime = servers_sub.add_parser("_http-runtime", help=argparse.SUPPRESS)
     http_runtime.add_argument("--host", required=True)
@@ -95,7 +103,7 @@ def add_managed_runtime_commands(sub: argparse._SubParsersAction[argparse.Argume
     ftp_runtime.add_argument("--root", required=True, type=Path)
     ftp_runtime.set_defaults(func=cmd_servers_ftp_runtime)
     servers_stop = servers_sub.add_parser("stop", help="stop a managed local server")
-    servers_stop.add_argument("service", choices=list(SERVER_DEFAULT_PORTS))
+    servers_stop.add_argument("service", choices=list(SERVER_CONTROL_PORTS))
     servers_stop.add_argument("--json", action="store_true")
     servers_stop.set_defaults(func=cmd_servers_stop)
 
@@ -221,12 +229,13 @@ def cmd_servers_config_plan(args: argparse.Namespace) -> int:
         require_auth=True if args.require_auth else None,
         require_tls=args.require_tls,
         allow_public_bind=args.allow_public_bind,
+        crontab=getattr(args, "crontab", None), iperf_version=getattr(args, "iperf_version", None),
     )
     if args.json:
         print(json.dumps(plan.to_dict(), indent=2, sort_keys=True))
         return 0
     print(f"service: {plan.service}")
-    print(f"bind: {plan.host}:{plan.port}")
+    print(f"bind: {plan.host}:{plan.port}" if plan.host else f"crontab: {plan.settings['crontab']}")
     print(f"hardening: {plan.hardening_profile}")
     print(f"auth required: {'yes' if plan.auth_required else 'no'}")
     for note in plan.notes:
@@ -258,6 +267,7 @@ def cmd_servers_start(args: argparse.Namespace) -> int:
         allow_public_bind=args.allow_public_bind,
         require_tls=getattr(args, "require_tls", False),
         hardening_profile=getattr(args, "hardening_profile", "loopback-private"),
+        crontab=getattr(args, "crontab", None), iperf_version=getattr(args, "iperf_version", None),
     )
     record = start_moba_server(plan, dry_run=args.dry_run)
     if args.json:
@@ -269,6 +279,11 @@ def cmd_servers_start(args: argparse.Namespace) -> int:
     print(f"lifecycle: {record.state} pid={record.pid or 'none'} state={record.state_path}")
     for note in plan.notes:
         print(f"note: {note}")
+    return 0
+
+
+def cmd_servers_cron_runtime(args: argparse.Namespace) -> int:
+    run_cron(args.crontab)
     return 0
 
 

@@ -301,6 +301,16 @@ reviews, and the downloaded release assets. See the
    and a release-evidence verifier requiring real client proofs for every
    service. The FTP inventory reports the pyftpdlib module used by the
    authenticated adapter, including when it runs inside a frozen launcher.
+   The Servers window also has Start, Stop and Settings controls for Cron and
+   Iperf. Cron runs the current user's five-field crontab and can start with the
+   desktop. Its Settings dialog includes the schedule editor. Iperf uses the
+   Iperf 2 executable from the daemon bundle or PATH and listens on
+   `127.0.0.1:5001`. Test it with `iperf -c 127.0.0.1`. Both controls default
+   to stopping after 360 seconds, as observed in the 26.4 Home frontend.
+   ROW's timer can be disabled or set to
+   1–65,535 seconds. Closing the desktop stops services it started. The
+   existing release evidence schema continues to cover the original eight
+   protocol checks.
    Full parity still needs production-grade daemon binaries for every
    embedded service attached to releases and accepted passing evidence proving
    each daemon serves real clients on supported targets.
@@ -333,7 +343,10 @@ reviews, and the downloaded release assets. See the
    events in order with their recorded delays and stops if the session changes
    or the terminal requests a password. Recording skips masked password input.
    The release-evidence checker compares recorded events and review decisions
-   with the bytes, timestamps, and session identity observed over SSH. Full
+   with the bytes, timestamps, and session identity observed over SSH. In a
+   reference check, the signed 26.4 Home frontend running under Wine recorded
+   `row26`, Tab, `z` and Enter. A loopback Telnet peer received the same bytes
+   when the saved macro was clicked, including Telnet's CR NUL for Enter. Full
    parity still requires accepted live replay evidence from supported release
    targets.
 6. Exact 26.4 SSH-browser behavior: smart-card auth, smart-card management
@@ -398,7 +411,11 @@ reviews, and the downloaded release assets. See the
    intact when wrapping or clipping at the right edge. When the viewport
    resizes, the visible alternate screen updates even if the remote
    application is quiet. DEC and CSI save/restore sequences share a cursor
-   position on each screen, including the primary screen. Saved cursor
+   position on each screen, including the primary screen. The 26.4 Home
+   reference moved from row 3, column 4 to row 8, column 12 and restored
+   row 3, column 4. ROW reproduced those coordinates over OpenSSH on Windows
+   ConPTY and Linux PTY. The plain Windows pipe fallback supports absolute
+   cursor addressing on its alternate screen only. Saved cursor
    positions and scrolling regions stay
    within the resized grid. Index and reverse index scroll only at the
    configured region boundaries. Cursor-position reports respect origin mode

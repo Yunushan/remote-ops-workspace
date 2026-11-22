@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from PyQt6.QtWidgets import QStatusBar
 
     from .gui_dialogs import WorkflowDialog
+    from .gui_server_lifecycle import ServerLifecycleManager
     from .layouts import LayoutStore
     from .models import Profile
     from .storage import ProfileStore
@@ -25,6 +26,7 @@ class OperatorWorkflows:
     if TYPE_CHECKING:
         layout_store: LayoutStore
         store: ProfileStore
+        server_lifecycle: ServerLifecycleManager
 
         def connect_selected(self, dry_run: bool) -> None: ...
         def create_layout(self) -> None: ...
@@ -124,6 +126,8 @@ class OperatorWorkflows:
         )
 
     def show_moba_servers_status(self, *_args) -> None:
+        from .gui_server_controls import add_server_controls
+
         self.set_moba_rail_active("tools")
         surface = build_moba_server_gui_config_surface(selected_service="http")
         self.setProperty("mobaEmbeddedServerGuiConfigSchema", surface.schema)
@@ -135,6 +139,7 @@ class OperatorWorkflows:
             (
                 row.label,
                 row.status,
+                "Local crontab" if row.service == "cron" else
                 f"port {row.default_port} runtime={row.selected_runtime} auth={'yes' if row.auth_required else 'no'}",
             )
             for row in surface.rows
@@ -148,7 +153,7 @@ class OperatorWorkflows:
                 f"Hardening: {selected.hardening_profile}",
                 f"Auth required: {'yes' if selected.auth_required else 'no'}",
                 f"TLS required: {'yes' if selected.tls_required else 'no'}",
-                f"Packaged daemon services: {surface.packaged_service_count}/{len(surface.rows)}",
+                f"Packaged daemon services: {surface.packaged_service_count}",
                 "GUI controls: " + ", ".join(surface.gui_controls),
                 "",
                 "Selected service commands:",
@@ -159,10 +164,11 @@ class OperatorWorkflows:
         )
         self.show_workflow_dialog(
             "Servers",
-            "MobaXterm-style local server suite status, hardening configuration and lifecycle actions.",
+            "Select a service to view its configuration.",
             rows,
             detail,
             actions=[("Run doctor", self.show_doctor), ("Tools", self.show_moba_tools_status)],
+            prepare=lambda dialog: add_server_controls(dialog, surface, self.server_lifecycle),
         )
 
     def show_moba_smartcards_status(self, *_args) -> None:
@@ -587,6 +593,7 @@ class OperatorWorkflows:
         detail: str,
         *,
         actions: Sequence[tuple[str, Callable[..., object]]] | None = None,
+        prepare: Callable[[WorkflowDialog], None] | None = None,
     ) -> None:
         dialog = self.create_workflow_dialog(
             title,
@@ -595,5 +602,7 @@ class OperatorWorkflows:
             detail,
             actions=actions,
         )
+        if prepare is not None:
+            prepare(dialog)
         dialog.exec()
         self.statusBar().showMessage(f"Workflow: {title}")

@@ -472,13 +472,14 @@ def run(args) -> dict:
     architecture = native_command(DPKG, "--print-architecture").stdout.strip()
     require(architecture in DEBIAN_TARGETS, "unsupported-debian-architecture")
     if args.action in {"stage-previous", "stage-candidate"}:
+        stage = trusted_path(args.stage, directory=True, private=True)
+        require(stage != SYSTEM_LOCK_ROOT, "managed-update-directories-overlap")
         status, version = installed_package(architecture)
         require(status == "installed", "installed-package-identity-refused")
         if args.action == "stage-candidate":
             require(_release_version(args.version) > _release_version(version), "update-version-not-newer")
             version = args.version
-        return stage_update(load_policy(args.policy), trusted_path(args.stage, directory=True, private=True),
-                            current_home=args.workspace, expected_version=version)
+        return stage_update(load_policy(args.policy), stage, current_home=args.workspace, expected_version=version)
     root = trusted_path(args.transaction, directory=True, private=True)
     workspace = Path(os.path.abspath(args.workspace))
     require(not root.is_relative_to(workspace), "transaction-must-be-outside-workspace")

@@ -27,6 +27,39 @@ def test_manager_refuses_non_root_or_other_platform_before_package_commands(monk
         updater.run(SimpleNamespace())
 
 
+@pytest.mark.parametrize("action", ["stage-previous", "stage-candidate"])
+@pytest.mark.parametrize("directory", ["reserved", "child", "sibling"])
+def test_standalone_stage_preserves_the_system_lock_directory(tmp_path, monkeypatch, action, directory):
+    system = tmp_path / "system"
+    system.mkdir()
+    lock = system / ".managed-update.json.lock"
+    lock.write_bytes(b"existing")
+    stages = {"reserved": system, "child": system / "stage", "sibling": tmp_path / "stage"}
+    stage = stages[directory]
+    stage.mkdir(exist_ok=True)
+    monkeypatch.setattr(updater.sys, "platform", "linux")
+    monkeypatch.setattr(updater.os, "getuid", lambda: 0, raising=False)
+    monkeypatch.setattr(updater.os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setattr(updater, "SYSTEM_LOCK_ROOT", system)
+    monkeypatch.setattr(updater, "native_command", lambda *args: SimpleNamespace(stdout="amd64"))
+    monkeypatch.setattr(updater, "trusted_path", lambda path, **kw: path.resolve())
+    args = SimpleNamespace(action=action, stage=stage, policy=tmp_path / "policy",
+                           workspace=tmp_path / "workspace", version="1.0.28")
+    if directory == "reserved":
+        args.stage = system / "unused" / ".."
+        monkeypatch.setattr(updater, "installed_package", lambda arch: pytest.fail("preflight continued"))
+        with pytest.raises(updater.UpdateError, match="managed-update-directories-overlap"):
+            updater.run(args)
+        assert list(system.iterdir()) == [lock] and lock.read_bytes() == b"existing"
+    else:
+        monkeypatch.setattr(updater, "installed_package", lambda arch: ("installed", "1.0.24"))
+        monkeypatch.setattr(updater, "load_policy", lambda path: path)
+        monkeypatch.setattr(updater, "stage_update", lambda *args, **kwargs: (args, kwargs))
+        assert updater.run(args) == ((args.policy, stage), {
+            "current_home": args.workspace, "expected_version": "1.0.24" if action == "stage-previous" else "1.0.28",
+        })
+
+
 @pytest.mark.parametrize("previous_stage_state", ["empty", "prepared", "interrupted"])
 def test_update_prepares_the_rollback_installer_before_the_candidate(tmp_path, monkeypatch, previous_stage_state):
     previous, candidate, workspace = [tmp_path / name for name in ("previous", "candidate", "home")]

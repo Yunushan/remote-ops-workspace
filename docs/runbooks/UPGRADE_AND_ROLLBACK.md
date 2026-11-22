@@ -100,6 +100,20 @@ journal if an installed dependency cannot satisfy the upgrade. APT uses the
 local installer and installed package database for the simulation. Use separate
 staging and transaction directories that do not overlap each other or the workspace.
 
+The updater uses `/var/lib/remote-ops-workspace-managed-update` for its
+system lock. Use a separate private directory for each package stage.
+An older standalone staging command pointed at the system lock directory
+could leave a stray `.transaction.json.lock` and block subsequent updates.
+
+To recover from that specific mistake, stop scheduled and interactive
+updaters and verify that all holders and waiters for both locks have exited.
+Confirm the mistaken command and inspect the directory as root. If it
+contains exactly the two root-owned regular files `.transaction.json.lock`
+and `.managed-update.json.lock`, move the stray `.transaction.json.lock` to
+a private backup directory and retain the system's `.managed-update.json.lock`
+at its existing path. If the history is uncertain or the directory contains
+any other files, preserve it for inspection.
+
 ```bash
 python3 -I scripts/managed_linux_update.py update --version 1.0.28 \
   --workspace /home/operator/.config/remote-ops-workspace \

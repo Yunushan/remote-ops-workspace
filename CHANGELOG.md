@@ -31,6 +31,16 @@ For the change classes used below, see [Keep a Changelog](https://keepachangelog
 - Windows native and XP build scripts accept a certificate-store thumbprint for
   signing.
 
+### Fixed
+
+- The Moba-style SFTP browser preserves Windows upload and download paths
+  and reuses the connected terminal's SSH socket when available.
+- Double-clicking a connection tab in the mRemoteNG-style view closes that
+  connection after the usual confirmation for running sessions. The gesture
+  can be disabled in **Tools → Options**.
+- The Debian and RPM managed updaters preserve authenticated packages when a
+  staging directory is accidentally supplied as the transaction directory.
+
 ## [1.0.27]
 
 ### Changed

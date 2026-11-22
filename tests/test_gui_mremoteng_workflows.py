@@ -414,3 +414,159 @@ def test_reconnect_restarts_only_the_selected_open_document(workspace, tmp_path)
     wait_for_starts(3)
     assert button.property(route.live_profile_property) == "Beta"
     assert window.all_terminal_panes() == [pane]
+
+
+def test_mremoteng_double_click_closes_only_the_clicked_connection(workspace):
+    from PyQt6.QtCore import Qt, QTimer
+    from PyQt6.QtTest import QTest
+    from PyQt6.QtWidgets import QMessageBox
+
+    app, window = workspace
+    tabs = window.tabs
+    bar = tabs.tabBar()
+    left = Qt.MouseButton.LeftButton
+    buttons = QMessageBox.StandardButton
+    prompts = []
+
+    def double_click(index, button=left, answer=buttons.No):
+        point = bar.tabRect(index).center()
+        QTimer.singleShot(0, lambda: reply(answer))
+        QTest.mouseDClick(bar, button, pos=point)
+        QTest.mouseRelease(bar, button, pos=point)
+        app.processEvents()
+
+    def reply(button):
+        dialog = app.activeModalWidget()
+        if isinstance(dialog, QMessageBox):
+            prompts.append((dialog.windowTitle(), dialog.text(), dialog.standardButton(dialog.defaultButton())))
+            if button == buttons.Yes:
+                # A prompt runs a nested event loop. Session tabs may move before the reply.
+                bar.moveTab(window.find_tab_by_label("Alpha"), window.find_tab_by_label("Beta"))
+            QTest.mouseClick(dialog.button(button), left)
+
+    try:
+        for name in ("Alpha", "Beta"):
+            window.open_terminal_tab(
+                TerminalPanePlan(name, [sys.executable, "-c", "import time; time.sleep(60)"], "profile"),
+                profile=window.store.get(name),
+            )
+            pane = window.active_terminal_pane()
+            deadline = time.monotonic() + 10
+            while not pane.is_running() and time.monotonic() < deadline:
+                QTest.qWait(10)
+            assert pane.is_running()
+
+        home = window.find_tab_by_role("home")
+        double_click(home)
+        assert window.find_tab_by_role("home") == home
+        window.set_design_preset("securecrt")
+        double_click(window.find_tab_by_label("Alpha"))
+        assert len(window.running_terminal_panes()) == 2
+        window.set_design_preset("mremoteng")
+        bar.moveTab(window.find_tab_by_label("Beta"), window.find_tab_by_label("Alpha"))
+        alpha = window.find_tab_by_label("Alpha")
+        double_click(alpha, Qt.MouseButton.RightButton)
+        window.mremoteng_double_click_close.trigger()
+        double_click(alpha)
+        window.mremoteng_double_click_close.trigger()
+        assert prompts == []
+        assert len(window.running_terminal_panes()) == 2
+
+        for answer in (buttons.No, buttons.Yes):
+            window.set_workspace_tab_index(window.find_tab_by_label("Beta"))
+            double_click(alpha, answer=answer)
+            assert prompts[-1:] == [("Close tab", "Stop 1 running process pane(s)?", buttons.No)]
+            if answer == buttons.No:
+                assert window.find_tab_by_label("Alpha") == alpha
+                assert len(window.running_terminal_panes()) == 2
+        assert len(prompts) == 2
+        assert window.find_tab_by_label("Alpha") == -1
+        assert [p.profile.name for p in window.running_terminal_panes()] == ["Beta"]
+    finally:
+        # The fixture closes any remaining local child when the window exits.
+        window.confirm_stop_processes = lambda *_args: True
+
+
+def test_mremoteng_tools_option_persists_between_windows(workspace):
+    from PyQt6.QtCore import QPoint, Qt
+    from PyQt6.QtTest import QTest
+
+    from remote_ops_workspace.gui import create_main_window
+
+    app, window = workspace
+
+    def click_option(owner, expected):
+        tools = next(menu for menu in owner.mremoteng_top_menus if menu.title() == "Tools")
+        assert tools.actions()[0].text() == "External Tools"
+        options = next(action.menu() for action in tools.actions() if action.text() == "Options")
+        action = next(action for action in options.actions() if action.text() == "Double click on tab closes it")
+        assert action.isCheckable() and action.isChecked() is expected
+        options.popup(owner.mapToGlobal(QPoint(80, 80)))
+        app.processEvents()
+        QTest.mouseClick(options, Qt.MouseButton.LeftButton, pos=options.actionGeometry(action).center())
+        assert action.isChecked() is not expected
+
+    click_option(window, True)
+    _, second = create_main_window(["mremoteng-option-reopen"], show=True)
+    try:
+        second.set_design_preset("mremoteng")
+        click_option(second, False)
+    finally:
+        second.close()
+
+
+def test_finished_shell_disappearing_during_close_confirmation_keeps_its_neighbour(workspace, monkeypatch):
+    from PyQt6.QtTest import QTest
+
+    _app, window = workspace
+    plan = TerminalPanePlan("Transient shell", [sys.executable, "-c", "import sys; sys.stdin.buffer.read(1)"])
+    window.open_terminal_tab(plan)
+    pane = window.active_terminal_pane()
+    deadline = time.monotonic() + 10
+    while not pane.is_running() and time.monotonic() < deadline:
+        QTest.qWait(10)
+    assert pane.is_running()
+
+    def finish_while_waiting(_title, _count):
+        pane.process.write(b"x")
+        deadline = time.monotonic() + 10
+        while window.find_tab_by_label(plan.title) >= 0 and time.monotonic() < deadline:
+            QTest.qWait(10)
+        assert window.find_tab_by_label(plan.title) == -1
+        return True
+
+    monkeypatch.setattr(window, "confirm_stop_processes", finish_while_waiting)
+    try:
+        window.close_tab(window.find_tab_by_label(plan.title))
+        assert window.tabs.count() == 1
+        assert window.tab_role(0) == "home"
+    finally:
+        window.confirm_stop_processes = lambda *_args: True
+
+
+def test_mremoteng_unreadable_option_disables_gesture_and_write_failure_retains_choice(workspace, tmp_path, monkeypatch):
+    from PyQt6.QtWidgets import QMenu
+
+    from remote_ops_workspace import gui_mremoteng
+
+    _app, window = workspace
+    path = tmp_path / "workspace" / "mremoteng-double-click-closes-tab.json"
+    for contents in ('"false"', " " * 65):
+        path.write_text(contents, encoding="utf-8")
+        window.add_mremoteng_tab_options(QMenu(window))
+        assert not window.mremoteng_double_click_close.isChecked()
+        assert "Cannot read" in window.statusBar().currentMessage()
+    path.unlink()
+    path.mkdir()
+    window.add_mremoteng_tab_options(QMenu(window))
+    action = window.mremoteng_double_click_close
+    assert not action.isChecked()
+    assert "Cannot read" in window.statusBar().currentMessage()
+
+    def fail_write(*args, **kwargs):
+        raise OSError("fixture write error")
+
+    monkeypatch.setattr(gui_mremoteng, "write_json_atomic", fail_write)
+    action.trigger()
+    assert not action.isChecked()
+    assert "Cannot save" in window.statusBar().currentMessage()

@@ -200,7 +200,9 @@ reviews, and the downloaded release assets. See the
   without destroying a connected SFTP dock, and SFTP returns to that dock. The
   connected SFTP toolbar now routes path/parent navigation, download/upload
   transfer queues, remote folder creation, reconnect, Tools and terminal focus
-  to live GUI workflows. New folder preloads a mkdir operation for review and
+  to live GUI workflows. Uploads and downloads preserve selected filenames
+  with spaces and apostrophes and reuse the terminal's authenticated SSH
+  socket when available. New folder preloads a mkdir operation for review and
   runs it when the operator chooses Run queue. It uses a shared authenticated
   SSH socket when available or a trusted host key with key or agent authentication.
   A successful creation refreshes the listing if its parent is still selected.

@@ -135,6 +135,7 @@ class WindowMenus:
         search_input: QLineEdit
 
         def add_split(self, direction: str) -> None: ...
+        def add_mremoteng_tab_options(self, tools: QMenu) -> None: ...
         def close_current_tab(self) -> None: ...
         def connect_selected(self, dry_run: bool) -> None: ...
         def create_profile(self) -> None: ...
@@ -390,6 +391,8 @@ class WindowMenus:
                     operation=self.product_menu_operations[family][item.key],
                     invoke=invoke_menu_action,
                 )
+                if family == "mremoteng" and item.key == "tools":
+                    self.add_mremoteng_tab_options(menu)
 
     def run_product_menu_action(self, family: str, action_key: str) -> None:
         callbacks = self.product_menu_callbacks.get(family)

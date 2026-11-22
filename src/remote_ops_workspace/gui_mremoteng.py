@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import re
+import stat
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from PyQt6.QtCore import QSize, Qt, QTimer
-from PyQt6.QtGui import QIcon
+from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -13,6 +14,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QPlainTextEdit,
     QPushButton,
     QSizePolicy,
@@ -39,7 +41,7 @@ from .gui_icons import draw_mremoteng_document_control_icon
 from .gui_profile_tree import MREMOTENG_CONFIG_ROLE
 from .gui_values import _safe_tooltip_html
 from .models import Profile
-from .paths import ensure_data_dir
+from .paths import data_dir, ensure_data_dir
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -135,6 +137,39 @@ class MRemoteNgWorkspace:
         def set_interaction_state(self, widget: QWidget, state: str) -> None: ...
         def show_external_tools_status(self, *_args: object) -> None: ...
         def statusBar(self) -> QStatusBar: ...
+
+    def add_mremoteng_tab_options(self, tools: QMenu) -> None:
+        options = QMenu("Options", tools)
+        tools.addMenu(options)
+        action = QAction("Double click on tab closes it", options)
+        action.setCheckable(True)
+        options.addAction(action)
+        self.mremoteng_double_click_close = action
+
+        path = data_dir() / "mremoteng-double-click-closes-tab.json"
+        try:
+            info = path.lstat()
+            if not stat.S_ISREG(info.st_mode) or info.st_size > 64:
+                raise ValueError("expected a small regular file")
+            value = path.read_bytes().strip()
+            if value not in (b"true", b"false"):
+                raise ValueError("expected true or false")
+            enabled = value == b"true"
+        except FileNotFoundError:
+            enabled = True
+        except (OSError, ValueError) as exc:
+            enabled = False
+            self.statusBar().showMessage(f"Cannot read the mRemoteNG tab option: {exc}", 8000)
+        action.setChecked(enabled)
+
+        def save(checked: bool) -> None:
+            try:
+                write_json_atomic(path, checked, private=True)
+            except OSError as exc:
+                action.setChecked(not checked)
+                self.statusBar().showMessage(f"Cannot save the mRemoteNG tab option: {exc}", 8000)
+
+        action.triggered.connect(save)
 
     def save_mremoteng_property(self, name: str, field: str, original: str, value: str) -> str:
         def update(profiles: list[Profile], defaults: dict[str, dict[str, object]]) -> list[Profile]:

@@ -1548,7 +1548,7 @@ def test_sftp_refresh_and_transfer_workflow_edges(
             _Dialog(QDialog.DialogCode.Accepted),
         ]
     )
-    window.create_transfer_queue_dialog = lambda _profile: next(dialogs)
+    window.create_transfer_queue_dialog = lambda _profile, **_kwargs: next(dialogs)
     dock.selected_sftp_item = lambda: ("report.txt", "file")
     assert dock.open_moba_sftp_transfer_workflow("download") is True
     dock.selected_sftp_item = lambda: ("archive", "dir")
@@ -1563,6 +1563,66 @@ def test_sftp_refresh_and_transfer_workflow_edges(
     assert dock.open_moba_sftp_transfer_workflow("upload") is False
     assert dock.open_moba_sftp_transfer_workflow("upload") is True
     app.processEvents()
+
+
+@pytest.mark.parametrize("action,kind", [("upload", "file"), ("download", "file"), ("download", "dir")])
+def test_connected_transfer_queue_preserves_selected_paths(connected_workspace, monkeypatch, tmp_path, action, kind):
+    from PyQt6.QtWidgets import QDialog, QFileDialog
+
+    from remote_ops_workspace import gui_connected
+    from remote_ops_workspace.file_transfer import SftpQueueItem
+    from remote_ops_workspace.gui_dialogs import TransferQueueDialog
+
+    _app, _window, _panel, dock, profile = connected_workspace
+    name = "Opérator's notes" if kind == "dir" else "Opérator's notes.txt"
+    source = tmp_path / "local files" / name
+    dock.active_remote_path = "/home/operator/shared files"
+    remote = f"{dock.active_remote_path}/{name}"
+    monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: profile)
+    monkeypatch.setattr(dock, "shared_ssh_control_path", lambda: "/run/operator/connection")
+    monkeypatch.setattr(dock, "selected_sftp_item", lambda: (name, kind))
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *_: (str(source), ""))
+    plans = []
+    channels = []
+
+    def use_socket(command, socket, *, master):
+        channels.append((socket, master))
+        return command
+
+    def inspect_queue(dialog):
+        plan = dialog.queue_plan()
+        assert dialog._prepare_command(plan.command) == plan.command
+        plans.append(plan)
+
+    monkeypatch.setattr(gui_connected, "ssh_command_with_control_path", use_socket)
+    monkeypatch.setattr(TransferQueueDialog, "run_queue", inspect_queue)
+    monkeypatch.setattr(TransferQueueDialog, "exec", lambda self: QDialog.DialogCode.Rejected)
+
+    assert dock.dispatch_moba_sftp_toolbar_action(action)
+    expected = SftpQueueItem(
+        action="put" if action == "upload" else "get",
+        remote_path=remote,
+        local_path=str(source) if action == "upload" else f"./{name}",
+        recursive=kind == "dir",
+    )
+    assert len(plans) == 1
+    assert plans[0].items == [expected]
+    assert channels == [("/run/operator/connection", False)]
+
+
+@pytest.mark.parametrize("separator", ["\n", "\u2028"])
+def test_connected_upload_leaves_multiline_filename_out_of_queue(connected_workspace, monkeypatch, separator):
+    from PyQt6.QtWidgets import QFileDialog
+
+    _app, window, _panel, dock, profile = connected_workspace
+    monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: profile)
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *_: (f"part{separator}two.txt", ""))
+    monkeypatch.setattr(window, "create_transfer_queue_dialog", lambda *_: pytest.fail("invalid path reached queue"))
+    messages = []
+    monkeypatch.setattr(dock, "show_sftp_status", messages.append)
+    dock.show_moba_sftp_toolbar_action("upload")
+    assert len(messages) == 1
+    assert "control" in messages[0] or "one line" in messages[0]
 
 
 def test_connected_compatibility_chrome_icons_actions_and_terminal_save(

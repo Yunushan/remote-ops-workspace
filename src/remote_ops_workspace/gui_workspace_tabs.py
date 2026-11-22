@@ -24,7 +24,7 @@ from .moba_connected import (
 
 if TYPE_CHECKING:
     from PyQt6.QtCore import QPoint
-    from PyQt6.QtGui import QIcon, QShortcut
+    from PyQt6.QtGui import QAction, QIcon, QShortcut
     from PyQt6.QtWidgets import QComboBox
 
     from .gui_designs import GuiDesignPreset, GuiInteractionState
@@ -39,6 +39,7 @@ class WorkspaceTabs:
         tabs: QTabWidget
         design_select: QComboBox
         moba_tab_bar: MobaWorkspaceTabBar
+        mremoteng_double_click_close: QAction
         moba_tab_guard: bool
         next_workspace_tab_shortcut: QShortcut
         previous_workspace_tab_shortcut: QShortcut
@@ -82,6 +83,9 @@ class WorkspaceTabs:
             ("Ctrl+Shift+Tab", "Ctrl+Alt+Left") if is_moba else ("Ctrl+Shift+Tab",)
         )
         tab_bar = self.moba_tab_bar
+        tab_bar.can_double_click_close = (
+            self.can_close_mremoteng_document if self.current_design_id() == "mremoteng" else None
+        )
         tab_bar.setProperty("mobaCompactTabWidths", bool(is_moba))
         tab_bar.setProperty(
             "mobaCompactTabWidthSource",
@@ -154,6 +158,9 @@ class WorkspaceTabs:
         if widget is None:
             return ""
         return str(widget.property("tabRole") or "session")
+
+    def can_close_mremoteng_document(self, index: int) -> bool:
+        return self.mremoteng_double_click_close.isChecked() and self.tab_role(index) in {"terminal", "split", "layout"}
 
     def find_tab_by_role(self, role: str) -> int:
         for index in range(self.tabs.count()):

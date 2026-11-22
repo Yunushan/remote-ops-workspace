@@ -3,13 +3,12 @@ from __future__ import annotations
 import os
 import posixpath
 import re
-import shlex
 import stat
-import subprocess
 import sys
 from abc import abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Protocol
 
@@ -57,11 +56,13 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from .command_safety import CommandSafetyError
 from .file_transfer import (
     SftpBatchPlan,
     SftpQueueItem,
     SftpQueuePlan,
     build_sftp_list_plan,
+    format_transfer_item_spec,
 )
 from .gui_connected_terminal import (
     ConnectedSessionPanel as ConnectedSessionPanel,
@@ -2662,6 +2663,14 @@ def create_moba_connected_classes(
                 status_bar.showMessage(message)
             main_window.log.append(message)
 
+        def prepare_sftp_queue_command(self, profile: Profile, command: list[str]) -> list[str]:
+            if self.runtime_shutting_down or self.profile_for_sftp_action() != profile:
+                raise ValueError("the connected SSH profile changed")
+            control_path = self.shared_ssh_control_path()
+            if control_path:
+                return ssh_command_with_control_path(command, control_path, master=False)
+            return openssh_command_without_windows_connection_sharing(command)
+
         def open_moba_sftp_transfer_workflow(self, action_key: str) -> bool:
             main_window = self.main_window()
             profile = self.profile_for_sftp_action()
@@ -2675,14 +2684,7 @@ def create_moba_connected_classes(
                     return False
                 name, kind = selected
                 remote_path = str(PurePosixPath(self.active_remote_path) / name)
-                operation = shlex.join(
-                    [
-                        "get",
-                        *(["-r"] if kind == "dir" else []),
-                        remote_path,
-                        f"./{name}",
-                    ]
-                )
+                arguments = ["get", *(["-r"] if kind == "dir" else []), remote_path, f"./{name}"]
             else:
                 local_path, _selected_filter = QFileDialog.getOpenFileName(
                     self,
@@ -2694,8 +2696,11 @@ def create_moba_connected_classes(
                     self.show_sftp_status("SFTP upload cancelled")
                     return False
                 remote_path = str(PurePosixPath(self.active_remote_path) / Path(local_path).name)
-                operation = shlex.join(["put", local_path, remote_path])
-            dialog = main_window.create_transfer_queue_dialog(profile)
+                arguments = ["put", local_path, remote_path]
+            operation = format_transfer_item_spec(arguments)
+            dialog = main_window.create_transfer_queue_dialog(
+                profile, prepare_command=partial(self.prepare_sftp_queue_command, profile)
+            )
             dialog.operations.setPlainText(operation)
             dialog.refresh_queue_preview()
             dialog.run_queue()
@@ -2731,16 +2736,10 @@ def create_moba_connected_classes(
             remote_path = str(PurePosixPath(parent_path) / name)
 
             def prepare_command(command: list[str]) -> list[str]:
-                if self.runtime_shutting_down or self.profile_for_sftp_action() != profile:
-                    raise ValueError("the connected SSH profile changed")
                 command = openssh_command_with_overrides(
-                    command,
-                    {"BatchMode": "yes", "ConnectTimeout": "5", "StrictHostKeyChecking": "yes"},
+                    command, {"BatchMode": "yes", "ConnectTimeout": "5", "StrictHostKeyChecking": "yes"},
                 )
-                control_path = self.shared_ssh_control_path()
-                if control_path:
-                    return ssh_command_with_control_path(command, control_path, master=False)
-                return openssh_command_without_windows_connection_sharing(command)
+                return self.prepare_sftp_queue_command(profile, command)
 
             def refresh_created_folder(item: SftpQueueItem) -> None:
                 if (
@@ -2750,13 +2749,12 @@ def create_moba_connected_classes(
                 ):
                     self.request_sftp_refresh(reason="new-folder")
 
+            operation = format_transfer_item_spec(["mkdir", remote_path])
             dialog = main_window.create_transfer_queue_dialog(
                 profile,
                 prepare_command=prepare_command,
                 on_item_completed=refresh_created_folder,
             )
-            arguments = ["mkdir", remote_path]
-            operation = subprocess.list2cmdline(arguments) if os.name == "nt" else shlex.join(arguments)
             dialog.operations.setPlainText(operation)
             dialog.refresh_queue_preview()
             dialog.exec()
@@ -2866,7 +2864,12 @@ def create_moba_connected_classes(
                     f"{self.UNAVAILABLE_ACTION_DETAILS.get(action.key, action.tooltip)}"
                 )
                 return
-            if not self.dispatch_moba_sftp_toolbar_action(action.key):
+            try:
+                completed = self.dispatch_moba_sftp_toolbar_action(action.key)
+            except CommandSafetyError as exc:
+                self.show_sftp_status(f"SFTP {action.label}: {exc}")
+                return
+            if not completed:
                 self.show_sftp_status(f"SFTP {action.label} did not complete")
 
         def build_sftp_transfer_menu_button(self) -> QToolButton:

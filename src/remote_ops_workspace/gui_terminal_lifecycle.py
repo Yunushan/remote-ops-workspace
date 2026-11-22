@@ -305,8 +305,13 @@ class TerminalLifecycle:
             self.open_local_terminal_tab()
             return
         running = [pane for pane in self.terminal_panes_in(widget) if pane.is_running()]
-        if running and not self.confirm_stop_processes("Close tab", len(running)):
-            return
+        if running:
+            if not self.confirm_stop_processes("Close tab", len(running)):
+                return
+            # Tabs can move or finish while the confirmation's nested event loop is running.
+            index = next((i for i in range(self.tabs.count()) if self.tabs.widget(i) is widget), -1)
+            if index < 0:
+                return
         title = self.tabs.tabText(index)
         if index == self.tabs.currentIndex() and self.tabs.count() > 1:
             successor_index = index + 1 if index + 1 < self.tabs.count() else index - 1

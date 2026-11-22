@@ -8,7 +8,9 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections.abc import Callable, Iterable
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -275,6 +277,8 @@ class MobAptPackagePlan:
     command: list[str]
     execute_required: bool
     notes: list[str]
+    cached_archive_sha256: str = ""
+    cached_package_version: str = ""
 
     def printable(self) -> str:
         return " ".join(safe.argv_list(self.command, "mobapt command"))
@@ -286,6 +290,8 @@ class MobAptPackagePlan:
             "manager": self.manager.to_dict(),
             "command": self.command,
             "execute_required": self.execute_required,
+            "cached_archive_sha256": self.cached_archive_sha256,
+            "cached_package_version": self.cached_package_version,
             "notes": self.notes,
         }
 
@@ -324,7 +330,10 @@ def build_mobapt_environment_status(
     base_tools = mobapt_unix_tool_status(tools=tools, which=which)
     runtime_status = build_mobapt_runtime_status(roots=runtime_roots)
     notes = ["MobApt compatibility runs in adapter mode against host package managers."]
-    if runtime_status.embedded_runtime_available:
+    selected = _selected_runtime(runtime_status.candidates)
+    if selected is not None:
+        bundled_tools = {tool.name: tool for tool in selected.tools}
+        base_tools = tuple(bundled_tools.get(tool.name, tool) for tool in base_tools)
         notes.append("ROW-owned MobApt runtime/cache manifest is available; host adapters remain available as fallback.")
     else:
         notes.append("No bundled Unix command runtime or ROW-owned package repository is present yet.")
@@ -347,16 +356,14 @@ def build_mobapt_runtime_status(
 ) -> MobAptRuntimeStatus:
     resolved_roots = mobapt_runtime_roots(roots)
     candidates = discover_mobapt_embedded_runtimes(roots=resolved_roots)
-    available = [candidate for candidate in candidates if candidate.available]
+    selected = _selected_runtime(candidates)
     notes = [
         f"Scanned {len(resolved_roots)} MobApt runtime/cache root(s).",
         f"Set {MOBAPT_RUNTIME_DIR_ENV} to a release-owned Unix runtime/cache directory to prefer packaged tools.",
     ]
-    if available:
-        selected = available[0]
+    if selected is not None:
         notes.append(f"Selected ROW-owned MobApt runtime/cache: {selected.name} {selected.version}.")
     else:
-        selected = None
         notes.append("No ROW-owned MobApt runtime/cache manifest was found; host package-manager adapters remain the only path.")
     return MobAptRuntimeStatus(
         roots=tuple(str(root) for root in resolved_roots),
@@ -365,6 +372,10 @@ def build_mobapt_runtime_status(
         candidates=candidates,
         notes=notes,
     )
+
+
+def _selected_runtime(candidates: tuple[MobAptEmbeddedRuntimeCandidate, ...]) -> MobAptEmbeddedRuntimeCandidate | None:
+    return next((candidate for candidate in candidates if candidate.available), None)
 
 
 def discover_mobapt_embedded_runtimes(
@@ -450,6 +461,7 @@ def build_mobapt_package_plan(
     manager: str | None = None,
     system: str | None = None,
     which: WhichResolver = shutil.which,
+    offline: bool = False,
 ) -> MobAptPackagePlan:
     normalized_action = _action(action)
     system_key = _system_key(system)
@@ -458,6 +470,28 @@ def build_mobapt_package_plan(
     package_name = "" if normalized_action == "update" else _package_name(package)
     command = _package_command(selected, normalized_action, package_name)
     notes = list(selected.notes)
+    cached_archive_sha256 = ""
+    cached_package_version = ""
+    if offline:
+        if normalized_action != "install" or selected.key != "apt":
+            raise ValueError("offline installs require the APT package manager")
+        runtime = _selected_runtime(discover_mobapt_embedded_runtimes())
+        if runtime is None:
+            raise ValueError("offline install requires a verified MobApt runtime/cache")
+        matches = [item for item in runtime.packages if item.name == package_name and Path(item.archive).suffix == ".deb"]
+        if len(matches) != 1:
+            raise ValueError(f"offline install requires exactly one cached .deb for '{package_name}'")
+        archive = matches[0]
+        archive_path = (Path(runtime.root) / archive.archive).resolve()
+        command = [
+            selected.executable,
+            "-o", "Dir::Etc::sourcelist=",
+            "-o", "Dir::Etc::sourceparts=",
+            "install", "--", str(archive_path),
+        ]
+        cached_archive_sha256 = archive.sha256
+        cached_package_version = archive.version
+        notes.append(f"Install {archive.name} {archive.version} from the verified cache with APT repository sources disabled.")
     notes.append("Plan is safe by default; pass --execute in the CLI to run the external package manager.")
     if not selected.available:
         notes.append(f"Package manager '{selected.key}' is not available on PATH.")
@@ -468,6 +502,8 @@ def build_mobapt_package_plan(
         command=command,
         execute_required=True,
         notes=notes,
+        cached_archive_sha256=cached_archive_sha256,
+        cached_package_version=cached_package_version,
     )
 
 
@@ -499,13 +535,30 @@ def run_mobapt_package_plan(
             stderr=f"package manager '{plan.manager.key}' is not available on PATH",
             notes=list(plan.notes),
         )
-    completed = runner(
-        plan.command,
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=timeout_seconds,
-    )
+    with ExitStack() as resources:
+        command = plan.command
+        if plan.cached_archive_sha256:
+            archive_path = Path(command[-1])
+            staging = resources.enter_context(tempfile.TemporaryDirectory(prefix="row-mobapt-"))
+            snapshot = Path(staging) / archive_path.name
+            shutil.copyfile(archive_path, snapshot)
+            if _sha256_file(snapshot) != plan.cached_archive_sha256:
+                raise ValueError(f"cached archive SHA-256 mismatch: {archive_path}")
+            try:
+                control = runner(
+                    ["dpkg-deb", r"--showformat=${Package}\n${Version}\n", "--show", str(snapshot)],
+                    check=False, capture_output=True, text=True, timeout=timeout_seconds,
+                )
+            except FileNotFoundError as exc:
+                raise ValueError("offline install requires dpkg-deb to verify the cached package") from exc
+            except subprocess.TimeoutExpired as exc:
+                raise ValueError("dpkg-deb timed out reading the cached package") from exc
+            if control.returncode:
+                raise ValueError(f"dpkg-deb could not read the cached package metadata: {archive_path}")
+            if control.stdout.splitlines() != [plan.package, plan.cached_package_version]:
+                raise ValueError(f"cached Debian package must declare {plan.package} version {plan.cached_package_version}")
+            command = [*command[:-1], str(snapshot)]
+        completed = runner(command, check=False, capture_output=True, text=True, timeout=timeout_seconds)
     returncode = int(getattr(completed, "returncode", 1))
     return MobAptPackageResult(
         plan=plan,

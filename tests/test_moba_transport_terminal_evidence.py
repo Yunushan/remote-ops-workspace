@@ -3,6 +3,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -41,6 +44,45 @@ SERVER_LOG = (
     "Starting session: subsystem 'sftp' for reviewer from 192.168.40.2 port 54600 id 1\n"
     "Starting session: command for reviewer from 192.168.40.2 port 54600 id 1\n"
 )
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the SSH peer uses a POSIX PTY")
+def test_vim_peer_waits_for_restored_cursor_reply_before_accepting_input(tmp_path: Path) -> None:
+    import pty
+    import select
+
+    # Only exercise the peer's process-exit handshake; the live fixture runs full Vim.
+    vim = tmp_path / "vim.basic"
+    vim.write_text("#!/bin/sh\nexit 0\n", encoding="ascii")
+    vim.chmod(0o700)
+    master, slave = pty.openpty()
+    peer = Path(native.__file__).with_name("transport_terminal_peer.py")
+    environment = {**os.environ, "PATH": str(tmp_path), "SSH_CONNECTION": "127.0.0.1 1 127.0.0.1 2"}
+
+    def read_through(marker: bytes) -> bytes:
+        received = bytearray()
+        while marker not in received:
+            assert select.select([master], [], [], 5)[0], f"missing peer output {marker!r}: {received!r}"
+            received.extend(os.read(master, 4096))
+        return bytes(received)
+
+    try:
+        with subprocess.Popen([sys.executable, str(peer), "vim"], stdin=slave, stdout=slave,
+                              stderr=slave, env=environment, cwd=tmp_path) as process:
+            try:
+                read_through(b"\x1b[4 q")
+                os.write(master, b"v")
+                read_through(b"\x1bP$q q\x1b\\")
+                os.write(master, b"\x1bP1$r4 q\x1b\\b")
+                receipt = read_through(b"ROW_PROBE_END_vim")
+                assert b'ROW_PROBE_shell_input="62"' in receipt
+                assert process.wait(timeout=5) == 0
+            finally:
+                if process.poll() is None:
+                    process.kill()
+    finally:
+        os.close(master)
+        os.close(slave)
 
 
 def test_complete_transport_terminal_evidence_passes(tmp_path: Path) -> None:

@@ -282,18 +282,21 @@ class SmartCardDialog(QDialog):
         elif exit_code or exit_status != QProcess.ExitStatus.NormalExit:
             self.status.setText("OpenSSH failed. Check the card, library, and SSH agent configuration.")
         elif operation == "discover":
-            selected_row = 0
+            selected_row = -1 if self.pinned_key else 0
             for row, (fingerprint, key) in enumerate(smartcard_public_keys(bytes(self.output))):
                 item = QListWidgetItem(f"{key.split()[0]}  {fingerprint}")
                 item.setData(Qt.ItemDataRole.UserRole, key)
                 self.keys.addItem(item)
                 if key == self.pinned_key:
                     selected_row = row
-            if self.keys.count():
-                self.keys.setCurrentRow(selected_row)
-                self.status.setText(f"Found {self.keys.count()} OpenSSH public key(s).")
-            else:
-                self.status.setText("The provider returned no OpenSSH public keys.")
+            self.keys.setCurrentRow(selected_row)
+            message = (
+                f"Found {self.keys.count()} OpenSSH public key(s)." if self.keys.count()
+                else "The provider returned no OpenSSH public keys."
+            )
+            if selected_row < 0:
+                message += " The profile’s saved key was not found."
+            self.status.setText(message)
         elif operation == "load":
             self.status.setText("OpenSSH loaded provider keys into the SSH agent.")
         else:

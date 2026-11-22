@@ -1754,7 +1754,7 @@ def test_connected_text_editor_open_dirty_save_diff_and_path_edges(
     dock.handle_moba_text_editor_diff()
     assert editor.property("mobaTextEditorCapturedDiff") is True
     assert editor.property("mobaTextEditorDiffEqual") is False
-    assert "+line four\n" in editor.property("mobaTextEditorDiffText")
+    assert "+line four" in editor.property("mobaTextEditorDiffText").splitlines()
 
     dock.hide_moba_text_editor()
     assert editor.isVisible() is False
@@ -1766,6 +1766,83 @@ def test_connected_text_editor_open_dirty_save_diff_and_path_edges(
     dock.text_editor = editor
     assert dock.text_editor_preview_for_remote_path("/etc/service.conf") == ""
     assert editor.textInteractionFlags() & Qt.TextInteractionFlag.TextEditable
+
+
+def test_editor_open_diff_save_preserve_downloaded_format(connected_workspace, tmp_path, monkeypatch):
+    from PyQt6.QtCore import Qt, QTimer
+    from PyQt6.QtTest import QTest
+    from PyQt6.QtWidgets import QApplication, QMessageBox, QTreeWidgetItem
+
+    from remote_ops_workspace.gui_sftp_editor import SFTP_ROW_KIND_ROLE, SFTP_ROW_SOURCE_PATH_ROLE
+
+    app, window, _panel, dock, profile = connected_workspace
+    original = "\ufeffa\u00a0b\r\nunchanged\r\nlast".encode()
+    remote = tmp_path / "test.txt"
+    remote.write_bytes(original)
+    operations = []
+
+    def local_transfer(operation, plan):
+        operations.append(operation)
+        if operation == "open":
+            Path(dock.text_editor_local_path).write_bytes(remote.read_bytes())
+            dock.finish_text_editor_open()
+        elif operation == "save-check":
+            Path(dock.text_editor_probe_path).write_bytes(remote.read_bytes())
+            dock.finish_text_editor_save_check()
+        else:
+            assert operation == "upload" and plan is dock.text_editor_tab_plan.save_plan
+            remote.write_bytes(Path(dock.text_editor_local_path).read_bytes())
+            dock.finish_text_editor_upload()
+
+    monkeypatch.setattr(dock, "start_text_editor_sftp_operation", local_transfer)
+    monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: profile)
+    monkeypatch.setattr(dock, "ensure_background_authentication_for_request", lambda: True)
+    table = dock.file_table
+    item = QTreeWidgetItem(["test.txt"])
+    item.setData(0, SFTP_ROW_KIND_ROLE, "file")
+    item.setData(0, SFTP_ROW_SOURCE_PATH_ROLE, "/")
+    table.clear()
+    table.addTopLevelItem(item)
+    window.activateWindow()
+    app.processEvents()
+    pos = table.visualItemRect(item).center()
+    QTest.mouseClick(table.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    QTest.mouseDClick(table.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    assert operations == ["open"]
+    editor = dock.text_editor
+    assert app.focusWidget() is editor
+    for phase in ("opened", "edited", "saved"):
+        QTimer.singleShot(0, lambda: QApplication.activeModalWidget().accept())
+        QTest.mouseClick(dock.text_editor_diff_button, Qt.MouseButton.LeftButton)
+        assert editor.property("mobaTextEditorDiffEqual") is (phase != "edited")
+        if phase == "opened":
+            window.activateWindow()
+            editor.setFocus()
+            QTest.keyClick(editor, Qt.Key.Key_End, Qt.KeyboardModifier.ControlModifier)
+            QTest.keyClicks(editor, "!")
+        elif phase == "edited":
+            assert " unchanged\r\n-last\n\\ No newline at end of file\n+last!\n" in editor.property("mobaTextEditorDiffText")
+            remote.write_bytes(b"concurrent change")
+            QTimer.singleShot(0, lambda: QApplication.activeModalWidget().button(QMessageBox.StandardButton.No).click())
+            QTest.mouseClick(dock.text_editor_save_button, Qt.MouseButton.LeftButton)
+            assert remote.read_bytes() == b"concurrent change" and "upload" not in operations
+            remote.write_bytes(original)
+            QTest.mouseClick(dock.text_editor_save_button, Qt.MouseButton.LeftButton)
+    assert remote.read_bytes() == original + b"!"
+    assert Path(dock.text_editor_local_path + ".bak").read_bytes() == original
+
+
+@pytest.mark.parametrize(("baseline", "edited", "expected"), [
+    ("plain", "new\u2029", "new\n"),
+    ("\ufeffhead\rbody\r", "head\u2029changed\u2029", "\ufeffhead\rchanged\r"),
+    ("first\r\nsecond\nlast", "first\u2029changed\u2029new\u2029last", "first\r\nchanged\nnew\r\nlast"),
+    ("a\u2029b\nc\r", "a\u2029c\u2029", "a\u2029c\r"),
+])
+def test_editor_serializes_uniform_and_mixed_original_line_endings(baseline, edited, expected):
+    pytest.importorskip("PyQt6")
+    from remote_ops_workspace.gui_sftp_editor import _restore_document_format
+
+    assert _restore_document_format(baseline, edited) == expected
 
 
 def test_connected_text_editor_refreshes_syntax_for_each_plan(

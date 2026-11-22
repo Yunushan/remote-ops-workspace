@@ -1424,13 +1424,21 @@ def _posix_apply_script() -> str:
     return """#!/usr/bin/env sh
 set -eu
 bundle_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-target="${ROW_HOME:-${HOME}/.config/remote-ops-workspace}"
-mkdir -p "$target"
 if [ "$(id -u)" -ne 0 ]; then
   printf '%s\n' 'apply-enterprise-bundle.sh must run as root to install machine policy' >&2
   exit 1
 fi
-policy_target="/etc/remote-ops-workspace"
+case "$(uname -s)" in
+  Darwin)
+    target="${ROW_HOME:-${HOME}/Library/Application Support/RemoteOpsWorkspace}"
+    policy_target="/Library/Application Support/RemoteOpsWorkspace"
+    ;;
+  *)
+    target="${ROW_HOME:-${XDG_CONFIG_HOME:-${HOME}/.config}/remote-ops-workspace}"
+    policy_target="/etc/remote-ops-workspace"
+    ;;
+esac
+mkdir -p "$target"
 install -d -m 0755 "$policy_target"
 cp "$bundle_root/config/settings.json" "$target/settings.json"
 cp "$bundle_root/config/profiles.json" "$target/profiles.json"

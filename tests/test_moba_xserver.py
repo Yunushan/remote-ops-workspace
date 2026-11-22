@@ -197,7 +197,8 @@ def test_moba_x_server_lifecycle_dry_run_does_not_write_state(tmp_path: Path) ->
     assert not authority_path.exists()
 
 
-def test_moba_x_server_status_includes_lifecycle_record(tmp_path: Path) -> None:
+@pytest.mark.parametrize(("display", "same_server"), [(":12", True), (":12.1", True), (":13", False)])
+def test_moba_x_server_status_includes_own_lifecycle_record(tmp_path: Path, display: str, same_server: bool) -> None:
     state_path = tmp_path / "xserver-state.json"
     plan = build_moba_x_server_plan(
         display=":12",
@@ -213,7 +214,7 @@ def test_moba_x_server_status_includes_lifecycle_record(tmp_path: Path) -> None:
         identity_factory=lambda process: {"pid": process.pid, "kind": "test"},
     )
     status = build_moba_x_server_status(
-        display=":12",
+        display=display,
         system="linux",
         which=lambda name: "/usr/bin/Xvfb" if name == "Xvfb" else None,
         display_probe=lambda display: False,
@@ -221,9 +222,13 @@ def test_moba_x_server_status_includes_lifecycle_record(tmp_path: Path) -> None:
         pid_probe=lambda pid: pid == 5252,
     )
 
-    assert status.lifecycle is not None
-    assert status.lifecycle.pid == 5252
-    assert status.lifecycle.running is True
+    if same_server:
+        assert status.lifecycle is not None
+        assert status.lifecycle.pid == 5252
+        assert status.lifecycle.running is True
+    else:
+        assert status.lifecycle is None
+        assert not any("Managed lifecycle state" in note for note in status.notes)
 
 
 def test_x11_stop_cli_command_is_registered() -> None:

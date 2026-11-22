@@ -226,8 +226,9 @@ def test_start_refuses_security_requirements_plain_adapters_cannot_enforce(tmp_p
 
 
 def test_ftp_start_requires_credentials_and_the_authenticated_runtime(tmp_path, monkeypatch):
-    monkeypatch.setattr(moba_servers.importlib.util, "find_spec", lambda _name: None)
+    monkeypatch.setattr(moba_servers.importlib.util, "find_spec", lambda _name: object())
     plan = moba_servers.build_moba_server_plan("ftp", root=tmp_path, which=lambda name: name if name == "pyftpdlib" else None)
+    monkeypatch.setattr(moba_servers.importlib.util, "find_spec", lambda _name: None)
     monkeypatch.delenv("ROW_FTP_USERNAME", raising=False)
     monkeypatch.delenv("ROW_FTP_PASSWORD", raising=False)
     with pytest.raises(ValueError, match="ROW_FTP_USERNAME"):

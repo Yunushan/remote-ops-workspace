@@ -277,14 +277,19 @@ reviews, and the downloaded release assets. See the
    packaged runtime discovery through `ROW_XSERVER_RUNTIME_DIR`, extension
    inventory, display collision checks, lifecycle supervision, smoke evidence
    capture, a packaged-runtime bundle writer and a release-evidence verifier
-   for real X11-forwarded GUI applications. Full parity still needs
+   for real X11-forwarded GUI applications. Status reports the managed
+   process only for the display it serves. Full parity still needs
    production-grade X server binaries attached to release targets and accepted
    passing evidence bundles from those targets.
 2. MobApt and embedded Unix environment parity: ROW now has a MobApt-style
    status/planning/execution workflow for host package managers, Unix tool
    inventory, ROW-owned runtime/cache manifest discovery, a bundle writer that
    can assemble release-owned runtime/cache artifacts, and an offline package
-   evidence verifier that requires terminal-use proof. Full parity still needs
+   evidence verifier that requires terminal-use proof. Status counts verified
+   tools from the selected runtime. On Debian,
+   `row mobapt install <name> --offline` plans an install from the selected cache. Add `--execute` to
+   verify the staged archive's SHA-256, Debian package name and version before
+   installing it with package repositories disabled. Full parity still needs
    production-grade Unix command binaries, real package archives attached to
    releases and accepted passing release evidence proving newly installed Unix
    tools are usable inside the terminal.
@@ -294,7 +299,9 @@ reviews, and the downloaded release assets. See the
    bundle writer, auth/hardening configuration plans, a PyQt Servers dialog for
    service rows, runtime roots, hardening state and lifecycle command previews,
    and a release-evidence verifier requiring real client proofs for every
-   service. Full parity still needs production-grade daemon binaries for every
+   service. The FTP inventory reports the pyftpdlib module used by the
+   authenticated adapter, including when it runs inside a frozen launcher.
+   Full parity still needs production-grade daemon binaries for every
    embedded service attached to releases and accepted passing evidence proving
    each daemon serves real clients on supported targets.
 4. MobaTextEditor/MobaDiff parity: ROW now has a CLI-backed text editor/diff
@@ -304,8 +311,10 @@ reviews, and the downloaded release assets. See the
    evidence. The PyQt Moba SFTP dock keeps its editor surface hidden until an
    explicit file-open action. In the live connected workspace, opening a file
    runs an asynchronous SFTP download, loads the returned text into an
-   editable editor, tracks the downloaded SHA-256 baseline, checks the remote
-   file again before saving and prompts on conflicts. The browser resolves
+   editable editor and tracks the downloaded SHA-256 baseline. Diff and Save
+   preserve the UTF-8 signature, line endings and nonbreaking spaces. Diffs
+   mark unterminated final lines. Save checks the remote file again and
+   prompts on conflicts. The browser resolves
    OpenSSH listing paths against the directory it requested. An overwrite approval
    applies to the reviewed bytes. The editor downloads the remote file again
    after approval and requests fresh approval if the bytes change. The final
@@ -318,7 +327,7 @@ reviews, and the downloaded release assets. See the
    targets.
 5. ROW provides a CLI-backed typed macro store and SSH replay workflow. The
    PyQt terminal records submitted lines, printable keys typed into the
-   terminal, and Enter. A key or paste outside the supported typed input
+   terminal, Tab and Enter. A key or paste outside the supported typed input
    cancels the recording so replay preserves the captured sequence. The replay
    dialog identifies the destination and defaults to Cancel. Replay sends the
    events in order with their recorded delays and stops if the session changes
@@ -336,7 +345,8 @@ reviews, and the downloaded release assets. See the
    including browser visibility, saved table widths, overwrite-confirmation
    mode, selected certificate metadata and MobAgent handoff flags. The PyQt
    Tools dialog displays saved certificate metadata and opens the live PKCS#11
-   inventory. Refresh reads public keys from the selected provider and the
+   inventory. If the saved public key disappears, the operator must select
+   its replacement. Refresh reads public keys from the selected provider and the
    copy action exports the selected OpenSSH record. Loading into the SSH
    agent uses a masked PIN prompt. Removing the provider asks for confirmation
    and leaves unrelated agent keys in place. `row smartcard
@@ -354,7 +364,9 @@ reviews, and the downloaded release assets. See the
    enforcement in CLI/GUI/Web/profile-editor/quick-connect/launcher surfaces
    and signed organization update channels. Runtime policy consumption now
    exists for profile storage, GUI profile editing, quick connect, launcher and
-   Web/PWA surfaces, and signed update manifests can now be verified against
+   Web/PWA surfaces. The POSIX deployment script uses the runtime policy
+   locations on macOS and respects Linux user XDG paths. Signed update
+   manifests can be verified against
    HTTPS artifact metadata and local SHA-256 evidence. `row customizer
    evidence-bundle` copies supplied proof files plus signed update-manifest
    artifacts into a release evidence root and immediately validates the
@@ -385,7 +397,9 @@ reviews, and the downloaded release assets. See the
    erasure and colored output. The alternate screen also keeps wide characters
    intact when wrapping or clipping at the right edge. When the viewport
    resizes, the visible alternate screen updates even if the remote
-   application is quiet. Saved cursor positions and scrolling regions stay
+   application is quiet. DEC and CSI save/restore sequences share a cursor
+   position on each screen, including the primary screen. Saved cursor
+   positions and scrolling regions stay
    within the resized grid. Index and reverse index scroll only at the
    configured region boundaries. Cursor-position reports respect origin mode
    and keep delayed wrap within the visible columns.

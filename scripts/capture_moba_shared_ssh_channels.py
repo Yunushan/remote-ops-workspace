@@ -219,7 +219,8 @@ def capture_session(root: Path, raw: Path, peer: TransportPeer, *, native: bool 
         state_log = {"events": states.copy(), "connected_views": connected_views}
         verify_connection_states(json.dumps(state_log).encode(), 0, errors)
         if errors:
-            raise ValueError(f"SSH state observations failed: {errors}")
+            phases = [(state["attempt"], state["phase"]) for state in states]
+            raise ValueError(f"SSH state observations failed: {errors}; observed transitions: {phases}")
         (root / "sshd.log").write_bytes(sshd)
         (root / "ssh-client.log").write_bytes(client)
         (root / "terminal.txt").write_text(terminal_output, encoding="utf-8")

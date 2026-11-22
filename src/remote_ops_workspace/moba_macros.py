@@ -1222,4 +1222,6 @@ def _macro_body(value: str) -> str:
 
 
 def _typed_text(value: str) -> str:
+    if value == "\t":
+        return value
     return safe.clean_text(value, "macro typed text", allow_empty=True)

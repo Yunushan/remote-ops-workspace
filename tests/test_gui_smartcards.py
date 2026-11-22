@@ -201,3 +201,32 @@ def test_profile_key_controls_follow_selection_and_surface_store_errors(dialog):
     save.assert_called_with("", None)
     assert not inventory.clear_key.isEnabled()
     inventory.done(int(dialog.module.QDialog.DialogCode.Rejected))
+
+
+def test_missing_saved_card_requires_explicit_replacement(dialog):
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+
+    other_key = ALGORITHM + b" " + base64.b64encode(WIRE[:-1] + b"b")
+    save = Mock()
+    inventory = dialog.module.SmartCardDialog(
+        dialog.parent, dialog.path, None, profile_name="card",
+        pinned_key=other_key.decode(), save_profile_key=save,
+    )
+    inventory.show()
+    inventory.refresh.click()
+    dialog.process.readAllStandardOutput.return_value = KEY + b"\n"
+    inventory.finish(0, dialog.qt.ExitStatus.NormalExit)
+    assert inventory.keys.count() == 1
+    assert inventory.keys.currentItem() is None
+    assert "saved key" in inventory.status.text().lower()
+    assert not inventory.copy.isEnabled() and not inventory.use_key.isEnabled()
+    assert inventory.clear_key.isEnabled()
+    assert inventory.pinned_key == other_key.decode()
+    save.assert_not_called()
+    row = inventory.keys.item(0)
+    QTest.mouseClick(inventory.keys.viewport(), Qt.MouseButton.LeftButton, pos=inventory.keys.visualItemRect(row).center())
+    assert inventory.copy.isEnabled() and inventory.use_key.isEnabled()
+    inventory.use_key.click()
+    save.assert_called_once_with(dialog.path, KEY.decode())
+    inventory.close()

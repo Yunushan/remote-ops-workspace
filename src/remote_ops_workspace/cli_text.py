@@ -137,7 +137,7 @@ def cmd_text_preview(args: argparse.Namespace) -> int:
 
 
 def cmd_text_write(args: argparse.Namespace) -> int:
-    text = args.text if args.text is not None else args.text_file.read_text(encoding=args.encoding)
+    text = args.text if args.text is not None else args.text_file.read_bytes().decode(args.encoding)
     result = write_text_document(
         args.path,
         text,

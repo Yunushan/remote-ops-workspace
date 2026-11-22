@@ -42,6 +42,7 @@ from .moba_text import (
     MobaTextEditorTabPlan,
     build_moba_text_editor_tab_plan,
     prepare_managed_edit_cache,
+    unified_text_diff,
     write_text_document,
 )
 from .models import Profile
@@ -52,12 +53,38 @@ from .terminal import (
 )
 
 if TYPE_CHECKING:
+    from PyQt6.QtWidgets import QTreeWidget
+
     from .gui_connected import ConnectedGuiServices
 
 # These roles let the editor identify the originating row in the connected dock.
 SFTP_ROW_KIND_ROLE = int(Qt.ItemDataRole.UserRole) + 42
 SFTP_ROW_SOURCE_PATH_ROLE = int(Qt.ItemDataRole.UserRole) + 47
 SFTP_ROW_INDEX_ROLE = int(Qt.ItemDataRole.UserRole) + 48
+
+
+def _restore_document_format(baseline: str, qt_text: str) -> str:
+    """Restore the original signature and paragraph endings hidden by QTextDocument."""
+    signature = "\ufeff" if baseline.startswith("\ufeff") else ""
+    text = baseline[len(signature):]
+    parts = re.split(r"(\r\n|[\r\n\u2029])", text)
+    lines, endings = parts[::2], parts[1::2]
+    if qt_text == "\u2029".join(lines):
+        return baseline
+    first_ending = endings[0] if endings else "\n"
+    if len(set(endings)) <= 1:
+        return signature + qt_text.replace("\u2029", first_ending)
+
+    # Keep matching lines' separators in mixed-format files. Replacement
+    # lines inherit the replaced separators; new lines use the first style.
+    edited_lines = qt_text.split("\u2029")
+    edited_endings = [first_ending] * (len(edited_lines) - 1)
+    matcher = difflib.SequenceMatcher(None, lines, edited_lines)
+    for _tag, i, j, k, end in matcher.get_opcodes():
+        for index, ending in zip(range(k, min(end, len(edited_endings))), endings[i:j], strict=False):
+            edited_endings[index] = ending
+    edited_endings.append("")
+    return signature + "".join(line + ending for line, ending in zip(edited_lines, edited_endings, strict=True))
 
 
 class MobaTextEditorHighlighter(QSyntaxHighlighter):
@@ -107,6 +134,7 @@ class SftpTextEditor(QFrame):
         _background_auth_prompt_complete: dict[str, bool]
         _background_password: bytearray | None
         active_remote_path: str
+        file_table: QTreeWidget
         runtime_shutting_down: bool
         state: MobaConnectedSessionState
         text_editor: QPlainTextEdit
@@ -539,20 +567,19 @@ class SftpTextEditor(QFrame):
         )
         self.start_text_editor_sftp_operation("save-check", probe_plan)
 
+    def current_text_editor_text(self) -> str:
+        document = self.text_editor.document()
+        assert document is not None  # QPlainTextEdit always owns a document.
+        return _restore_document_format(self.text_editor_baseline_text, document.toRawText())
+
     def handle_moba_text_editor_diff(self) -> None:
         editor = getattr(self, "text_editor", None)
         if editor is None or not bool(editor.property("mobaTextEditorContentLoaded")):
             self.show_sftp_status("Text editor diff unavailable: remote content is not loaded")
             return
-        current_text = editor.toPlainText()
-        diff_lines = list(
-            difflib.unified_diff(
-                self.text_editor_baseline_text.splitlines(keepends=True),
-                current_text.splitlines(keepends=True),
-                fromfile=self.text_editor_remote_path,
-                tofile=f"{self.text_editor_remote_path} (editor)",
-                n=3,
-            )
+        diff_lines = unified_text_diff(
+            self.text_editor_baseline_text, self.current_text_editor_text(),
+            self.text_editor_remote_path, f"{self.text_editor_remote_path} (editor)",
         )
         diff_text = "".join(diff_lines)
         self.capture_moba_text_editor_action("diff", status="diff-ready")
@@ -871,6 +898,8 @@ class SftpTextEditor(QFrame):
             remote_sha256=digest,
             operation="idle",
         )
+        if self.file_table.hasFocus():
+            editor.setFocus(Qt.FocusReason.OtherFocusReason)
         self.show_sftp_status(
             f"Loaded {self.text_editor_remote_path} for editing"
         )
@@ -917,11 +946,10 @@ class SftpTextEditor(QFrame):
             self.text_editor_approved_remote_sha256 = current_digest
             self.request_text_editor_remote_check(profile)
             return
-        editor = self.text_editor
         try:
             result = write_text_document(
                 self.text_editor_local_path,
-                editor.toPlainText(),
+                self.current_text_editor_text(),
                 expected_sha256=self.text_editor_cache_sha256,
                 backup=True,
                 encoding=self.state.text_editor.encoding or "utf-8",
@@ -953,7 +981,7 @@ class SftpTextEditor(QFrame):
 
     def finish_text_editor_upload(self) -> None:
         digest = self.text_editor_file_sha256(Path(self.text_editor_local_path))
-        self.text_editor_baseline_text = self.text_editor.toPlainText()
+        self.text_editor_baseline_text = self.current_text_editor_text()
         self.text_editor_original_remote_sha256 = digest
         self.text_editor_cache_sha256 = digest
         route = self.state.text_editor

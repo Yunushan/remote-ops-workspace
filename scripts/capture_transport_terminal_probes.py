@@ -128,10 +128,14 @@ def capture_vim(root: Path, window, pane, wait_for, submit, socket: str) -> dict
     window.resize(original)
     wait_for(lambda: terminal_grid_geometry(emulator) == initial_size and emulator.alternate_screen_active,
              "return to initial Vim viewport")
+    responses_before_quit = output.property("terminalEmulatorResponseCount")
     submit(":q!")
     wait_for(lambda: not emulator.alternate_screen_active and output.toPlainText() == before
              and output.property("terminalRemoteCursorShape") == "underline", "primary-screen restoration")
     write_json(root / "primary-restored.json", {"geometry": list(initial_size), "text": output.toPlainText()})
+    wait_for(lambda: output.property("terminalEmulatorResponseCount") > responses_before_quit
+             and output.property("terminalLastEmulatorResponse").endswith(b"\x1bP1$r4 q\x1b\\"),
+             "peer ready for input after Vim exited")
     QTest.keyClicks(output, "b")
     observed = peer_observations(output, wait_for, "vim", socket)
     if observed != {"shell_input": "62"}:

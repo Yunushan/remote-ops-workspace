@@ -433,7 +433,7 @@ def build_moba_server_suite_status(
         for service in SERVER_DEFAULT_PORTS
     )
     notes = [
-        "MobaXterm-style embedded server suite is represented by a built-in HTTP runtime and host daemon adapters.",
+        "The embedded server suite includes built-in HTTP, optional Python FTP support and local daemon adapters.",
         "Full proprietary parity still needs bundled, release-tested daemon binaries and per-service hardening.",
     ]
     return MobaEmbeddedServerSuiteStatus(system=system_key, services=services, notes=notes)
@@ -452,9 +452,10 @@ def discover_moba_server_runtimes(
     runtimes: list[MobaEmbeddedServerRuntime] = []
     for key, label, executable, bundled, builtin, notes in _runtime_definitions(service_key, system_key):
         resolved: str | None
-        if key == "pyftpdlib" and importlib.util.find_spec("pyftpdlib") is not None:
+        if key == "pyftpdlib":
             resolved = sys.executable
-            available = True
+            available = importlib.util.find_spec("pyftpdlib") is not None
+            builtin = available and bool(getattr(sys, "frozen", False))
         elif builtin and executable == "python":
             resolved = sys.executable
             available = bool(sys.executable)
@@ -1459,7 +1460,7 @@ def _runtime_definitions(
         )
     if service == "ftp":
         return (
-            ("pyftpdlib", "pyftpdlib FTP server", "pyftpdlib", False, False, external),
+            ("pyftpdlib", "pyftpdlib FTP server", "pyftpdlib", False, False, ("Authenticated FTP requires pyftpdlib in the ROW Python runtime.",)),
             ("ftpd", "System FTP daemon", "ftpd", False, False, external),
         )
     if service == "tftp":

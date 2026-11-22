@@ -380,6 +380,76 @@ def test_terminal_macro_capture_replay_and_cancel_edges(
     assert pane.macro_replay_active is False
 
 
+def test_macro_record_button_returns_focus_to_terminal_and_replay_preserves_bytes(gui_window, tmp_path) -> None:
+    import sys
+
+    from PyQt6.QtCore import Qt, QTimer
+    from PyQt6.QtTest import QTest
+    from PyQt6.QtWidgets import QApplication, QMessageBox
+
+    app, window = gui_window
+    received = tmp_path / "received.bin"
+    child = """
+import pathlib
+import sys
+
+sink = pathlib.Path(sys.argv[1])
+for line in sys.stdin.buffer:
+    with sink.open("ab") as out:
+        out.write(line)
+"""
+    plan = TerminalPanePlan(title="Local macro fixture", command=[sys.executable, "-u", "-c", child, str(received)], source="test")
+    window.set_design_preset("mobaxterm")
+    window.open_terminal_tab(plan)
+    pane = window.active_terminal_pane()
+    def wait_for(predicate):
+        for _ in range(200):
+            if predicate():
+                return
+            QTest.qWait(10)
+        assert predicate()
+
+    try:
+        wait_for(lambda: pane.is_running() and pane.macro_record_button.isEnabled())
+        window.activateWindow()
+        pane.macro_record_button.setFocus()
+        QTest.keyClick(pane.macro_record_button, Qt.Key.Key_Space)
+        app.processEvents()
+        assert app.focusWidget() is pane.output
+        QTest.keyClicks(app.focusWidget(), "typed")
+        QTest.keyClick(app.focusWidget(), Qt.Key.Key_Tab)
+        QTest.keyClicks(app.focusWidget(), "42")
+        QTest.keyClick(app.focusWidget(), Qt.Key.Key_Return)
+        QTest.mouseClick(pane.macro_stop_button, Qt.MouseButton.LeftButton)
+        wait_for(received.exists)
+        assert received.read_bytes() == b"typed\t42\n"
+        saved = pane.macro_last_recording
+        assert saved is not None and saved.input_text == "typed\t42\n"
+        QTest.mouseClick(pane.macro_record_button, Qt.MouseButton.LeftButton)
+        QTest.keyClicks(app.focusWidget(), "undo")
+        QTest.keyClick(app.focusWidget(), Qt.Key.Key_Return)
+        QTest.mouseClick(pane.macro_cancel_button, Qt.MouseButton.LeftButton)
+        assert pane.macro_last_recording is saved
+        wait_for(lambda: received.read_bytes() == b"typed\t42\nundo\n")
+
+        def answer(review_button):
+            box = QApplication.activeModalWidget()
+            assert isinstance(box, QMessageBox)
+            assert box.defaultButton() is box.button(QMessageBox.StandardButton.Cancel)
+            QTest.mouseClick(box.button(review_button), Qt.MouseButton.LeftButton)
+
+        for choice in (QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Yes):
+            QTimer.singleShot(0, lambda button=choice: answer(button))
+            QTest.mouseClick(pane.macro_replay_button, Qt.MouseButton.LeftButton)
+            if choice == QMessageBox.StandardButton.Cancel:
+                assert not pane.macro_replay_active
+                assert received.read_bytes() == b"typed\t42\nundo\n"
+        wait_for(lambda: received.read_bytes() == b"typed\t42\nundo\ntyped\t42\n")
+    finally:
+        pane.process.kill()
+        wait_for(lambda: not pane.is_running())
+
+
 def test_terminal_macro_review_guards_ordered_keys_and_session_changes(gui_window, monkeypatch) -> None:
     from PyQt6.QtCore import QTimer
     from PyQt6.QtTest import QTest

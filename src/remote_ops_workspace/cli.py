@@ -599,6 +599,7 @@ def build_parser() -> argparse.ArgumentParser:
     mobapt_search.set_defaults(func=cmd_mobapt_package, action="search")
     mobapt_install = mobapt_sub.add_parser("install", help="plan or run a package install")
     mobapt_install.add_argument("package")
+    mobapt_install.add_argument("--offline", action="store_true", help="install a verified cached Debian archive with APT repository sources disabled")
     mobapt_install.add_argument("--manager", help="package manager key such as apt, brew, winget, scoop or choco")
     mobapt_install.add_argument("--execute", action="store_true", help="run the external package manager")
     mobapt_install.add_argument("--timeout", type=float, default=120.0)
@@ -1416,6 +1417,7 @@ def cmd_mobapt_package(args: argparse.Namespace) -> int:
         args.action,
         getattr(args, "package", None),
         manager=args.manager,
+        offline=getattr(args, "offline", False),
     )
     result = run_mobapt_package_plan(plan, execute=args.execute, timeout_seconds=args.timeout)
     if args.json:

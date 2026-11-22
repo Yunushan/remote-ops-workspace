@@ -778,17 +778,7 @@ class AnsiTerminalTranscript:
             self._escape = None
             return
         if sequence in {"7", "8"}:
-            # DEC save/restore cursor is still emitted by Vim and a number of
-            # ncurses applications in addition to CSI s/u.
-            if self._alternate_screen:
-                if sequence == "7":
-                    self._alternate_saved_cursor = (
-                        self._alternate_row,
-                        self._alternate_column,
-                    )
-                elif self._alternate_saved_cursor is not None:
-                    self._alternate_row, self._alternate_column = self._alternate_saved_cursor
-                    self._alternate_margin_written = False
+            self._save_or_restore_cursor_position(save=sequence == "7")
             self._escape = None
             return
         if sequence == "c":
@@ -877,7 +867,9 @@ class AnsiTerminalTranscript:
             else:
                 self._pending_responses.append(b"\x1b[?1;2c")
             return
-        if command == "m":
+        if command in {"s", "u"}:
+            self._save_or_restore_cursor_position(save=command == "s")
+        elif command == "m":
             self._apply_sgr(params)
         elif self._alternate_screen:
             self._apply_alternate_csi(values, command)
@@ -962,12 +954,17 @@ class AnsiTerminalTranscript:
             if not values or values in ([0], [1], [0, 0], [1, 1]):
                 self._normal_cursor_row = 0
                 self._column = 0
-        elif command == "s":
-            self._normal_saved_cursor = (
-                self._normal_cursor_row,
-                self._column,
-            )
-        elif command == "u" and self._normal_saved_cursor is not None:
+
+    def _save_or_restore_cursor_position(self, *, save: bool) -> None:
+        if self._alternate_screen:
+            if save:
+                self._alternate_saved_cursor = (self._alternate_row, self._alternate_column)
+            elif self._alternate_saved_cursor is not None:
+                self._alternate_row, self._alternate_column = self._alternate_saved_cursor
+                self._alternate_margin_written = False
+        elif save:
+            self._normal_saved_cursor = (self._normal_cursor_row, self._column)
+        elif self._normal_saved_cursor is not None:
             self._normal_cursor_row, self._column = self._normal_saved_cursor
 
     def _move_primary_cursor(self, values: list[int], command: str) -> None:
@@ -1170,10 +1167,6 @@ class AnsiTerminalTranscript:
         if command in {"@", "P", "X"}:
             self._edit_alternate_columns(first or 1, command)
             return
-        if command == "s":
-            self._alternate_saved_cursor = (self._alternate_row, self._alternate_column)
-        elif command == "u" and self._alternate_saved_cursor is not None:
-            self._alternate_row, self._alternate_column = self._alternate_saved_cursor
 
     def _apply_sgr(self, params: str) -> None:
         # Most producers use semicolon parameters.  Accept the common colon

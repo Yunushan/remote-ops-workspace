@@ -69,7 +69,11 @@ def vim() -> dict:
         config.write_text(VIM_CONFIG, encoding="utf-8")
         subprocess.run([executable, "-Nu", str(config), "-n", "-i", "NONE", "--", "document.txt"],
                        env={**os.environ, "TERM": "xterm-256color"}, check=True, timeout=60)
-    tty.setraw(0)
+    # Vim can restore the visible primary screen before the process exits.
+    # Signal readiness without modifying that screen or flushing pending PTY input.
+    tty.setraw(0, termios.TCSANOW)
+    send(b"\x1bP$q q\x1b\\")
+    receive(b"\x1bP1$r4 q\x1b\\")
     return {"shell_input": receive(b"b")}
 
 

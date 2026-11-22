@@ -54,19 +54,23 @@ def test_server_status_plans_and_validation_are_json_ready(tmp_path: Path) -> No
     assert validation.to_dict()["errors"] == ["bad"]
 
 
-def test_pyftpdlib_discovery_uses_current_python(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(servers.importlib.util, "find_spec", lambda name: object() if name == "pyftpdlib" else None)
+@pytest.mark.parametrize(("installed", "frozen"), [(True, True), (True, False), (False, True)])
+def test_pyftpdlib_discovery_uses_current_python(monkeypatch: pytest.MonkeyPatch, installed: bool, frozen: bool) -> None:
+    monkeypatch.setattr(servers.importlib.util, "find_spec", lambda name: object() if installed and name == "pyftpdlib" else None)
+    monkeypatch.setattr(servers.sys, "frozen", frozen, raising=False)
 
     runtimes = servers.discover_moba_server_runtimes(
         "ftp",
         system="Linux",
-        which=lambda _name: None,
+        which=lambda name: "/other/python/bin/pyftpdlib" if name == "pyftpdlib" else None,
         packaged_roots=[],
     )
 
     assert runtimes[0].key == "pyftpdlib"
-    assert runtimes[0].available is True
+    assert runtimes[0].available is installed
+    assert runtimes[0].builtin is (installed and frozen)
     assert runtimes[0].executable == servers.sys.executable
+    assert "ROW Python runtime" in runtimes[0].notes[0]
 
 
 def test_runtime_status_reports_complete_packaged_coverage(monkeypatch: pytest.MonkeyPatch) -> None:

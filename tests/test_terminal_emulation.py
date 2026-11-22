@@ -146,15 +146,24 @@ def test_primary_grid_clear_history_preserves_visible_hard_lines() -> None:
     assert terminal.text() == "new prompt" + "\n" * 4
 
 
-def test_primary_grid_saved_cursor_tracks_bounded_history() -> None:
+@pytest.mark.parametrize(("save", "restore"), [("\x1b7", "\x1b8"), ("\x1b[s", "\x1b[u")])
+def test_primary_grid_saved_cursor_tracks_bounded_history(save: str, restore: str) -> None:
     terminal = AnsiTerminalTranscript(max_scrollback_lines=6, primary_reflow=True)
     terminal.set_screen_size(20, 5)
     terminal.feed("\n".join(f"line-{index}" for index in range(7)))
-    terminal.feed("\x1b[2;2H\x1b[s\x1b[5;1H\nline-7\x1b[uX")
+    terminal.feed(f"\x1b[2;2H{save}\x1b[5;1H\nline-7{restore}X")
 
     assert terminal.text().split("\n")[2] == "lXne-3"
-    terminal.feed("\x1b[5;1H" + "\nmore" * 8 + "\x1b[uY")
+    terminal.feed("\x1b[5;1H" + "\nmore" * 8 + restore + "Y")
     assert terminal.text().startswith("Yore\n")
+
+
+def test_dec_and_csi_share_the_saved_position_only_on_the_same_screen() -> None:
+    terminal = AnsiTerminalTranscript(primary_reflow=True)
+    terminal.feed("\x1b[3;4H\x1b7\x1b[8;12H")
+    terminal.feed("\x1b[?1049h\x1b[2;5H\x1b[s\x1b[8;12H\x1b8\x1b[6n")
+    terminal.feed("\x1b[?1049l\x1b[u\x1b[6n")
+    assert terminal.take_pending_responses() == (b"\x1b[2;5R", b"\x1b[3;4R")
 
 
 def test_ansi_transcript_replaces_normal_readline_history_rows() -> None:

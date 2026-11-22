@@ -93,6 +93,23 @@ def test_moba_text_write_with_expected_hash_creates_backup(tmp_path: Path, monke
     assert Path(result.backup_path).read_text(encoding="utf-8") == "old\n"
 
 
+def test_text_cli_honors_encoding_and_preserves_input_and_backup_bytes(tmp_path: Path) -> None:
+    target = tmp_path / "notes.txt"
+    edited = tmp_path / "new.txt"
+    original = "prix 2 €\r\n".encode("cp1252")
+    replacement = "prix 3 €\r\n".encode("cp1252")
+    target.write_bytes(original)
+    edited.write_bytes(replacement)
+    args = build_parser().parse_args([
+        "text", "write", str(target), "--text-file", str(edited), "--encoding", "cp1252",
+        "--expected-sha256", hashlib.sha256(original).hexdigest(),
+    ])
+    assert args.func(args) == 0
+    assert target.read_bytes() == replacement
+    assert target.with_suffix(".txt.bak").read_bytes() == original
+    assert diff_text_documents(edited, target, encoding="cp1252").equal
+
+
 def test_moba_diff_reports_unified_diff_stats(tmp_path: Path) -> None:
     left = tmp_path / "left.txt"
     right = tmp_path / "right.txt"
@@ -107,6 +124,28 @@ def test_moba_diff_reports_unified_diff_stats(tmp_path: Path) -> None:
     assert result.hunk_count == 1
     assert "+gamma" in result.unified_diff
     assert "-beta" in result.unified_diff
+
+
+def test_unterminated_diff_matches_unified_format_and_counts_marker_like_content(tmp_path: Path) -> None:
+    left, right = tmp_path / "a", tmp_path / "b"
+    left.write_bytes(b"alpha\r\n--last")
+    right.write_bytes(b"alpha\r\n++last!")
+    result = diff_text_documents(left, right)
+    assert result.unified_diff.endswith(" alpha\r\n---last\n\\ No newline at end of file\n+++last!\n\\ No newline at end of file\n")
+    assert (result.added_lines, result.removed_lines, result.hunk_count) == (1, 1, 1)
+
+
+@pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\v", "\f", "\x85", "\r"])
+def test_unified_diff_treats_only_lf_as_a_record_boundary(tmp_path: Path, separator: str) -> None:
+    left, right = tmp_path / "a", tmp_path / "b"
+    for terminator, expected_suffix in (("\n", "\n"), ("\r", "\r\n\\ No newline at end of file\n")):
+        left.write_bytes(f"one{separator}body{terminator}".encode())
+        right.write_bytes(f"two{separator}body{terminator}".encode())
+        result = diff_text_documents(left, right)
+        assert result.unified_diff.endswith(
+            f"@@ -1 +1 @@\n-one{separator}body{expected_suffix}+two{separator}body{expected_suffix}"
+        )
+        assert (result.added_lines, result.removed_lines) == (1, 1)
 
 
 def test_moba_remote_text_edit_plan_reuses_sftp_get_and_put() -> None:

@@ -305,6 +305,15 @@ def test_alternate_index_and_reverse_index_respect_scroll_margins_and_columns() 
     assert transcript.feed("\x1b[?1049l\x1bD\x1bM") == "shell"
 
 
+def test_initial_primary_restore_and_unsupported_alternate_csi_preserve_cursor_and_text() -> None:
+    transcript = terminal.AnsiTerminalTranscript(primary_reflow=True)
+    transcript.feed("\x1b8\x1b[6n")
+    assert transcript.take_pending_responses() == (b"\x1b[1;1R",)
+    transcript.feed("\x1b[?1049htext\x1b[0z\x1b[6n")
+    assert transcript.screen_text().rstrip("\n") == "text"
+    assert transcript.take_pending_responses() == (b"\x1b[1;5R",)
+
+
 def test_cursor_report_uses_origin_relative_row_and_clamps_pending_wrap_column() -> None:
     transcript = terminal.AnsiTerminalTranscript()
     transcript.set_screen_size(20, 6)
@@ -439,7 +448,7 @@ def test_normal_dec_controls_queries_and_ignored_csi_modes() -> None:
     transcript._apply_csi("2;2", "H")
     transcript._apply_csi("", "z")
 
-    assert transcript.take_pending_responses() == (b"\x1b[1;12R",)
+    assert transcript.take_pending_responses() == (b"\x1b[1;7R",)
     assert transcript.text() == "normalmoved"
     assert transcript.origin_mode_active is True
 

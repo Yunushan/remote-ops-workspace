@@ -423,6 +423,7 @@ def create_main_window(
 
             self.tabs.tabCloseRequested.connect(self.close_tab)
             self.tabs.currentChanged.connect(self.handle_tab_changed)
+            self.tabs.currentChanged.connect(self.refresh_moba_recording_ribbon)
             self.moba_tab_bar.customContextMenuRequested.connect(
                 self.show_tab_context_menu
             )
@@ -977,7 +978,10 @@ def create_main_window(
                 return
             for pane in self.terminal_panes_in(current):
                 if current_focus is pane or pane.isAncestorOf(current_focus):
+                    changed = self._last_terminal_pane is not pane
                     self._last_terminal_pane = pane
+                    if changed:
+                        self.refresh_moba_recording_ribbon()
                     return
 
         def active_terminal_pane(self) -> TerminalPane | None:

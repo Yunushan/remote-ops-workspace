@@ -286,6 +286,190 @@ def test_terminal_start_restart_and_nonblocking_stop_edges(
     assert "did not exit after kill request" in transcript
 
 
+@pytest.fixture
+def macro_workspace(gui_window, monkeypatch):
+    from remote_ops_workspace.moba_macros import MobaMacroStore
+
+    _app, window = gui_window
+    pane = _new_pane(window)
+    pane.process = _FakeProcess(running=True)
+    pane.update_process_actions()
+    active = [pane]
+    monkeypatch.setattr(window, "active_terminal_pane", lambda: active[0])
+    menu = next(menu for menu in window.moba_top_menus if menu.property("mobaTopMenuKey") == "macros")
+
+    def popup():
+        menu.aboutToShow.emit()
+        return {action.text(): action for action in menu.actions() if not action.isSeparator()}
+
+    return window, pane, active, popup, MobaMacroStore()
+
+
+def test_moba_recording_ribbon_follows_the_active_terminal(macro_workspace, monkeypatch):
+    from PyQt6.QtWidgets import QInputDialog
+
+    window, pane, active, popup, store = macro_workspace
+    window.set_design_preset("mobaxterm")
+    popup()["Record new macro"].trigger()
+    assert window.moba_recording_label.isVisible() and window.moba_recording_stop.isVisible()
+    assert not window.moba_x_server_button.isVisible()
+
+    active[0] = None
+    window.refresh_moba_recording_ribbon()
+    assert not window.moba_recording_stop.isVisible()
+    assert window.moba_x_server_button.isVisible()
+    active[0] = pane
+    window.refresh_moba_recording_ribbon()
+    pane.capture_macro_input("recorded", enter=False)
+    monkeypatch.setattr(QInputDialog, "getText", lambda *_args: ("ribbon", True))
+    window.moba_recording_stop.click()
+    assert store.get("ribbon").input_text == "recorded"
+    assert not window.moba_recording_label.isVisible()
+    assert window.moba_x_server_button.isVisible()
+
+
+def test_moba_macros_menu_records_names_and_replays_the_current_session(macro_workspace, monkeypatch):
+    from PyQt6.QtTest import QTest
+    from PyQt6.QtWidgets import QInputDialog
+
+    window, pane, active, popup, store = macro_workspace
+    actions = popup()
+    assert not actions["Saved macros"].isEnabled()
+    actions["Record new macro"].trigger()
+    pane.capture_macro_input("unlisted input", enter=False)
+    pane.macro_capture_state.events[0].delay_ms = 0
+    names = iter([(" ", True), ("alpha&beta", True)])
+    monkeypatch.setattr(QInputDialog, "getText", lambda *_: next(names))
+    popup()["Stop recording"].trigger()
+    assert store.get("alpha&beta").input_text == "unlisted input"
+    before = pane.macro_last_recording
+    actions = popup()
+    assert "alpha&&beta" in actions and "unlisted input" not in str(actions)
+
+    monkeypatch.setattr(pane, "confirm_macro_replay", lambda _record: False)
+    actions["alpha&&beta"].trigger()
+    assert pane.macro_last_recording is before and pane.process.written == b""
+    monkeypatch.setattr(pane, "confirm_macro_replay", lambda _record: True)
+    actions["alpha&&beta"].trigger()
+    assert popup()["Cancel replay"].isEnabled()
+    QTest.qWait(10)
+    assert pane.process.written == b"unlisted input"
+
+    popup()["Record new macro"].trigger()
+    pane.capture_macro_input("another recording")
+    names = iter([("alpha&beta", True), ("", False)])
+    popup()["Stop recording"].trigger()
+    assert pane.macro_last_recording is before and store.get("alpha&beta").input_text == "unlisted input"
+    popup()["Record new macro"].trigger()
+    popup()["Cancel recording"].trigger()
+    assert pane.macro_capture_state is None
+    action = popup()["alpha&&beta"]
+    active[0] = None
+    action.trigger()
+    assert pane.process.written == b"unlisted input"
+    assert not popup()["Record new macro"].isEnabled()
+    assert not popup()["alpha&&beta"].isEnabled()
+
+    active[0] = pane
+    popup()["Record new macro"].trigger()
+    pane.capture_macro_input("discard")
+
+    def switch(*_args):
+        active[0] = None
+        return "wrong tab", True
+
+    monkeypatch.setattr(QInputDialog, "getText", switch)
+    popup()["Stop recording"].trigger()
+    assert [record.name for record in store.load()] == ["alpha&beta"]
+    assert pane.macro_last_recording is before
+    active[0] = pane
+    monkeypatch.setattr(pane, "confirm_macro_replay", lambda _: switch()[1])
+    popup()["alpha&&beta"].trigger()
+    QTest.qWait(10)
+    assert pane.process.written == b"unlisted input"
+
+
+def test_moba_macros_dialog_selects_saved_entries_and_preserves_private_input(macro_workspace, monkeypatch):
+    from remote_ops_workspace.moba_macros import record_typed_macro
+
+    window, pane, _active, popup, store = macro_workspace
+    store.add(record_typed_macro("first", "private first"))
+    store.add(record_typed_macro("second", "private second"))
+    reviewed = []
+    monkeypatch.setattr(pane, "confirm_macro_replay", lambda record: reviewed.append(record.name))
+
+    def choose(title, subtitle, rows, detail, *, actions, prepare):
+        dialog = window.create_workflow_dialog(title, subtitle, rows, detail, actions=actions)
+        prepare(dialog)
+        assert "private" not in str(rows) + dialog.detail.toPlainText()
+        dialog.rows.setCurrentItem(dialog.rows.topLevelItem(1))
+        dict(actions)["Replay selected"]()
+        dialog.rows.clear()
+        dialog.close()
+
+    monkeypatch.setattr(window, "show_workflow_dialog", choose)
+    window.show_moba_macros_status()
+    assert reviewed == ["second"]
+    pane.start_macro_capture()
+    pane.capture_macro_input("volatile")
+    pane.stop_macro_capture()
+    popup()["Replay last recording"].trigger()
+    assert reviewed[-1] == pane.macro_last_recording.name
+
+
+def test_moba_macros_rejects_unreadable_removed_or_invalid_recordings(macro_workspace, monkeypatch):
+    from PyQt6.QtWidgets import QInputDialog
+
+    from remote_ops_workspace.moba_macros import record_typed_macro
+
+    window, pane, active, popup, store = macro_workspace
+    recording = record_typed_macro("stale", "private event")
+    store.add(recording)
+    stale = popup()["stale"]
+    store.remove("stale")
+    stale.trigger()
+    assert "could not be replayed" in window.statusBar().currentMessage()
+    recording.events[0].delay_ms = -1
+    store.add(recording)
+    popup()["stale"].trigger()
+    assert pane.process.written == b""
+    store.path.write_text('{"macros":[{"events":[{"text":"private event"}]}]}', encoding="utf-8")
+    actions = popup()
+    assert "could not be read" in window.statusBar().currentMessage()
+    actions["Record new macro"].trigger()
+    pane.capture_macro_input("private event")
+    monkeypatch.setattr(QInputDialog, "getText", lambda *_: ("save", True))
+    popup()["Stop recording"].trigger()
+    assert "could not be updated" in window.statusBar().currentMessage()
+    assert pane.macro_last_recording is None
+    controls = window.moba_macro_controls()
+    active[0] = None
+    controls.record()
+    controls.stop()
+    controls.cancel()
+    controls.replay_last()
+    assert controls.save(recording) is None
+    assert pane.macro_capture_state is None
+
+
+def test_closing_the_macro_destination_during_naming_discards_the_new_recording(macro_workspace, monkeypatch):
+    from PyQt6.QtWidgets import QInputDialog
+
+    _window, pane, _active, popup, store = macro_workspace
+    popup()["Record new macro"].trigger()
+    pane.capture_macro_input("discard")
+
+    def close_during_naming(*_args):
+        pane.prepare_for_close()
+        return "abandoned", True
+
+    monkeypatch.setattr(QInputDialog, "getText", close_during_naming)
+    popup()["Stop recording"].trigger()
+    assert not store.path.exists()
+    assert pane.macro_last_recording is None
+    assert not popup()["Record new macro"].isEnabled()
+
+
 def test_terminal_macro_capture_replay_and_cancel_edges(
     gui_window,
     monkeypatch,

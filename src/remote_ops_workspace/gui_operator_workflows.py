@@ -11,10 +11,12 @@ from .smartcard_keys import PINNED_SMARTCARD_KEY
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-    from PyQt6.QtWidgets import QStatusBar
+    from PyQt6.QtWidgets import QMenu, QStatusBar
 
     from .gui_dialogs import WorkflowDialog
+    from .gui_macro_controls import TerminalMacroControls
     from .gui_server_lifecycle import ServerLifecycleManager
+    from .gui_terminal import TerminalPane
     from .layouts import LayoutStore
     from .models import Profile
     from .storage import ProfileStore
@@ -29,6 +31,7 @@ class OperatorWorkflows:
         server_lifecycle: ServerLifecycleManager
 
         def connect_selected(self, dry_run: bool) -> None: ...
+        def active_terminal_pane(self) -> TerminalPane | None: ...
         def create_layout(self) -> None: ...
         def create_profile(self) -> None: ...
         def create_workflow_dialog(
@@ -570,19 +573,40 @@ class OperatorWorkflows:
             actions=[("Run doctor", self.show_doctor)],
         )
 
+    def moba_macro_controls(self) -> TerminalMacroControls:
+        from .gui_macro_controls import TerminalMacroControls
+
+        return TerminalMacroControls(self.active_terminal_pane, self.statusBar().showMessage)
+
+    def populate_moba_macro_menu(self, menu: QMenu) -> None:
+        self.moba_macro_controls().populate(menu)
+
     def show_moba_macros_status(self, *_args) -> None:
         self.set_moba_rail_active("macros")
+        controls = self.moba_macro_controls()
+        actions = [(label, callback) for label, enabled, callback in controls.actions() if enabled]
+        rows = [(name, "Saved", f"{count} recorded events") for name, count in controls.saved.items()]
+        selected = next(iter(controls.saved), "")
+
+        def prepare(dialog: WorkflowDialog) -> None:
+            def select(item, _previous) -> None:
+                nonlocal selected
+                selected = item.text(0) if item is not None else ""
+
+            dialog.rows.setCurrentItem(dialog.rows.topLevelItem(0))
+            dialog.rows.currentItemChanged.connect(select)
+
+        if rows and controls.ready():
+            actions.append(("Replay selected", lambda: controls.replay(selected)))
+        actions.append(("New terminal", self.open_local_terminal_tab))
         self.show_workflow_dialog(
             "Macros",
-            "Reusable snippets and scripted workflows for repeated operator actions.",
-            [
-                ("Snippets", "CLI-backed", "Store and run reusable command snippets."),
-                ("MultiExec", "ribbon", "Preview broadcast command plans for SSH profiles."),
-                ("Recover", "Ctrl+Shift+T", "Restore recent terminal plans."),
-                ("Future dialogs", "tracked", "GUI macro editor can build on snippet storage."),
-            ],
-            "Macros are represented by reusable snippets and terminal plans today.\nThe rail keeps this workflow visible in the Moba-style shell.",
-            actions=[("New terminal", self.open_local_terminal_tab), ("Run doctor", self.show_doctor)],
+            "Record terminal input and replay a saved macro in the active session.",
+            rows or [("Saved macros", "Empty", "Record a macro in a running terminal.")],
+            f"Active terminal: {controls.pane.plan.title}" if controls.current() and controls.pane is not None
+            else "Select a running terminal to record or replay a macro.",
+            actions=actions,
+            prepare=prepare,
         )
 
     def show_workflow_dialog(

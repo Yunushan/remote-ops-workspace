@@ -75,7 +75,7 @@ MENU_OPERATIONS = (
     ("mobaxterm", "tools", "tools-status"),
     ("mobaxterm", "games", "games-status"),
     ("mobaxterm", "settings", "settings-status"),
-    ("mobaxterm", "macros", "macros-status"),
+    ("mobaxterm", "macros", "manage-macros"),
     ("mobaxterm", "help", "run-doctor"),
     ("securecrt", "file", "connect-selected"),
     ("securecrt", "edit", "focus-find"),
@@ -2446,6 +2446,15 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         *window.securecrt_top_menus,
         *window.mremoteng_top_menus,
     ]
+    macro_menu = next(menu for menu in window.moba_top_menus if menu.property("mobaTopMenuKey") == "macros")
+    macro_menu.aboutToShow.emit()
+    macro_actions = macro_menu.actions()
+    record(
+        "moba-macros-menu-controls",
+        macro_actions[0].text() == "Record new macro"
+        and any(action.text() == "Saved macros" and not action.isEnabled() for action in macro_actions)
+        and macro_actions[-1].text() == "Manage macros…",
+    )
     routed_menu_actions = [
         action
         for menu in all_product_menus

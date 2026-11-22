@@ -1063,7 +1063,7 @@ GUI_DESIGN_MOBA_TOP_MENU_ITEMS: tuple[GuiMobaTopMenuItem, ...] = (
         "games", "Games", "Games status", "Explicit compatibility and support status"
     ),
     GuiMobaTopMenuItem("settings", "Settings", "Settings status", "Workspace settings commands"),
-    GuiMobaTopMenuItem("macros", "Macros", "Macros status", "Macro and multiexec workflow status"),
+    GuiMobaTopMenuItem("macros", "Macros", "Manage macros…", "Record and replay terminal macros"),
     GuiMobaTopMenuItem("help", "Help", "Run doctor", "Help and doctor commands"),
 )
 
@@ -1125,7 +1125,7 @@ GUI_DESIGN_MOBA_RAIL_ITEMS: tuple[GuiMobaRailItem, ...] = (
         icon_key="multiexec",
         rail_icon_key="macros",
         color="#446ee8",
-        tooltip="Show macros status",
+        tooltip="Manage terminal macro recordings",
     ),
     GuiMobaRailItem(
         role="sftp",

@@ -143,6 +143,7 @@ class WindowMenus:
         def open_files_selected(self) -> None: ...
         def open_local_terminal_tab(self) -> None: ...
         def open_selected_layout(self) -> None: ...
+        def populate_moba_macro_menu(self, menu: QMenu) -> None: ...
         def recover_previous_sessions(self) -> None: ...
         def refresh_profiles(self) -> None: ...
         def run_operator_action(self, callback: Callable[[], object]) -> None: ...
@@ -293,7 +294,7 @@ class WindowMenus:
                 "tools": "tools-status",
                 "games": "games-status",
                 "settings": "settings-status",
-                "macros": "macros-status",
+                "macros": "manage-macros",
                 "help": "run-doctor",
             },
             "securecrt": {
@@ -346,6 +347,8 @@ class WindowMenus:
                 operation=self.product_menu_operations["mobaxterm"][moba_item.key],
                 invoke=invoke_menu_action,
             )
+            if moba_item.key == "macros":
+                menu.aboutToShow.connect(lambda menu=menu: self.populate_moba_macro_menu(menu))
 
         self.securecrt_top_menus: list[QMenu] = []
         self.securecrt_top_menu_actions: list[QAction] = []

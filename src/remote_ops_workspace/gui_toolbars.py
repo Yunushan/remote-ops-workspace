@@ -41,6 +41,9 @@ if TYPE_CHECKING:
     from PyQt6.QtGui import QIcon, QShortcut
     from PyQt6.QtWidgets import QStyle
 
+    from .gui_macro_controls import TerminalMacroControls
+    from .gui_terminal import TerminalPane
+
 
 class WindowToolbars:
     """Build the desktop action and layout toolbars and apply preset geometry."""
@@ -48,6 +51,9 @@ class WindowToolbars:
     if TYPE_CHECKING:
         securecrt_host_shortcut: QShortcut
         securecrt_keyword_shortcut: QShortcut
+
+        def active_terminal_pane(self) -> TerminalPane | None: ...
+        def moba_macro_controls(self) -> TerminalMacroControls: ...
 
         def add_split(self, direction: str) -> None: ...
         @staticmethod
@@ -171,6 +177,8 @@ class WindowToolbars:
         self.moba_ribbon_buttons = self.build_moba_ribbon_buttons()
         for button in self.moba_ribbon_buttons:
             self.add_toolbar_widget(self.main_toolbar, button)
+        self.moba_recording_label = QLabel("Recording terminal macro")
+        self.add_toolbar_widget(self.main_toolbar, self.moba_recording_label)
         self.moba_toolbar_spacer = QWidget()
         self.moba_toolbar_spacer.setObjectName("mobaToolbarSpacer")
         self.moba_toolbar_spacer.setSizePolicy(
@@ -225,6 +233,11 @@ class WindowToolbars:
         )
         self.add_toolbar_widget(self.main_toolbar, self.moba_x_server_button)
         self.add_toolbar_widget(self.main_toolbar, self.moba_exit_button)
+        self.moba_recording_stop = self.toolbar_button("Stop recording", "SP_MediaStop", "Stop and name this macro")
+        self.moba_recording_stop.setObjectName("mobaStopRecording")
+        self.moba_recording_stop.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.moba_recording_stop.clicked.connect(lambda: self.moba_macro_controls().stop())
+        self.add_toolbar_widget(self.main_toolbar, self.moba_recording_stop)
         self.main_toolbar_buttons = [
             self.refresh_button,
             self.new_profile_button,
@@ -735,6 +748,16 @@ class WindowToolbars:
                 button_style.polish(button)
                 button.update()
 
+    def refresh_moba_recording_ribbon(self) -> None:
+        is_moba = self.main_toolbar.property("productChromePreset") == "mobaxterm"
+        pane = self.active_terminal_pane() if is_moba else None
+        recording = bool(pane and pane.macro_capture_state and pane.macro_capture_state.active)
+        for widget in (*self.moba_ribbon_buttons, self.moba_x_server_button, self.moba_exit_button):
+            self.set_toolbar_widget_visible(widget, is_moba and not recording)
+        self.set_toolbar_widget_visible(self.moba_toolbar_spacer, is_moba)
+        self.set_toolbar_widget_visible(self.moba_recording_label, recording)
+        self.set_toolbar_widget_visible(self.moba_recording_stop, recording)
+
     def configure_toolbar_for_design(self, preset: GuiDesignPreset, is_moba: bool, icon_size: int) -> None:
         icon = QSize(icon_size, icon_size)
         is_securecrt = preset.id == "securecrt"
@@ -771,14 +794,7 @@ class WindowToolbars:
         for search_widget in (self.search_input, self.find_button):
             self.set_toolbar_widget_visible(search_widget, not is_moba)
 
-        moba_widgets = [
-            *self.moba_ribbon_buttons,
-            self.moba_toolbar_spacer,
-            self.moba_x_server_button,
-            self.moba_exit_button,
-        ]
-        for moba_widget in moba_widgets:
-            self.set_toolbar_widget_visible(moba_widget, is_moba)
+        self.refresh_moba_recording_ribbon()
         for securecrt_widget in (
             self.securecrt_host_input,
             self.securecrt_keyword_input,

@@ -337,7 +337,12 @@ reviews, and the downloaded release assets. See the
    targets.
 5. ROW provides a CLI-backed typed macro store and SSH replay workflow. The
    PyQt terminal records submitted lines, printable keys typed into the
-   terminal, Tab and Enter. A key or paste outside the supported typed input
+   terminal, Tab and Enter. In a connected Moba-style session, choose
+   **Macros → Record new macro**, type in the terminal, then select **Stop
+   recording** on the recording ribbon. Accepting a name saves it in the workspace macro
+   store. Saved entries appear in the Macros menu on subsequent launches.
+   Selecting an entry opens the replay review for the active terminal.
+   A key or paste outside the supported typed input
    cancels the recording so replay preserves the captured sequence. The replay
    dialog identifies the destination and defaults to Cancel. Replay sends the
    events in order with their recorded delays and stops if the session changes

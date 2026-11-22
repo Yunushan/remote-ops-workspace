@@ -19,6 +19,7 @@ from PyQt6.QtCore import (
     Qt,
     QTimer,
     QUrl,
+    pyqtSignal,
 )
 from PyQt6.QtGui import (
     QClipboard,
@@ -303,6 +304,7 @@ class TerminalTextEdit(QTextEdit):
 
 
 class TerminalPane(QWidget):
+    macroRecordingChanged = pyqtSignal()
     STOP_POLICY = ProcessStopPolicy()
     OUTPUT_RENDER_BATCH_BYTES = 16 * 1024
     OUTPUT_RENDER_TURN_BUDGET_BYTES = 256 * 1024
@@ -1794,13 +1796,15 @@ class TerminalPane(QWidget):
         if self._secret_prompt_active:
             self.append_text("\n[macro recording unavailable during secret input]\n")
             return
-        if self.macro_capture_state is not None and self.macro_capture_state.active:
+        if self.macro_replay_active or (self.macro_capture_state is not None and self.macro_capture_state.active):
             return
+        self.macro_replay_sequence += 1
         self.macro_capture_state = start_terminal_macro_capture(
             self.macro_capture_name(),
             pane_id=self.macro_pane_id(),
         )
         self.macro_last_event_at = time.monotonic()
+        self.macroRecordingChanged.emit()
         self.append_text("\n[macro recording started]\n")
         self.apply_moba_macro_runtime_properties()
         self.update_process_actions()
@@ -1829,12 +1833,17 @@ class TerminalPane(QWidget):
             self.cancel_macro_capture(announce=False)
             self.append_text("\n[macro recording stopped on an unsupported terminal key or paste]\n")
 
-    def stop_macro_capture(self) -> None:
+    def stop_macro_capture(
+        self, *, save: Callable[[MobaMacroRecording], MobaMacroRecording | None] | None = None,
+    ) -> None:
         state = self.macro_capture_state
         if state is None or not state.active:
             return
+        self.macro_capture_state = None
+        self.macro_last_event_at = None
+        self.macroRecordingChanged.emit()
         try:
-            self.macro_last_recording = finish_terminal_macro_capture(
+            recording = finish_terminal_macro_capture(
                 state,
                 description="Captured from the PyQt terminal pane.",
                 tags=["gui", "live"],
@@ -1842,9 +1851,12 @@ class TerminalPane(QWidget):
         except ValueError as exc:
             self.append_text(f"\n[macro recording ignored: {exc}]\n")
         else:
-            self.append_text(f"\n[macro recording saved: {self.macro_last_recording.name}]\n")
-        self.macro_capture_state = None
-        self.macro_last_event_at = None
+            result = save(recording) if save is not None else recording
+            if self._terminal_scroll_closed:
+                return
+            if result is not None:
+                self.macro_last_recording = result
+                self.append_text(f"\n[macro recording saved: {result.name}]\n")
         self.apply_moba_macro_runtime_properties()
         self.update_process_actions()
 
@@ -1857,6 +1869,7 @@ class TerminalPane(QWidget):
                 self.append_text("\n[macro recording cancelled]\n")
             self.macro_capture_state = None
             self.macro_last_event_at = None
+            self.macroRecordingChanged.emit()
         elif self.macro_replay_active:
             self.macro_replay_cancelled = True
             self.macro_replay_active = False
@@ -1882,11 +1895,13 @@ class TerminalPane(QWidget):
         dialog.setDefaultButton(QMessageBox.StandardButton.Cancel)
         return dialog.exec() == QMessageBox.StandardButton.Yes
 
-    def replay_macro_capture(self) -> None:
+    def replay_macro_capture(
+        self, *, saved: MobaMacroRecording | None = None, still_current: Callable[[], bool] | None = None,
+    ) -> None:
         if self._secret_prompt_active:
             self.append_text("\n[macro replay unavailable during secret input]\n")
             return
-        recording = self.macro_last_recording
+        recording = saved if saved is not None else self.macro_last_recording
         if recording is None:
             self.append_text("\n[macro replay unavailable: no recorded macro]\n")
             return
@@ -1906,7 +1921,8 @@ class TerminalPane(QWidget):
             reviewed_sequence != self.macro_replay_sequence
             or process is not self.process
             or process.state() != QProcess.ProcessState.Running
-            or recording is not self.macro_last_recording
+            or (saved is None and recording is not self.macro_last_recording)
+            or (still_current is not None and not still_current())
         ):
             self.append_text("\n[macro replay cancelled because the session changed during review]\n")
             return

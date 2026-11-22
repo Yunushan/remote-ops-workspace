@@ -23,28 +23,29 @@ green build.
 
 | Field | Value |
 | --- | --- |
-| Assessed on | 2026-11-17 |
+| Assessed on | 2026-11-22 |
 | Version | 1.0.27 |
-| Assessed `main` commit | `a1d14f1f2e5367497c750627307bc7e3bba24aa5` |
+| Assessed `main` commit | `4b1f02a67bd8877acd8c784283af7c46f3cc3535` |
 | Overall engineering score | **78 / 100** |
 | Strict certification gate | **Pending a signed, release-bound audit** |
 | Current release for this version | [v1.0.27 unsigned preview](https://github.com/Yunushan/remote-ops-workspace/releases/tag/v1.0.27) |
 
-The Nov. 14 assessment scored 75/100 at `cedf1e0` using the same weights.
-This assessment adds one point each for the Windows X11 TCP opt-in, native
-Windows private-staging qualification, and the extraction of shared Qt menus
-and Quick Connect parsing. The scores use merged source and hosted evidence.
+Since the Nov. 17 assessment at `a1d14f1`, two dependency updates have landed
+on `main`, bringing PyQt6 to 6.12.1 and PyQt6-sip to 13.13.1. All 74 hosted
+checks passed on the merged commit. This preserves the prior 78/100 score.
+The assessed commit predates the v1.0.28 candidate changes in PR #194.
+[Changes since the previous assessment](https://github.com/Yunushan/remote-ops-workspace/compare/a1d14f1f2e5367497c750627307bc7e3bba24aa5...4b1f02a67bd8877acd8c784283af7c46f3cc3535)
 
 ## A. Engineering production-readiness score
 
 | Area | Weight | Score | Basis |
 | --- | --- | --- | --- |
-| Code quality and tests | 15 | 14 | All 65 exact-main CI jobs passed, including the 100% line and branch coverage gate and native Windows readiness. CodeQL and the real Ubuntu browser qualification also passed. [Main CI](https://github.com/Yunushan/remote-ops-workspace/actions/runs/44132009249) · [Coverage](https://github.com/Yunushan/remote-ops-workspace/actions/runs/44132009249/job/134280201117) · [CodeQL](https://github.com/Yunushan/remote-ops-workspace/actions/runs/44132009411) · [Browser](https://github.com/Yunushan/remote-ops-workspace/actions/runs/44132009255) |
+| Code quality and tests | 15 | 14 | All 65 CI jobs passed on the assessed commit, including the 100% line and branch coverage gate and native Windows readiness. CodeQL and the real Ubuntu browser qualification also passed. [Main CI](https://github.com/Yunushan/remote-ops-workspace/actions/runs/44942627492) · [Coverage](https://github.com/Yunushan/remote-ops-workspace/actions/runs/44942627492/job/136962949960) · [CodeQL](https://github.com/Yunushan/remote-ops-workspace/actions/runs/44942627579) · [Browser](https://github.com/Yunushan/remote-ops-workspace/actions/runs/44942627543) |
 | Runtime security | 20 | 20 | The earlier runtime integrity, input validation, FTP, and plugin fixes remain in place. X11 servers now require explicit TCP opt-in, including the Windows TCP-only backends that require it to serve X clients. [PR #183](https://github.com/Yunushan/remote-ops-workspace/pull/183) |
-| Supply chain and CI | 15 | 15 | Exact-main CI verified provenance and CycloneDX SBOM attestations for the smoke-tested Web/PWA image digest. The downloaded-installer verifier binds the bytes to the immutable release digest and provenance. Its live end-to-end check requires a certified release. [Attestation job](https://github.com/Yunushan/remote-ops-workspace/actions/runs/44132009249/job/134280129818) · [Release promotion runbook](runbooks/RELEASE_PROMOTION.md) |
+| Supply chain and CI | 15 | 15 | The smoke-tested Web/PWA image manifest, build provenance and CycloneDX SBOM all identify `sha256:3dd01ffc0f9454d9bec7f8caf5b32a205a8f3247ac50f6a416151975575df106`. The downloaded-installer verifier binds the bytes to the immutable release digest and provenance. Its live end-to-end check requires a certified release. [Provenance](https://github.com/Yunushan/remote-ops-workspace/attestations/70601031) · [SBOM](https://github.com/Yunushan/remote-ops-workspace/attestations/70601035) · [Verification](https://github.com/Yunushan/remote-ops-workspace/actions/runs/44942627492/job/136963125109) · [Release promotion runbook](runbooks/RELEASE_PROMOTION.md) |
 | Release and distribution | 15 | 5 | Seven modern native candidate builds passed. The latest preview for this version has 48 assets. Production signing and independent, exact-artifact redistribution approval are open. [Native matrix](https://github.com/Yunushan/remote-ops-workspace/actions/runs/43055313245) · [Preview release](https://github.com/Yunushan/remote-ops-workspace/releases/tag/v1.0.27) · [Compliance policy](../configs/release_compliance_policy.json) |
 | Platform and parity evidence | 10 | 3 | The protected platform registry has 0/4 accepted targets. The strict MobaXterm registry has 0/8 accepted articles. [Platform registry](../configs/platform_verified_evidence.json) · [Parity registry](../configs/mobaxterm_parity_evidence.json) |
-| Operability and observability | 10 | 9 | Windows x64 and Linux x64 native recovery drills passed. The Windows NTFS qualification passed under a separate unprivileged identity and exercised authenticated staging, interrupted recovery, and tamper rejection. The assessed commit has the same storage, staging, and qualification source as the tested commit. Automatic updater installation and rollback remain open. [Windows recovery](https://github.com/Yunushan/remote-ops-workspace/actions/runs/43055313245/job/130646688694) · [Linux recovery](https://github.com/Yunushan/remote-ops-workspace/actions/runs/43055313245/job/130646688872) · [NTFS job](https://github.com/Yunushan/remote-ops-workspace/actions/runs/43870047705/job/133308506237) |
+| Operability and observability | 10 | 9 | Windows x64 and Linux x64 native recovery drills passed in the earlier native matrix. On the assessed commit, the Windows NTFS job exercised authenticated staging, interrupted recovery, and tamper rejection under a separate unprivileged identity. Automatic updater installation and rollback remain open on the assessed version. [Windows recovery](https://github.com/Yunushan/remote-ops-workspace/actions/runs/43055313245/job/130646688694) · [Linux recovery](https://github.com/Yunushan/remote-ops-workspace/actions/runs/43055313245/job/130646688872) · [NTFS job](https://github.com/Yunushan/remote-ops-workspace/actions/runs/44942627490/job/136962949762) |
 | Maintainability | 10 | 7 | Workflow and transfer dialogs and the packaged QSS were extracted previously. Quick Connect parsing and shared Qt menus now have dedicated modules. Several large GUI and CLI modules remain. [PR #159](https://github.com/Yunushan/remote-ops-workspace/pull/159) · [PR #183](https://github.com/Yunushan/remote-ops-workspace/pull/183) · [PR #187](https://github.com/Yunushan/remote-ops-workspace/pull/187) |
 | Docs and governance | 5 | 5 | Retains the previously verified engineering controls. Public GitHub metadata confirms that `main` is protected and the `v*` ruleset is active with update and deletion restrictions. Release certification still requires the authenticated exact-tag audit and an independent auditor signature. [Tag ruleset](https://github.com/Yunushan/remote-ops-workspace/rules/24350907) |
 | **Total** | **100** | **78** | |
@@ -110,6 +111,7 @@ steps 6-8. See the backlog for the owner's production scope decision (D1).
 | 2026-10-17 | M2: added `logging_setup.py` (stdlib logging with a redacting formatter), wired `--log-level`/`ROW_LOG_LEVEL` into `cli.main`, and a redacted public-bind warning in `web_server`; new module pinned in the catalogue inventory. Full suite 6821 passed, 98 skipped, 100% line/branch coverage | **70** | 0/9 |
 | 2026-11-14 | Published image provenance and SBOM, installer verification, native recovery, GUI extraction, and live governance advanced the assessment on `cedf1e0`. | **75** | Pending release-bound audit |
 | 2026-11-17 | Windows X11 TCP opt-in, NTFS private-staging qualification, and shared Qt menu and Quick Connect extraction verified on `a1d14f1`. | **78** | Pending release-bound audit |
+| 2026-11-22 | The merged Qt dependency updates passed all 74 hosted checks on `4b1f02a`, including GUI interaction, coverage and image attestation. | **78** | Pending release-bound audit |
 
 ## How to re-score
 

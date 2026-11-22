@@ -95,7 +95,10 @@ DisableForwarding yes
 Subsystem sftp internal-sftp
 LogLevel VERBOSE
 EOF
-exec /usr/sbin/sshd -D -E /log/sshd.log -f /tmp/sshd_config
+# Serialize messages from concurrent SSH sessions through one writer to the bind mount.
+mkfifo -m 600 /run/sshd/fixture-log
+cat /run/sshd/fixture-log > /log/sshd.log &
+exec /usr/sbin/sshd -D -e -f /tmp/sshd_config 2> /run/sshd/fixture-log
 """
 
 

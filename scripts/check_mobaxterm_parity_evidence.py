@@ -327,7 +327,7 @@ def check_article_record(
     errors.extend(check_required_checks(row, spec))
     errors.extend(
         check_validation_summary(
-            article_id, row.get("validation_summary"), release_target=row.get("release_target"),
+            article_id, row.get("validation_summary"), release_target=row.get("release_target"), release_tag=release_tag,
         )
     )
     if article_id in SOURCE_BOUND_ARTICLES:
@@ -453,7 +453,18 @@ def check_required_checks(row: dict[str, Any], spec: ArticleSpec) -> list[str]:
     return []
 
 
-def check_validation_summary(article_id: str, summary: Any, *, release_target: Any) -> list[str]:
+def requires_named_macro_evidence(release_tag: str) -> bool:
+    """Only older, valid release tags qualify for historical macro evidence."""
+    if not RELEASE_TAG_RE.fullmatch(release_tag):
+        return True
+    try:
+        version = tuple(map(int, release_tag[1:].split(".")))
+    except ValueError:
+        return True
+    return version >= (1, 0, 28)
+
+
+def check_validation_summary(article_id: str, summary: Any, *, release_target: Any, release_tag: str) -> list[str]:
     if not isinstance(summary, dict) or not summary:
         return [f"{article_id} validation_summary must be a non-empty object"]
     if summary.get("passed") is not True:
@@ -480,6 +491,10 @@ def check_validation_summary(article_id: str, summary: Any, *, release_target: A
         sessions = details.get("replay_sessions")
         if type(count) is not int or type(sessions) is not int or count < 1 or count != sessions:
             errors.append("macro-recorder validation summary must record verified SSH timing and review for every replay")
+        named = details.get("verified_named_macro_replays")
+        if requires_named_macro_evidence(release_tag) or "verified_named_macro_replays" in details:
+            if type(named) is not int or named != count:
+                errors.append("macro-recorder validation summary must verify named workspace playback for every replay")
     if article_id == "moba-text-editor-diff" and details.get("verified_remote_edit") is not True:
         errors.append("moba-text-editor-diff validation summary must record a verified SFTP edit")
     if article_id == "shared-authenticated-transport-terminal-grid":

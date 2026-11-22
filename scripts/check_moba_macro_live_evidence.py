@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import ipaddress
 import json
 import re
@@ -19,14 +20,19 @@ from remote_ops_workspace.moba_macros import (  # noqa: E402
     MobaMacroRecording,
     validate_macro_live_replay_evidence,
 )
-from scripts.check_mobaxterm_parity_evidence import capture_release_identity  # noqa: E402
+from scripts.check_mobaxterm_parity_evidence import (  # noqa: E402
+    capture_release_identity,
+    requires_named_macro_evidence,
+)
 from scripts.check_release_license_compliance import (  # noqa: E402
     bound_evidence_file,
+    canonical_json,
     secure_regular_file,
 )
 
 REVIEW_SCHEMA = "row.moba-macro.live-review.v1"
 SSH_REPLAY_SCHEMA = "row.moba-macro.ssh-replay.v1"
+WORKSPACE_CONTROLS_SCHEMA = "row.moba-macro.workspace-controls.v1"
 TRANSCRIPT_BYTE = re.compile(r"^ROW_INPUT_(\d+)_([0-9a-f]{2})_(\d+)\s*$", re.MULTILINE)
 TRANSCRIPT_READY = re.compile(
     r"^ROW_MACRO_READY_(\d+) (\S+) (\d+) (\S+) (\d+)[ \t]*$", re.MULTILINE
@@ -114,14 +120,19 @@ def parse_observations(text: str, pid: int) -> list[tuple[int, str, int]]:
     return rows
 
 
-def verify_ssh_sessions(text: str, user: str, connections: list[tuple[str, str, str, str]]) -> None:
-    started = {(address, port) for login, address, port in PTY.findall(text) if login == user}
-    accepted = {(address, port) for login, address, port in AUTH.findall(text) if login == user}
+def verify_ssh_sessions(
+    text: str, users: list[str], connections: list[tuple[str, str, str, str]]
+) -> None:
+    started = set(PTY.findall(text))
+    accepted = set(AUTH.findall(text))
     observed = set(CONNECT.findall(text))
     origins = {(client, port) for client, port, _, _ in connections}
+    logins = {
+        (user, client, port) for user, (client, port, _, _) in zip(users, connections, strict=True)
+    }
     if (
-        len(origins) != 2
-        or not origins <= started & accepted
+        len(origins) != len(connections)
+        or not logins <= started & accepted
         or not set(connections) <= observed
         or any(
             ipaddress.ip_address(client) == ipaddress.ip_address(server)
@@ -131,8 +142,15 @@ def verify_ssh_sessions(text: str, user: str, connections: list[tuple[str, str, 
         )
     ):
         raise ValueError(
-            "SSH server log must show two separate public-key-authenticated remote PTY connections"
+            "SSH server log must show distinct public-key-authenticated remote PTY connections"
         )
+
+
+def recorded_payloads(recording: MobaMacroRecording, enter: str) -> list[bytes]:
+    return [
+        event.text.encode() + (bytes.fromhex(enter) if event.enter else b"")
+        for event in recording.events
+    ]
 
 
 def verify_timed_bytes(
@@ -270,13 +288,10 @@ def verify_replay_capture(
     ]
     verify_ssh_sessions(
         captured_text(bound_capture(root, receipt.get("ssh_log"), "SSH server log")),
-        user,
+        [user, user],
         connections,
     )
-    payloads = [
-        event.text.encode() + (bytes.fromhex(enter) if event.enter else b"")
-        for event in recording.events
-    ]
+    payloads = recorded_payloads(recording, enter)
     original = b"".join(payloads)
     size = len(original)
     prefix = verify_review_windows(
@@ -291,6 +306,192 @@ def verify_replay_capture(
         raise ValueError(
             "cancelled SSH replay must contain exactly the observed prefix of the recording"
         )
+
+
+def verify_persisted_recording(
+    root: Path, controls: dict[str, Any], recording: MobaMacroRecording
+) -> None:
+    captured, reopened = controls.get("capture_app_pid"), controls.get("replay_app_pid")
+    if (
+        controls.get("schema") != WORKSPACE_CONTROLS_SCHEMA
+        or controls.get("macro_name") != recording.name
+        or controls.get("input_sha256") != recording.to_dict()["input_sha256"]
+        or type(captured) is not int
+        or type(reopened) is not int
+        or min(captured, reopened) < 1
+        or captured == reopened
+    ):
+        raise ValueError(
+            "named macro controls must identify the recording and two separate GUI processes"
+        )
+    expected_route = {
+        "preset": "mobaxterm",
+        "menu": "Macros",
+        "record": "Record new macro",
+        "stop": "Stop recording",
+        "stop_object": "mobaStopRecording",
+        "prompt": "Please enter a name for this macro",
+        "accepted_name": recording.name,
+        "focused_output": "terminalOutput",
+    }
+    if controls.get("capture_route") != expected_route:
+        raise ValueError(
+            "named macro capture must show the Macros menu, focused terminal, Stop and accepted name"
+        )
+
+    before = bound_capture(root, controls.get("store_before_exit"), "macro store before exit")
+    after = bound_capture(root, controls.get("store_after_restart"), "macro store after restart")
+    store = captured_object(after, "reopened macro store")
+    if (
+        before == after
+        or controls["store_before_exit"]["sha256"] != controls["store_after_restart"]["sha256"]
+        or type(store.get("version")) is not int
+        or store["version"] != 1
+        or not isinstance(store.get("macros"), list)
+    ):
+        raise ValueError(
+            "separate macro store snapshots must retain identical workspace bytes across restart"
+        )
+    saved = [
+        row
+        for row in store["macros"]
+        if isinstance(row, dict) and row.get("name") == recording.name
+    ]
+    if canonical_json(saved) != canonical_json([recording.to_dict()]):
+        raise ValueError("the reopened named macro must preserve every recorded event and delay")
+
+
+def named_replay_observations(
+    root: Path, receipt: dict[str, Any], controls: dict[str, Any], event_count: int
+) -> list[tuple[int, str, int]]:
+    selected, inactive = controls["selected"], controls["inactive"]
+    if controls.get("ssh_log") != receipt["ssh_log"]:
+        raise ValueError(
+            "named replay must reference the same authenticated SSH log as the capture"
+        )
+
+    connections = []
+    pids = [
+        receipt["receiver_pid"],
+        receipt["replacement_receiver_pid"],
+        selected["receiver_pid"],
+        inactive["receiver_pid"],
+    ]
+    if any(type(pid) is not int or pid < 1 for pid in pids) or len(set(pids)) != len(pids):
+        raise ValueError("named replay requires fresh, distinct SSH receiver processes")
+    transcripts = []
+    for pid, attachment in zip(
+        pids,
+        (
+            receipt["terminal_transcript"],
+            receipt["replacement_transcript"],
+            selected["terminal_transcript"],
+            inactive["terminal_transcript"],
+        ),
+        strict=True,
+    ):
+        transcript = captured_text(bound_capture(root, attachment, "SSH terminal transcript"))
+        ready = TRANSCRIPT_READY.findall(transcript)
+        if len(ready) != 1 or ready[0][0] != str(pid):
+            raise ValueError(
+                "named replay transcript must identify its own SSH receiver and connection"
+            )
+        _, client, port, server, server_port = ready[0]
+        connections.append((client, port, server, server_port))
+        transcripts.append(transcript)
+    verify_ssh_sessions(
+        captured_text(bound_capture(root, controls["ssh_log"], "workspace SSH log")),
+        [receipt["ssh_user"], receipt["ssh_user"], selected["ssh_user"], inactive["ssh_user"]],
+        connections,
+    )
+    rows = parse_observations(
+        captured_text(bound_capture(root, selected["server_bytes"], "selected receiver bytes")),
+        pids[2],
+    )
+    selected_text, inactive_text = transcripts[2:]
+    queued = [
+        line for line in selected_text.splitlines() if line.startswith("[macro replay queued:")
+    ]
+    if (
+        queued != [f"[macro replay queued: {event_count} event(s)]"]
+        or "[macro replay queued:" in inactive_text
+    ):
+        raise ValueError("the selected terminal must queue exactly one named replay")
+    client_rows = [
+        (int(index), byte, int(ns)) for index, byte, ns in TRANSCRIPT_BYTE.findall(selected_text)
+    ]
+    if selected_text.count("ROW_INPUT_") != len(client_rows) or rows != client_rows:
+        raise ValueError("selected named replay transcript and independent receiver bytes disagree")
+    if "ROW_INPUT_" in inactive_text or captured_text(
+        bound_capture(root, inactive["server_bytes"], "inactive receiver bytes")
+    ):
+        raise ValueError(
+            "the separate inactive SSH receiver must remain quiet throughout both named replay reviews"
+        )
+
+    return rows
+
+
+def verify_workspace_controls(
+    root: Path, receipt: dict[str, Any], recording: MobaMacroRecording
+) -> str:
+    controls = captured_object(
+        bound_capture(root, receipt.get("workspace_controls"), "named macro controls"),
+        "named macro controls",
+    )
+    verify_persisted_recording(root, controls, recording)
+    selected, inactive = controls["selected"], controls["inactive"]
+    if (
+        selected["profile"] != receipt["profile"]
+        or selected["ssh_user"] != receipt["ssh_user"]
+        or any(
+            not isinstance(peer[k], str) or not peer[k].strip()
+            for peer in (selected, inactive)
+            for k in ("profile", "destination", "ssh_user")
+        )
+        or any(selected[k] == inactive[k] for k in ("profile", "destination", "ssh_user"))
+    ):
+        raise ValueError(
+            "named replay must identify the selected profile and a distinct inactive SSH peer"
+        )
+    if controls.get("replay_route") != {
+        "preset": "mobaxterm",
+        "menu": "Macros",
+        "saved_section": "Saved macros",
+        "selected_entry": recording.name,
+        "active_profile": selected["profile"],
+        "active_destination": selected["destination"],
+    }:
+        raise ValueError(
+            "the clicked tab and saved menu entry must match the selected replay destination"
+        )
+    rows = named_replay_observations(root, receipt, controls, len(recording.events))
+    payloads = recorded_payloads(recording, receipt["enter_byte"])
+    verify_timed_bytes(rows, payloads, recording)
+    duration = sum(event.delay_ms for event in recording.events)
+    for action, decision, end in (("decline", "Cancel", 0), ("complete", "Yes", len(rows))):
+        row = controls["reviews"][action]
+        if (
+            row.get("decision") != decision
+            or row.get("default_is_cancel") is not True
+            or row.get("text") != f"Replay {recording.name} in {selected['destination']}?"
+            or any(
+                type(row.get(k)) is not int or row[k] != expected
+                for k, expected in (
+                    ("before", 0),
+                    ("after", end),
+                    ("inactive_before", 0),
+                    ("inactive_after", 0),
+                )
+            )
+            or action == "decline"
+            and (type(row.get("quiet_ms")) is not int or row["quiet_ms"] < duration)
+        ):
+            raise ValueError(
+                f"named replay {action} must bind the destination, default-Cancel review and both receiver windows"
+            )
+    # Compare the receiver observations across profiles even if the JSONL whitespace differs.
+    return hashlib.sha256(canonical_json(rows)).hexdigest()
 
 
 def validate_macro_release_replay_evidence(
@@ -331,6 +532,8 @@ def validate_macro_release_replay_evidence(
         ):
             raise ValueError("macro review and replay must each cover the same unique profiles")
         observations: set[str] = set()
+        named_observations: set[str] = set()
+        named_required = requires_named_macro_evidence(summary["release_tag"])
         for session in sessions:
             receipt = captured_object(
                 bound_capture(root, session, "SSH replay", action=True), "SSH replay receipt"
@@ -346,11 +549,20 @@ def validate_macro_release_replay_evidence(
                     "SSH replay receipt must bind the profile, recording, workflow and tested release asset"
                 )
             verify_replay_capture(root, receipt, recording, cases[session["profile"]])
+            if named_required or "workspace_controls" in receipt:
+                named_digest = verify_workspace_controls(root, receipt, recording)
+                if named_digest in named_observations:
+                    raise ValueError(
+                        "each named macro replay profile requires a separate receiver capture"
+                    )
+                named_observations.add(named_digest)
             observed_digest = receipt["server_bytes"]["sha256"]
             if observed_digest in observations:
                 raise ValueError("each macro profile requires a separate SSH receiver capture")
             observations.add(observed_digest)
             summary["verified_macro_replays"] += 1
+        if len(named_observations) == len(sessions):
+            summary["verified_named_macro_replays"] = len(named_observations)
     except (AttributeError, KeyError, OSError, TypeError, ValueError) as exc:
         return MobaMacroLiveEvidenceValidation(
             str(evidence_path), str(root), False, [str(exc)], [], summary

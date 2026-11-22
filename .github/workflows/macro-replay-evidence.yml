@@ -19,7 +19,7 @@ env:
 
 jobs:
   qualify-macro:
-    name: Qualify the published wheel's timed macro replay
+    name: Qualify saved macro playback in the release wheel
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -51,7 +51,7 @@ jobs:
       - name: Prepare a hash-locked Qt and OpenSSH fixture
         shell: bash
         run: bash scripts/build_qt_release_fixture.sh "$MACRO_WORK" "$MACRO_IMAGE"
-      - name: Capture timed replay and cancellation through an actual SSH PTY
+      - name: Verify named recording, reopening and timed playback into the selected SSH session
         shell: bash
         run: |
           wheel="remote_ops_workspace-${GITHUB_REF_NAME#v}-py3-none-any.whl"

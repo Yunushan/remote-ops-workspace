@@ -22,6 +22,7 @@ HOST = "row-qt-server"
 PORT = 2222
 EDITOR_USER = "rowedit"
 MACRO_USER = "rowmacro"
+MACRO_INACTIVE_USER = "rowmacroother"
 EDITOR_ORIGINAL = "opening fixture: café\n".encode()
 TARGET = "linux-x86_64"
 

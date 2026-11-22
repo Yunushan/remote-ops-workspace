@@ -104,6 +104,26 @@ def test_mobaxterm_record_generator_registers_eighth_article_validator() -> None
     assert validator.__name__ == "validate_moba_transport_terminal_evidence"
 
 
+@pytest.mark.parametrize(("tag", "named", "valid"), [
+    ("v1.0.27", None, True), ("v1.0.28", None, False), ("v1.0.28", True, False),
+    ("v1.0.28", 0, False), ("v1.0.28", 1, False), ("v1.0.28", 2, True),
+    ("v1.1.0", None, False), ("v2.0.0", None, False), ("v1.0.27", 1, False),
+    ("1.0.27", None, False), ("v0", None, False),
+])
+def test_macro_summary_binds_named_workspace_playback_to_release(tag, named, valid):
+    checker = _load_checker()
+    details = {"verified_macro_replays": 2, "replay_sessions": 2, "release_target": "linux-x86_64"}
+    if named is not None:
+        details["verified_named_macro_replays"] = named
+    errors = checker.check_validation_summary(
+        "macro-recorder", {"passed": True, "errors": [], "summary": details},
+        release_target="linux-x86_64", release_tag=tag,
+    )
+    assert errors == ([] if valid else [
+        "macro-recorder validation summary must verify named workspace playback for every replay"
+    ])
+
+
 @pytest.mark.parametrize(("article", "validator_name", "flag", "missing_receipt"), [
     ("mobapt-unix-runtime", "validate_mobapt_release_cache_evidence", "offline_execution_receipts_verified",
      "must record verified offline execution receipts"),

@@ -890,8 +890,8 @@ captures of at most 1 MiB per file.
 ### Macro replay release evidence
 
 Dispatch `macro-replay-evidence.yml` at the exact release tag. It runs the
-installed wheel's terminal against a disposable SSH peer and submits the recording,
-timing and reconnect evidence for independent review.
+installed wheel's Moba-style workspace against disposable SSH receivers and
+submits the recording, timing and reconnect evidence for independent review.
 
 Use the `row.moba-macro.live-replay-evidence.v1` envelope with the same `source`
 and `release_asset` fields as the embedded-server contract. The capture
@@ -920,6 +920,15 @@ starts the session with `ROW_MACRO_READY_<pid>` followed on the same line by
 the client IP and port and the server IP and port from `SSH_CONNECTION`.
 Capture the SSH server log for those two public-key-authenticated remote PTYs.
 Use disposable accounts and test input to keep credentials out of the capture.
+
+Starting with v1.0.28, each SSH replay receipt also binds a `workspace_controls`
+attachment. Record through the visible Macros menu, stop with the recording
+ribbon and accept a name. Reopen the same workspace in another application
+process. Select a saved macro with two SSH sessions connected and verify
+which receiver gets the recorded bytes. Keep the store snapshots, the review
+decisions, both terminal transcripts, independent receiver journals and SSH
+session identities with the capture. The selected receiver must stay quiet
+after a declined review. The other receiver must stay quiet throughout.
 
 ### Smart-card release capture
 

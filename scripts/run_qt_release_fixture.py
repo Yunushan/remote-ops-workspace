@@ -10,7 +10,14 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import uuid4
 
-from qt_release_capture import EDITOR_ORIGINAL, EDITOR_USER, HOST, MACRO_USER, PORT
+from qt_release_capture import (
+    EDITOR_ORIGINAL,
+    EDITOR_USER,
+    HOST,
+    MACRO_INACTIVE_USER,
+    MACRO_USER,
+    PORT,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 RUN = ("run", "--pull", "never", "--platform", "linux/amd64", "--security-opt", "no-new-privileges")
@@ -58,6 +65,7 @@ def wait_for_server(log: Path) -> None:
 
 
 def server_command(capture: str, user: str) -> str:
+    users = f"{user} {MACRO_INACTIVE_USER}" if capture == "macro" else user
     if capture != "macro":
         prepare = f"install -m 600 -o {user} -g {user} /input/document.txt /home/{user}/document.txt"
     else:
@@ -65,17 +73,19 @@ def server_command(capture: str, user: str) -> str:
     if capture == "transport":
         prepare += "\ninstall -m 644 /input/transport-peer.py /usr/local/lib/row-transport-peer.py"
     return f"""
-useradd --create-home --shell /bin/sh {user}
 install -m 600 /input/host_key /tmp/host_key
-install -d -m 700 -o {user} -g {user} /home/{user}/.ssh
-install -m 600 -o {user} -g {user} /input/authorized_keys /home/{user}/.ssh/authorized_keys
+for account in {users}; do
+    useradd --create-home --shell /bin/sh "$account"
+    install -d -m 700 -o "$account" -g "$account" "/home/$account/.ssh"
+    install -m 600 -o "$account" -g "$account" /input/authorized_keys "/home/$account/.ssh/authorized_keys"
+done
 {prepare}
 mkdir -p /run/sshd
 cat > /tmp/sshd_config <<'EOF'
 ListenAddress 0.0.0.0
 Port {PORT}
 HostKey /tmp/host_key
-AllowUsers {user}
+AllowUsers {users}
 AuthenticationMethods publickey
 PasswordAuthentication no
 KbdInteractiveAuthentication no

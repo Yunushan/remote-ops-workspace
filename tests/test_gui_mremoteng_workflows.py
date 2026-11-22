@@ -438,7 +438,8 @@ def test_mremoteng_double_click_closes_only_the_clicked_connection(workspace):
     def reply(button):
         dialog = app.activeModalWidget()
         if isinstance(dialog, QMessageBox):
-            prompts.append((dialog.windowTitle(), dialog.text(), dialog.standardButton(dialog.defaultButton())))
+            prompts.append((dialog.windowTitle(), dialog.text(), dialog.standardButtons(),
+                            dialog.standardButton(dialog.defaultButton())))
             if button == buttons.Yes:
                 # A prompt runs a nested event loop. Session tabs may move before the reply.
                 bar.moveTab(window.find_tab_by_label("Alpha"), window.find_tab_by_label("Beta"))
@@ -475,7 +476,9 @@ def test_mremoteng_double_click_closes_only_the_clicked_connection(workspace):
         for answer in (buttons.No, buttons.Yes):
             window.set_workspace_tab_index(window.find_tab_by_label("Beta"))
             double_click(alpha, answer=answer)
-            assert prompts[-1:] == [("Close tab", "Stop 1 running process pane(s)?", buttons.No)]
+            # QMessageBox ignores setWindowTitle on macOS, including with offscreen Qt.
+            title = "" if sys.platform == "darwin" else "Close tab"
+            assert prompts[-1:] == [(title, "Stop 1 running process pane(s)?", buttons.Yes | buttons.No, buttons.No)]
             if answer == buttons.No:
                 assert window.find_tab_by_label("Alpha") == alpha
                 assert len(window.running_terminal_panes()) == 2

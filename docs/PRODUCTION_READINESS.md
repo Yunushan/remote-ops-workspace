@@ -226,17 +226,20 @@ may publish the standard downloads under an exact `vX.Y.Z` tag as an explicitly
 labeled `UNSIGNED PREVIEW` prerelease. Neither preview is production
 certification or satisfies the 100/100 gate.
 
-Bring the required evidence infrastructure online before dispatching the
-protected workflows:
+Before dispatch, bring the native hosts online and register the GitHub Actions
+runners on separate collector hosts. The workflow's `target` input selects the
+required collector labels.
 
-- a real 32-bit i386/i686 Linux builder with labels `self-hosted`, `linux`,
-  `i386`;
-- a real 32-bit armv7l/armhf Linux builder with labels `self-hosted`, `linux`,
-  `armhf`;
-- a modern Windows collector with PowerShell 7 and labels
-  `self-hosted`, `windows`, `xp-evidence`, plus a real
-  Windows XP SP3 x86 host and a real Windows XP Professional x64 SP2 host for
-  `scripts/xp_smoke_runner.cmd`.
+| Dispatch target | Native host that produces the evidence | Required labels on the collector |
+| --- | --- | --- |
+| `linux-i386` | 32-bit i386/i686 Linux builder | `self-hosted`, `linux`, `x64`, `i386` |
+| `linux-armhf` | 32-bit armv7l/armhf Linux builder | `self-hosted`, `linux`, `x64`, `armhf` |
+| `windows-xp-native-x86` | Windows XP SP3 x86 | `self-hosted`, `windows`, `xp-evidence` |
+| `windows-xp-native-x64` | Windows XP Professional x64 Edition SP2 | `self-hosted`, `windows`, `xp-evidence` |
+
+A modern Linux x64 collector can serve both Linux targets when it has both
+custom labels. Run `scripts/xp_smoke_runner.cmd` on each XP host and use a
+modern Windows collector with PowerShell 7 to validate and package the results.
 
 Check runner availability immediately before dispatch:
 

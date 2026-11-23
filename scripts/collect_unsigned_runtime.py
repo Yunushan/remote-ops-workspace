@@ -8,6 +8,7 @@ Opaque formats remain explicit gaps. See docs/UNSIGNED_RUNTIME_OBSERVATIONS.md.
 from __future__ import annotations
 
 import argparse
+import base64
 import bz2
 import csv
 import email.parser
@@ -313,7 +314,9 @@ class Observations:
             raise Refusal("global-gap-count-bound")
         self.gaps.append({"code": code, "reference": reference})
 
-    def observe(self, name: str, raw: bytes, reference: str, *, package: str | None = None) -> dict:
+    def observe(
+        self, name: str, raw: bytes, reference: str, *, package: str | None = None, retain_license: bool = True,
+    ) -> dict:
         name = relative(name)
         if len(self.files) >= self.limits.members or len(raw) > self.limits.member_bytes:
             raise Refusal("member-bound")
@@ -327,7 +330,7 @@ class Observations:
             row["component_identity"] = "unknown"
             row["exact_component_version"] = None
         self.files.append(row)
-        if license_name(name):
+        if retain_license and license_name(name):
             if not raw:
                 self.gap("empty-license-material", reference)
             elif len(raw) > self.limits.license_bytes:
@@ -1097,8 +1100,17 @@ def installed_identities(site_roots: list[Path], observations: Observations) -> 
     return identities
 
 
-def scan_metadata(components: list[dict], site_roots: list[Path], observations: Observations):
+def scan_metadata(
+    components: list[dict], site_roots: list[Path], observations: Observations, *, scripts_root: Path | None = None,
+):
     roots = [root.resolve() for root in site_roots]
+    if scripts_root is not None:
+        plain(scripts_root, directory=True)
+        scripts_root = scripts_root.resolve()
+        if scripts_root.name not in {"bin", "Scripts"} or any(
+            not root.is_relative_to(scripts_root.parent) or root == scripts_root.parent for root in roots
+        ):
+            raise Refusal("distribution-scripts-scheme-invalid")
     if installed_identities(site_roots, observations) != {
         item["normalized_name"]: item["version"] for item in components
     }:
@@ -1138,13 +1150,34 @@ def scan_metadata(components: list[dict], site_roots: list[Path], observations: 
             component["license_files"] = observations.licenses.get(ref, [])
             record = child(location, "RECORD")
             record_raw = read(record, observations.limits.metadata_bytes)
-            known, native_records, count = set(), [], 0
+            known, native_records, script_records, count = set(), [], [], 0
+            # Wheel entry points in a virtual environment are sibling files, not
+            # children of site-packages. Admit only the actual scripts scheme.
+            script_prefix = Path(os.path.relpath(scripts_root, root)).as_posix() + "/" if scripts_root else ""
             for fields in csv.reader(io.StringIO(record_raw.decode("utf-8"))):
                 observations.node()
                 count += 1
                 if len(fields) != 3 or fields[0] in known:
                     raise Refusal("distribution-record-invalid")
                 known.add(fields[0])
+                if scripts_root is not None and script_prefix and fields[0].startswith(script_prefix):
+                    try:
+                        name = relative(fields[0].removeprefix(script_prefix))
+                        if "/" in name:
+                            raise Refusal("distribution-script-path-invalid")
+                        data = read(child(scripts_root, name), observations.limits.member_bytes)
+                    except (Refusal, OSError) as exc:
+                        if isinstance(exc, Refusal) and str(exc) in GLOBAL_BOUNDS:
+                            raise
+                        observations.gap("distribution-script-path-unobserved", ref)
+                        continue
+                    encoded = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode("ascii")
+                    if fields[1] != f"sha256={encoded}" or fields[2] != str(len(data)):
+                        observations.gap("distribution-script-record-mismatch", ref)
+                        continue
+                    row = observations.observe(f"{scripts_root.name}/{name}", data, ref, retain_license=False)
+                    script_records.append(row)
+                    continue
                 try:
                     name = relative(fields[0])
                     path = child(root, name)
@@ -1167,6 +1200,7 @@ def scan_metadata(components: list[dict], site_roots: list[Path], observations: 
                     )
             component["license_files"] = observations.licenses.get(ref, [])
             component["installed_native_observations"] = native_records
+            component["installed_script_observations"] = script_records
             component["record_sha256"] = digest(record_raw)
             component["record_entry_count"] = count
             component["installed_files_all_hashed"] = False
@@ -1219,6 +1253,7 @@ def collect(
     limits: Limits = DEFAULT_LIMITS,
     runtime_root: Path | None = None,
     repository: str | None = None,
+    scripts_root: Path | None = None,
 ):
     if target not in TARGETS or not SHA.fullmatch(sha):
         raise Refusal("candidate-identity-invalid")
@@ -1291,7 +1326,7 @@ def collect(
         raise Refusal("carchive-receipt-shape-invalid")
     observations = Observations(limits, target=target)
     components = inspect_distributions(raw_inspect, limits, root)
-    scan_metadata(components, site_roots, observations)
+    scan_metadata(components, site_roots, observations, scripts_root=scripts_root)
     runtime_component = {
         "name": "CPython",
         "version": runtime.get("version"),
@@ -1556,6 +1591,7 @@ def main(argv=None) -> int:
             runtime,
             runtime_root=Path(sys.base_prefix),
             repository=os.environ.get("GITHUB_REPOSITORY"),
+            scripts_root=Path(sysconfig.get_path("scripts")) if sys.prefix != sys.base_prefix else None,
         )
         if (
             record["run_id"] != os.environ["GITHUB_RUN_ID"]

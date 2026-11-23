@@ -51,6 +51,11 @@ metadata. Actual license bytes are copied and content-deduplicated. The existing
 compliance checker can verify those copied bytes and exact pip-inspect digest;
 it still rejects the collector's incomplete/unapproved inventory.
 
+The collector checks generated command scripts listed in wheel `RECORD` files
+against the active virtual environment's `bin` or `Scripts` directory. An entry
+must name a directly installed regular file and match its recorded size and
+SHA-256. The output records script paths, byte counts and hashes.
+
 Every bound source/input/asset is rechecked after parsing. This is a local
 receipt/byte check, not an independent hosted attestation or hostile race
 guarantee. Windows receipt separators normalize only typed asset/CArchive

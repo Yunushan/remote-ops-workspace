@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import gzip
 import importlib.util
 import io
@@ -323,6 +324,43 @@ class RuntimeObservationCollectorTests(unittest.TestCase):
             self.assertEqual(row["runtime_options_observed"], ["pyi-contents-directory _internal"])
         self.assertNotIn("carchive-runtime-option-unclassified", [row["code"] for row in record["unresolved"]])
         self.assertEqual(record["inputs"]["carchive_report_sha256"], c.digest(archive_raw))
+
+    def test_installed_script_records_are_checked_against_the_venv_scheme(self):
+        self.fixture()
+        site = self.root / "site"
+        scripts = self.root / "Scripts"
+        scripts.mkdir()
+        metadata = site / "example-1.2.dist-info"
+        normal = b"MZfixture launcher"
+        digest = base64.urlsafe_b64encode(bytes.fromhex(c.digest(normal))).rstrip(b"=").decode()
+        (scripts / "example.exe").write_bytes(normal)
+        (scripts / "LICENSE.txt").write_bytes(normal)
+        (scripts / "other.exe").write_bytes(b"payload with a different hash")
+        (self.root / "outside.exe").write_bytes(normal)
+        record = metadata / "RECORD"
+        with record.open("a", encoding="utf-8") as stream:
+            stream.write(f"../Scripts/example.exe,sha256={digest},{len(normal)}\n")
+            stream.write(f"../Scripts/LICENSE.txt,sha256={digest},{len(normal)}\n")
+            stream.write(f"../Scripts/other.exe,sha256={digest},{len(normal)}\n")
+            stream.write(f"../Scripts/../outside.exe,sha256={digest},{len(normal)}\n")
+            stream.write(f"../outside.exe,sha256={digest},{len(normal)}\n")
+        components = c.inspect_distributions((self.root / "proof/pip-inspect.json").read_bytes(), self.limits)
+        observations = c.Observations(self.limits)
+        c.scan_metadata(components, [site], observations, scripts_root=scripts)
+        installed, = components
+        scripts_by_path = {row["path"]: row["sha256"] for row in installed["installed_script_observations"]}
+        self.assertEqual(scripts_by_path, {
+            "Scripts/example.exe": c.digest(normal), "Scripts/LICENSE.txt": c.digest(normal),
+        })
+        self.assertNotIn(c.digest(normal), observations.blobs)
+        self.assertIs(installed["installed_files_all_hashed"], False)
+        self.assertEqual(
+            {row["code"] for row in observations.gaps},
+            {"distribution-script-path-unobserved", "distribution-script-record-mismatch",
+             "distribution-record-outside-root-or-nonregular"},
+        )
+        with self.assertRaisesRegex(c.Refusal, "distribution-scripts-scheme-invalid"):
+            c.scan_metadata([], [site], c.Observations(self.limits), scripts_root=site)
 
     def test_receipt_separator_adaptation_is_typed_and_never_accepts_path_aliases(self):
         self.assertEqual(

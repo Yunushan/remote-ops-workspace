@@ -399,6 +399,10 @@ def mobapt_runtime_roots(roots: Iterable[Path] | None = None) -> tuple[Path, ...
     if env_value:
         raw_roots.extend(Path(part) for part in env_value.split(os.pathsep) if part)
     executable_dir = Path(sys.executable).resolve().parent
+    if sys.platform == "linux" and getattr(sys, "frozen", False):
+        installed_root = executable_dir.parent / "lib" / "remote-ops-workspace" / "mobapt"
+        if (installed_root / "mobapt-runtime.json").is_file():
+            raw_roots.append(installed_root)
     raw_roots.extend(
         [
             executable_dir / "mobapt",

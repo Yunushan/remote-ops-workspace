@@ -66,6 +66,33 @@ def test_mobapt_runtime_status_detects_row_owned_cache(tmp_path: Path) -> None:
     assert evidence.is_file()
 
 
+@pytest.mark.parametrize(("system", "frozen", "found"), [
+    ("linux", True, True), ("linux", False, False), ("win32", True, False),
+])
+def test_mobapt_discovers_installed_linux_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, system: str, frozen: bool, found: bool,
+) -> None:
+    source, _ = _write_mobapt_runtime_tree(tmp_path / "bundle")
+    prefix = tmp_path / "usr"
+    installed = prefix / "lib" / "remote-ops-workspace" / "mobapt"
+    installed.parent.mkdir(parents=True)
+    source.rename(installed)
+    monkeypatch.delenv(mobapt.MOBAPT_RUNTIME_DIR_ENV, raising=False)
+    monkeypatch.setattr(mobapt.sys, "executable", str(prefix / "bin" / "row"))
+    monkeypatch.setattr(mobapt.sys, "platform", system)
+    monkeypatch.setattr(mobapt.sys, "frozen", frozen, raising=False)
+    assert build_mobapt_runtime_status().embedded_runtime_available is found
+
+    explicit = tmp_path / "explicit"
+    monkeypatch.setenv(mobapt.MOBAPT_RUNTIME_DIR_ENV, str(tmp_path / "configured"))
+    roots = mobapt.mobapt_runtime_roots([explicit])
+    assert roots[:2] == (explicit, tmp_path / "configured")
+    if found:
+        assert roots[2] == installed
+        (installed / "mobapt-runtime.json").unlink()
+        assert installed not in mobapt.mobapt_runtime_roots()
+
+
 def test_mobapt_runtime_bundle_writer_creates_verifiable_release_tree(tmp_path: Path) -> None:
     out_dir = tmp_path / "bundle"
 

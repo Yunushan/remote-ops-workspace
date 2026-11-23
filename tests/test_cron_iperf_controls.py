@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -142,6 +143,47 @@ def test_frozen_cron_uses_independent_extraction_and_expected_stop_is_atomic(tmp
         servers.stop_moba_server("cron", expected_record=record, terminator=pytest.fail, **kwargs)
     with pytest.raises(servers.ServerOwnershipChanged):
         servers.stop_moba_server("cron", expected_record=record, state_dir=tmp_path / "missing")
+
+
+@pytest.mark.parametrize(
+    "runtime_platform, frozen, original, expected",
+    [
+        ("linux", True, None, None),
+        ("linux", True, "", ""),
+        ("linux", True, "/opt/application/lib", "/opt/application/lib"),
+        ("linux", False, None, "/tmp/parent-extraction"),
+        ("win32", True, None, "/tmp/parent-extraction"),
+    ],
+)
+def test_managed_server_restores_frozen_linux_library_search(
+    tmp_path, monkeypatch, runtime_platform, frozen, original, expected,
+):
+    monkeypatch.setenv("ROW_HOME", str(tmp_path / "workspace"))
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/parent-extraction")
+    monkeypatch.delenv("LD_LIBRARY_PATH_ORIG", raising=False)
+    if original is not None:
+        monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", original)
+    plan = servers.build_moba_server_plan("http", root=tmp_path)
+    monkeypatch.setattr(servers, "sys", SimpleNamespace(frozen=frozen, platform=runtime_platform))
+    launched = []
+
+    def launch(_command, *, env):
+        launched.append(env)
+        return SimpleNamespace(pid=7788, poll=lambda: None)
+
+    servers.start_moba_server(
+        plan,
+        state_dir=tmp_path / "state",
+        popen_factory=launch,
+        identity_factory=lambda child: {"pid": child.pid},
+    )
+    environment, = launched
+    library_path = environment.get("LD_LIBRARY_PATH")
+    assert library_path == expected
+    assert "LD_LIBRARY_PATH_ORIG" not in environment
+    assert (environment.get("PYINSTALLER_RESET_ENVIRONMENT") == "1") == frozen
+    assert os.environ["LD_LIBRARY_PATH"] == "/tmp/parent-extraction"
+    assert os.environ.get("LD_LIBRARY_PATH_ORIG") == original
 
 
 def test_startup_failure_preserves_ownership_and_stop_can_retry(tmp_path, monkeypatch):

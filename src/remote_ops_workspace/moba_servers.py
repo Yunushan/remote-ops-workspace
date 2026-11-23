@@ -1108,8 +1108,18 @@ def _start_moba_server_locked(
     identity_factory: Callable[[Any], dict[str, Any]] | None,
 ) -> MobaEmbeddedServerLifecycleRecord:
     factory = popen_hidden if popen_factory is None else popen_factory
-    environment = {**os.environ, **plan.environment}
-    if getattr(sys, "frozen", False) and plan.runtime.key in {"python-http", "pyftpdlib", "row-cron"}:
+    environment = dict(os.environ)
+    frozen = getattr(sys, "frozen", False)
+    if frozen and sys.platform.startswith("linux"):
+        # PyInstaller prepends its extraction directory. Restore the caller's
+        # search path before a daemon bootloader or host binary enters glibc.
+        original = environment.pop("LD_LIBRARY_PATH_ORIG", None)
+        if original is None:
+            environment.pop("LD_LIBRARY_PATH", None)
+        else:
+            environment["LD_LIBRARY_PATH"] = original
+    environment.update(plan.environment)
+    if frozen and plan.runtime.key in {"python-http", "pyftpdlib", "row-cron"}:
         # The server outlives the CLI that starts it. A one-file PyInstaller
         # child needs its own extraction directory after that CLI exits.
         environment["PYINSTALLER_RESET_ENVIRONMENT"] = "1"

@@ -581,6 +581,12 @@ class OperatorWorkflows:
     def populate_moba_macro_menu(self, menu: QMenu) -> None:
         self.moba_macro_controls().populate(menu)
 
+    def open_moba_quick_macros(self, pane: TerminalPane) -> bool:
+        if self.current_design_id() != "mobaxterm" or self.active_terminal_pane() is not pane:
+            return False
+        self.moba_macro_controls().show_chooser(pane)
+        return True
+
     def show_moba_macros_status(self, *_args) -> None:
         self.set_moba_rail_active("macros")
         controls = self.moba_macro_controls()

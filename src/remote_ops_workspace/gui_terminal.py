@@ -253,6 +253,18 @@ class TerminalTextEdit(QTextEdit):
         super().hideEvent(event)
         self._sync_remote_cursor_blink()
 
+    def terminal_cursor_rect(self) -> QRect:
+        document = _required_gui_value(self.document(), "terminal text document")
+        end = document.characterCount() - 1
+        position = end if self._remote_cursor_position is None else self._remote_cursor_position
+        cursor = QTextCursor(document)
+        cursor.setPosition(max(0, min(end, position)))
+        rectangle = self.cursorRect(cursor)
+        cell_width = max(1, self.fontMetrics().horizontalAdvance("M"))
+        rectangle.translate(self._remote_cursor_trailing_cells * cell_width, 0)
+        rectangle.setWidth(cell_width)
+        return rectangle
+
     def paintEvent(self, event) -> None:  # noqa: N802
         if bool(self.property("terminalTabPaintFrozen")):
             return
@@ -267,21 +279,10 @@ class TerminalTextEdit(QTextEdit):
             self.viewport(),
             "terminal paint viewport",
         )
-        document = _required_gui_value(
-            self.document(),
-            "terminal paint document",
-        )
-        cursor = QTextCursor(document)
-        cursor.setPosition(
-            max(
-                0,
-                min(document.characterCount() - 1, self._remote_cursor_position),
-            )
-        )
-        rectangle = self.cursorRect(cursor)
-        cell_width = max(1, self.fontMetrics().horizontalAdvance("M"))
+        rectangle = self.terminal_cursor_rect()
+        cell_width = rectangle.width()
         thickness = max(2, round(self.devicePixelRatioF()))
-        x = rectangle.x() + self._remote_cursor_trailing_cells * cell_width
+        x = rectangle.x()
         y = rectangle.y() + 1
         height = max(1, rectangle.height() - 2)
         shape = self._remote_cursor_style[0]
@@ -956,6 +957,11 @@ class TerminalPane(QWidget):
                 event.accept()
                 return True
         if watched in terminal_targets and event.type() == QEvent.Type.KeyPress:
+            if event.key() == Qt.Key.Key_Space and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+                chooser = getattr(self.window(), "open_moba_quick_macros", None)
+                if chooser is not None and chooser(self):
+                    event.accept()
+                    return True
             # The terminal event filter normally owns key delivery so
             # that readline, Vim, and ncurses receive exact TTY bytes.
             # Ctrl+Tab is the workspace traversal gesture, however; if

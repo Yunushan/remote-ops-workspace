@@ -305,6 +305,147 @@ def macro_workspace(gui_window, monkeypatch):
     return window, pane, active, popup, MobaMacroStore()
 
 
+def test_moba_quick_macro_keyboard_filter_and_guarded_replay(macro_workspace, monkeypatch):
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+    from PyQt6.QtWidgets import QApplication, QLineEdit, QListWidget
+
+    from remote_ops_workspace.moba_macros import record_typed_macro
+
+    window, pane, active, _menu, store = macro_workspace
+    window.set_design_preset("mobaxterm")
+    window.add_workspace_tab(pane, "quick macro test")
+    window.activateWindow()
+    store.add(record_typed_macro("01 apple", "first"))
+    store.add(record_typed_macro("02 PEAR", "second"))
+    reviewed = []
+    accept = [False]
+
+    def review(recording):
+        reviewed.append(recording.name)
+        return accept[0]
+
+    monkeypatch.setattr(pane, "confirm_macro_replay", review)
+
+    def show():
+        pane.output.setFocus()
+        QTest.keyClick(pane.output, Qt.Key.Key_Space, Qt.KeyboardModifier.ControlModifier)
+        popup = QApplication.activePopupWidget()
+        assert popup.objectName() == "mobaQuickMacroPopup"
+        search = popup.findChild(QLineEdit, "mobaQuickMacroFilter")
+        assert popup.focusWidget() is search
+        return search, popup.findChild(QListWidget, "mobaQuickMacroNames")
+
+    search, names = show()
+    assert search.placeholderText() == "Search macro"
+    assert [names.item(row).text() for row in range(names.count())] == [
+        "01 apple", "02 PEAR", "Record new macro...",
+    ]
+    initial_height = search.window().height()
+    assert names.currentItem().text() == "01 apple"
+    QTest.keyClick(search, Qt.Key.Key_Down)
+    assert names.currentItem().text() == "02 PEAR"
+    QTest.keyClick(search, Qt.Key.Key_Up)
+    assert names.currentItem().text() == "01 apple"
+    QTest.keyClicks(search, "absent")
+    assert names.count() == 0
+    assert search.window().height() < initial_height
+    QTest.keyClick(search, Qt.Key.Key_Return)
+    assert QApplication.activePopupWidget() is not None
+    QTest.keyClick(search, Qt.Key.Key_Escape)
+    assert QApplication.activePopupWidget() is None
+    assert not reviewed and pane.process.written == b""
+
+    search, names = show()
+    QTest.keyClicks(search, "ear")
+    assert names.count() == 1 and names.currentItem().text() == "02 PEAR"
+    QTest.keyClick(search, Qt.Key.Key_Return)
+    QTest.qWait(5)
+    assert reviewed == ["02 PEAR"] and pane.process.written == b""
+
+    accept[0] = True
+    search, names = show()
+    active[0] = None
+    QTest.keyClick(search, Qt.Key.Key_Return)
+    QTest.qWait(5)
+    assert reviewed == ["02 PEAR"] and pane.process.written == b""
+    active[0] = pane
+    _search, names = show()
+    point = names.visualItemRect(names.item(0)).center()
+    QTest.mouseClick(names.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    QTest.qWait(20)
+    assert reviewed == ["02 PEAR", "01 apple"] and pane.process.written == b"first\n"
+    window.tabs.removeTab(window.tabs.indexOf(pane))
+
+
+def test_quick_macro_command_and_identically_named_recording_are_distinct(macro_workspace, monkeypatch):
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+    from PyQt6.QtWidgets import QApplication, QLineEdit, QListWidget
+
+    from remote_ops_workspace.moba_macros import record_typed_macro
+
+    window, pane, _active, _menu, store = macro_workspace
+    window.set_design_preset("mobaxterm")
+    window.add_workspace_tab(pane, "recording origin")
+    window.activateWindow()
+
+    def chooser():
+        pane.output.setFocus()
+        QTest.keyClick(pane.output, Qt.Key.Key_Space, Qt.KeyboardModifier.ControlModifier)
+        popup = QApplication.activePopupWidget()
+        search = popup.findChild(QLineEdit, "mobaQuickMacroFilter")
+        QTest.keyClicks(search, "REC")
+        return search, popup.findChild(QListWidget, "mobaQuickMacroNames")
+
+    search, names = chooser()
+    label = "Record new macro..."
+    assert names.count() == 1 and names.currentItem().text() == label
+    QTest.keyClick(search, Qt.Key.Key_Return)
+    QTest.qWait(5)
+    assert pane.macro_capture_state.active and pane.process.written == b""
+    pane.cancel_macro_capture()
+
+    store.add(record_typed_macro(label, "idle"))
+    search, names = chooser()
+    assert [names.item(i).text() for i in range(2)] == [label, label]
+    reviewed = []
+    monkeypatch.setattr(pane, "confirm_macro_replay", lambda recording: reviewed.append(recording.name) or False)
+    item = names.currentItem()
+    # These signals can both be emitted by a Qt style for one activation.
+    names.itemClicked.emit(item)
+    names.itemActivated.emit(item)
+    QTest.qWait(5)
+    assert reviewed == [label] and pane.macro_capture_state is None
+    window.tabs.removeTab(window.tabs.indexOf(pane))
+
+
+def test_quick_macro_key_is_local_only_to_moba_terminal_output(macro_workspace):
+    from PyQt6.QtCore import QEvent, Qt
+    from PyQt6.QtGui import QKeyEvent
+    from PyQt6.QtTest import QTest
+    from PyQt6.QtWidgets import QApplication
+
+    window, pane, active, _menu, _store = macro_workspace
+    ctrl = Qt.KeyboardModifier.ControlModifier
+    # A standalone pane and other presets still use the conventional TTY mapping.
+    assert pane.output.terminal_cursor_rect().width() > 0
+    QTest.keyClick(pane.output, Qt.Key.Key_Space, ctrl)
+    window.set_design_preset("native")
+    window.add_workspace_tab(pane, "key scope test")
+    QTest.keyClick(pane.output, Qt.Key.Key_Space, ctrl)
+    window.set_design_preset("mobaxterm")
+    active[0] = None
+    assert not window.open_moba_quick_macros(pane)
+    active[0] = pane
+    event = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Space, ctrl | Qt.KeyboardModifier.AltModifier, " ")
+    QApplication.sendEvent(pane.output, event)
+    assert pane.process.written == b"\x00\x00 "
+    QTest.keyClick(window.quick_connect, Qt.Key.Key_Space, ctrl)
+    assert QApplication.activePopupWidget() is None
+    window.tabs.removeTab(window.tabs.indexOf(pane))
+
+
 def test_moba_recording_ribbon_follows_the_active_terminal(macro_workspace, monkeypatch):
     from PyQt6.QtWidgets import QInputDialog
 

@@ -343,7 +343,11 @@ reviews, and the downloaded release assets. See the
    **Macros → Record new macro**, type in the terminal, then select **Stop
    recording** on the recording ribbon. Accepting a name saves it in the workspace macro
    store. Saved entries appear in the Macros menu on subsequent launches.
-   Selecting an entry opens the replay review for the active terminal.
+   With the Moba-style terminal focused, press **Ctrl+Space** to search saved
+   macros. Type part of a name and press **Enter** to review playback, or
+   press **Escape** to return to the terminal. **Record new macro...** is
+   available even when the library is empty.
+   Selecting a saved entry opens the replay review for the active terminal.
    A key or paste outside the supported typed input
    cancels the recording so replay preserves the captured sequence. The replay
    dialog identifies the destination and defaults to Cancel. Replay sends the

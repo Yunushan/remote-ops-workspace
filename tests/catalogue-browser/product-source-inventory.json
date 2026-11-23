@@ -178,8 +178,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_macro_controls.py",
-      "sha256": "92fcbb2d1406afd9f20558af9b41c9304e76f5338055dc9b93f45ba984765786",
-      "size": 5796
+      "sha256": "1be3ea64e238de535741ff56d5cedf9b085e2b22441f8f4bed14b5bec7aeb7ec",
+      "size": 9568
     },
     {
       "path": "src/remote_ops_workspace/gui_menus.py",
@@ -198,8 +198,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_operator_workflows.py",
-      "sha256": "ca1cacc221fc5b8094628b51fd2f331633b8c5137445e7f1a5e14495af782232",
-      "size": 29573
+      "sha256": "c62e194bb12a354b6e2b9c3a63bc01ab760e6807cd989a1c373c6898d91c7b75",
+      "size": 29834
     },
     {
       "path": "src/remote_ops_workspace/gui_preset_mobaxterm.py",
@@ -318,8 +318,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_terminal.py",
-      "sha256": "80d58c4433ef3babcab637569a9420062cde71072da3c0b0d4a476fc572b6e3d",
-      "size": 139095
+      "sha256": "fa6423aa5279e14585986dd471a051ecb67e47d37b31aaf6d718c9b96bd56a0f",
+      "size": 139627
     },
     {
       "path": "src/remote_ops_workspace/gui_terminal_lifecycle.py",

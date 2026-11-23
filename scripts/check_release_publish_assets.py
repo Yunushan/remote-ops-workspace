@@ -29,8 +29,10 @@ from check_platform_verified_evidence import (  # noqa: E402
     RESERVED_WORKSPACE_ROOTS,
     directory_path_has_file_suffix,
 )
+from macos_notarization import check_release_receipt  # noqa: E402
 
 EXPECTED_CHECKSUM_SUFFIX = "SHA256SUMS.txt"
+MACOS_NOTARIZATION_RECEIPT_FIRST_RELEASE = (1, 0, 28)
 SOURCE_PYTHON_SBOM_SCOPE = "source-and-python-release-environment"
 RUNTIME_CONFIG_FILES = (
     "feature_manifest.json",
@@ -453,12 +455,6 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
             "Install native archive inspector",
         ),
         (
-            "python scripts/check_packaged_release_notices.py",
-            "exact package notices audit",
-            "run",
-            "Verify notices in the exact native packages",
-        ),
-        (
             "check_release_license_compliance.py",
             "signed exact-byte compliance audit",
             "run",
@@ -594,11 +590,6 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
     indexes: list[int] = []
     command_contracts = {
         "Install native archive inspector": ((), (), frozenset()),
-        "Verify notices in the exact native packages": (
-            ("--assets-dir release-assets", '--tag "$RELEASE_TAG"'),
-            (),
-            frozenset({"--assets-dir", "--tag"}),
-        ),
         "Verify final immutable release and complete exact-tag provenance": (
             (
                 "python scripts/check_release_provenance.py",
@@ -613,13 +604,18 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
                 "--governance-signature release-governance-publish/tag-governance-attestation.sig.json",
                 '--redistribution-evidence "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.json"',
                 '--redistribution-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"',
+                '--candidate-inventory "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/release-candidate-inventory.json"',
+                '--protected-platform-registry "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/platform_verified_evidence.json"',
+                '--candidate-qualification-archives "$RUNNER_TEMP/candidate-qualification"',
             ),
             ("--help",),
             frozenset({
                 "--assets-dir", "--repository", "--tag", "--sha", "--published-release-id",
                 "--current-transaction-run-id", "--current-transaction-run-attempt",
                 "--governance-attestation", "--governance-signature",
-                "--redistribution-evidence", "--redistribution-signature",
+                "--redistribution-evidence", "--redistribution-signature", "--candidate-inventory",
+                "--protected-platform-registry",
+                "--candidate-qualification-archives",
             }),
         ),
         "Verify attestation and download exact candidate artifact IDs": (
@@ -632,6 +628,7 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
                 '--inventory-artifact-id "$INPUT_INVENTORY_ARTIFACT_ID"',
                 '--inventory-archive-digest "$INPUT_INVENTORY_ARCHIVE_DIGEST"',
                 '--approved-inventory "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/release-candidate-inventory.json"',
+                '--qualification-archives "$RUNNER_TEMP/candidate-qualification"',
                 "--assets-root release-assets",
             ),
             ("--help", "--dry-run"),
@@ -645,6 +642,7 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
                     "--inventory-artifact-id",
                     "--inventory-archive-digest",
                     "--approved-inventory",
+                    "--qualification-archives",
                     "--assets-root",
                 }
             ),
@@ -1403,6 +1401,40 @@ def check_native_release_signing_metadata(
             for key, value in expected.items():
                 if signing.get(key) != value:
                     errors.append(f"{label} signing.{key} must be {value!r}")
+        macos_manifest = re.fullmatch(
+            r"(remote-ops-workspace-v(\d+)\.(\d+)\.(\d+)-macos-(?:x64|arm64))-native-manifest\.json", name,
+        )
+        if (expected_production and macos_manifest
+                and tuple(map(int, macos_manifest.groups()[1:])) >= MACOS_NOTARIZATION_RECEIPT_FIRST_RELEASE):
+            errors.extend(check_macos_notarization_receipts(root, macos_manifest[1], payload))
+    return errors
+
+
+def check_macos_notarization_receipts(root: Path, base: str, payload: list[Any]) -> list[str]:
+    expected = {f"{base}.dmg", f"{base}.pkg"}
+    checked = set()
+    submission_ids = set()
+    errors: list[str] = []
+    for item in payload:
+        path = item.get("file") if isinstance(item, dict) else None
+        name = PurePosixPath(path).name if isinstance(path, str) else ""
+        if name not in expected or name in checked or item.get("format") != name.rsplit(".", 1)[1]:
+            errors.append(f"{base} notarization evidence must contain one receipt for each exact DMG and PKG")
+            continue
+        checked.add(name)
+        artifact = root / name
+        try:
+            digest = item.get("sha256")
+            receipt_id = check_release_receipt(item.get("notarization"), archive=name, stapled_sha256=digest)
+            if receipt_id in submission_ids:
+                raise ValueError("Apple notarization submission ID is duplicated")
+            submission_ids.add(receipt_id)
+            if artifact.is_symlink() or not artifact.is_file() or sha256_file(artifact) != digest:
+                raise ValueError("release file does not match the verified stapled SHA-256")
+        except (OSError, ValueError) as exc:
+            errors.append(f"{name}: {exc}")
+    if checked != expected:
+        errors.append(f"{base} notarization evidence is missing receipts for {sorted(expected - checked)}")
     return errors
 
 

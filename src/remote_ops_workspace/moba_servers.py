@@ -9,19 +9,34 @@ import os
 import platform
 import re
 import shutil
+import socket
+import subprocess
 import sys
+import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
+from uuid import uuid4
 
 from . import command_safety as safe
+from .embedded_cron import (
+    CRON_STOP_TIMEOUT,
+    change_cron_phase,
+    cron_worker_lease_held,
+    default_crontab_path,
+    prepare_crontab,
+    uses_cron_worker_lease,
+    wait_for_cron_ready,
+)
 from .file_safety import write_json_atomic
 from .paths import ensure_data_dir
 from .process_launch import popen_hidden
 from .process_status import (
+    ProcessIdentityError,
     process_is_running,
+    reap_exited_owned_process,
     recorded_process_is_running,
     register_process,
     terminate_owned_process,
@@ -35,6 +50,9 @@ ProcessTerminator = Callable[[int], None]
 SERVER_RUNTIME_DIR_ENV = "ROW_SERVER_RUNTIME_DIR"
 SERVER_RUNTIME_BUNDLE_SCHEMA = "row.moba-servers.runtime-bundle.v1"
 SERVER_RUNTIME_MANIFEST_NAME = "servers-runtime.json"
+SERVER_OPENSSH_HELPER_DIR = "linux/openssh/libexec"
+SERVER_OPENSSH_HELPERS = ("sshd-session", "sshd-auth")
+SERVER_RUNTIME_MAX_BYTES = 128 * 1024 * 1024
 SERVER_RELEASE_EVIDENCE_SCHEMA = "row.moba-servers.release-evidence.v1"
 SERVER_POLICY_SCHEMA = "row.moba-servers.policy.v1"
 SERVER_GUI_CONFIG_SCHEMA = "row.moba-servers.gui-config-surface.v1"
@@ -49,9 +67,12 @@ SERVER_DEFAULT_PORTS: dict[str, int] = {
     "vnc": 5901,
     "nfs": 2049,
 }
+# The v1 release evidence contract covers the eight network protocols above.
+# Cron is a scheduler; its lifecycle record has no network endpoint.
+SERVER_CONTROL_PORTS = {**SERVER_DEFAULT_PORTS, "cron": 0, "iperf": 5001}
 
 FILE_ROOT_SERVICES = {"http", "ftp", "tftp"}
-AUTH_CAPABLE_SERVICES = {"ftp", "ssh", "sftp", "telnet", "vnc"}
+AUTH_CAPABLE_SERVICES = {"ftp", "ssh", "sftp", "telnet", "vnc", "nfs"}
 
 
 @dataclass(slots=True)
@@ -364,6 +385,7 @@ class MobaEmbeddedServerLifecycleRecord:
     state_path: str = ""
     running: bool = False
     process_identity: dict[str, Any] | None = None
+    cron_generation: str = ""
 
     @classmethod
     def from_dict(
@@ -375,10 +397,11 @@ class MobaEmbeddedServerLifecycleRecord:
     ) -> MobaEmbeddedServerLifecycleRecord:
         pid_value = data.get("pid")
         pid = int(str(pid_value)) if pid_value not in (None, "") else None
+        service = _service_key(str(data.get("service") or "http"))
         return cls(
-            service=_service_key(str(data.get("service") or "http")),
-            host=safe.host(str(data.get("host") or "127.0.0.1"), "server bind host"),
-            port=safe.port(int(data.get("port") or SERVER_DEFAULT_PORTS["http"]), "server port"),
+            service=service,
+            host="" if service == "cron" else safe.host(str(data.get("host") or "127.0.0.1"), "server bind host"),
+            port=0 if service == "cron" else safe.port(int(data.get("port") or SERVER_DEFAULT_PORTS["http"]), "server port"),
             runtime_key=safe.option_value(str(data.get("runtime_key") or "unknown"), "server runtime key"),
             command=safe.argv_list([str(item) for item in data.get("command", [])], "embedded server command"),
             state=safe.option_value(str(data.get("state") or "unknown"), "embedded server state"),
@@ -389,6 +412,7 @@ class MobaEmbeddedServerLifecycleRecord:
             state_path=str(state_path or data.get("state_path") or ""),
             running=bool(running) if running is not None else bool(data.get("running", False)),
             process_identity=_record_process_identity(data),
+            cron_generation=str(data.get("cron_generation") or "") if service == "cron" else "",
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -406,6 +430,7 @@ class MobaEmbeddedServerLifecycleRecord:
             "state_path": self.state_path,
             "running": self.running,
             "process_identity": self.process_identity,
+            **({"cron_generation": self.cron_generation} if self.cron_generation else {}),
         }
 
 
@@ -427,10 +452,10 @@ def build_moba_server_suite_status(
             state_dir=state_dir,
             pid_probe=pid_probe,
         )
-        for service in SERVER_DEFAULT_PORTS
+        for service in SERVER_CONTROL_PORTS
     )
     notes = [
-        "MobaXterm-style embedded server suite is represented by a built-in HTTP runtime and host daemon adapters.",
+        "The embedded server suite includes built-in HTTP, optional Python FTP support and local daemon adapters.",
         "Full proprietary parity still needs bundled, release-tested daemon binaries and per-service hardening.",
     ]
     return MobaEmbeddedServerSuiteStatus(system=system_key, services=services, notes=notes)
@@ -449,14 +474,20 @@ def discover_moba_server_runtimes(
     runtimes: list[MobaEmbeddedServerRuntime] = []
     for key, label, executable, bundled, builtin, notes in _runtime_definitions(service_key, system_key):
         resolved: str | None
-        if key == "pyftpdlib" and importlib.util.find_spec("pyftpdlib") is not None:
+        if key == "pyftpdlib":
             resolved = sys.executable
-            available = True
+            available = importlib.util.find_spec("pyftpdlib") is not None
+            builtin = available and bool(getattr(sys, "frozen", False))
         elif builtin and executable == "python":
             resolved = sys.executable
             available = bool(sys.executable)
         else:
-            resolved = which(executable)
+            if system_key == "linux" and key == "nfsd":
+                resolved = which("rpc.nfsd") or which(executable)
+            elif system_key == "linux" and key == "telnetd":
+                resolved = which(executable) or which("in.telnetd")
+            else:
+                resolved = which(executable)
             available = resolved is not None
         runtimes.append(
             MobaEmbeddedServerRuntime(
@@ -482,10 +513,10 @@ def build_moba_server_runtime_status(
     resolved_roots = moba_server_runtime_roots(roots)
     runtimes = tuple(
         runtime
-        for service in SERVER_DEFAULT_PORTS
+        for service in SERVER_CONTROL_PORTS
         for runtime in discover_packaged_moba_server_runtimes(service, system=system_key, roots=resolved_roots)
     )
-    coverage = {service: any(runtime.service == service and runtime.available for runtime in runtimes) for service in SERVER_DEFAULT_PORTS}
+    coverage = {service: any(runtime.service == service and runtime.available for runtime in runtimes) for service in SERVER_CONTROL_PORTS}
     notes = [
         f"Scanned {len(resolved_roots)} embedded server runtime root(s).",
         f"Set {SERVER_RUNTIME_DIR_ENV} to a release-owned daemon runtime directory to prefer packaged server binaries.",
@@ -519,6 +550,8 @@ def build_moba_server_runtime_bundle_plan(
     allow_placeholder: bool = False,
 ) -> MobaEmbeddedServerRuntimeBundlePlan:
     service_key = _service_key(service)
+    if service_key == "cron":
+        raise ValueError("Cron uses the built-in ROW scheduler")
     system_key = safe.option_value(system or platform.system(), "system").lower()
     key, label, default_executable, _bundled, _builtin, _notes = _runtime_definition_by_key(
         service_key,
@@ -628,6 +661,8 @@ def discover_packaged_moba_server_runtimes(
     roots: Iterable[Path] | None = None,
 ) -> tuple[MobaEmbeddedServerRuntime, ...]:
     service_key = _service_key(service)
+    if service_key == "cron":
+        return ()
     system_key = safe.option_value(system or platform.system(), "system").lower()
     found: list[MobaEmbeddedServerRuntime] = []
     for root in moba_server_runtime_roots(roots):
@@ -661,6 +696,10 @@ def moba_server_runtime_roots(roots: Iterable[Path] | None = None) -> tuple[Path
     if env_value:
         raw_roots.extend(Path(part) for part in env_value.split(os.pathsep) if part)
     executable_dir = Path(sys.executable).resolve().parent
+    if sys.platform == "linux" and getattr(sys, "frozen", False):
+        installed_root = executable_dir.parent / "lib" / "remote-ops-workspace" / "servers"
+        if (installed_root / SERVER_RUNTIME_MANIFEST_NAME).is_file():
+            raw_roots.append(installed_root)
     raw_roots.extend(
         [
             executable_dir / "servers",
@@ -692,25 +731,33 @@ def build_moba_server_plan(
     packaged_roots: Iterable[Path] | None = None,
     require_tls: bool = False,
     hardening_profile: str = "loopback-private",
+    crontab: Path | None = None,
+    iperf_version: int | None = None,
 ) -> MobaEmbeddedServerPlan:
     service_key = _service_key(service)
     system_key = safe.option_value(system or platform.system(), "system").lower()
-    host = validate_server_bind(host, allow_public_bind=allow_public_bind)
-    resolved_port = safe.port(port or SERVER_DEFAULT_PORTS[service_key], "server port")
     resolved_root = _resolve_root(service_key, root)
     config = build_moba_server_config_plan(
-        service_key, host=host, port=resolved_port, root=resolved_root,
+        service_key, host=host, port=port, root=resolved_root,
         hardening_profile=hardening_profile, require_tls=require_tls,
-        allow_public_bind=allow_public_bind,
+        allow_public_bind=allow_public_bind, crontab=crontab, iperf_version=iperf_version,
     )
+    host, resolved_port = config.host, config.port
     runtimes = discover_moba_server_runtimes(
         service_key,
         system=system_key,
         which=which,
         packaged_roots=packaged_roots,
     )
+    if service_key == "iperf":
+        runtimes = tuple(item for item in runtimes if item.key == f"iperf{config.settings['iperf_version']}")
     runtime = _select_runtime(runtimes)
-    command = _runtime_command(runtime, host, resolved_port, resolved_root)
+    if service_key == "cron":
+        command = [*(_frozen_server_command("cron", "Cron") if getattr(sys, "frozen", False)
+                     else [sys.executable, "-m", "remote_ops_workspace", "servers", "_cron-runtime"]),
+                   "--crontab", config.settings["crontab"]]
+    else:
+        command = _runtime_command(runtime, host, resolved_port, resolved_root)
     notes = _plan_notes(service_key, runtime, host, resolved_root)
     environment = {"ROW_SERVER_SERVICE": service_key}
     environment["ROW_SERVER_AUTH_REQUIRED"] = "1" if config.auth_required else "0"
@@ -729,7 +776,7 @@ def build_moba_server_plan(
         command=command,
         runtime=runtime,
         environment=environment,
-        public_bind=not _is_loopback_host(host.lower()),
+        public_bind=bool(config.settings["network"]["public_bind_active"]),
         notes=notes,
     )
 
@@ -744,16 +791,25 @@ def build_moba_server_config_plan(
     require_auth: bool | None = None,
     require_tls: bool = False,
     allow_public_bind: bool = False,
+    crontab: Path | None = None,
+    iperf_version: int | None = None,
 ) -> MobaEmbeddedServerConfigPlan:
     service_key = _service_key(service)
     profile = _hardening_profile(hardening_profile)
     bind_host = validate_server_bind(host, allow_public_bind=allow_public_bind)
-    resolved_port = safe.port(port or SERVER_DEFAULT_PORTS[service_key], "server port")
+    if crontab is not None and service_key != "cron":
+        raise ValueError("--crontab applies only to Cron")
+    if iperf_version is not None and (service_key != "iperf" or iperf_version not in {2, 3}):
+        raise ValueError("--iperf-version must select Iperf 2 or 3")
+    if service_key == "cron" and (port not in (None, 0) or allow_public_bind or bind_host != "127.0.0.1" or require_auth or require_tls):
+        raise ValueError("Cron runs locally without a network listener or network authentication")
+    default_port = 5201 if iperf_version == 3 else SERVER_CONTROL_PORTS[service_key]
+    resolved_port = 0 if service_key == "cron" else safe.port(port or default_port, "server port")
     resolved_root = _resolve_root(service_key, root)
     auth_required = bool(require_auth) if require_auth is not None else service_key in AUTH_CAPABLE_SERVICES
     public_bind = not _is_loopback_host(bind_host.lower())
     settings: dict[str, Any] = {
-        "bind_host": bind_host,
+        "bind_host": "" if service_key == "cron" else bind_host,
         "port": resolved_port,
         "service": service_key,
         "root": str(resolved_root) if resolved_root else "",
@@ -774,14 +830,18 @@ def build_moba_server_config_plan(
         "MobaXterm-style embedded server configuration plan.",
         "Secrets are referenced through external stores or system accounts; generated config does not contain passwords.",
     ]
+    if service_key == "cron":
+        settings["crontab"] = os.path.abspath((crontab or default_crontab_path()).expanduser())
+    if service_key == "iperf":
+        settings["iperf_version"] = iperf_version or 2
     if public_bind:
         notes.append("Public bind is active; use only on trusted networks and pair with authentication.")
     if profile == "strict-private":
         if public_bind:
             raise ValueError("strict-private hardening requires a loopback bind host")
         settings["network"]["public_bind_allowed"] = False
-        settings["auth"]["required"] = True
-        notes.append("Strict-private hardening forces authentication and loopback-only network exposure.")
+        settings["auth"]["required"] = service_key != "cron"
+        notes.append("Strict-private hardening restricts network listeners to authenticated loopback connections.")
     if service_key == "ftp":
         settings["auth"] = {
             "required": True, "source": "ROW_FTP_USERNAME/ROW_FTP_PASSWORD environment",
@@ -791,6 +851,11 @@ def build_moba_server_config_plan(
         settings["transport"]["certificate_env"] = "ROW_FTP_TLS_CERT"
         settings["transport"]["private_key_env"] = "ROW_FTP_TLS_KEY"
     if service_key in {"telnet", "nfs"}:
+        settings["auth"] = {
+            "required": True,
+            "source": "system-pam-login" if service_key == "telnet" else "kerberos-rpcsec-gss",
+            "passwords_in_config": False,
+        }
         settings["execution"] = {
             "mode": "host-managed", "managed_start_supported": False,
             "reason": "portable daemon adapter cannot enforce listener binding and system authentication",
@@ -800,7 +865,7 @@ def build_moba_server_config_plan(
     return MobaEmbeddedServerConfigPlan(
         schema=SERVER_POLICY_SCHEMA,
         service=service_key,
-        host=bind_host,
+        host=settings["bind_host"],
         port=resolved_port,
         root=str(resolved_root) if resolved_root else "",
         hardening_profile=profile,
@@ -928,6 +993,8 @@ def validate_moba_server_release_evidence(
         if service_key:
             try:
                 service_key = _service_key(service_key)
+                if service_key not in SERVER_DEFAULT_PORTS:
+                    raise ValueError(f"{service_key} is outside the v1 eight-service evidence contract")
                 covered_services.add(service_key)
             except ValueError as exc:
                 errors.append(f"{label}.service is invalid: {exc}")
@@ -995,6 +1062,8 @@ def start_moba_server(
     if not plan.runtime.available:
         raise ValueError(f"embedded server runtime is not available: {plan.runtime.label}")
     verify_packaged_runtime_integrity(plan.runtime)
+    if plan.service == "cron":
+        prepare_crontab(Path(plan.command[-1]))
     if plan.service == "ftp":
         from .embedded_ftp import validate_ftp_environment
 
@@ -1005,7 +1074,7 @@ def start_moba_server(
             raise ValueError("FTPS requires pyOpenSSL in the ROW Python runtime")
     if plan.environment.get("ROW_SERVER_TLS_REQUIRED") == "1" and plan.service != "ftp":
         raise ValueError("the selected server adapter cannot enforce the required TLS transport; use a host-managed TLS service")
-    if plan.environment.get("ROW_SERVER_AUTH_REQUIRED") == "1" and plan.service in {"http", "tftp"}:
+    if plan.environment.get("ROW_SERVER_AUTH_REQUIRED") == "1" and plan.service in {"http", "tftp", "iperf"}:
         raise ValueError("the selected server adapter cannot enforce required authentication; use a host-managed authenticated service")
     if plan.service == "vnc":
         password_file = plan.command[-1] if "-rfbauth" in plan.command else ""
@@ -1013,7 +1082,23 @@ def start_moba_server(
             raise ValueError("managed VNC requires x11vnc and an existing ROW_VNC_PASSWORD_FILE (created with x11vnc -storepasswd)")
     with exclusive_file_lock(target_state_path, timeout_seconds=lock_timeout_seconds):
         _require_replaceable_server_record(plan.service, state_dir)
+        if plan.service == "iperf":
+            _require_available_iperf_port(plan.host, plan.port)
         return _start_moba_server_locked(plan, target_state_path, popen_factory, identity_factory)
+
+
+def _require_available_iperf_port(host: str, port: int) -> None:
+    # Older Windows Iperf can stay alive after a collision. Check before
+    # spawning it; the native program must acquire the actual listener itself.
+    for family, kind, proto, _name, address in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM):
+        with socket.socket(family, kind, proto) as probe:
+            exclusive = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
+            if exclusive is not None:
+                probe.setsockopt(socket.SOL_SOCKET, exclusive, 1)
+            try:
+                probe.bind(address)
+            except OSError as exc:
+                raise ValueError(f"Iperf cannot bind {host}:{port}: {exc}") from exc
 
 
 def _start_moba_server_locked(
@@ -1023,8 +1108,21 @@ def _start_moba_server_locked(
     identity_factory: Callable[[Any], dict[str, Any]] | None,
 ) -> MobaEmbeddedServerLifecycleRecord:
     factory = popen_hidden if popen_factory is None else popen_factory
-    process = factory(plan.command, env={**os.environ, **plan.environment})
+    environment = {**os.environ, **plan.environment}
+    if getattr(sys, "frozen", False) and plan.runtime.key in {"python-http", "pyftpdlib", "row-cron"}:
+        # The server outlives the CLI that starts it. A one-file PyInstaller
+        # child needs its own extraction directory after that CLI exits.
+        environment["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    # Never leave a CLI caller's capture pipe open in the scheduler or Iperf.
+    streams = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) if plan.service in {"cron", "iperf"} else {}
+    generation = uuid4().hex if plan.service == "cron" else ""
+    control = target_state_path.with_suffix(".control")
+    if generation:
+        change_cron_phase(control, generation, (), "pending")
+        environment.update(ROW_CRON_GENERATION=generation, ROW_CRON_CONTROL_FILE=str(control.absolute()))
+    process = None
     try:
+        process = factory(plan.command, env=environment, **streams)
         identity = (identity_factory or register_process)(process)
         if process.poll() is not None:
             raise ProcessLookupError("managed embedded server exited before its lifecycle state could be saved")
@@ -1040,12 +1138,31 @@ def _start_moba_server_locked(
             state_path=str(target_state_path),
             running=True,
             process_identity=identity,
+            cron_generation=generation,
         )
+        # Retain the verified PID for recovery even if a slow frozen worker
+        # times out. The pending generation cannot dispatch a single job.
         write_json_atomic(target_state_path, record.to_dict(), private=True)
+        if generation:
+            wait_for_cron_ready(control, generation, process)
+            if not change_cron_phase(control, generation, ("ready",), "active"):
+                raise ValueError("the Cron startup generation changed")
     except BaseException:
-        terminate_owned_process(process)
+        if generation:
+            change_cron_phase(control, generation, ("pending", "ready", "active"), "revoked")
+            if process is not None:
+                try:
+                    process.wait(timeout=CRON_STOP_TIMEOUT)
+                except subprocess.TimeoutExpired as exc:
+                    raise ValueError("Cron startup was cancelled; retry stop to confirm the process exited") from exc
+        elif process is not None:
+            terminate_owned_process(process)
         raise
     return record
+
+
+class ServerOwnershipChanged(ValueError):
+    """Another invocation replaced or stopped the server this caller started."""
 
 
 def stop_moba_server(
@@ -1055,11 +1172,12 @@ def stop_moba_server(
     pid_probe: PidProbe | None = None,
     terminator: ProcessTerminator | None = None,
     lock_timeout_seconds: float = DEFAULT_LOCK_TIMEOUT_SECONDS,
+    expected_record: MobaEmbeddedServerLifecycleRecord | None = None,
 ) -> MobaEmbeddedServerLifecycleRecord:
     service_key = _service_key(service)
     target_state_path = moba_server_state_path(service_key, state_dir=state_dir)
     with exclusive_file_lock(target_state_path, timeout_seconds=lock_timeout_seconds):
-        return _stop_moba_server_locked(service_key, target_state_path, state_dir, pid_probe, terminator)
+        return _stop_moba_server_locked(service_key, target_state_path, state_dir, pid_probe, terminator, expected_record)
 
 
 def _stop_moba_server_locked(
@@ -1068,13 +1186,34 @@ def _stop_moba_server_locked(
     state_dir: Path | None,
     pid_probe: PidProbe | None,
     terminator: ProcessTerminator | None,
+    expected_record: MobaEmbeddedServerLifecycleRecord | None = None,
 ) -> MobaEmbeddedServerLifecycleRecord:
     record = load_moba_server_record(service_key, state_dir=state_dir, pid_probe=pid_probe)
+    if expected_record is not None and (
+        record is None or record.service != expected_record.service or record.state != "started"
+        or record.pid != expected_record.pid or record.started_at != expected_record.started_at
+        or record.cron_generation != expected_record.cron_generation
+        or not expected_record.process_identity or record.process_identity != expected_record.process_identity
+    ):
+        raise ServerOwnershipChanged(f"the {service_key} instance is no longer owned by this caller")
     if record is None:
         raise ValueError(f"no managed embedded server state found at {target_state_path}")
+    if record.cron_generation and record.pid is not None:
+        # A one-file launcher owns the actual Python worker. Ending its
+        # generation lets that worker exit and its launcher clean up normally.
+        change_cron_phase(target_state_path.with_suffix(".control"), record.cron_generation,
+                          ("pending", "ready", "active"), "revoked")
+        if terminator is None:
+            deadline = time.monotonic() + CRON_STOP_TIMEOUT
+            while _server_process_running(record.pid, record.process_identity, record.cron_generation, target_state_path):
+                if time.monotonic() >= deadline:
+                    raise ValueError("Cron shutdown is pending; retry to confirm the original process exited")
+                time.sleep(0.1)
     if terminator is not None:
         if record.pid is not None and record.running:
             terminator(record.pid)
+    elif record.cron_generation and record.pid is not None:
+        reap_exited_owned_process(record.pid, record.process_identity)
     elif record.pid is not None:
         terminate_recorded_process(record.pid, record.process_identity)
     elif record.state != "stopped":
@@ -1108,9 +1247,25 @@ def _require_replaceable_server_record(service: str, state_dir: Path | None) -> 
         if record.state == "stopped" and stored.get("running", False) is False:
             return
         raise ValueError("managed embedded server state is active or ambiguous; stop or recover it before starting again")
-    if recorded_process_is_running(record.pid, record.process_identity):
+    # A stored "stopped" label can still carry a live process identity.
+    if _server_process_running(record.pid, record.process_identity, record.cron_generation, Path(record.state_path)):
         raise ValueError("managed embedded server is already running; stop it before starting again")
-    terminate_recorded_process(record.pid, record.process_identity)
+    if record.cron_generation:
+        reap_exited_owned_process(record.pid, record.process_identity)
+    else:
+        terminate_recorded_process(record.pid, record.process_identity)
+
+
+def _server_process_running(pid: int, identity: dict[str, Any] | None, generation: str, state_path: Path) -> bool:
+    try:
+        return recorded_process_is_running(pid, identity)
+    except ProcessIdentityError:
+        # An independent macOS CLI has no Popen handle. The private generation
+        # and kernel-held worker lease can confirm its scheduler without a PID signal.
+        if (not generation or not uses_cron_worker_lease() or not identity or identity.get("kind") != "owned"
+                or identity.get("pid") != pid or identity.get("version") != 1 or not identity.get("token")):
+            raise
+        return cron_worker_lease_held(state_path.with_suffix(".control"), generation)
 
 
 def load_moba_server_record(
@@ -1130,7 +1285,9 @@ def load_moba_server_record(
     running = False
     if pid_value not in (None, "") and str(data.get("state", "")) == "started":
         pid = int(str(pid_value))
-        running = pid_probe(pid) if pid_probe is not None else recorded_process_is_running(pid, _record_process_identity(data))
+        generation = str(data.get("cron_generation") or "") if service_key == "cron" else ""
+        running = pid_probe(pid) if pid_probe is not None else _server_process_running(
+            pid, _record_process_identity(data), generation, target_state_path)
     return MobaEmbeddedServerLifecycleRecord.from_dict(data, state_path=target_state_path, running=running)
 
 
@@ -1152,6 +1309,24 @@ def validate_server_bind(host: str, *, allow_public_bind: bool = False) -> str:
     return host
 
 
+def run_http_server(host: str, port: int, root: Path, *, allow_public_bind: bool = False) -> None:
+    from functools import partial
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+    from socket import SOCK_STREAM, getaddrinfo
+
+    bind_host = validate_server_bind(host, allow_public_bind=allow_public_bind)
+    bind_port = safe.port(port, "server port")
+    directory = _resolve_root("http", root)
+    family, _, _, _, address = getaddrinfo(bind_host, bind_port, type=SOCK_STREAM)[0]
+
+    class BoundHTTPServer(ThreadingHTTPServer):
+        address_family = family
+
+    handler = partial(SimpleHTTPRequestHandler, directory=directory)
+    with BoundHTTPServer(cast(tuple[str, int] | tuple[str, int, int, int], address), handler) as server:
+        server.serve_forever()
+
+
 def _service_status(
     service: str,
     *,
@@ -1167,8 +1342,13 @@ def _service_status(
         which=which,
         packaged_roots=packaged_roots,
     )
-    runtime = _select_runtime(runtimes)
     lifecycle = load_moba_server_record(service, state_dir=state_dir, pid_probe=pid_probe)
+    if service == "iperf":
+        # Show the actual running protocol, including an explicit CLI v3 start.
+        key = "iperf3" if lifecycle and lifecycle.running and lifecycle.runtime_key == "iperf3" else "iperf2"
+        runtime = _select_runtime(tuple(item for item in runtimes if item.key == key))
+    else:
+        runtime = _select_runtime(runtimes)
     notes = list(runtime.notes)
     if not runtime.available:
         notes.append("Install or bundle a compatible daemon before starting this service.")
@@ -1181,7 +1361,7 @@ def _service_status(
     return MobaEmbeddedServerServiceStatus(
         key=service,
         label=_service_label(service),
-        default_port=SERVER_DEFAULT_PORTS[service],
+        default_port=SERVER_CONTROL_PORTS[service],
         available=runtime.available,
         startable=startable,
         selected_runtime=runtime.key,
@@ -1208,7 +1388,7 @@ def _gui_config_row(
         port=service.default_port,
         root=service_root or None,
         hardening_profile=hardening_profile,
-        require_tls=require_tls,
+        require_tls=require_tls and service.key != "cron",
     )
     return MobaEmbeddedServerGuiConfigRow(
         service=service.key,
@@ -1299,6 +1479,7 @@ def _merged_server_runtime_manifest(
     service_record: dict[str, Any],
 ) -> dict[str, Any]:
     services: list[dict[str, Any]] = []
+    helper_manifest: dict[str, Any] = {}
     if manifest_path.is_file():
         try:
             existing = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -1308,6 +1489,8 @@ def _merged_server_runtime_manifest(
             raw_services = existing.get("services", [])
             if isinstance(raw_services, list):
                 services = [item for item in raw_services if isinstance(item, dict)]
+            if "openssh_helpers" in existing:
+                helper_manifest["openssh_helpers"] = existing["openssh_helpers"]
     service_key = str(service_record.get("service") or "")
     services = [item for item in services if str(item.get("service") or "") != service_key]
     services.append(service_record)
@@ -1316,6 +1499,7 @@ def _merged_server_runtime_manifest(
         "release_target": release_target,
         "system": system,
         "services": sorted(services, key=lambda item: str(item.get("service") or "")),
+        **helper_manifest,
     }
 
 
@@ -1331,21 +1515,42 @@ def _packaged_runtime_manifest_path(executable: Path) -> Path:
     raise ValueError(f"packaged embedded server runtime has no integrity manifest: {executable}")
 
 
-def _manifest_runtime_record(manifest_path: Path, runtime: MobaEmbeddedServerRuntime) -> dict[str, Any]:
+def _manifest_runtime_record(
+    manifest_path: Path, runtime: MobaEmbeddedServerRuntime,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"packaged embedded server manifest is unreadable: {manifest_path}") from exc
-    services = manifest.get("services") if isinstance(manifest, dict) else None
-    if not isinstance(services, list):
+    if not isinstance(manifest, dict) or not isinstance(services := manifest.get("services"), list):
         raise ValueError(f"packaged embedded server manifest is malformed: {manifest_path}")
     for item in services:
         if not isinstance(item, dict) or str(item.get("service") or "") != runtime.service:
             continue
         record = item.get("runtime")
         if isinstance(record, dict) and str(record.get("key") or "") == runtime.key:
-            return record
+            return manifest, record
     raise ValueError(f"packaged embedded server runtime is not recorded in {manifest_path.name}: {runtime.key}")
+
+
+def verify_packaged_openssh_helpers(root: Path, hashes: Any) -> dict[str, str]:
+    """Verify the two companion executables in the package-owned libexec directory."""
+    if not isinstance(hashes, dict) or hashes.keys() != set(SERVER_OPENSSH_HELPERS):
+        raise ValueError("OpenSSH helper manifest must record sshd-session and sshd-auth")
+    root = root.resolve()
+    verified = {}
+    for name in SERVER_OPENSSH_HELPERS:
+        relative = f"{SERVER_OPENSSH_HELPER_DIR}/{name}"
+        helper = root / relative
+        expected = hashes[name]
+        if not isinstance(expected, str) or re.fullmatch(r"[0-9a-f]{64}", expected) is None:
+            raise ValueError(f"OpenSSH helper has an invalid SHA-256: {name}")
+        if helper.resolve() != helper or not helper.is_file() or not 0 < helper.stat().st_size <= SERVER_RUNTIME_MAX_BYTES:
+            raise ValueError(f"OpenSSH helper must be a regular package file: {helper}")
+        if not hmac.compare_digest(_sha256_file(helper), expected):
+            raise ValueError(f"OpenSSH helper failed its integrity check: {helper}")
+        verified[relative] = expected
+    return verified
 
 
 def verify_packaged_runtime_integrity(runtime: MobaEmbeddedServerRuntime) -> None:
@@ -1354,7 +1559,7 @@ def verify_packaged_runtime_integrity(runtime: MobaEmbeddedServerRuntime) -> Non
         return
     executable = Path(runtime.executable)
     manifest_path = _packaged_runtime_manifest_path(executable)
-    record = _manifest_runtime_record(manifest_path, runtime)
+    manifest, record = _manifest_runtime_record(manifest_path, runtime)
     recorded_executable = manifest_path.parent / str(record.get("executable") or "")
     if recorded_executable.resolve() != executable.resolve():
         raise ValueError(
@@ -1365,6 +1570,8 @@ def verify_packaged_runtime_integrity(runtime: MobaEmbeddedServerRuntime) -> Non
         raise ValueError(f"packaged embedded server runtime has no recorded sha256: {runtime.key}")
     if not hmac.compare_digest(_sha256_file(executable), expected):
         raise ValueError(f"packaged embedded server runtime failed its integrity check: {executable}")
+    if runtime.service in {"ssh", "sftp"} and "openssh_helpers" in manifest:
+        verify_packaged_openssh_helpers(manifest_path.parent, manifest["openssh_helpers"])
 
 
 def _chmod_executable(path: Path) -> None:
@@ -1379,6 +1586,12 @@ def _runtime_definitions(
     system: str,
 ) -> tuple[tuple[str, str, str, bool, bool, tuple[str, ...]], ...]:
     external = ("Host-provided daemon adapter; not yet a bundled ROW runtime.",)
+    if service == "cron":
+        return (("row-cron", "Current-user crontab scheduler", "python", False, True,
+                 ("Five-field user crontab; jobs run under the current account.",)),)
+    if service == "iperf":
+        return (("iperf2", "Iperf 2 throughput server", "iperf", False, False, external),
+                ("iperf3", "Iperf 3 throughput server", "iperf3", False, False, external))
     if service == "http":
         return (
             (
@@ -1392,7 +1605,7 @@ def _runtime_definitions(
         )
     if service == "ftp":
         return (
-            ("pyftpdlib", "pyftpdlib FTP server", "pyftpdlib", False, False, external),
+            ("pyftpdlib", "pyftpdlib FTP server", "pyftpdlib", False, False, ("Authenticated FTP requires pyftpdlib in the ROW Python runtime.",)),
             ("ftpd", "System FTP daemon", "ftpd", False, False, external),
         )
     if service == "tftp":
@@ -1426,9 +1639,17 @@ def _runtime_command(
     root: Path | None,
 ) -> list[str]:
     executable = safe.path_arg(runtime.executable, "embedded server executable")
+    if runtime.key in {"iperf2", "iperf3"}:
+        ipv6 = ["-V"] if runtime.key == "iperf2" and ":" in host else []
+        return [executable, "-s", *ipv6, "-B", host, "-p", str(port)]
     if runtime.key == "python-http":
         if root is None:
             raise ValueError("http server requires a root directory")
+        if getattr(sys, "frozen", False):
+            command = [*_frozen_server_command("http", "HTTP"), "--host", host, "--port", str(port), "--root", str(root)]
+            if not _is_loopback_host(host.lower()):
+                command.append("--allow-public-bind")
+            return command
         return [executable, "-m", "http.server", str(port), "--bind", host, "--directory", str(root)]
     if runtime.key == "pyftpdlib":
         if root is None:
@@ -1443,7 +1664,10 @@ def _runtime_command(
     if runtime.key in {"tftpd", "atftpd"}:
         if root is None:
             raise ValueError("tftp server requires a root directory")
-        return [executable, "--foreground", "--address", f"{host}:{port}", str(root)]
+        if runtime.key == "atftpd":
+            return [executable, "--daemon", "--no-fork", "--bind-address", host, "--port", str(port), str(root)]
+        address = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
+        return [executable, "--foreground", "--address", address, str(root)]
     if runtime.key == "sshd":
         return [executable, "-D", "-p", str(port), "-o", f"ListenAddress={host}", "-o", "PermitEmptyPasswords=no", "-o", "PermitRootLogin=no"]
     if runtime.key == "sshd-sftp":
@@ -1463,37 +1687,52 @@ def _runtime_command(
 def _ftp_runner_command() -> list[str]:
     if not getattr(sys, "frozen", False):
         return [sys.executable, "-m", "remote_ops_workspace.embedded_ftp"]
+    return _frozen_server_command("ftp", "authenticated FTP")
+
+
+def _frozen_server_command(service: str, label: str) -> list[str]:
     executable = Path(sys.executable)
+    arguments = ["servers", f"_{service}-runtime"]
     # The macOS app launcher already delegates all supplied arguments to the
     # CLI, whereas Windows has separate GUI and console entry points.
     if platform.system().lower() == "darwin" and executable.is_file():
-        return [str(executable), "servers", "_ftp-runtime"]
+        return [str(executable), *arguments]
     name = "row.exe" if os.name == "nt" else "row"
     candidates = (executable.with_name(name), executable.parent / "bin" / name)
     for candidate in candidates:
         if candidate.is_file():
-            return [str(candidate), "servers", "_ftp-runtime"]
-    raise ValueError("native authenticated FTP requires the packaged row CLI helper alongside the GUI")
+            return [str(candidate), *arguments]
+    raise ValueError(f"native {label} requires the packaged row CLI helper alongside the GUI")
 
 
 def _host_managed_config(service: str, host: str, port: int) -> dict[str, Any]:
     """Concrete administrator settings, separate from managed process claims."""
     if service == "telnet":
+        legacy_daemon = "/usr/sbin/in.telnetd"
+        daemon = legacy_daemon if Path(legacy_daemon).is_file() else "/usr/sbin/telnetd"
         return {
             "implementation": "xinetd", "service": {
                 "type": "UNLISTED", "socket_type": "stream", "protocol": "tcp",
-                "wait": "no", "user": "root", "server": "/usr/sbin/in.telnetd",
+                "wait": "no", "user": "root", "server": daemon,
                 "bind": host, "port": port,
                 "only_from": "127.0.0.0/8 ::1" if _is_loopback_host(host.lower()) else "ADMINISTRATOR_CLIENT_ALLOWLIST_REQUIRED",
                 "disable": "yes",
             },
             "requirements": ["administrator-approved patched telnetd", "system PAM/login authentication", "explicit insecure-protocol approval", "verify effective listener and client allowlist before enabling"],
         }
+    # Older rpc.nfsd builds interpret every nonempty rdma value as a legacy
+    # port name when it does not enable RDMA as a boolean.
     return {
         "implementation": "Linux nfs-utils", "nfs.conf": {
-            "nfsd": {"host": host, "port": port, "vers3": "n", "vers4": "y", "udp": "n", "tcp": "y", "rdma": "n"},
+            "nfsd": {"host": host, "port": port, "vers3": "n", "vers4": "y", "udp": "n", "tcp": "y"},
         },
-        "requirements": ["administrator-approved exports with explicit client and sec=krb5p policy", "stop existing nfsd before applying listener changes", "verify mountd/rpcbind/lockd auxiliary listeners and firewall", "verify effective server configuration after restart"],
+        "requirements": [
+            "administrator-approved exports with explicit client and sec=krb5p policy",
+            "stop existing nfsd before applying listener changes",
+            "remove rdma and rdma-port settings and --rdma flags from the effective NFS configuration",
+            "verify mountd/rpcbind/lockd auxiliary listeners and firewall",
+            "verify effective server configuration after restart",
+        ],
     }
 
 
@@ -1599,6 +1838,8 @@ def _plan_notes(
     host: str,
     root: Path | None,
 ) -> list[str]:
+    if service == "cron":
+        return list(runtime.notes)
     notes = [
         f"MobaXterm-style embedded {service} server workflow.",
         "Server binds to loopback by default; public binds require --allow-public-bind.",
@@ -1635,6 +1876,8 @@ def _server_config_action(
     hardening_profile: str,
     require_tls: bool,
 ) -> str:
+    if service == "cron":
+        return "row servers config-plan cron"
     command = [
         "row",
         "servers",
@@ -1653,6 +1896,8 @@ def _server_config_action(
 
 
 def _server_start_action(service: str, port: int, root: str) -> str:
+    if service == "cron":
+        return "row servers start cron"
     command = ["row", "servers", "start", service, "--port", str(port)]
     if root:
         command.extend(["--root", root])
@@ -1671,14 +1916,16 @@ def _resolve_root(service: str, root: Path | str | None) -> Path | None:
 
 def _service_key(value: str) -> str:
     key = safe.option_value(value, "embedded server service").lower()
-    if key not in SERVER_DEFAULT_PORTS:
-        allowed = ", ".join(SERVER_DEFAULT_PORTS)
+    if key not in SERVER_CONTROL_PORTS:
+        allowed = ", ".join(SERVER_CONTROL_PORTS)
         raise ValueError(f"unsupported embedded server service: {key}; expected one of: {allowed}")
     return key
 
 
 def _service_label(service: str) -> str:
     return {
+        "cron": "Cron server",
+        "iperf": "Iperf server",
         "http": "HTTP static file server",
         "ftp": "FTP file server",
         "tftp": "TFTP file server",

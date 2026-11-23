@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 from collections.abc import Callable, Iterable
@@ -270,6 +271,15 @@ def run_sftp_batch(plan: SftpBatchPlan, dry_run: bool = False) -> SftpBatchPlan:
         safe.argv_list(plan.command, "sftp command")
         subprocess.run(plan.command, input=plan.batch_input(), text=True, check=True)
     return plan
+
+
+def format_transfer_item_spec(arguments: list[str]) -> str:
+    """Format one editable queue operation using the native parser's quoting rules."""
+    arguments = safe.argv_list(arguments, "transfer queue item")
+    operation = subprocess.list2cmdline(arguments) if os.name == "nt" else shlex.join(arguments)
+    if operation.splitlines() != [operation]:
+        raise safe.CommandSafetyError("Transfer queue paths must fit on one line")
+    return operation
 
 
 def parse_transfer_item_spec(spec: str) -> SftpQueueItem:

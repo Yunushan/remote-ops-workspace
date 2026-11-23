@@ -139,7 +139,7 @@ def test_profile_create_edit_remove_and_import_workflow_edges(
 ) -> None:
     from PyQt6.QtWidgets import QDialog, QFileDialog, QMessageBox
 
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_profile_actions
 
     _app, window = gui_window
     first = Profile(
@@ -204,7 +204,7 @@ def test_profile_create_edit_remove_and_import_workflow_edges(
                 accepted.append(profile)
             return accepted
 
-        def get(self, _name: str):
+        def get(self, _name: str, *, resolve: bool = True):
             if isinstance(self.get_value, Exception):
                 raise self.get_value
             return self.get_value
@@ -336,7 +336,7 @@ def test_profile_create_edit_remove_and_import_workflow_edges(
             raise value
         return value
 
-    monkeypatch.setattr(gui, "import_profiles", fake_import)
+    monkeypatch.setattr(gui_profile_actions, "import_profiles", fake_import)
     store.fail_next_add = True
     for _index in range(6):
         window.import_profiles_with_preview()

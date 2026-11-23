@@ -8,7 +8,8 @@ must have SLSA provenance issued by the exact release workflow and source SHA.
 Final verification requires one common completed successful run; the narrowly
 scoped draft-transaction mode instead binds every draft asset to the current
 tag-triggered run before the draft is promoted. Operators can verify a single
-downloaded file against the immutable published release and its promotion run.
+downloaded file against the immutable published release and its promotion run,
+with optional platform signature verification for Windows and macOS installers.
 """
 
 from __future__ import annotations
@@ -21,7 +22,8 @@ import re
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable
+import zipfile
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,14 +41,26 @@ from check_release_license_compliance import (  # noqa: E402
     check_tag_governance_attestation,
     parse_timestamp,
     read_json_object,
+    secure_regular_file,
+    valid_evidence_record,
     verify_tag_governance_signature,
 )
 from check_release_publish_assets import (  # noqa: E402
     MATRIX_PATH,
+    PLATFORM_GOAL_TARGETS,
+    check_native_release_signing_metadata,
     expected_release_assets,
 )
 from check_release_tag_governance import check_redistribution_approval  # noqa: E402
 from fetch_release_tag_governance import promotion_transaction, require_transaction  # noqa: E402
+from release_candidate_inventory import (  # noqa: E402
+    ARCHIVE_FILE_SCOPE_SCHEMA_VERSION,
+    MAX_JSON_BYTES,
+    candidate_file_identities,
+    require_candidate_archive_indexes,
+    validate_managed_release_qualification,
+    verify_retained_qualification_archives,
+)
 
 PREDICATE_TYPE = "https://slsa.dev/provenance/v1"
 RELEASE_WORKFLOW = ".github/workflows/release-promotion.yml"
@@ -81,6 +95,7 @@ def main(
     check_published_at: Callable[[datetime], list[str]] | None = None,
     audited_inputs: dict[Path, str] | None = None,
     audited_policy: tuple[bytes, dict[str, Any]] | None = None,
+    reviewed_asset_hashes: dict[str, str] | None = None,
 ) -> int:
     args = parse_args(argv)
     try:
@@ -122,6 +137,8 @@ def main(
         single_asset = args.asset is not None
         if single_asset and (draft_transaction or current_transaction):
             raise ValueError("--asset requires a completed published release, outside a transaction")
+        if args.verify_platform_signature and not single_asset:
+            raise ValueError("--verify-platform-signature requires --asset")
         governance_paths = (args.governance_attestation, args.governance_signature)
         verify_governance = any(path is not None for path in governance_paths)
         if verify_governance and (
@@ -135,9 +152,13 @@ def main(
         approval_paths = (args.redistribution_evidence, args.redistribution_signature)
         approval = None
         if any(path is not None for path in approval_paths):
+            delegated_compliance = (
+                audited_policy is not None and audited_inputs is not None
+                and not (current_transaction or completed_promotion)
+            )
             if (
-                not (current_transaction or completed_promotion) or not verify_governance
-                or audited_inputs is not None or None in approval_paths
+                not (current_transaction or completed_promotion or delegated_compliance) or not verify_governance
+                or (audited_inputs is not None and not delegated_compliance) or None in approval_paths
             ):
                 raise ValueError("explicit redistribution inputs require both files and an exact published promotion")
             evidence_path, signature_path = approval_paths
@@ -145,13 +166,22 @@ def main(
             evidence_bytes, evidence = read_json_object(evidence_path, "signed redistribution approval")
             signature_bytes, signature = read_json_object(signature_path, "redistribution approval signature")
             approval = (evidence_bytes, evidence, signature)
-            audited_inputs = {
+            approval_digests = {
                 evidence_path: hashlib.sha256(evidence_bytes).hexdigest(),
                 signature_path: hashlib.sha256(signature_bytes).hexdigest(),
             }
+            if delegated_compliance and approval_digests != audited_inputs:
+                raise ValueError("signed redistribution approval changed after the compliance audit")
+            audited_inputs = approval_digests
         if audited_inputs is not None and not verify_governance:
             raise ValueError("audited input checks require verified governance")
-        if audited_policy is not None and (check_published_at is None or not audited_inputs):
+        if args.candidate_inventory is not None and approval is None:
+            raise ValueError("--candidate-inventory requires the signed redistribution approval")
+        if args.candidate_qualification_archives is not None and args.candidate_inventory is None:
+            raise ValueError("--candidate-qualification-archives requires --candidate-inventory")
+        if args.protected_platform_registry is not None and approval is None:
+            raise ValueError("--protected-platform-registry requires the signed redistribution approval")
+        if audited_policy is not None and (not audited_inputs or (approval is None and check_published_at is None)):
             raise ValueError("audited policy requires a delegated compliance audit")
         policy_snapshot = (
             audited_policy or read_json_object(POLICY_PATH, "release compliance policy")
@@ -164,11 +194,14 @@ def main(
         tag = normalize_tag(args.tag)
         matrix = read_json(MATRIX_PATH, "release matrix")
         standard_assets = expected_release_assets(matrix, tag=tag)
+        signature_commands: list[list[str]] = []
         if single_asset:
             asset = args.asset.absolute()
             if not safe_asset_name(asset.name) or asset.is_symlink() or not asset.is_file():
                 raise ValueError("--asset must identify a regular file with its published name")
             local_assets = {asset.name: asset}
+            if args.verify_platform_signature:
+                signature_commands = native_installer_signature_commands(asset)
         else:
             local_assets, local_errors = local_release_assets(args.assets_dir)
             if local_errors:
@@ -204,6 +237,13 @@ def main(
             )
             if approval_errors:
                 raise ValueError("; ".join(approval_errors))
+            if args.candidate_inventory is None and "linux-x86_64" in policy.get("production_targets", ()):
+                raise ValueError("the audited candidate inventory is required for Debian release qualification")
+            if args.protected_platform_registry is None and (
+                "protected_platform_registry" in evidence
+                or any(target in policy.get("production_targets", ()) for target in PLATFORM_GOAL_TARGETS)
+            ):
+                raise ValueError("the signed protected-platform registry is required for publication verification")
         errors = check_release_asset_bytes(
             release,
             local_assets,
@@ -237,6 +277,29 @@ def main(
             item["name"]: item["digest"].removeprefix("sha256:")
             for item in release["assets"] if item["name"] in local_assets
         }
+        for name, digest in (reviewed_asset_hashes or {}).items():
+            if release_digests.get(name) != digest:
+                raise ValueError(f"published asset {name} does not match the independently reviewed SHA-256")
+        if args.candidate_inventory is not None:
+            assert approval is not None and audited_inputs is not None and args.assets_dir is not None
+            published_files = {
+                item["name"]: (item["size"], release_digests[item["name"]])
+                for item in release["assets"] if item["name"] in standard_assets
+            }
+            digest = check_approved_candidate_inventory(
+                args.candidate_inventory, approval[1], repository=repository, tag=tag,
+                sha=sha, published_files=published_files, assets_dir=args.assets_dir,
+                deb_package=local_assets.get(f"remote-ops-workspace-{tag}-linux-amd64.deb"),
+                archive_root=args.candidate_qualification_archives,
+                require_retained_archives=not current_transaction,
+            )
+            audited_inputs[args.candidate_inventory] = digest
+        if args.protected_platform_registry is not None:
+            assert approval is not None and audited_inputs is not None and args.assets_dir is not None
+            digest = check_approved_protected_platform_assets(
+                args.protected_platform_registry, approval[1], args.assets_dir, repository=repository, tag=tag, sha=sha,
+            )
+            audited_inputs[args.protected_platform_registry] = digest
         invocations_by_asset: dict[str, set[RunInvocation]] = {}
         for name in sorted(local_assets):
             path = local_assets[name]
@@ -369,15 +432,25 @@ def main(
             )
         if errors:
             raise RuntimeError("; ".join(dict.fromkeys(errors)))
+        if completed_promotion:
+            errors = check_native_release_signing_metadata(
+                args.assets_dir, standard_assets, native_release_channel="production-signed",
+            )
+            if errors:
+                raise RuntimeError("; ".join(dict.fromkeys(errors)))
         if check_published_at is not None:
             published_at = parse_timestamp(release.get("published_at"), "GitHub release published_at")
             errors = check_published_at(published_at)
             if errors:
                 raise RuntimeError("; ".join(dict.fromkeys(errors)))
+        if signature_commands:
+            if asset.is_symlink() or sha256_file(asset) != release_digests[asset.name]:
+                raise ValueError(f"local release asset changed before platform signature verification: {asset.name}")
+            verify_platform_signature(signature_commands)
         for name, path in local_assets.items():
             if path.is_symlink() or sha256_file(path) != release_digests[name]:
                 raise ValueError(f"local release asset changed during verification: {name}")
-    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
+    except (OSError, RuntimeError, ValueError, json.JSONDecodeError, zipfile.BadZipFile) as exc:
         print(f"release provenance: {exc}", file=sys.stderr)
         return 1
 
@@ -387,6 +460,8 @@ def main(
             f"release asset provenance passed: {asset.name} matches immutable {tag} "
             f"and its completed promotion run {chosen.url}"
         )
+        if signature_commands:
+            print(f"platform installer signature passed: {asset.name}")
         return 0
     print(
         "release provenance passed: "
@@ -394,6 +469,78 @@ def main(
         f"{len(local_assets)}/{len(local_assets)} certified assets share {chosen.url}"
     )
     return 0
+
+
+def check_approved_candidate_inventory(
+    path: Path, approval: dict[str, Any], *, repository: str, tag: str, sha: str,
+    published_files: Mapping[str, tuple[int, str]], assets_dir: Path, deb_package: Path | None,
+    archive_root: Path | None, require_retained_archives: bool,
+) -> str:
+    digest, value = read_approved_json(path, approval, "candidate_inventory", "candidate inventory")
+    deb_name = f"remote-ops-workspace-{tag}-linux-amd64.deb"
+    if deb_name not in published_files:
+        raise ValueError("published release is missing the qualified Debian amd64 installer")
+    records = validate_managed_release_qualification(
+        value, repository=repository, release_tag=tag, release_sha=sha,
+        deb_sha256=published_files[deb_name][1], deb_package=deb_package,
+    )
+    check_published_candidate_files(records, published_files)
+    if value["schema_version"] >= ARCHIVE_FILE_SCOPE_SCHEMA_VERSION:
+        require_candidate_archive_indexes(assets_dir, records)
+    if archive_root is not None:
+        verify_retained_qualification_archives(archive_root, value)
+    elif require_retained_archives and "linux_smoke" in value:
+        raise ValueError("published audit requires --candidate-qualification-archives from the original release review")
+    return digest
+
+
+def read_approved_json(path: Path, approval: dict[str, Any], key: str, label: str) -> tuple[str, dict[str, Any]]:
+    record = approval.get(key)
+    if not valid_evidence_record(record) or record["size_bytes"] > MAX_JSON_BYTES:
+        raise ValueError(f"signed redistribution approval has no valid {label} record")
+    approved_path, error = secure_regular_file(path.parent, path.name, f"audited {label}")
+    if approved_path is None:
+        raise ValueError(error)
+    with approved_path.open("rb") as stream:
+        raw = stream.read(MAX_JSON_BYTES + 1)
+    digest = hashlib.sha256(raw).hexdigest()
+    if len(raw) != record["size_bytes"] or digest != record["sha256"]:
+        raise ValueError(f"audited {label} does not match the signed redistribution approval")
+    value = json.loads(raw)
+    if not isinstance(value, dict):
+        raise ValueError(f"audited {label} must contain an object")
+    return digest, value
+
+
+def check_approved_protected_platform_assets(
+    path: Path, approval: dict[str, Any], assets: Path, *, repository: str, tag: str, sha: str,
+) -> str:
+    from check_protected_platform_goal import check_protected_platform_goal
+
+    digest, registry = read_approved_json(path, approval, "protected_platform_registry", "protected-platform registry")
+    errors, report = check_protected_platform_goal(
+        registry=registry, release_tag=tag, require_complete=True, assets_dir=assets, repository=repository,
+    )
+    if errors:
+        raise ValueError("; ".join(dict.fromkeys(errors)))
+    if report.get("release_source_head") != sha:
+        raise ValueError("protected-platform registry must bind the exact published release source SHA")
+    return digest
+
+
+def check_published_candidate_files(
+    records: list[dict[str, Any]], published_files: Mapping[str, tuple[int, str]],
+) -> None:
+    reviewed = candidate_file_identities(item for record in records for item in record["files"])
+    if reviewed.keys() != published_files.keys():
+        raise ValueError(
+            "approved candidate and published standard file sets differ: "
+            f"missing from reviewed candidate={sorted(published_files.keys() - reviewed.keys())}, "
+            f"outside the standard release={sorted(reviewed.keys() - published_files.keys())}"
+        )
+    for name, expected in reviewed.items():
+        if published_files[name] != expected:
+            raise ValueError(f"published standard asset {name} does not match the independently approved candidate bytes")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -406,6 +553,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     inputs = parser.add_mutually_exclusive_group(required=True)
     inputs.add_argument("--assets-dir", type=Path, help="verify the complete published or draft inventory")
     inputs.add_argument("--asset", type=Path, help="verify one downloaded file from an immutable published release")
+    parser.add_argument(
+        "--verify-platform-signature",
+        action="store_true",
+        help="also require a trusted platform signature for a Windows EXE/MSI or macOS PKG/DMG on its platform",
+    )
     parser.add_argument("--repository", required=True)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--sha", required=True)
@@ -423,7 +575,89 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--governance-signature", type=Path)
     parser.add_argument("--redistribution-evidence", type=Path)
     parser.add_argument("--redistribution-signature", type=Path)
+    parser.add_argument("--candidate-inventory", type=Path)
+    parser.add_argument(
+        "--candidate-qualification-archives", type=Path,
+        help="directory of original Actions qualification ZIPs retained during candidate review",
+    )
+    parser.add_argument("--protected-platform-registry", type=Path)
     return parser.parse_args(argv)
+
+
+def native_installer_signature_commands(path: Path, *, registered_sdk=False) -> list[list[str]]:
+    artifact = str(path)
+    suffix = path.suffix.casefold()
+    if suffix in {".exe", ".msi"}:
+        if sys.platform != "win32":
+            raise ValueError("verify Windows installer signatures on Windows")
+        tool = find_windows_signtool(registered_only=True) if registered_sdk else find_windows_signtool()
+        return [[str(tool), "verify", "/pa", "/all", "/tw", artifact]]
+    if suffix not in {".dmg", ".pkg"}:
+        raise ValueError("platform signature verification supports Windows EXE/MSI and macOS PKG/DMG")
+    if sys.platform != "darwin":
+        raise ValueError("verify macOS installer signatures on macOS")
+    if suffix == ".pkg":
+        signature = ["/usr/sbin/pkgutil", "--check-signature", artifact]
+        assessment = ["/usr/sbin/spctl", "--assess", "--type", "install", artifact]
+    else:
+        signature = ["/usr/bin/codesign", "--verify", "--strict", artifact]
+        assessment = [
+            "/usr/sbin/spctl", "--assess", "--type", "open", "--context", "context:primary-signature", artifact,
+        ]
+    return [signature, ["/usr/bin/xcrun", "stapler", "validate", artifact], assessment]
+
+
+def find_windows_signtool(*, registered_only=False) -> Path:
+    import winreg
+
+    sdk_root = None
+    for view in (winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY):
+        try:
+            with winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows Kits\Installed Roots",
+                access=winreg.KEY_READ | view,
+            ) as key:
+                root, _ = winreg.QueryValueEx(key, "KitsRoot10")
+        except OSError:
+            continue
+        if isinstance(root, str) and Path(root).is_absolute():
+            sdk_root = Path(root)
+            break
+    if sdk_root is None and not registered_only:
+        program_files = os.environ.get("ProgramFiles(x86)") or os.environ.get("ProgramFiles", "")
+        if Path(program_files).is_absolute():
+            sdk_root = Path(program_files) / "Windows Kits" / "10"
+
+    host_arch = os.environ.get("PROCESSOR_ARCHITEW6432") or os.environ.get("PROCESSOR_ARCHITECTURE", "")
+    architectures = {
+        "amd64": ("x64", "x86"), "arm64": ("arm64", "x64", "x86"), "x86": ("x86",),
+    }.get(host_arch.lower(), ())
+    if sdk_root is not None and (sdk_root / "bin").is_dir():
+        versions = sorted(
+            (directory for directory in (sdk_root / "bin").iterdir()
+             if re.fullmatch(r"10\.0\.\d+\.\d+", directory.name) and directory.is_dir()),
+            key=lambda directory: tuple(int(part) for part in directory.name.split(".")),
+            reverse=True,
+        )
+        for architecture in architectures:
+            for directory in versions:
+                tool = directory / architecture / "signtool.exe"
+                if tool.is_file():
+                    return tool
+    raise RuntimeError("platform signature verification requires SignTool from the Windows SDK")
+
+
+def verify_platform_signature(commands: list[list[str]]) -> None:
+    for command in commands:
+        tool = Path(command[0]).name
+        try:
+            result = subprocess.run(
+                command, stdin=subprocess.DEVNULL, capture_output=True, check=False, timeout=120,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"platform installer signature check timed out: {tool}") from exc
+        if result.returncode != 0:
+            raise RuntimeError(f"platform installer signature check failed: {tool} exited with {result.returncode}")
 
 
 def verified_governance_invocations(
@@ -854,6 +1088,13 @@ def safe_asset_name(value: Any) -> bool:
 
 
 def verify_attestation(path: Path, *, repository: str, sha: str, tag: str) -> Any:
+    return verify_workflow_attestation(path, repository=repository, sha=sha, workflow=RELEASE_WORKFLOW,
+                                       source_ref=f"refs/tags/{tag}")
+
+
+def verify_workflow_attestation(
+    path: Path, *, repository: str, sha: str, workflow: str, source_ref: str,
+) -> Any:
     return run_gh_json(
         [
             "attestation",
@@ -862,11 +1103,11 @@ def verify_attestation(path: Path, *, repository: str, sha: str, tag: str) -> An
             "--repo",
             repository,
             "--signer-workflow",
-            f"{repository}/{RELEASE_WORKFLOW}",
+            f"{repository}/{workflow}",
             "--source-digest",
             sha,
             "--source-ref",
-            f"refs/tags/{tag}",
+            source_ref,
             "--predicate-type",
             PREDICATE_TYPE,
             "--deny-self-hosted-runners",
@@ -887,11 +1128,14 @@ def verified_run_invocations(
     asset_sha256: str,
     repository: str,
     sha: str,
-    tag: str,
+    tag: str | None = None,
+    source_ref: str | None = None,
 ) -> tuple[set[RunInvocation], list[str]]:
+    if (tag is None) == (source_ref is None):
+        raise ValueError("supply exactly one tag or source ref for attestation verification")
     if not isinstance(payload, list) or not payload:
         return set(), [f"{asset_name} attestation verification returned no results"]
-    required_ref = f"refs/tags/{tag}"
+    required_ref = f"refs/tags/{tag}" if tag is not None else source_ref
     accepted: set[RunInvocation] = set()
     rejected: list[str] = []
     for index, item in enumerate(payload):
@@ -930,9 +1174,8 @@ def verified_run_invocations(
             continue
         trigger = certificate_value(certificate, "buildTrigger", "githubWorkflowTrigger")
         if trigger != "workflow_dispatch":
-            rejected.append(
-                f"{prefix} build trigger must be an exact-tag release promotion dispatch"
-            )
+            expected_trigger = "an exact-tag release promotion dispatch" if tag is not None else "workflow_dispatch"
+            rejected.append(f"{prefix} build trigger must be {expected_trigger}")
             continue
         if not statement_has_digest(verification.get("statement"), asset_sha256):
             rejected.append(f"{prefix} statement does not contain the downloaded asset digest")

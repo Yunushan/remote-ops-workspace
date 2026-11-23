@@ -12,12 +12,82 @@ import hashlib
 import json
 import os
 import re
+import stat
 import sys
 import tempfile
+import unicodedata
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.release_evidence_file import replace_evidence_file  # noqa: E402
 
 REPORT_NAME = "candidate-runtime-byte-binding.json"
 APPIMAGE_LAUNCHER = "build/native/linux/Remote_Ops_Workspace.AppDir/AppRun"
+MAC_APP = "Remote Ops Workspace.app"
+MAC_APP_SOURCE = f"build/native/macos/pyinstaller-dist/{MAC_APP}"
+MAC_BUNDLE_STAGES = {
+    (f"{kind}/{MAC_APP}", phase)
+    for kind in ("dmg", "pkg") for phase in ("install", "reinstall")
+}
+
+
+def binding_schema(target):
+    return 2 if target.startswith("macos-") else 1
+
+
+def app_bundle_inventory(root):
+    """Hash relative paths, entry types, file contents, and literal link targets."""
+    if not stat.S_ISDIR(root.lstat().st_mode):
+        raise ValueError("candidate application bundle root must be a directory")
+    pending = [root]
+    records = {}
+    while pending:
+        for entry in pending.pop().iterdir():
+            name = unicodedata.normalize("NFC", entry.relative_to(root).as_posix())
+            if name in records:
+                raise ValueError("candidate application bundle contains aliased paths")
+            mode = entry.lstat().st_mode
+            if stat.S_ISLNK(mode):
+                records[name] = ["symlink", os.readlink(entry)]
+            elif stat.S_ISDIR(mode):
+                records[name] = ["directory"]
+                pending.append(entry)
+            elif stat.S_ISREG(mode):
+                records[name] = ["file", digest(entry)]
+            else:
+                raise ValueError("candidate application bundle contains an unsupported entry")
+    if not records:
+        raise ValueError("candidate application bundle is empty")
+    canonical = json.dumps(records, sort_keys=True, separators=(",", ":")).encode("ascii")
+    return {"sha256": hashlib.sha256(canonical).hexdigest(), "entries": len(records)}
+
+
+def expected_app_bundle(report):
+    expected = report.get("expected_app_bundle")
+    if (
+        not isinstance(expected, dict) or expected.keys() != {"path", "sha256", "entries"}
+        or expected["path"] != MAC_APP_SOURCE or not isinstance(expected["sha256"], str)
+        or not re.fullmatch(r"[0-9a-f]{64}", expected["sha256"])
+        or type(expected["entries"]) is not int or expected["entries"] <= 0
+    ):
+        raise ValueError("candidate application bundle build identity is missing or invalid")
+    return {key: expected[key] for key in ("sha256", "entries")}
+
+
+def validate_app_bundle_observations(report, original=None):
+    expected = expected_app_bundle(report)
+    if original is not None and expected != original:
+        raise ValueError("candidate application bundle differs from original build output")
+    rows = report.get("app_bundle_observations", [])
+    if not isinstance(rows, list) or len(rows) != len(MAC_BUNDLE_STAGES) or any(
+        not isinstance(row, dict) or row.keys() != {"path", "phase", "inventory", "matched"}
+        or not isinstance(row["path"], str) or not isinstance(row["phase"], str)
+        or row["inventory"] != expected or row["matched"] is not True for row in rows
+    ) or {(row["path"], row["phase"]) for row in rows} != MAC_BUNDLE_STAGES:
+        raise ValueError("candidate application bundle was not bound after every install and reinstall")
 
 
 def digest(path):
@@ -30,7 +100,7 @@ def digest(path):
 
 def target_contract(target):
     if target in ("macos-x64", "macos-arm64"):
-        original = "build/native/macos/pyinstaller-dist/Remote Ops Workspace.app/Contents/MacOS/Remote Ops Workspace"
+        original = f"{MAC_APP_SOURCE}/Contents/MacOS/Remote Ops Workspace"
         paths = {
             f"{kind}/Remote Ops Workspace.app/Contents/MacOS/Remote Ops Workspace": "gui"
             for kind in ("dmg", "pkg")
@@ -66,7 +136,7 @@ def save(path, value):
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
             json.dump(value, stream, indent=2, sort_keys=True)
             stream.write("\n")
-        temporary.replace(path)
+        replace_evidence_file(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -76,7 +146,16 @@ def regular_file(path):
         raise ValueError("candidate binding requires a regular non-symlink file")
 
 
-def initialize(root, target, report_path, appimage=None):
+def installer_hashes(target, installers):
+    suffixes = {".deb", ".rpm", ".AppImage"} if target.startswith("linux-") else {".dmg", ".pkg"}
+    if len(installers) != len(suffixes) or {path.suffix for path in installers} != suffixes:
+        raise ValueError(f"installer binding requires one package per format for {target}")
+    for path in installers:
+        regular_file(path)
+    return {path.name: digest(path) for path in installers}
+
+
+def initialize(root, target, report_path, appimage=None, *, installers=()):
     from candidate_native_proof import archive_inventory
 
     outputs, paths, probes = target_contract(target)
@@ -106,7 +185,7 @@ def initialize(root, target, report_path, appimage=None):
             {"role": "appimage-launcher", "path": APPIMAGE_LAUNCHER, "sha256": digest(launcher)}
         )
     report = {
-        "schema_version": 1,
+        "schema_version": binding_schema(target),
         "target": target,
         "status": "pending",
         "smoke_complete": False,
@@ -119,6 +198,11 @@ def initialize(root, target, report_path, appimage=None):
         "expected_packages": packages,
         "package_observations": [],
     }
+    if target.startswith("macos-"):
+        report["expected_app_bundle"] = {"path": MAC_APP_SOURCE, **app_bundle_inventory(root / MAC_APP_SOURCE)}
+        report["app_bundle_observations"] = []
+    if installers:
+        report["installer_sha256"] = installer_hashes(target, installers)
     save(report_path, report)
     return report
 
@@ -128,7 +212,7 @@ def load(report_path, target):
     outputs, paths, probes = target_contract(target)
     if not isinstance(report, dict) or (
         type(report.get("schema_version")) is not int
-        or report["schema_version"] != 1
+        or report["schema_version"] != binding_schema(target)
         or report.get("target") != target
         or report.get("smoke_complete") is not False
         or report.get("status") not in ("pending", "mismatch")
@@ -204,8 +288,32 @@ def check(report_path, target, path, public_path, phase, probe, package=False):
         raise ValueError("candidate executable byte mismatch before probe")
 
 
-def complete(report_path, target):
+def check_app_bundle(report_path, target, path, public_path, phase):
+    if not target.startswith("macos-") or (public_path, phase) not in MAC_BUNDLE_STAGES:
+        raise ValueError("unexpected candidate application bundle observation")
     report = load(report_path, target)
+    expected = expected_app_bundle(report)
+    observed = None
+    try:
+        observed = app_bundle_inventory(path)
+    except (OSError, ValueError):
+        pass
+    matched = observed == expected
+    report["app_bundle_observations"].append(
+        {"path": public_path, "phase": phase, "inventory": observed, "matched": matched}
+    )
+    if not matched:
+        report["status"] = "mismatch"
+    save(report_path, report)
+    if not matched:
+        raise ValueError("candidate application bundle byte mismatch")
+
+
+def complete(report_path, target, *, installers=()):
+    report = load(report_path, target)
+    if installers or "installer_sha256" in report:
+        if installer_hashes(target, installers) != report.get("installer_sha256"):
+            raise ValueError("installer bytes changed during native smoke")
     _, _, required = target_contract(target)
     observations = report["observations"]
     if report["status"] != "pending" or any(row.get("matched") is not True for row in observations):
@@ -229,17 +337,20 @@ def complete(report_path, target):
             or {(row["path"], row["phase"], row["probe"]) for row in packages} != required_packages
         ):
             raise ValueError("candidate AppImage extraction bytes were not bound")
+    else:
+        validate_app_bundle_observations(report)
     report.update(status="bound", smoke_complete=True)
     save(report_path, report)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("init", "check", "complete"))
+    parser.add_argument("phase", choices=("init", "check", "bundle", "complete"))
     parser.add_argument("--target", required=True)
     parser.add_argument("--report", required=True, type=Path)
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--appimage", type=Path)
+    parser.add_argument("--installer", type=Path, action="append", default=[])
     parser.add_argument("--path", type=Path)
     parser.add_argument("--public-path")
     parser.add_argument("--stage", choices=("install", "reinstall"))
@@ -248,7 +359,7 @@ def main():
     args = parser.parse_args()
     try:
         if args.phase == "init":
-            initialize(args.root.resolve(), args.target, args.report, args.appimage)
+            initialize(args.root.resolve(), args.target, args.report, args.appimage, installers=args.installer)
         elif args.phase == "check":
             if (
                 args.path is None
@@ -266,15 +377,20 @@ def main():
                 args.probe,
                 args.package,
             )
+        elif args.phase == "bundle":
+            if args.path is None or args.public_path is None or args.stage is None:
+                raise ValueError("candidate bundle check needs a path and stage")
+            check_app_bundle(args.report, args.target, args.path, args.public_path, args.stage)
         else:
-            complete(args.report, args.target)
+            complete(args.report, args.target, installers=args.installer)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         # Never print an actual installed/private path, file contents or traceback.
-        reason = (
-            "byte mismatch before probe"
-            if str(exc) == "candidate executable byte mismatch before probe"
-            else type(exc).__name__
-        )
+        known_failures = {
+            "candidate executable byte mismatch before probe": "byte mismatch before probe",
+            "installer bytes changed during native smoke": "installer bytes changed during native smoke",
+            "candidate application bundle byte mismatch": "application bundle byte mismatch",
+        }
+        reason = known_failures.get(str(exc), type(exc).__name__)
         print("candidate executable binding failed: " + reason, file=sys.stderr)
         return 1
     return 0

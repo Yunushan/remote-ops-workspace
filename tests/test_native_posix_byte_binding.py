@@ -84,11 +84,15 @@ def setup_fixture(tmp_path, target, helpers):
         )
         image.chmod(0o755)
     report = tmp_path / f"build/native-smoke/{target}/candidate-runtime-byte-binding.json"
+    if target.startswith("macos-"):
+        resources = tmp_path / binding.MAC_APP_SOURCE / "Contents/Resources"
+        resources.mkdir()
+        (resources / "policy.txt").write_text("packaged resource", encoding="utf-8")
     value = binding.initialize(tmp_path, target, report, image)
     return report, value, image
 
 
-def fill_report(binding, target, root, report, package):
+def fill_report(binding, target, root, report, package, *, installers=()):
     outputs, paths, probes = binding.target_contract(target)
     for public_path, phase, probe in sorted(probes):
         binding.check(report, target, root / outputs[paths[public_path]], public_path, phase, probe)
@@ -107,8 +111,37 @@ def fill_report(binding, target, root, report, package):
                     probe,
                     True,
                 )
-    binding.complete(report, target)
+    if target.startswith("macos-"):
+        for public_path, phase in sorted(binding.MAC_BUNDLE_STAGES):
+            binding.check_app_bundle(report, target, root / binding.MAC_APP_SOURCE, public_path, phase)
+    binding.complete(report, target, installers=installers)
     return json.loads(report.read_text())
+
+
+
+@pytest.mark.parametrize("target", ["macos-x64", "linux-x86_64", "linux-aarch64"])
+@pytest.mark.parametrize("changed", [False, True])
+def test_native_smoke_binds_installer_bytes(helpers, tmp_path, target, changed):
+    binding, _ = helpers
+    report, _, appimage = setup_fixture(tmp_path, target, helpers)
+    suffixes = ("deb", "rpm") if appimage else ("dmg", "pkg")
+    installers = [tmp_path / f"remote-ops-workspace-v1.0.27-{target}.{suffix}" for suffix in suffixes]
+    for installer in installers:
+        installer.write_bytes(installer.name.encode())
+    if appimage:
+        installers.append(appimage)
+    initial = binding.initialize(tmp_path, target, report, appimage, installers=installers)
+    if changed:
+        installers[1].write_bytes(b"different installer")
+        with pytest.raises(ValueError, match="installer bytes changed during native smoke"):
+            fill_report(binding, target, tmp_path, report, appimage, installers=installers)
+        assert json.loads(report.read_text())["smoke_complete"] is False
+    else:
+        final = fill_report(binding, target, tmp_path, report, appimage, installers=installers)
+        assert final["smoke_complete"] is True
+        assert final["installer_sha256"] == initial["installer_sha256"] == {
+            installer.name: binding.digest(installer) for installer in installers
+        }
 
 
 @pytest.mark.parametrize("target", TARGETS)
@@ -136,7 +169,7 @@ def test_complete_receipt_matches_real_finish_contract(helpers, tmp_path, target
         if package
         else []
     )
-    proof.validate_posix_byte_binding(value, archives, target, assets, launchers)
+    proof.validate_posix_byte_binding(value, archives, target, assets, launchers, root=tmp_path)
     assert value["status"] == "bound" and value["smoke_complete"] is True
     assert str(tmp_path) not in report.read_text()
 
@@ -239,6 +272,70 @@ def test_finish_refuses_forged_or_incomplete_receipt(helpers, tmp_path, change):
         proof.validate_posix_byte_binding(value, archives, target, assets, launchers)
 
 
+@pytest.mark.parametrize("change", ("missing", "duplicate", "different-content", "forged-original", "old-schema"))
+def test_macos_finish_requires_verified_bundle_inventory(helpers, tmp_path, change):
+    binding, proof = helpers
+    target = "macos-x64"
+    report, _, _ = setup_fixture(tmp_path, target, helpers)
+    value = fill_report(binding, target, tmp_path, report, None)
+    launcher = binding.target_contract(target)[0]["gui"]
+    archives = [dict(path=launcher, artifact_sha256=binding.digest(tmp_path / launcher), toc=["fixture"])]
+    if change == "missing":
+        value["app_bundle_observations"].pop()
+    elif change == "duplicate":
+        value["app_bundle_observations"][-1] = value["app_bundle_observations"][0]
+    elif change == "different-content":
+        value["app_bundle_observations"][0]["inventory"]["sha256"] = "1" * 64
+    elif change == "forged-original":
+        value["expected_app_bundle"]["sha256"] = "2" * 64
+        for observation in value["app_bundle_observations"]:
+            observation["inventory"]["sha256"] = "2" * 64
+    else:
+        value["schema_version"] = 1
+    with pytest.raises(ValueError):
+        proof.validate_posix_byte_binding(value, archives, target, [], root=tmp_path)
+
+
+def test_macos_resource_mismatch_is_durable_even_when_launcher_matches(helpers, tmp_path):
+    binding, _ = helpers
+    target = "macos-arm64"
+    report, _, _ = setup_fixture(tmp_path, target, helpers)
+    source = tmp_path / binding.MAC_APP_SOURCE
+    installed = tmp_path / binding.MAC_APP
+    shutil.copytree(source, installed)
+    (installed / "Contents/Resources/policy.txt").write_text("changed resource", encoding="utf-8")
+    assert binding.digest(source / "Contents/MacOS/Remote Ops Workspace") == binding.digest(
+        installed / "Contents/MacOS/Remote Ops Workspace",
+    )
+    with pytest.raises(ValueError, match="bundle byte mismatch"):
+        binding.check_app_bundle(report, target, installed, f"pkg/{binding.MAC_APP}", "reinstall")
+    value = json.loads(report.read_text())
+    assert value["status"] == "mismatch" and value["app_bundle_observations"][-1]["matched"] is False
+    with pytest.raises(ValueError):
+        binding.complete(report, target)
+
+
+def test_macos_bundle_fingerprints_literal_links_without_following_them(helpers, tmp_path):
+    binding, _ = helpers
+    app = tmp_path / binding.MAC_APP
+    app.mkdir()
+    library = app / "lib"
+    library.mkdir()
+    (library / "payload").write_bytes(b"component")
+    link = app / "Current"
+    try:
+        link.symlink_to("lib", target_is_directory=True)
+    except OSError:
+        pytest.skip("symbolic links are unavailable on this host")
+    original = binding.app_bundle_inventory(app)
+    assert original["entries"] == 3
+    link.unlink()
+    link.symlink_to("./lib", target_is_directory=True)
+    assert binding.app_bundle_inventory(app) != original
+    with pytest.raises(ValueError, match="root must be a directory"):
+        binding.app_bundle_inventory(link)
+
+
 def test_macos_receipt_cannot_claim_unexpected_wrapper_binding(helpers, tmp_path):
     binding, proof = helpers
     target = "macos-x64"
@@ -309,7 +406,7 @@ def shell_fixture(tmp_path, target, helpers):
     report, _, package = setup_fixture(tmp_path, target, helpers)
     scripts = tmp_path / "scripts"
     scripts.mkdir()
-    for name in ("candidate_posix_byte_binding.py", "candidate_native_proof.py"):
+    for name in ("candidate_posix_byte_binding.py", "candidate_native_proof.py", "release_evidence_file.py"):
         shutil.copyfile(SCRIPTS / name, scripts / name)
     original = tmp_path / next(iter(binding.target_contract(target)[0].values()))
     actual = (
@@ -317,8 +414,11 @@ def shell_fixture(tmp_path, target, helpers):
         if target.startswith("macos-")
         else tmp_path / "actual/row"
     )
-    actual.parent.mkdir(parents=True)
-    shutil.copyfile(original, actual)
+    if target.startswith("macos-"):
+        shutil.copytree(tmp_path / binding.MAC_APP_SOURCE, actual.parents[2], symlinks=True)
+    else:
+        actual.parent.mkdir(parents=True)
+        shutil.copyfile(original, actual)
     actual.chmod(0o755)
     smoke = report.parent
     env = {
@@ -328,6 +428,7 @@ def shell_fixture(tmp_path, target, helpers):
         "SMOKE_ROOT": str(smoke),
         "VERSION": "1.0.27",
         "APP_EXECUTABLE_NAME": "Remote Ops Workspace",
+        "APP_NAME": binding.MAC_APP,
         "NATIVE_BINDING_MARKER": str(tmp_path / "launch-marker"),
         "EXTRACTION_MARKER": str(tmp_path / "extract-marker"),
         "EXTRACTED_FIXTURE_SOURCE": str(actual),
@@ -335,7 +436,7 @@ def shell_fixture(tmp_path, target, helpers):
         "STAGED_APPIMAGE": str(package) if package else "",
     }
     names = (
-        ("candidate_check_app", "verify_app_runtime_resources", "verify_app_gui")
+        ("candidate_check_app", "candidate_check_bundle", "verify_app_runtime_resources", "verify_app_gui")
         if target.startswith("macos-")
         else (
             "run_row_command",
@@ -362,6 +463,53 @@ def bash_run(tmp_path, code, env):
         timeout=30,
         check=False,
     )
+
+
+@pytest.mark.skipif(BASH is None, reason="actual Bash native fixture requires POSIX host")
+@pytest.mark.parametrize("signed", (False, True))
+def test_macos_smoke_binds_installers_in_signed_mode(tmp_path, signed):
+    script = (SCRIPTS / "smoke_macos_native.sh").read_text()
+    setup = script[script.index('BINDING_TARGET="macos-') : script.index("\ncandidate_check_app()")]
+    completion = script.split('require_pkg_absent "PKG uninstall"\n', 1)[1].split('\necho ', 1)[0]
+    env = {
+        **os.environ,
+        "ARCH": "arm64",
+        "ROOT": "/build root",
+        "SMOKE_ROOT": "/smoke root",
+        "DMG": "/build root/candidate image.dmg",
+        "PKG": "/build root/candidate installer.pkg",
+        "REQUIRE_RELEASE_SIGNING": "true" if signed else "false",
+    }
+    # Capture the actual argv, including paths with spaces, at both ends of the smoke.
+    capture = r'''python3() { printf '%s\0' "$@"; printf '\n'; }'''
+    result = bash_run(tmp_path, "\n".join((capture, setup, completion)), env)
+    assert result.returncode == 0, result.stderr
+    arguments = [line.removesuffix("\0").split("\0") for line in result.stdout.splitlines()]
+    common = ["--target", "macos-arm64", "--report", "/smoke root/candidate-runtime-byte-binding.json"]
+    if signed:
+        common.extend(("--installer", env["DMG"], "--installer", env["PKG"]))
+    helper = "scripts/candidate_posix_byte_binding.py"
+    assert arguments == [[helper, "init", "--root", env["ROOT"], *common], [helper, "complete", *common]]
+
+
+@pytest.mark.skipif(BASH is None, reason="actual Bash native fixture requires POSIX host")
+@pytest.mark.parametrize("changed", (False, True))
+def test_macos_smoke_bundle_check_stops_before_running_a_modified_app(helpers, tmp_path, changed):
+    report, _, executable, env, code = shell_fixture(tmp_path, "macos-x64", helpers)
+    app = executable.parents[2]
+    if changed:
+        (app / "Contents/Resources/policy.txt").write_text("different resource", encoding="utf-8")
+    env["APP_PATH"] = str(app)
+    result = bash_run(
+        tmp_path,
+        code + '\n'
+        'candidate_check_bundle "$APP_PATH" pkg install\n'
+        '"$APP_PATH/Contents/MacOS/Remote Ops Workspace" --version',
+        env,
+    )
+    assert (result.returncode == 0) is not changed, result.stdout + result.stderr
+    assert (tmp_path / "launch-marker").exists() is not changed
+    assert json.loads(report.read_text())["app_bundle_observations"][-1]["matched"] is not changed
 
 
 @pytest.mark.skipif(BASH is None, reason="actual Bash native fixture requires POSIX host")
@@ -430,20 +578,32 @@ def test_macos_pkg_checks_installed_receipt_version(tmp_path, installed_version)
     script = SCRIPTS / "smoke_macos_native.sh"
     mock = r"""
 pkgutil() {
-  [[ "$*" = "--pkg-info $APP_ID" && -n "$INSTALLED_VERSION" ]] || return 2
-  printf 'package-id: %s\nversion: %s\n' "$APP_ID" "$INSTALLED_VERSION"
+  case "$*" in
+    "--pkg-info $APP_ID")
+      [[ -n "$INSTALLED_VERSION" ]] || return 2
+      printf 'package-id: %s\nversion: %s\nvolume: /\nlocation: /\n' "$APP_ID" "$INSTALLED_VERSION"
+      ;;
+    "--files $APP_ID") printf '%s\n' "$APP_PATH" ;;
+    *) return 2 ;;
+  esac
 }
 """
+    app_path = "Applications/Remote Ops Workspace.app/Contents/MacOS/Remote Ops Workspace"
+    bom = tmp_path / "bom.txt"
+    bom.write_text("./" + app_path + "\n", encoding="utf-8")
     env = {
         **os.environ,
+        "ROOT": str(SCRIPTS.parent),
         "APP_ID": "io.github.remoteopsworkspace.app",
+        "APP_PATH": app_path,
+        "PKG_BOM_PATHS": str(bom),
+        "SMOKE_ROOT": str(tmp_path),
         "VERSION": "1.0.27",
         "INSTALLED_VERSION": installed_version,
     }
     code = functions(script, ("verify_pkg_receipt",)) + mock + '\nverify_pkg_receipt "PKG verify"'
     result = bash_run(tmp_path, code, env)
     assert (result.returncode == 0) is (installed_version == "1.0.27")
-
 
 PROBES = [
     (target, path, phase, probe)

@@ -321,10 +321,10 @@ def test_promotion_requires_immutable_release_setting_at_publication() -> None:
     assert any("publication-time immutable release setting proof" in error for error in asset_errors)
 
 
-def test_promotion_requires_exact_package_notices_audit() -> None:
-    workflow = remove_named_step(promotion_workflow(), "Verify notices in the exact native packages")
+def test_promotion_requires_native_archive_inspector_for_the_signed_audit() -> None:
+    workflow = remove_named_step(promotion_workflow(), "Install native archive inspector")
     _, errors = both_contract_errors(workflow)
-    assert any("exact package notices audit" in error for error in errors)
+    assert any("native archive inspector" in error for error in errors)
 
 
 @pytest.mark.parametrize(
@@ -473,6 +473,32 @@ def test_completed_certification_is_separate_from_in_progress_transaction() -> N
     ]
     changed = workflow.replace("production-redistribution-approval-", "other-")
     assert any("attempt-specific redistribution approval" in error for error in checker.check_certification_truth(changed))
+    changed = workflow.replace("production-candidate-qualification-", "other-")
+    assert any("attempt-specific candidate qualification ZIPs" in error for error in checker.check_certification_truth(changed))
+    changed = workflow.replace(
+        '--candidate-inventory "$RUNNER_TEMP/redistribution-approval/bundle/release-candidate-inventory.json"',
+        '--candidate-inventory "$RUNNER_TEMP/unverified.json"',
+    )
+    assert any("exact immutable publication audit" in error for error in checker.check_certification_truth(changed))
+
+
+@pytest.mark.parametrize(("filename", "label"), [
+    ("release-candidate-inventory.json", "candidate inventory"),
+    ("platform_verified_evidence.json", "protected-platform registry"),
+])
+def test_promotion_attests_and_retains_the_exact_audited_inputs(filename, label) -> None:
+    workflow = (ROOT / ".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
+    checker = load_script("check_release_truth")
+    assert checker.check_promotion_truth(workflow) == []
+    path = (
+        "release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}"
+        f"/bundle/{filename}"
+    )
+    for step in ("Attest the audited redistribution approval", "Retain the audited redistribution approval"):
+        step_marker = f"      - name: {step}\n"
+        before, after = workflow.split(step_marker, 1)
+        changed = before + step_marker + after.replace(path, "unverified.json", 1)
+        assert f"{step} must include the audited {label}" in checker.check_promotion_truth(changed)
 
 
 @pytest.mark.parametrize(
@@ -481,6 +507,16 @@ def test_completed_certification_is_separate_from_in_progress_transaction() -> N
         (
             '--completed-promotion-run-attempt "$PROMOTION_RUN_ATTEMPT"',
             '--completed-promotion-run-attempt "$GITHUB_RUN_ATTEMPT"',
+            "must run the exact immutable publication audit unconditionally",
+        ),
+        (
+            '--protected-platform-registry "$RUNNER_TEMP/redistribution-approval/bundle/platform_verified_evidence.json"',
+            '--protected-platform-registry "$RUNNER_TEMP/unreviewed.json"',
+            "must run the exact immutable publication audit unconditionally",
+        ),
+        (
+            '--candidate-qualification-archives "$RUNNER_TEMP/candidate-qualification"',
+            '--candidate-qualification-archives "$RUNNER_TEMP/unreviewed"',
             "must run the exact immutable publication audit unconditionally",
         ),
         (
@@ -519,6 +555,17 @@ def test_release_verifier_rejects_unisolated_python_environment(name: str) -> No
     message = f"{name} must install the hash-locked compliance verifier in an isolated Python environment"
     assert message not in check(workflow)
     assert message in check(remove_named_step(workflow, "Create isolated compliance verifier environment"))
+
+
+def test_promotion_requires_retaining_the_qualification_zips() -> None:
+    checker = load_script("check_release_truth")
+    workflow = promotion_workflow()
+    message = "promotion must retain the verified qualification ZIPs before creating a draft"
+    assert message not in checker.check_promotion_truth(workflow)
+    changed = remove_named_step(workflow, "Retain original candidate qualification ZIPs")
+    assert message in checker.check_promotion_truth(changed)
+    changed = workflow.replace("production-candidate-qualification-", "other-")
+    assert message in checker.check_promotion_truth(changed)
 
 
 def test_certification_verifies_source_before_installing_dependencies() -> None:

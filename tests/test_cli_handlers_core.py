@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from remote_ops_workspace import cli
+from remote_ops_workspace import cli, cli_customizer, cli_reports, cli_transfers, cli_workspace
 from remote_ops_workspace.models import Profile
 
 
@@ -182,40 +182,40 @@ def test_setup_profile_connect_and_doctor_handlers(monkeypatch, capsys, tmp_path
         executables={"ssh": {"ssh": True}, "rdp": {"mstsc": False}},
         protocol_status={"ssh": {"summary": "ready"}},
     )
-    monkeypatch.setattr(cli, "run_doctor", lambda: doctor)
+    monkeypatch.setattr(cli_reports, "run_doctor", lambda: doctor)
     assert cli.cmd_doctor(_ns(json=True)) == 0
     assert cli.cmd_doctor(_ns(json=False)) == 0
-    assert cli._doctor_executable_summary({"ssh": True, "plink": False}) == "ssh"
-    assert cli._doctor_executable_summary({"ssh": False}) == "missing"
+    assert cli_reports._doctor_executable_summary({"ssh": True, "plink": False}) == "ssh"
+    assert cli_reports._doctor_executable_summary({"ssh": False}) == "missing"
     assert "no profiles" in capsys.readouterr().out
 
 
 def test_feature_and_plugin_handler_output_branches(monkeypatch, capsys) -> None:
     manifest = {"features": ["ssh"]}
-    monkeypatch.setattr(cli, "load_feature_manifest", lambda: manifest)
+    monkeypatch.setattr(cli_reports, "load_feature_manifest", lambda: manifest)
     monkeypatch.setattr(
-        cli,
+        cli_reports,
         "feature_summary",
         lambda: [{"id": "ssh", "status": "ready", "coverage": "complete"}],
     )
     assert cli.cmd_features(_ns(json=True, coverage=False)) == 0
     assert cli.cmd_features(_ns(json=False, coverage=False)) == 0
 
-    assert cli._protected_platform_row_provenance_note({}) == ""
+    assert cli_reports._protected_platform_row_provenance_note({}) == ""
     assert (
-        cli._protected_platform_row_provenance_note(
+        cli_reports._protected_platform_row_provenance_note(
             {"accepted_evidence_required_targets": ["linux"], "release_backed_readiness_complete": True}
         )
         == "; release-backed proof complete"
     )
     assert (
-        cli._protected_platform_row_provenance_note(
+        cli_reports._protected_platform_row_provenance_note(
             {"accepted_evidence_required_targets": ["linux"], "accepted_evidence_record_complete": True}
         )
         == "; accepted records complete, release assets pending"
     )
     assert (
-        cli._protected_platform_row_provenance_note({"accepted_evidence_required_targets": ["linux"]})
+        cli_reports._protected_platform_row_provenance_note({"accepted_evidence_required_targets": ["linux"]})
         == "; accepted records/release assets pending"
     )
 
@@ -356,8 +356,8 @@ def test_platform_and_coverage_reports_cover_optional_sections(monkeypatch) -> N
         "evidence_summary": {"features_with_evidence": 1, "total_features": 1},
         "workflow_parity_contract": {"label": "strict"},
     }
-    monkeypatch.setattr(cli, "load_platform_targets", lambda: targets)
-    monkeypatch.setattr(cli, "coverage_report", lambda: report)
+    monkeypatch.setattr(cli_reports, "load_platform_targets", lambda: targets)
+    monkeypatch.setattr(cli_reports, "coverage_report", lambda: report)
 
     assert cli.cmd_platforms(_ns(json=True)) == 0
     assert cli.cmd_platforms(_ns(json=False)) == 0
@@ -394,8 +394,8 @@ def test_customizer_handlers_cover_json_text_and_failure(monkeypatch, tmp_path: 
         manifest={"brand_name": "Corp Ops", "profile_count": 2},
         files=files,
     )
-    monkeypatch.setattr(cli, "build_moba_professional_customizer_plan", lambda *_args, **_kwargs: _Record())
-    monkeypatch.setattr(cli, "write_moba_professional_customizer_bundle", lambda _plan: bundle)
+    monkeypatch.setattr(cli_customizer, "build_moba_professional_customizer_plan", lambda *_args, **_kwargs: _Record())
+    monkeypatch.setattr(cli_customizer, "write_moba_professional_customizer_bundle", lambda _plan: bundle)
     common_build = dict(
         out=Path("bundle"),
         brand_name="Corp Ops",
@@ -433,7 +433,7 @@ def test_customizer_handlers_cover_json_text_and_failure(monkeypatch, tmp_path: 
         update_channel=channel,
         evidence_requirements=["signed installer"],
     )
-    monkeypatch.setattr(cli, "build_professional_deployment_plan", lambda **_kwargs: deployment)
+    monkeypatch.setattr(cli_customizer, "build_professional_deployment_plan", lambda **_kwargs: deployment)
     deployment_args = _ns(
         brand_name="Corp Ops",
         organization="Example Corp",
@@ -462,9 +462,9 @@ def test_customizer_handlers_cover_json_text_and_failure(monkeypatch, tmp_path: 
         files=[Path("deployment.json")],
     )
     monkeypatch.setattr(
-        cli, "build_professional_deployment_evidence_bundle_plan", lambda *_args, **_kwargs: _Record()
+        cli_customizer, "build_professional_deployment_evidence_bundle_plan", lambda *_args, **_kwargs: _Record()
     )
-    monkeypatch.setattr(cli, "write_professional_deployment_evidence_bundle", lambda _plan: evidence_result)
+    monkeypatch.setattr(cli_customizer, "write_professional_deployment_evidence_bundle", lambda _plan: evidence_result)
     evidence_args = _ns(
         **vars(deployment_args),
         out_dir=Path("artifacts"),
@@ -533,7 +533,8 @@ def test_validation_handlers_cover_all_output_states(
     args: argparse.Namespace,
 ) -> None:
     result = _validation(passed=True, summary=True)
-    monkeypatch.setattr(cli, dependency_name, lambda *_args, **_kwargs: result)
+    dependency_owner = cli_customizer if handler_name.startswith("cmd_customizer_") else cli
+    monkeypatch.setattr(dependency_owner, dependency_name, lambda *_args, **_kwargs: result)
     handler = getattr(cli, handler_name)
     assert handler(args) == 0
     args.json = True
@@ -808,8 +809,8 @@ def test_cli_helpers_cover_validation_and_formatting(monkeypatch, capsys) -> Non
     monkeypatch.setattr(cli, "getpass", lambda _prompt: "typed-secret")
     assert cli._vault_secret_value(_ns(secret_env=None, stdin=False)) == "typed-secret"
 
-    cli._print_local_preview({"path": "missing", "kind": "missing", "exists": False})
-    cli._print_local_preview(
+    cli_transfers._print_local_preview({"path": "missing", "kind": "missing", "exists": False})
+    cli_transfers._print_local_preview(
         {
             "path": "file.txt",
             "kind": "file",
@@ -822,7 +823,7 @@ def test_cli_helpers_cover_validation_and_formatting(monkeypatch, capsys) -> Non
             "error": "preview error",
         }
     )
-    cli._print_local_preview(
+    cli_transfers._print_local_preview(
         {
             "path": "empty",
             "kind": "directory",
@@ -856,20 +857,20 @@ def test_cli_helpers_cover_validation_and_formatting(monkeypatch, capsys) -> Non
         stdout="stdout\n",
         stderr="stderr\n",
     )
-    cli._print_sftp_queue_result(queue_plan, queue_result)
+    cli_transfers._print_sftp_queue_result(queue_plan, queue_result)
     queue_result.dry_run = False
     queue_result.ok = False
     queue_result.returncode = 3
     queue_result.progress = []
     queue_result.stdout = ""
     queue_result.stderr = ""
-    cli._print_sftp_queue_result(queue_plan, queue_result)
+    cli_transfers._print_sftp_queue_result(queue_plan, queue_result)
     queue_result.ok = True
-    cli._print_sftp_queue_result(queue_plan, queue_result)
+    cli_transfers._print_sftp_queue_result(queue_plan, queue_result)
 
     plan = _Record(batch_commands=["ls"], notes=["note"])
-    cli._print_sftp_plan(plan, show_batch=True)
-    cli._print_sftp_plan(plan, show_batch=False)
+    cli_transfers._print_sftp_plan(plan, show_batch=True)
+    cli_transfers._print_sftp_plan(plan, show_batch=False)
 
     broadcast = _Record(
         profile_name="edge",
@@ -981,8 +982,8 @@ def test_vault_sync_gui_and_module_guard_handlers(monkeypatch, capsys, tmp_path:
             assert source and replace
             return 2
 
-    monkeypatch.setattr(cli, "BackupService", Backup)
-    monkeypatch.setattr(cli, "DirectorySyncProvider", Sync)
+    monkeypatch.setattr(cli_workspace, "BackupService", Backup)
+    monkeypatch.setattr(cli_workspace, "DirectorySyncProvider", Sync)
     assert cli.cmd_export(_ns(out=tmp_path / "backup.zip")) == 0
     assert cli.cmd_sync_push(_ns(to=tmp_path / "remote")) == 0
     assert cli.cmd_sync_pull(_ns(source=tmp_path / "remote", replace=True)) == 0
@@ -1003,8 +1004,8 @@ def test_vault_sync_gui_and_module_guard_handlers(monkeypatch, capsys, tmp_path:
     client = _Record()
     client.push = lambda team, expected_version: snapshot
     client.pull = lambda team, replace: snapshot
-    monkeypatch.setattr(cli, "TeamSyncBackend", Backend)
-    monkeypatch.setattr(cli, "_team_sync_client", lambda _root: client)
+    monkeypatch.setattr(cli_workspace, "TeamSyncBackend", Backend)
+    monkeypatch.setattr(cli_workspace, "_team_sync_client", lambda _root: client)
     team_args = _ns(root=tmp_path, team="ops", json=False, expected_version=2, replace=True)
     assert cli.cmd_team_sync_status(team_args) == 0
     assert cli.cmd_team_sync_push(team_args) == 0

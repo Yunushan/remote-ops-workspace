@@ -4,6 +4,9 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
+from remote_ops_workspace import file_safety
 from remote_ops_workspace.cli import build_parser
 from remote_ops_workspace.moba_text import (
     build_moba_text_editor_tab_plan,
@@ -60,18 +63,51 @@ def test_moba_text_write_requires_force_or_expected_hash_for_existing_file(tmp_p
         raise AssertionError("existing text modifications must be guarded")
 
 
-def test_moba_text_write_with_expected_hash_creates_backup(tmp_path: Path) -> None:
+@pytest.mark.parametrize("temporary_denial", [False, True])
+def test_moba_text_write_with_expected_hash_creates_backup(tmp_path: Path, monkeypatch, temporary_denial: bool) -> None:
     document = tmp_path / "notes.txt"
     document.write_text("old\n", encoding="utf-8")
     expected = preview_text_document(document).sha256
+    delays = []
+    if temporary_denial:
+        replace = file_safety.os.replace
+
+        def replace_after_denial(source, destination):
+            if destination == document and not delays:
+                error = PermissionError("temporary Windows file lock")
+                error.winerror = 5
+                raise error
+            replace(source, destination)
+
+        monkeypatch.setattr(file_safety.os, "replace", replace_after_denial)
+        monkeypatch.setattr(file_safety, "sleep", delays.append)
 
     result = write_text_document(document, "new\n", expected_sha256=expected)
+    assert delays == ([0.01] if temporary_denial else [])
+    assert not list(tmp_path.glob(".*.tmp"))
 
     assert result.changed is True
     assert result.previous_sha256 == expected
     assert result.backup_path.endswith("notes.txt.bak")
     assert document.read_text(encoding="utf-8") == "new\n"
     assert Path(result.backup_path).read_text(encoding="utf-8") == "old\n"
+
+
+def test_text_cli_honors_encoding_and_preserves_input_and_backup_bytes(tmp_path: Path) -> None:
+    target = tmp_path / "notes.txt"
+    edited = tmp_path / "new.txt"
+    original = "prix 2 €\r\n".encode("cp1252")
+    replacement = "prix 3 €\r\n".encode("cp1252")
+    target.write_bytes(original)
+    edited.write_bytes(replacement)
+    args = build_parser().parse_args([
+        "text", "write", str(target), "--text-file", str(edited), "--encoding", "cp1252",
+        "--expected-sha256", hashlib.sha256(original).hexdigest(),
+    ])
+    assert args.func(args) == 0
+    assert target.read_bytes() == replacement
+    assert target.with_suffix(".txt.bak").read_bytes() == original
+    assert diff_text_documents(edited, target, encoding="cp1252").equal
 
 
 def test_moba_diff_reports_unified_diff_stats(tmp_path: Path) -> None:
@@ -88,6 +124,28 @@ def test_moba_diff_reports_unified_diff_stats(tmp_path: Path) -> None:
     assert result.hunk_count == 1
     assert "+gamma" in result.unified_diff
     assert "-beta" in result.unified_diff
+
+
+def test_unterminated_diff_matches_unified_format_and_counts_marker_like_content(tmp_path: Path) -> None:
+    left, right = tmp_path / "a", tmp_path / "b"
+    left.write_bytes(b"alpha\r\n--last")
+    right.write_bytes(b"alpha\r\n++last!")
+    result = diff_text_documents(left, right)
+    assert result.unified_diff.endswith(" alpha\r\n---last\n\\ No newline at end of file\n+++last!\n\\ No newline at end of file\n")
+    assert (result.added_lines, result.removed_lines, result.hunk_count) == (1, 1, 1)
+
+
+@pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\v", "\f", "\x85", "\r"])
+def test_unified_diff_treats_only_lf_as_a_record_boundary(tmp_path: Path, separator: str) -> None:
+    left, right = tmp_path / "a", tmp_path / "b"
+    for terminator, expected_suffix in (("\n", "\n"), ("\r", "\r\n\\ No newline at end of file\n")):
+        left.write_bytes(f"one{separator}body{terminator}".encode())
+        right.write_bytes(f"two{separator}body{terminator}".encode())
+        result = diff_text_documents(left, right)
+        assert result.unified_diff.endswith(
+            f"@@ -1 +1 @@\n-one{separator}body{expected_suffix}+two{separator}body{expected_suffix}"
+        )
+        assert (result.added_lines, result.removed_lines) == (1, 1)
 
 
 def test_moba_remote_text_edit_plan_reuses_sftp_get_and_put() -> None:

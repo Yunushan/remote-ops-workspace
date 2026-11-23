@@ -75,7 +75,7 @@ MENU_OPERATIONS = (
     ("mobaxterm", "tools", "tools-status"),
     ("mobaxterm", "games", "games-status"),
     ("mobaxterm", "settings", "settings-status"),
-    ("mobaxterm", "macros", "macros-status"),
+    ("mobaxterm", "macros", "manage-macros"),
     ("mobaxterm", "help", "run-doctor"),
     ("securecrt", "file", "connect-selected"),
     ("securecrt", "edit", "focus-find"),
@@ -332,7 +332,7 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
             QTimer,
         )
         from PyQt6.QtGui import QPalette
-        from PyQt6.QtTest import QTest
+        from PyQt6.QtTest import QSignalSpy, QTest
         from PyQt6.QtWidgets import (
             QApplication,
             QComboBox,
@@ -354,6 +354,7 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         return [{"name": "pyqt6-available", "passed": False, "detail": detail}], [detail]
 
     import remote_ops_workspace.gui as gui_module
+    from remote_ops_workspace import gui_mremoteng, gui_remmina
     from remote_ops_workspace.gui import create_main_window
     from remote_ops_workspace.gui_designs import (
         GUI_DESIGN_PRESETS,
@@ -1639,23 +1640,46 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         },
     )
     reconnect_button = document_buttons["reconnect"]
+    reconnect_profile = window.store.get(mremoteng_route.selected_profile_name)
+    window.open_terminal_tab(
+        TerminalPanePlan(
+            title="Reconnect transport",
+            command=[sys.executable, "-c", "print('reconnect transport')"],
+            source="profile",
+        ),
+        profile=reconnect_profile,
+    )
+    reconnect_index = window.tabs.currentIndex()
+    reconnect_pane = window.active_terminal_pane()
+    starts = QSignalSpy(reconnect_pane.process.started)
+    finishes = QSignalSpy(reconnect_pane.process.finished)
+    if not finishes:
+        finishes.wait(5000)
+    window.tabs.setCurrentIndex(window.find_tab_by_role("home"))
+    window.select_profile(reconnect_profile.name)
     reconnect_button.click()
-    app.processEvents()
+    requested_message = window.statusBar().currentMessage()
+    if len(finishes) < 2:
+        finishes.wait(5000)
     record(
         "mremoteng-reconnect-routes-statefully",
-        bool(reconnect_button.property(mremoteng_route.live_triggered_property))
+        len(starts) == len(finishes) == 2
+        and bool(reconnect_button.property(mremoteng_route.live_triggered_property))
         and reconnect_button.property(mremoteng_route.live_state_property)
         == mremoteng_route.reconnect_state
         and mremoteng_route.selected_profile_name
-        in window.statusBar().currentMessage(),
+        in requested_message,
         {
+            "process_starts": len(starts),
+            "process_finishes": len(finishes),
             "triggered": reconnect_button.property(
                 mremoteng_route.live_triggered_property
             ),
             "state": reconnect_button.property(mremoteng_route.live_state_property),
-            "status": window.statusBar().currentMessage(),
+            "status": requested_message,
         },
     )
+    window.close_tab(reconnect_index)
     external_dialog_state: dict[str, object] = {}
 
     def inspect_external_tools_dialog() -> None:
@@ -1881,14 +1905,16 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         },
     )
 
-    original_ensure_data_dir = gui_module.ensure_data_dir
+    mremoteng_ensure_data_dir = gui_mremoteng.ensure_data_dir
+    remmina_ensure_data_dir = gui_remmina.ensure_data_dir
     denied_data_dir_calls: list[str] = []
 
     def deny_data_dir_directly() -> Path:
         denied_data_dir_calls.append("called")
         raise OSError("direct ROW_HOME denial proof")
 
-    gui_module.ensure_data_dir = deny_data_dir_directly
+    gui_mremoteng.ensure_data_dir = deny_data_dir_directly
+    gui_remmina.ensure_data_dir = deny_data_dir_directly
     try:
         window.set_design_preset("mremoteng")
         app.processEvents()
@@ -1898,7 +1924,7 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         save_failed_closed = (
             blocked_save_button.property("mRemoteNgDocumentSaveTriggered") is False
             and bool(blocked_save_button.property("mRemoteNgDocumentSaveError"))
-            and "not writable" in window.statusBar().currentMessage()
+            and "direct ROW_HOME denial proof" in window.statusBar().currentMessage()
         )
         window.set_design_preset("remmina")
         app.processEvents()
@@ -1921,7 +1947,8 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
             and "capture failed" in window.statusBar().currentMessage()
         )
     finally:
-        gui_module.ensure_data_dir = original_ensure_data_dir
+        gui_mremoteng.ensure_data_dir = mremoteng_ensure_data_dir
+        gui_remmina.ensure_data_dir = remmina_ensure_data_dir
     record(
         "gui-artifact-write-errors-fail-closed-without-slot-exception",
         save_failed_closed
@@ -2164,10 +2191,10 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
     window.set_design_preset("native")
     app.processEvents()
 
-    from remote_ops_workspace import gui_terminal
+    from remote_ops_workspace import gui_layouts, gui_terminal
 
     policy_calls: list[dict[str, str]] = []
-    original_policy_check = gui_module.assert_profile_launch_allowed
+    original_layout_policy_check = gui_layouts.assert_profile_launch_allowed
     original_terminal_policy_check = gui_terminal.assert_profile_launch_allowed
 
     def block_profile_launch(profile, *, surface: str = "launcher", **_kwargs) -> None:
@@ -2180,7 +2207,7 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         )
         raise ValueError("interaction policy proof")
 
-    gui_module.assert_profile_launch_allowed = block_profile_launch
+    gui_layouts.assert_profile_launch_allowed = block_profile_launch
     gui_terminal.assert_profile_launch_allowed = block_profile_launch
     try:
         guarded_pane = window.new_terminal_pane(
@@ -2223,7 +2250,7 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         guarded_pane.deleteLater()
         app.processEvents()
     finally:
-        gui_module.assert_profile_launch_allowed = original_policy_check
+        gui_layouts.assert_profile_launch_allowed = original_layout_policy_check
         gui_terminal.assert_profile_launch_allowed = original_terminal_policy_check
 
     literal_plan = TerminalPanePlan(
@@ -2419,6 +2446,15 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         *window.securecrt_top_menus,
         *window.mremoteng_top_menus,
     ]
+    macro_menu = next(menu for menu in window.moba_top_menus if menu.property("mobaTopMenuKey") == "macros")
+    macro_menu.aboutToShow.emit()
+    macro_actions = macro_menu.actions()
+    record(
+        "moba-macros-menu-controls",
+        macro_actions[0].text() == "Record new macro"
+        and any(action.text() == "Saved macros" and not action.isEnabled() for action in macro_actions)
+        and macro_actions[-1].text() == "Manage macros…",
+    )
     routed_menu_actions = [
         action
         for menu in all_product_menus
@@ -3881,7 +3917,23 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
     )
     capture("native-terminal-split-1180x720.png", window)
     if len(panes) >= 2:
-        first_pane, second_pane = panes[:2]
+        search_panes = panes[:2]
+        first_pane, second_pane = search_panes
+        # Finish the live shell checks before seeding search and copy text.
+        # A delayed ConPTY startup or resize frame can overwrite the fixture.
+        for pane in (first_pane, second_pane):
+            if pane.is_running():
+                pane.process.kill()
+                pane.process.waitForFinished(1000)
+        deadline = time.monotonic() + 2
+        app.processEvents()
+        while time.monotonic() < deadline and any(
+            pane.is_running() or pane.process_output_pending() for pane in search_panes
+        ):
+            QTest.qWait(10)
+        shells_drained = not any(
+            pane.is_running() or pane.process_output_pending() for pane in search_panes
+        )
         first_pane.set_terminal_transcript("pane-one-only\n")
         second_pane.set_terminal_transcript("pane-two-only-needle\n")
         window.raise_()
@@ -3898,7 +3950,8 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         app.processEvents()
         record(
             "find-control-preserves-second-split-pane-target",
-            second_was_focused
+            shells_drained
+            and second_was_focused
             and second_pane.output.textCursor().selectedText() == "pane-two-only-needle"
             and second_pane.output.hasFocus()
             and first_pane.output.textCursor().selectedText() == ""
@@ -3906,6 +3959,7 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
             and window.statusBar().currentMessage()
             == "Found in active terminal: pane-two-only-needle",
             {
+                "shells_drained": shells_drained,
                 "first_selection": first_pane.output.textCursor().selectedText(),
                 "second_selection": second_pane.output.textCursor().selectedText(),
                 "second_was_focused": second_was_focused,
@@ -3925,10 +3979,6 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
             pane.width() < 620 and compact,
             {"pane_width": pane.width(), "compact": compact},
         )
-        # Let the live shell publish its startup prompt before replacing the
-        # transcript with deterministic search evidence.  Python 3.15 on
-        # Windows can deliver the first ConPTY frame during this focus turn;
-        # seeding before that frame makes the prompt overwrite the fixture.
         pane.output.setFocus()
         app.processEvents()
         pane.set_terminal_transcript("alpha\nneedle-in-terminal\nomega\n")

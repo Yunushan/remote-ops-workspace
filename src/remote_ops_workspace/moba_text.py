@@ -6,11 +6,12 @@ import json
 import re
 import shutil
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 from . import command_safety as safe
-from .file_safety import ensure_private_dir_required, write_json_atomic, write_text_atomic
+from .file_safety import ensure_private_dir_required, write_bytes_atomic, write_json_atomic
 from .file_transfer import SftpBatchPlan, build_sftp_get_plan, build_sftp_put_plan
 from .models import Profile
 from .paths import ensure_data_dir
@@ -343,19 +344,21 @@ def write_text_document(
         raise ValueError(f"text write path is not a regular file: {target}")
     if not existed and not create:
         raise ValueError("text write target does not exist; pass --create to create it")
-    previous_sha256 = _sha256_path(target) if existed else ""
+    previous_payload = target.read_bytes() if existed else b""
+    previous_sha256 = hashlib.sha256(previous_payload).hexdigest() if existed else ""
     if expected_sha256 and previous_sha256 != expected_sha256:
         raise ValueError("text write expected sha256 does not match current file")
-    previous_text = _read_text(target, encoding=encoding) if existed else ""
+    previous_text = _decode_text(previous_payload, target, encoding=encoding) if existed else ""
     changed = previous_text != new_text
     if existed and changed and not force and not expected_sha256:
         raise ValueError("text write would modify an existing file; pass --force or --expected-sha256")
+    new_payload = new_text.encode(encoding) if changed or not existed else previous_payload
     backup_path = ""
     if existed and changed and backup:
         backup_target = target.with_name(f"{target.name}.bak")
-        write_text_atomic(backup_target, previous_text)
+        write_bytes_atomic(backup_target, previous_payload)
         backup_path = str(backup_target)
-    write_text_atomic(target, new_text)
+    write_bytes_atomic(target, new_payload)
     new_sha256 = _sha256_path(target)
     notes = ["MobaTextEditor-style guarded local save."]
     if backup_path:
@@ -374,6 +377,15 @@ def write_text_document(
     )
 
 
+def unified_text_diff(left: str, right: str, left_name: str, right_name: str, *, context: int = 3) -> list[str]:
+    # Unified diffs delimit records with LF. Keep all other characters as file content.
+    lines = difflib.unified_diff(
+        list(StringIO(left, newline="\n")), list(StringIO(right, newline="\n")),
+        fromfile=left_name, tofile=right_name, n=context,
+    )
+    return [line if line.endswith("\n") else line + "\n\\ No newline at end of file\n" for line in lines]
+
+
 def diff_text_documents(
     left: Path | str,
     right: Path | str,
@@ -387,20 +399,10 @@ def diff_text_documents(
     right_path = _path(right, "right diff path")
     left_text = _read_text(left_path, encoding=encoding)
     right_text = _read_text(right_path, encoding=encoding)
-    left_lines = left_text.splitlines(keepends=True)
-    right_lines = right_text.splitlines(keepends=True)
-    diff_lines = list(
-        difflib.unified_diff(
-            left_lines,
-            right_lines,
-            fromfile=str(left_path),
-            tofile=str(right_path),
-            n=context,
-        )
-    )
+    diff_lines = unified_text_diff(left_text, right_text, str(left_path), str(right_path), context=context)
     unified = "".join(diff_lines)
-    added = sum(1 for line in diff_lines if line.startswith("+") and not line.startswith("+++"))
-    removed = sum(1 for line in diff_lines if line.startswith("-") and not line.startswith("---"))
+    added = sum(1 for line in diff_lines[2:] if line.startswith("+"))
+    removed = sum(1 for line in diff_lines[2:] if line.startswith("-"))
     hunks = sum(1 for line in diff_lines if line.startswith("@@"))
     return MobaDiffResult(
         left_path=str(left_path),
@@ -964,7 +966,10 @@ def _read_text(path: Path, *, encoding: str) -> str:
         raise ValueError(f"text file does not exist: {path}")
     if not path.is_file():
         raise ValueError(f"text path is not a regular file: {path}")
-    payload = path.read_bytes()
+    return _decode_text(path.read_bytes(), path, encoding=encoding)
+
+
+def _decode_text(payload: bytes, path: Path, *, encoding: str) -> str:
     if b"\x00" in payload:
         raise ValueError(f"text path appears to be binary: {path}")
     try:

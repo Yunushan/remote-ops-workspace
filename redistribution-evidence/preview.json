@@ -5,7 +5,7 @@
   "materials": {
     "third_party_notices": {
       "file": "THIRD_PARTY_NOTICES.md",
-      "sha256": "f57ddcf79ee050b02e4344b5b4a0d7fe37691cd3ca8dba4fc9c50ba095173921"
+      "sha256": "c7a77c7405951e4d59fbfa6be98c39228d2a15a676b3dd0b5de5f35f67b45796"
     },
     "pyqt6_gplv3": {
       "file": "PyQt6-GPL-3.0.txt",
@@ -25,7 +25,7 @@
     },
     "qt_relink_instructions": {
       "file": "Qt-Relinking.md",
-      "sha256": "25171e80495938a4a42724d5de05f1f6f507fa1e290d2e2f43832d4bb53818dd"
+      "sha256": "fd33ccaf785484467844704f621e1f831b2ebca80af1eeb6ff67fd61d2845873"
     }
   }
 }

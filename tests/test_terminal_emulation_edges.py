@@ -34,11 +34,129 @@ def test_feed_and_literal_handle_tabs_controls_and_cursor_rewrites() -> None:
     assert transcript.feed_literal("\rB\bC\tD\x00") == "C       D"
 
 
+@pytest.mark.parametrize("screen", ["", "\x1b[?1049h"])
+def test_unicode_cell_width_and_combining_styles(screen: str) -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    transcript.feed(screen + "\u0301\x1b[31m界e\x1b[32m")
+    assert transcript.cursor_column == 3
+    assert transcript.feed("\u0301Ａ") == "界e\u0301Ａ"
+    assert transcript.cursor_text_column() == (4, 0)
+    fragments = transcript.styled_fragments(end=4, screen=bool(screen))
+    assert [(fragment.text, fragment.style.foreground) for fragment in fragments] == [
+        ("界e\u0301", terminal.ANSI_16_COLOR_PALETTE[1]),
+        ("Ａ", terminal.ANSI_16_COLOR_PALETTE[2]),
+    ]
+    assert transcript.feed("\x1b[2G\x1b[6n") == "界e\u0301Ａ"
+    assert transcript.take_pending_responses() == (b"\x1b[1;2R",)
+    assert transcript.cursor_text_column() == (0, 1)
+    assert transcript.feed("X") == " Xe\u0301Ａ"
+    assert transcript.feed("\x1b[4Gé") == " Xe\u0301é "
+    assert transcript.cursor_column == 4
+    assert transcript.feed("\x1b[9G\u0301") == " Xe\u0301é "
+    assert transcript.cursor_text_column() == (6, 3)
+
+
+def test_combining_mark_on_wide_glyph_is_bounded_and_preserves_tab_stops() -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    marks = "\u0301" * (terminal.MAX_CELL_CODEPOINTS - 1)
+    assert transcript.feed("界" + marks + "\u0301\tX") == "界" + marks + "      X"
+    assert transcript.cursor_column == 9
+
+
+@pytest.mark.parametrize("screen", ["", "\x1b[?1049h"])
+@pytest.mark.parametrize(
+    ("edit", "expected"),
+    [
+        ("\x1b[3G\x1b[K", "a "),
+        ("\x1b[2G\x1b[1K", "   b"),
+        ("\x1b[3G\x1b[J", "a "),
+        ("\x1b[2G\x1b[1J", "   b"),
+    ],
+)
+def test_unicode_cell_erase_clears_the_whole_glyph(screen: str, edit: str, expected: str) -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    assert transcript.feed(screen + "a界b" + edit) == expected
+
+
+@pytest.mark.parametrize(
+    ("edit", "expected"),
+    [
+        ("\x1b[3G\x1b[@", "a   b"),
+        ("\x1b[2G\x1b[P", "a b"),
+        ("\x1b[2G\x1b[X", "a  b"),
+        ("\x1b[3G\x1b[4h界", "a 界 b"),
+    ],
+)
+def test_alternate_cell_edits_preserve_wide_cell_pairs(edit: str, expected: str) -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    assert transcript.feed("\x1b[?1049ha界b" + edit) == expected
+
+
+def test_alternate_wide_glyph_wraps_and_resize_clips_the_entire_glyph() -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    transcript.set_screen_size(21, 5)
+    prefix = "." * 19
+    assert transcript.feed("\x1b[?1049h" + prefix + "界") == prefix + "界"
+    transcript.set_screen_size(20, 5)
+    assert transcript.text() == prefix + " "
+    assert transcript.feed("\x1b[1;20H界\u0301") == prefix + " \n界\u0301"
+    assert transcript.cursor_text_column() == (2, 0)
+    assert transcript.feed("\x1b[?7l\x1b[2;20H界") == prefix + " \n界\u0301" + " " * 18
+    assert transcript.cursor_column == 19
+    assert transcript.feed("X") == prefix + " \n界\u0301" + " " * 17 + "X"
+    assert transcript.feed("\x1b[31m\u0301") == prefix + " \n界\u0301" + " " * 17 + "X\u0301"
+
+
 def test_end_of_stream_and_screen_text_on_primary_screen() -> None:
     transcript = terminal.AnsiTerminalTranscript()
     transcript.feed("primary")
     assert transcript.end_of_stream() == "primary"
     assert transcript.screen_text() == "primary"
+
+
+@pytest.mark.parametrize(
+    ("code", "style", "report"),
+    [
+        ("", ("block", True), "1"),
+        ("0", ("block", True), "1"),
+        ("1", ("block", True), "1"),
+        ("2", ("block", False), "2"),
+        ("3", ("underline", True), "3"),
+        ("4", ("underline", False), "4"),
+        ("5", ("bar", True), "5"),
+        ("06", ("bar", False), "6"),
+    ],
+)
+def test_terminal_cursor_style_and_status_query(code, style, report) -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    assert transcript.feed(f"x\x1b[{code} ") == "x"
+    assert transcript.cursor_style == terminal.DEFAULT_CURSOR_STYLE
+    assert transcript.feed("q\x1bP$q ") == "x"
+    assert transcript.cursor_style == style
+    assert transcript.cursor_column == 1
+    assert not transcript.consume_full_redraw_hint()
+    assert transcript.feed("q\x1b\\") == "x"
+    assert transcript.take_pending_responses() == (f"\x1bP1$r{report} q\x1b\\".encode("ascii"),)
+
+
+def test_terminal_cursor_style_restores_after_full_screen_and_stream_exit() -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    transcript.feed("shell\x1b[4 q\x1b[1\"q\x1b[99 q\x1b[?5 q\x1b[5;2 q")
+    assert transcript.cursor_style == ("underline", False)
+    assert transcript.cursor_visible
+    transcript.feed("\x1b[?1049hvim\x1b[2 q\x1b[?12h\x1b[?25l")
+    assert transcript.cursor_style == ("block", True)
+    assert not transcript.cursor_visible
+    transcript.feed("\x1b[?12l")
+    assert transcript.cursor_style == ("block", False)
+    assert transcript.feed("\x1b[?1049l") == "shell"
+    assert transcript.cursor_style == ("underline", False)
+    assert transcript.cursor_visible
+    transcript.feed("\x1b[?1049h\x1b[5 q")
+    assert transcript.end_of_stream() == "shell"
+    assert transcript.cursor_style == terminal.DEFAULT_CURSOR_STYLE
+    transcript.feed("\x1b[3 q\x1bc")
+    assert transcript.cursor_style == terminal.DEFAULT_CURSOR_STYLE
 
 
 def test_styled_fragments_cover_screen_rows_empty_ranges_and_cache_reuse() -> None:
@@ -161,6 +279,52 @@ def test_alternate_cursor_motion_absolute_and_origin_bounds() -> None:
     assert transcript._alternate_bottom_margin == 5
 
 
+def test_alternate_index_and_reverse_index_respect_scroll_margins_and_columns() -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    transcript.set_screen_size(20, 6)
+    transcript.feed("shell\x1b[?1049h")
+    for row, content in enumerate(("header", "\x1b[31mone\x1b[0m", "two", "three", "four", "footer"), 1):
+        transcript.feed(f"\x1b[{row};1H{content}")
+    first_style = transcript.styled_alternate_rows()[1][1]
+    transcript.feed("\x1b[2;5r\x1b[2;3H\x1bMR")
+    assert transcript.screen_text().split("\n") == ["header", "  R", "one", "two", "three", "footer"]
+    assert transcript.styled_alternate_rows()[2][1] == first_style
+    assert (transcript.cursor_row, transcript.cursor_column) == (1, 3)
+
+    transcript.feed("\x1b[5;4H\x1bDF\x1b[3;12H\x1bEN")
+    assert transcript.screen_text().split("\n") == ["header", "one", "two", "Nhree", "   F", "footer"]
+    assert transcript.styled_alternate_rows()[1][1] == first_style
+    assert (transcript.cursor_row, transcript.cursor_column) == (3, 1)
+
+    before = transcript.screen_text()
+    transcript.feed("\x1b[1;2H\x1bM")
+    assert (transcript.cursor_row, transcript.cursor_column) == (0, 1)
+    transcript.feed("\x1b[6;9H\x1bD\n")
+    assert (transcript.cursor_row, transcript.cursor_column) == (5, 0)
+    assert transcript.screen_text() == before
+    assert transcript.feed("\x1b[?1049l\x1bD\x1bM") == "shell"
+
+
+def test_initial_primary_restore_and_unsupported_alternate_csi_preserve_cursor_and_text() -> None:
+    transcript = terminal.AnsiTerminalTranscript(primary_reflow=True)
+    transcript.feed("\x1b8\x1b[6n")
+    assert transcript.take_pending_responses() == (b"\x1b[1;1R",)
+    transcript.feed("\x1b[?1049htext\x1b[0z\x1b[6n")
+    assert transcript.screen_text().rstrip("\n") == "text"
+    assert transcript.take_pending_responses() == (b"\x1b[1;5R",)
+
+
+def test_cursor_report_uses_origin_relative_row_and_clamps_pending_wrap_column() -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    transcript.set_screen_size(20, 6)
+    transcript.feed("\x1b[?1049h\x1b[2;5r\x1b[?6h\x1b[2;20Hx")
+    assert (transcript.cursor_row, transcript.cursor_column) == (2, 20)
+    transcript.feed("\x1b[6n\x1b[?6n\x1b[?5n")
+    assert transcript.take_pending_responses() == (b"\x1b[2;20R", b"\x1b[?2;20R")
+    transcript.feed("\x1bD!")
+    assert transcript.screen_text().split("\n")[3] == " " * 19 + "!"
+
+
 def test_alternate_insert_delete_scroll_and_column_edits() -> None:
     transcript = terminal.AnsiTerminalTranscript()
     transcript.set_screen_size(20, 5)
@@ -206,6 +370,44 @@ def test_alternate_screen_resize_preserves_bounded_content() -> None:
     assert transcript.cursor_column == 19
 
 
+@pytest.mark.parametrize(("save", "restore"), [("\x1b7", "\x1b8"), ("\x1b[s", "\x1b[u")])
+def test_alternate_saved_cursor_is_clamped_to_the_resized_screen(save: str, restore: str) -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    transcript.set_screen_size(30, 7)
+    transcript.feed("\x1b[?1049h\x1b[7;30H" + save + "\x1b[Hfirst")
+    transcript.set_screen_size(20, 5)
+    transcript.feed(restore + "Z")
+    rows = transcript.screen_text().split("\n")
+    assert rows[0] == "first"
+    assert len(rows) == 5
+    assert rows[-1] == " " * 19 + "Z"
+
+
+def test_height_only_resize_keeps_delayed_wrap_and_extends_default_scroll_region() -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    transcript.set_screen_size(20, 5)
+    transcript.feed("\x1b[?1049h" + "x" * 20)
+    transcript.set_screen_size(20, 5)
+    transcript.set_screen_size(20, 7)
+    assert transcript.cursor_column == 20
+    transcript.feed("Y\x1b[6;1Hbottom\nlast")
+    rows = transcript.screen_text().split("\n")
+    assert rows[0] == "x" * 20
+    assert rows[1] == "Y"
+    assert rows[-2:] == ["bottom", "last"]
+
+
+def test_resize_keeps_finite_scroll_region_and_resets_an_empty_region() -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    transcript.set_screen_size(40, 9)
+    transcript.feed("\x1b[?1049h\x1b[4;8r")
+    transcript.set_screen_size(40, 10)
+    assert (transcript._alternate_top_margin, transcript._alternate_bottom_margin) == (3, 7)
+    transcript.feed("\x1b[6;10r")
+    transcript.set_screen_size(40, 5)
+    assert (transcript._alternate_top_margin, transcript._alternate_bottom_margin) == (0, 4)
+
+
 def test_alternate_newline_scrolls_region_and_no_wrap_overwrites_last_cell() -> None:
     transcript = terminal.AnsiTerminalTranscript()
     transcript.set_screen_size(20, 5)
@@ -246,7 +448,7 @@ def test_normal_dec_controls_queries_and_ignored_csi_modes() -> None:
     transcript._apply_csi("2;2", "H")
     transcript._apply_csi("", "z")
 
-    assert transcript.take_pending_responses() == (b"\x1b[1;12R",)
+    assert transcript.take_pending_responses() == (b"\x1b[1;7R",)
     assert transcript.text() == "normalmoved"
     assert transcript.origin_mode_active is True
 

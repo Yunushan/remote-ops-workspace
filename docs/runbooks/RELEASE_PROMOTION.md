@@ -36,8 +36,9 @@ promotion target.
    python scripts/check_platform_verified_evidence.py --registry "<signed-registry.json>" --require-goal-targets --require-review-bundles --release-tag "<tag>"
    ```
 
-4. After publication, finalize the MobaXterm records using the downloaded
-   release assets and merge the reviewed registry into protected `main`.
+4. After publication, [finalize the MobaXterm registry](../MOBAXTERM_PARITY.md#finalize-the-registry-after-immutable-publication)
+   using the complete downloaded release inventory. Merge the reviewed
+   registry into protected `main`.
    Run the [aggregate gate with the required release inputs](../PRODUCTION_READINESS.md#final-promotion-sequence)
    from the tagged checkout and require `production readiness: 100/100 gates passed`.
 
@@ -50,24 +51,52 @@ Use the **Report promotion coordinates** summary from the successful
 from that run and its repository. Authenticate GitHub CLI and set `GH_TOKEN`
 or `GITHUB_TOKEN` with Actions, attestations, and contents read access.
 
-From the tagged checkout, download the sealed inventory to `$approval_dir/bundle`
-and materialize the standard release assets into a new directory outside the
-checkout. The materializer verifies the original inventory ZIP digest, exact
-tag and build attempt, the inventory's attestation, and all candidate bytes.
+On a Linux review host with `dpkg-deb`, use the selected tagged checkout
+with clean tracked files to prepare the exact candidate materials in a new
+directory outside the checkout. The command
+selects artifacts by numeric ID from the successful first attempt. It checks
+the live tag and build, verifies the inventory attestation, and revalidates
+the archived installer bytes against the sealed file list.
 
 ```bash
-gh run download "$build_run_id" --repo "$release_repository" \
-  --name release-candidate-inventory --dir "$approval_dir/bundle"
-python scripts/release_candidate_inventory.py promote \
-  --repository "$release_repository" --release-tag "$release_tag" \
-  --release-sha "$release_sha" --build-run-id "$build_run_id" --build-run-attempt 1 \
-  --inventory-artifact-id "$candidate_inventory_artifact_id" \
-  --inventory-archive-digest "$candidate_inventory_archive_digest" \
-  --approved-inventory "$approval_dir/bundle/release-candidate-inventory.json" \
-  --assets-root "$release_assets_dir"
+python scripts/prepare_release_redistribution_review.py \
+  --repository "$release_repository" --release-tag "$release_tag" --release-sha "$release_sha" \
+  --candidate-inventory "$build_run_id $candidate_inventory_artifact_id $candidate_inventory_archive_digest" \
+  --out "$approval_dir"
+release_assets_dir="$approval_dir/assets"
 ```
 
-After the platform host runs are finalized, place the reviewed registry at
+The command retains the original inventory ZIP and all seven runtime report
+ZIPs in `archives/`. For current candidates it also retains the original
+Debian update, RPM recovery, four desktop GUI smoke ZIPs, and two Linux
+native smoke ZIPs. Sealing, review, and promotion verify the smoke archives
+and check that each native proof refers to its completed receipt. Desktop
+smoke hashes the Windows ZIP, EXE, and MSI and the macOS DMG and PKG before
+and after installer testing. Both Linux jobs do the same for the DEB, RPM,
+and AppImage. Sealing compares those digests with the candidate assets,
+and the final audit compares the approved candidate assets with the
+published bytes. Inventory schema 10 requires a bundled Debian amd64
+installer. Sealing, review, promotion, and the published audit open the
+installer to verify its `Depends` field and distro notices. They compare
+the packaged daemons, OpenSSH helpers, and HTTP and FTP launchers with
+the hashes in the server manifest. The review command checks the Linux
+qualification files and controller digests against the sealed inventory
+and tagged checkout.
+`review-materials.json` lists the retained qualification archive paths, hashes,
+and source references. The command copies the sealed inventory, report
+payloads, and matching tagged resolver locks into `bundle/` and verifies the
+runtime reports against the sealed digests and locked installed distributions
+before publishing the directory. Use the `policy_sha256` and `candidate_inventory`
+fields in `review-materials.json` and copy each `modern_targets` entry into
+the matching native inventory during review. Complete the artifact extraction
+scans, license classifications, Qt review where applicable, and the
+independent approval before signing. Keep `archives/` in release evidence
+storage.
+
+After the platform host runs are finalized, use the
+[protected-platform review preparation](../PRODUCTION_READINESS.md#external-prerequisites)
+to build the release registry, verify the four bundles, and retain the source
+archives. Place the reviewed registry at
 `$approval_dir/bundle/platform_verified_evidence.json`. Import the native
 packages and their review files from the exact Actions runs into the same
 staging directory.
@@ -80,12 +109,180 @@ python scripts/import_platform_evidence_artifacts.py \
   --verify-source-run --repository "$release_repository"
 ```
 
-Retain the raw `candidate-pip-inspect.json` from each standard native
-target's `release-runtime-*` artifact. The sealed inventory's
-`runtime_reports` entries bind each report's artifact ID, archive digest,
-payload size and payload SHA-256. Use those exact report bytes in the review
-bundle. See the [protected source evidence capture](../PRODUCTION_READINESS.md#external-prerequisites)
-for the registry's original Actions archives.
+On a Linux review host with the same archive readers as the promotion job,
+capture the required notices after importing the protected Linux packages.
+
+```bash
+python scripts/check_packaged_release_notices.py \
+  --assets-dir "$release_assets_dir" --tag "$release_tag" \
+  --evidence-root "$approval_dir/bundle" --write-review-inputs
+```
+
+The command adds `packaged-notices/` to the evidence bundle after the full
+package matrix passes. Its `notice-extraction.json` records each package's
+digest and the extracted notice paths, sizes, and digests. The corresponding
+`notice_files` entries identify the original bytes under
+`packaged-notices/files/` relative to `bundle/`. For each Linux package the
+command also captures the frozen Python runtime licenses under
+`usr/share/doc/remote-ops-workspace/licenses/`. It also tags the installed
+application license and the GUI packages' PyQt6 and Qt license texts with
+their component names. `review-inputs.json` binds these observations to each
+native manifest digest. The export and signed audit verify that each manifest
+lists exactly the packages assigned to its target in the release matrix.
+Copy each `artifact_license_files` map into the
+matching native inventory and use `component_license_files` to populate the
+reviewed components' `license_files`. The export supplies `artifact_paths`
+when installers place identical license bytes at different paths. The signed
+audit verifies the recorded paths, sizes, and digests against the package.
+Complete the component classifications, license expressions, and channel
+review before signing the approval.
+
+If a Debian package contains the reviewed server bundle, the extraction also
+retains each distro copyright file and records its package name, version, and
+`native-component` origin. Use these rows for the corresponding components and
+the Debian artifact scan. Keep their recorded paths. The signed audit scopes
+these files to the Debian packages that actually ship them.
+
+Windows packages ship their frozen runtime license files under
+`docs/licenses/runtime/`. Native smoke checks compare the installed bytes
+with the build staging files after portable extraction, EXE installation and
+upgrade, and MSI installation and reinstall. The macOS packages ship the
+files inside the signed app at `Contents/Resources/licenses/runtime/`, where
+the installed app bundle checks cover them. The release notice checker
+requires these files in the finished Windows and macOS packages and captures
+their installed paths and original bytes alongside the general notices.
+The Windows x86 profile ships the CPython and PyInstaller licenses for its CLI
+package.
+
+The signed compliance audit extracts the required notices again from the local
+release assets. Their installed paths, sizes, and digests must match the signed
+artifact scans, and the packages must match the signed native manifest hashes.
+For each standard platform, the audit checks the native manifest and packages
+against their file records in the same sealed build inventory that supplies
+the runtime report.
+
+The signed Windows x64, Windows ARM64, and macOS build jobs retain
+`gui-archive-proof.json` alongside the installed GUI smoke reports and
+`candidate-runtime-byte-binding.json`. The archive check confirms that the
+executables observed during installation and reinstall contain the required
+frozen GUI modules, including the connected SSH monitoring runtime. The proof
+records the executable and smoke receipt digests.
+Candidate inventory schema 12 validates the target executable path and the
+complete module observations during sealing, promotion, and retained-evidence
+verification. Older inventory versions keep their original smoke receipt rules.
+Schema 13 checks the exact file list for each build archive against the
+release matrix. Sealing rejects missing files, unexpected files, and files
+uploaded by the wrong job before making the candidate inventory available.
+Sealing, promotion, and the published audit verify each archive's manifest
+and checksum sidecar against the files assigned to that archive.
+
+### Qualify the Windows x64 MSI before publication
+
+The signed MSI rollback drill can use attested inventories from completed
+candidate builds. The signed predecessor can come from an immutable release
+or another sealed candidate. See the
+[Windows MSI release evidence runbook](UPGRADE_AND_ROLLBACK.md#windows-msi-release-evidence).
+
+### Collect MobaXterm parity evidence before publication
+
+The eight parity qualification workflows accept the sealed candidate
+coordinates on the exact release tag. They verify either the standard Python
+wheel or the Debian amd64 installer from that inventory. Retain the original
+Actions ZIPs for independent review. Once all reviews are available, run the
+[parity preflight](../MOBAXTERM_PARITY.md#preflight-reviewed-evidence-against-the-sealed-inventory)
+on the exact staging directory. Use immutable release downloads when finalizing
+the accepted records. Follow the
+[parity qualification procedure](../MOBAXTERM_PARITY.md#qualify-sealed-candidates-before-publication).
+
+### Review the Debian amd64 upgrade and rollback result
+
+The Linux x86_64 release job runs the managed update drill against the
+byte-pinned v1.0.24 DEB and the exact candidate installer. When the candidate
+declares shared libraries, the job first provisions them from the Debian
+repositories in an image built from a digest-pinned base. The update drill
+runs with networking disabled and serves the test feed on loopback.
+
+The release job retains `managed-debian-update.json` in
+`release-managed-debian-update`. The sealed candidate inventory embeds the
+receipt and binds its archive and file digests to the release source, the
+Actions attempt, and the candidate DEB. For new seals, it requires the
+current receipt with dependency refusals during upgrade and rollback and checks its `Depends`
+field and server bundle claim against the extracted candidate DEB. Review
+the offline upgrade and rollback outcomes, including the manifest-change
+refusal when the server bundle is present. The drill uses a test signer.
+
+### Review the Linux x86-64 RPM recovery result
+
+The tagged Linux job runs the offline Fedora drill on the same RPM it
+smoke-tested. The drill upgrades from the pinned v1.0.27 RPM, checks the
+explicit downgrade, and verifies the restored profile and encrypted vault
+with the predecessor launcher.
+
+The same job runs the managed RPM controller in a fresh Fedora container.
+It checks the authenticated HTTPS upgrade, refusal of tampered inputs, offline
+retry, interrupted upgrade and rollback recovery, and concurrent execution.
+It installs only the hash-locked cryptography dependencies from the checkout
+and uses a test signer on loopback.
+
+The `release-linux-rpm-recovery` Actions artifact contains
+`rpm-recovery.json`, `finish.json`, and `candidate-runtime-byte-binding.json`.
+The sealer checks their digests, the tagged workflow attempt, the RPM bytes,
+and the launcher observations from installation and reinstallation. It also
+checks that both drills refer to the same packages and launchers, and that the
+managed drill used the controller and dependency lock from the release
+checkout. Promotion downloads the same archive by its sealed artifact ID and
+rechecks the evidence.
+Before signing approval, review the embedded `rpm_recovery` receipt alongside
+the original smoke reports listed in `rpm_smoke`. Inventory schema 6 and
+later require the managed findings inside the RPM receipt. Historical
+inventories follow the checks associated with their schema.
+
+### Select the Debian amd64 server bundle
+
+Prepare and review a gzip-compressed tar archive containing
+`servers-runtime.json`, the native files it lists under `linux/`, and the
+reviewed copyright attachments under `notices/`. Record its SHA-256 during
+review. Once upload is authorized, place the exact archive at
+`server-bundles/<tag>/server-bundle.tar.gz` on the data-only
+`release-compliance-evidence` branch and record the full commit SHA.
+Dispatch **Prepare Debian amd64 server bundle** from protected `main` with the
+release tag, evidence commit SHA, and reviewed archive SHA-256. The job reads
+the archive from that commit, verifies the target, native files and notices,
+and retains the original archive as the only file in the Actions artifact.
+Keep the artifact available until the candidate build finishes.
+
+Before tagging, set `ROW_DEBIAN_AMD64_SERVER_BUNDLE` in the protected
+`release` environment to the value printed in the workflow summary. It
+contains the release tag, the numeric Actions artifact ID, and the lowercase
+SHA-256 of the inner `server-bundle.tar.gz` file. The strict pre-tag check
+requires this selection
+for the embedded-server article. It downloads and stages the exact archive
+in temporary storage, verifies its native files and notices, and rereads the
+selection before reporting success. Keep the selection and archive available
+for the tagged build. The tagged workflow requires the selection and verifies
+the archive before starting its build matrix. The Linux x86_64 job verifies
+the same artifact ID and digest again before packaging. Its recovery drill
+requires the candidate installer to contain the server bundle. The sealer
+downloads that archive again and verifies that its reviewed runtime matches
+the packaged runtime. Inventory schema 11 records the archive artifact ID,
+the archive SHA-256, and the SHA-256 of the reviewed manifest fields carried
+into the package. Review, promotion, and the published audit compare the
+packaged runtime with the recorded fingerprint.
+
+The same archive can be checked locally before requesting a candidate build.
+
+```bash
+python scripts/stage_debian_server_bundle.py \
+  --archive server-bundle.tar.gz --sha256 "$server_bundle_sha256" \
+  --target linux-x86_64 --out "$verified_bundle"
+```
+
+For a Debian asset with the embedded server bundle, include its distro
+components with their exact Debian versions in the signed native inventory.
+Record each packaged notice by its installed path, size, and SHA-256 in that
+asset's license extraction scan. The compliance check reads the notice records
+and files from the Debian archive itself and applies those notice requirements
+to that asset. The other packaged license records retain their normal coverage.
 
 ## Prepare the policy before tagging
 
@@ -103,47 +300,174 @@ The policy must map every production target to the tracked lock its workflow
 consumes.
 
 On the protected source commit, install the hash-locked verifier dependencies
-and run the policy check from a Linux x64 Python environment.
+from a Linux x64 Python environment.
 
 ```bash
 python -m pip install --require-hashes --requirement requirements-locks/release-verifier-linux-x86_64.txt
-python scripts/check_release_license_compliance.py --check-policy-only
 ```
 
-After the policy and required CI checks pass, confirm that the intended tag
-is absent locally and remotely and that no release or draft uses its name.
-Run this from the release checkout with `release_repository` set to
-`owner/repo`, `release_tag` set to the intended version tag, and
-`GITHUB_TOKEN` exported for an account with push access to the repository.
-GitHub includes draft releases in the listing for users with push access.
-[GitHub release listing permissions](https://docs.github.com/en/rest/releases/releases#list-releases)
+Configure the protected signing inputs, then run the read-only pre-tag check
+from a clean checkout of the selected production commit. Set
+`release_repository` to `owner/repo`, `release_tag` to the unused production
+version, and `release_sha` to the full qualified commit SHA. Fetch `main`
+first if the selected commit is behind its live tip so Git can verify ancestry.
+The check rejects an existing tag or a tag under the selected name, such as
+`v1.2.3/preview` when creating `v1.2.3`, in both the checkout and the remote.
+Use the following credentials for their respective checks.
+
+- Export `GITHUB_TOKEN` for an account with push access so the release listing
+  includes drafts. The token also needs Actions read for exact-commit CI
+  and the selected Debian server bundle artifact.
+- Use `GH_TOKEN` for branch protection and tag-ruleset inspection, including
+  visibility of bypass actors, if `GITHUB_TOKEN` lacks that access.
+- Export `ROW_RELEASE_IMMUTABILITY_TOKEN` for the repository setting check
+  and `ROW_PLATFORM_RUNNER_INVENTORY_TOKEN` for the protected runner check.
+  [GitHub release listing permissions](https://docs.github.com/en/rest/releases/releases#list-releases)
+- Give `GITHUB_TOKEN` Environments read access for the signing inventory check,
+  or export a separate `ROW_RELEASE_SIGNING_INVENTORY_TOKEN` with that access.
+  The same permission covers the selected Debian bundle, the Professional
+  variables, and the required promotion and platform runner secret names in
+  their own environments.
+  [GitHub environment secret listing permissions](https://docs.github.com/en/rest/actions/secrets#list-environment-secrets)
+  [GitHub environment variable read permissions](https://docs.github.com/en/rest/actions/variables#get-an-environment-variable)
+
+Check the deployment rules before the signing and review credentials are ready.
+The command verifies the `v*` tag rule in all three release environments and
+the tag-only restriction in `platform-evidence`. For a public repository,
+the deployment metadata is readable without a token. Private repositories
+require `GITHUB_TOKEN` with Actions read access.
 
 ```bash
-(
-  set -euo pipefail
-  python scripts/check_release_version.py --release-tag "$release_tag"
-  if git show-ref --exists "refs/tags/$release_tag"; then
-    echo "Local tag already exists: $release_tag" >&2
-    exit 1
-  elif [ "$?" -ne 2 ]; then
-    echo "Could not check the local tag." >&2
-    exit 1
-  fi
-  if git ls-remote --exit-code --refs "https://github.com/$release_repository.git" "refs/tags/$release_tag"; then
-    echo "Remote tag already exists: $release_tag" >&2
-    exit 1
-  else
-    status=$?
-    if [ "$status" -ne 2 ]; then
-      exit "$status"
-    fi
-  fi
-  python scripts/check_release_remote_preconditions.py namespace \
-    --repository "$release_repository" --tag "$release_tag"
-)
+python scripts/check_release_remote_preconditions.py environments \
+  --repository "$release_repository" --tag "$release_tag"
 ```
 
-Cut the tag after this check passes. The artifact-specific approval uses
+Check parity deployment policies before provisioning the Professional update
+variables. The deployment-only check reports all three environments together.
+It verifies required reviewers for `smartcard-evidence`, `transport-evidence`,
+and `professional-update-review`. The two native capture environments must
+allow only tags and cover the selected tag with `v*` or an exact rule.
+For private repositories, give `GITHUB_TOKEN` Actions read access.
+
+```bash
+python scripts/check_release_remote_preconditions.py parity --deployment-only \
+  --repository "$release_repository" --tag "$release_tag"
+```
+
+Run the full parity check with an Environments read token after setting the
+Professional branding and update variables. This checks the branding text and
+ICO structure, the deployment GUID, the Ed25519 public key, and whether the
+update URL uses an approved HTTPS origin. The qualification jobs retrieve and
+verify the signed update and hosted installer bytes after the tag is created.
+
+```bash
+python scripts/check_release_remote_preconditions.py parity \
+  --repository "$release_repository" --tag "$release_tag"
+```
+
+On an operator-controlled Linux machine with OpenSSL 3, load the candidate
+signing values into the environment using the secret names from the
+[production readiness guide](../PRODUCTION_READINESS.md). Before enrolling
+the values, run both offline checks from the selected release checkout.
+
+```bash
+python -I scripts/check_release_signing_inputs.py windows
+python -I scripts/check_release_signing_inputs.py macos
+```
+
+The checks open the password-protected certificate bundles and validate the
+Windows timestamp URL and macOS notarization key format. The Windows PFX must
+provide one currently valid leaf certificate whose key usage and extended
+key usage allow code signing. The macOS bundle must contain both Developer ID
+keys. The application and installer selectors
+must each resolve to one currently valid certificate with the corresponding
+Apple role. Use the certificate's unique common name or SHA-1 fingerprint.
+For both platforms, the verifier checks that each selected certificate is
+paired with a matching private key in the bundle, using the PKCS#12
+associations. OpenSSL handles decrypted keys in memory. The verifier reads
+credentials from the process environment and checks them offline with system
+OpenSSL 3, including its runtime library. The protected preflight runs the same
+checks before starting native builds. The native jobs use the imported keys and
+verify platform trust, signing and notarization on the actual packages.
+[OpenSSL PKCS#12](https://docs.openssl.org/3.0/man1/openssl-pkcs12/) ·
+[Microsoft SignTool certificate selection](https://learn.microsoft.com/en-us/windows/win32/seccrypto/signtool#sign-command-options) ·
+[Apple Developer ID certificate roles](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements) ·
+[App Store Connect team API keys](https://developer.apple.com/documentation/appstoreconnectapi/generating-tokens-for-api-requests)
+
+Before creating the tag, you can also rehearse Windows signing on a Windows
+signing host with the Windows SDK. Set `ROW_WINDOWS_TIMESTAMP_URL` and select
+the certificate using the environment settings in the
+[production readiness guide](../PRODUCTION_READINESS.md#external-prerequisites).
+For PFX signing, set `ROW_WINDOWS_CERTIFICATE_PATH` to the local PFX and
+`ROW_WINDOWS_CERTIFICATE_PASSWORD` to its password. For a certificate from
+the Windows certificate store, use the configured thumbprint and store.
+
+```powershell
+.\scripts\sign_windows_artifact.ps1 -Rehearse
+```
+
+The rehearsal compiles a disposable DLL, signs it with SHA-256, and checks
+its Authenticode trust and RFC 3161 timestamp using the release SignTool
+commands. The timestamp service receives the signature digest. The script
+removes the temporary DLL after success or failure. The release build still
+signs and verifies the final installer bytes on its native runners.
+
+The Windows release jobs repeat this rehearsal after verifying their checkout
+and before installing build dependencies. The hosted rehearsal reads the PFX
+from the protected step environment and removes its temporary copy. A trust or
+timestamp failure stops that job before packaging starts.
+
+On a macOS signing host with Xcode, load the seven macOS signing values into
+the environment and run the same rehearsal used by the release jobs.
+
+```bash
+bash scripts/with_macos_release_signing.sh --rehearse
+```
+
+The rehearsal imports both Developer ID identities into a temporary keychain.
+It authenticates to the notary service with the stored profile and signs and
+verifies a disposable executable and PKG. It removes the keychain and files
+afterward. The release jobs run this before installing build dependencies and
+submit the final DMG and PKG for notarization after packaging.
+
+For production releases from v1.0.28, the macOS native manifests include a
+notarization receipt for each DMG and PKG. The builder requires Apple's
+accepted submission log to match the local filename and SHA-256 before
+stapling. It records the submission ID, the uploaded SHA-256, and the
+SHA-256 of the stapled file after ticket and Gatekeeper verification.
+Candidate staging, promotion, and certification compare the recorded stapled
+SHA-256 with the exact release file. [Apple notarization logs](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)
+
+The published release audit compares every standard asset's size and SHA-256
+with the sealed candidate inventory referenced by the signed redistribution
+approval. It requires the same set of standard files on both sides of that
+comparison.
+
+Promotion also attests and retains the signed approval's protected-platform
+registry. Certification downloads it from that same promotion attempt,
+rechecks its signed digest and exact source commit, and verifies the published
+installers, review bundles, and finalized records against it.
+
+You can check the protected `release` environment while other approvals are
+pending. This command verifies the presence of the Windows and macOS signing
+secret names.
+
+```bash
+python scripts/check_release_remote_preconditions.py signing \
+  --repository "$release_repository"
+```
+
+```bash
+python scripts/check_release_remote_preconditions.py pre-tag \
+  --repository "$release_repository" --tag "$release_tag" --sha "$release_sha"
+```
+
+The command checks production metadata, policy, exact-commit CI and governance,
+immutable release settings, deployment tag rules, required environment secret
+names, strict parity environment settings, runner availability, and the unused
+tag and release namespace. After it passes, cut the tag at the same explicit
+`release_sha`.
+The artifact-specific approval uses
 the resulting tag, commit, and signed installer bytes. The production
 candidate job repeats the policy check against the tagged source before
 starting native builds. Promotion checks the release namespace again before
@@ -197,6 +521,8 @@ inventory and signed platform registry the promotion job will consume. Set
 `approval_dir` to the directory containing the two approval files and its
 `bundle/` subdirectory. Set `release_assets_dir` to the complete staged asset
 inventory and authenticate GitHub CLI for the live source checks.
+Use a verifier with the archive readers installed by
+`scripts/install_native_archive_inspector.sh`.
 
 ```bash
 python scripts/check_release_license_compliance.py \
@@ -276,9 +602,11 @@ directory. Push its two files together to the new printed ref. Keep the exact
 publication proof and signature for the aggregate audit. The workflow also
 retains a copy as `production-tag-governance-<run ID>-<attempt>`. After a
 successful promotion, the certification workflow retrieves that copy and
-verifies that the proof, the signed redistribution approval, and all
-immutable release assets share the triggering run and attempt. It verifies
-both independent signatures and checks their validity at publication.
+verifies that the proof, the signed redistribution approval, the audited
+candidate inventory, and all immutable release assets share the triggering
+run and attempt. It verifies both independent signatures at publication
+time and checks that the embedded Debian rollback receipt matches the
+published amd64 installer.
 
 ## Download the publication evidence
 
@@ -294,13 +622,25 @@ gh run download "$promotion_run_id" --repo "$release_repository" \
 gh run download "$promotion_run_id" --repo "$release_repository" \
   --name "production-redistribution-approval-${promotion_run_id}-${promotion_run_attempt}" \
   --dir "$publication_evidence_dir/redistribution"
+gh run download "$promotion_run_id" --repo "$release_repository" \
+  --name "production-candidate-qualification-${promotion_run_id}-${promotion_run_attempt}" \
+  --dir "$publication_evidence_dir/candidate-qualification"
 ```
 
 Use the downloaded governance JSON and signature for the aggregate audit.
-The redistribution artifact contains the approval and signature. The
-aggregate also needs the matching signed evidence bundle and sealed candidate
-inventory from the pinned evidence commit, and the original protected-platform
-Actions ZIPs retained during [source evidence capture](../PRODUCTION_READINESS.md#external-prerequisites).
+The redistribution artifact contains the approval, signature, and the
+audited candidate inventory and protected-platform registry under `bundle/`.
+The aggregate also needs
+the matching signed evidence bundle from the pinned evidence commit and
+the original protected-platform Actions ZIPs retained during
+[source evidence capture](../PRODUCTION_READINESS.md#external-prerequisites).
+Use the downloaded `candidate-qualification/` directory or the original review
+packet's `archives/` directory as `RELEASE_CANDIDATE_QUALIFICATION_ARCHIVES`.
+The hosted certification job downloads the same attempt's qualification ZIPs.
+The audit verifies the original
+Debian and RPM qualification ZIPs and the desktop and Linux installer smoke
+ZIPs against the signed candidate inventory. The retained ZIPs let the auditor
+repeat these checks after the original Actions downloads expire.
 
 ## Verify a published artifact
 
@@ -320,9 +660,16 @@ python scripts/check_release_provenance.py \
 
 The verifier compares the file's SHA-256 with the immutable GitHub Release,
 resolves the live release tag to the attested commit, and checks the completed
-promotion run and its successful publish step. Use the matching published
-filename on Windows, macOS, and Linux. Verify the platform installer
-signature before installation. See
+promotion run and its successful publish step.
+
+For a Windows EXE or MSI, run the verifier on Windows with Windows SDK
+SignTool available. For a macOS PKG or DMG, run it on macOS with Gatekeeper
+and the `stapler` tool available. Use the published filename and add
+`--verify-platform-signature`. On Windows this verifies all embedded signatures
+and their timestamps under the Authenticode policy. On macOS it verifies the
+installer signature, stapled notarization ticket, and Gatekeeper assessment.
+The verifier rechecks the file's digest after the platform checks. Use the
+installer from a directory you control. See
 [`../PRODUCTION_DEPLOYMENT.md`](../PRODUCTION_DEPLOYMENT.md).
 
 ## Installer trust boundary (O3)

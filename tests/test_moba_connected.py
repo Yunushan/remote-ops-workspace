@@ -485,8 +485,8 @@ def test_same_parameters_sftp_plan_preserves_ssh_options() -> None:
 
     assert plan.command[:3] == ["sftp", "-P", "2222"]
     assert "-C" in plan.command
-    assert "-I" in plan.command
-    assert "/usr/lib/opensc-pkcs11.so" in plan.command
+    assert "-I" not in plan.command
+    assert 'PKCS11Provider="/usr/lib/opensc-pkcs11.so"' in plan.command
     assert "CertificateFile=/home/operator/.ssh/id_ed25519-cert.pub" in plan.command
     assert "IdentityAgent=/tmp/agent.sock" in plan.command
     assert plan.command[-1] == "operator@example.internal"
@@ -505,6 +505,15 @@ def test_sftp_listing_parser_extracts_file_table_rows() -> None:
         {"name": "releases", "kind": "dir", "size_kb": 4, "modified": "Jun 06 12:01"},
         {"name": "deploy.log", "kind": "file", "size_kb": 2, "modified": "Jun 06 12:02"},
     ]
+
+    live_rows = parse_sftp_ls_output(
+        "drwx------    ? rowedit rowedit 4096 Nov 18 03:20 /home/rowedit/.\n"
+        "drwxr-xr-x    ? root root 4096 Nov 18 03:20 /home/rowedit/..\n"
+        "-rw-r--r--    ? rowedit rowedit 16 Nov 18 03:20 /home/rowedit/document copy.txt\n"
+        "-rw-r--r--    ? rowedit rowedit 16 Nov 18 03:20 /home/rowedit-other/unrelated.txt\n",
+        directory="/home/rowedit/",
+    )
+    assert [row.name for row in live_rows] == ["document copy.txt"]
 
 
 def test_remote_monitoring_parser_uses_users_as_connection_count() -> None:

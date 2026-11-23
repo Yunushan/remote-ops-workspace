@@ -1,0 +1,165 @@
+name: Signed Windows MSI upgrade qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      previous_tag:
+        description: Previous certified release or sealed candidate tag
+        required: true
+        type: string
+      previous_sha:
+        description: Full commit SHA for the previous release
+        required: true
+        type: string
+      candidate_tag:
+        description: Newer certified release or sealed candidate tag
+        required: true
+        type: string
+      candidate_sha:
+        description: Full commit SHA for the newer release
+        required: true
+        type: string
+      previous_inventory:
+        description: Optional previous candidate coordinates as RUN_ID ARTIFACT_ID sha256:DIGEST
+        required: false
+        type: string
+      candidate_inventory:
+        description: Optional newer candidate coordinates as RUN_ID ARTIFACT_ID sha256:DIGEST
+        required: false
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  attestations: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  signed-windows-upgrade:
+    if: github.repository == 'Yunushan/remote-ops-workspace' && github.ref == 'refs/heads/main'
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 30
+    outputs:
+      receipt-artifact-id: ${{ steps.upload-receipt.outputs.artifact-id }}
+      receipt-sha256: ${{ steps.receipt-hash.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          clean: true
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          architecture: x64
+          python-version: "3.14.10"
+      - name: Install hash-locked workspace recovery dependencies
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          $lock = Get-Content -LiteralPath requirements-locks/windows-x64.txt -Raw
+          $blocks = [regex]::Matches($lock, '(?m)^(?:cryptography|cffi|pycparser)==[^\r\n]+(?:\r?\n[ ]+--hash=sha256:[^\r\n]+)+')
+          if ($blocks.Count -ne 3) { throw 'Expected three hash-locked workspace recovery dependencies' }
+          $requirements = Join-Path $env:RUNNER_TEMP 'row-msi-recovery-requirements.txt'
+          $blocks.Value | Set-Content -LiteralPath $requirements -Encoding ascii
+          python -I -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple --requirement $requirements
+          exit $LASTEXITCODE
+      - name: Exercise rollback and install through the managed CLI from empty stages
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROW_PREVIOUS_TAG: ${{ inputs.previous_tag }}
+          ROW_PREVIOUS_SHA: ${{ inputs.previous_sha }}
+          ROW_CANDIDATE_TAG: ${{ inputs.candidate_tag }}
+          ROW_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          ROW_PREVIOUS_INVENTORY: ${{ inputs.previous_inventory }}
+          ROW_CANDIDATE_INVENTORY: ${{ inputs.candidate_inventory }}
+        run: |
+          $inventoryOptions = @()
+          if ($env:ROW_PREVIOUS_INVENTORY) { $inventoryOptions += @("--previous-inventory", $env:ROW_PREVIOUS_INVENTORY) }
+          if ($env:ROW_CANDIDATE_INVENTORY) { $inventoryOptions += @("--candidate-inventory", $env:ROW_CANDIDATE_INVENTORY) }
+          python -I scripts/qualify_windows_msi_upgrade.py `
+            --previous-tag "$env:ROW_PREVIOUS_TAG" --previous-sha "$env:ROW_PREVIOUS_SHA" `
+            --candidate-tag "$env:ROW_CANDIDATE_TAG" --candidate-sha "$env:ROW_CANDIDATE_SHA" @inventoryOptions
+          exit $LASTEXITCODE
+      - name: Bind the completed receipt bytes
+        id: receipt-hash
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $receipt = 'build/native-smoke/windows-x64/signed-msi-upgrade.json'
+          $digest = (Get-FileHash -LiteralPath $receipt -Algorithm SHA256).Hash.ToLowerInvariant()
+          "sha256=$digest" >> $env:GITHUB_OUTPUT
+      - name: Retain bounded Windows install and rollback observations
+        id: upload-receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: signed-windows-msi-upgrade-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/native-smoke/windows-x64/signed-msi-upgrade.json
+          if-no-files-found: warn
+          retention-days: 90
+
+  attest-signed-windows-upgrade:
+    needs: signed-windows-upgrade
+    if: ${{ needs.signed-windows-upgrade.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - name: Require exact receipt coordinates from the Windows job
+        shell: bash
+        env:
+          RECEIPT_ARTIFACT_ID: ${{ needs.signed-windows-upgrade.outputs.receipt-artifact-id }}
+          RECEIPT_SHA256: ${{ needs.signed-windows-upgrade.outputs.receipt-sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$RECEIPT_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$RECEIPT_SHA256" =~ ^[0-9a-f]{64}$ ]]
+      - name: Download the Windows job receipt by its exact artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v4
+        with:
+          artifact-ids: ${{ needs.signed-windows-upgrade.outputs.receipt-artifact-id }}
+          path: qualification
+          merge-multiple: true
+      - name: Verify the completed receipt belongs to the current workflow attempt
+        shell: bash
+        env:
+          RECEIPT_SHA256: ${{ needs.signed-windows-upgrade.outputs.receipt-sha256 }}
+        run: |
+          set -euo pipefail
+          receipt=qualification/signed-msi-upgrade.json
+          [[ -f "$receipt" && ! -L "$receipt" ]]
+          python3 -I - "$receipt" <<'PY'
+          import hashlib
+          import json
+          import os
+          import sys
+
+          maximum = 1024 * 1024
+          with open(sys.argv[1], "rb") as stream:
+              raw = stream.read(maximum + 1)
+          if not 0 < len(raw) <= maximum or hashlib.sha256(raw).hexdigest() != os.environ["RECEIPT_SHA256"]:
+              raise SystemExit("Windows MSI qualification receipt digest or size mismatch")
+          receipt = json.loads(raw)
+          expected = {
+              "schema": "row.signed-windows-msi-upgrade.v7",
+              "status": "passed",
+              "phase": "complete",
+              "target": "windows-x64",
+              "source_commit": os.environ["GITHUB_SHA"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+          }
+          if not isinstance(receipt, dict) or any(receipt.get(key) != value for key, value in expected.items()):
+              raise SystemExit("Windows MSI qualification receipt belongs to a different or incomplete attempt")
+          PY
+      - name: Attest the completed signed Windows MSI upgrade receipt
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: qualification/signed-msi-upgrade.json

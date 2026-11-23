@@ -5,6 +5,7 @@ from urllib.error import HTTPError
 
 import pytest
 
+from scripts import check_ci_workflow
 from scripts import check_python315_ci_evidence as evidence
 
 SHA = "a" * 40
@@ -36,23 +37,20 @@ def _runs(
 def _jobs(*, conclusion: str = "success") -> dict:
     jobs = [
         {
-            "id": 456,
+            "id": job_id,
             "run_id": 123,
             "run_attempt": 1,
             "head_sha": SHA,
-            "name": "Python 3.15 readiness",
+            "name": name,
             "status": "completed",
             "conclusion": conclusion,
-        },
-        {
-            "id": 457,
-            "run_id": 123,
-            "run_attempt": 1,
-            "head_sha": SHA,
-            "name": "Native Windows readiness",
-            "status": "completed",
-            "conclusion": conclusion,
-        },
+            "labels": [runner] if runner else [],
+            "steps": [
+                {"name": step, "status": "completed", "conclusion": "success"}
+                for step in steps
+            ],
+        }
+        for job_id, (name, (runner, steps)) in enumerate(evidence.REQUIRED_CI_JOBS.items(), 456)
     ]
     return {"total_count": len(jobs), "jobs": jobs}
 
@@ -84,6 +82,53 @@ def test_latest_matching_run_must_succeed() -> None:
 
     assert run is not None and run["id"] == 124
     assert any("conclusion must be success" in error for error in errors)
+
+
+@pytest.mark.parametrize(("change", "error"), [
+    ("none", None),
+    ("queued-rerun", "status must be completed"),
+    ("failed-rerun", "conclusion must be success"),
+    ("completed-rerun", "CI run or attempt changed while verifying its jobs"),
+    ("new-run", "CI run or attempt changed while verifying its jobs"),
+    ("disappeared-run", "no .github/workflows/ci.yml push run matches"),
+])
+def test_live_ci_evidence_rechecks_the_current_run_after_verifying_jobs(monkeypatch, capsys, change, error):
+    initial = _runs()
+    if change == "queued-rerun":
+        latest = _runs(status="queued", conclusion=None)
+    elif change == "failed-rerun":
+        latest = _runs(conclusion="failure")
+    elif change == "new-run":
+        latest = _runs(run_id=124)
+        latest["workflow_runs"].append(initial["workflow_runs"][0])
+        latest["total_count"] += 1
+    elif change == "disappeared-run":
+        latest = {"workflow_runs": [], "total_count": 0}
+    else:
+        latest = _runs()
+    if change.endswith("-rerun"):
+        latest["workflow_runs"][0]["run_attempt"] = 2
+
+    monkeypatch.setenv("GITHUB_TOKEN", "fixture-token")
+    monkeypatch.setenv("GITHUB_API_URL", "https://api.github.com")
+    base = "https://api.github.com/repos/example/project/actions"
+    runs_url = f"{base}/workflows/ci.yml/runs?branch=main&event=push&head_sha={SHA}&per_page=100"
+    jobs_url = f"{base}/runs/123/attempts/1/jobs?per_page={evidence.JOBS_PAGE_SIZE}&page=1"
+    remaining = [(runs_url, initial), (jobs_url, _jobs()), (runs_url, latest)]
+
+    def fetch_json(url: str, *, token: str) -> dict:
+        expected, response = remaining.pop(0)
+        assert token == "fixture-token" and url == expected
+        return response
+
+    monkeypatch.setattr(evidence, "fetch_json", fetch_json)
+    result = evidence.main(["--repository", "example/project", "--sha", SHA])
+    output = capsys.readouterr()
+    assert not remaining
+    if error:
+        assert result == 1 and error in output.err and not output.out
+    else:
+        assert result == 0 and "run 123 attempt 1" in output.out and not output.err
 
 
 def test_pull_request_or_wrong_sha_cannot_satisfy_release_evidence() -> None:
@@ -169,6 +214,41 @@ def test_native_windows_readiness_job_is_required_and_must_succeed() -> None:
     )
 
 
+def test_release_evidence_requires_the_branch_coverage_job() -> None:
+    jobs = _jobs()
+    name = "Python branch-aware coverage"
+    jobs["jobs"] = [job for job in jobs["jobs"] if job["name"] != name]
+    jobs["total_count"] = len(jobs["jobs"])
+    assert evidence.validate_readiness_job(jobs, run=_runs()["workflow_runs"][0]) == [
+        f"expected exactly one {name!r} job in the accepted run, found 0",
+    ]
+
+
+def test_release_evidence_checks_coverage_identity_runner_and_validated_threshold() -> None:
+    jobs = _jobs()
+    name = "Python branch-aware coverage"
+    job = next(job for job in jobs["jobs"] if job["name"] == name)
+    job.update(run_attempt=2, labels=["windows-11-arm"], conclusion="skipped")
+    job["steps"] = [step for step in job["steps"] if step["name"] != "Enforce branch coverage floor"]
+    validation = next(step for step in job["steps"] if step["name"] == "Validate aggregate and branch coverage evidence")
+    validation["conclusion"] = "skipped"
+    assert evidence.validate_readiness_job(jobs, run=_runs()["workflow_runs"][0]) == [
+        f"{name} run_attempt must match the selected CI run",
+        f"{name} conclusion must be success, got 'skipped'",
+        f"{name} must report runner label 'windows-2025-vs2026'",
+        f"{name} must report exactly one 'Enforce branch coverage floor' step",
+        f"{name} step 'Validate aggregate and branch coverage evidence' must complete successfully",
+    ]
+
+
+def test_release_coverage_job_and_steps_match_the_workflow() -> None:
+    workflow = check_ci_workflow.CI_WORKFLOW.read_text(encoding="utf-8")
+    job = check_ci_workflow.workflow_job_block(workflow, "coverage")
+    assert f"    name: {evidence.COVERAGE_JOB_NAME}\n" in job
+    assert f"    runs-on: {evidence.COVERAGE_RUNNER}\n" in job
+    assert all(f"      - name: {step}\n" in job for step in evidence.COVERAGE_STEPS)
+
+
 @pytest.mark.parametrize(("field", "value"), [
     ("run_id", 124),
     ("run_attempt", 2),
@@ -184,6 +264,64 @@ def test_successful_readiness_jobs_must_bind_the_selected_run(field, value) -> N
     assert evidence.validate_readiness_job(jobs, run=run) == [
         f"Native Windows readiness {field} must match the selected CI run",
     ]
+
+
+
+def test_successful_aggregates_do_not_cover_a_missing_runtime_host() -> None:
+    jobs = _jobs()
+    name = "Python 3.15 optional dependencies, GUI, and build on ubuntu-24.04-arm"
+    jobs["jobs"] = [job for job in jobs["jobs"] if job["name"] != name]
+    jobs["total_count"] = len(jobs["jobs"])
+
+    assert evidence.validate_readiness_job(jobs, run=_runs()["workflow_runs"][0]) == [
+        f"expected exactly one {name!r} job in the accepted run, found 0",
+    ]
+
+
+def test_runtime_job_must_report_the_expected_host_and_attempt() -> None:
+    jobs = _jobs()
+    name = "Python 3.15 optional dependencies, GUI, and build on windows-11-arm"
+    job = next(job for job in jobs["jobs"] if job["name"] == name)
+    job.update(labels=["windows-2025-vs2026"], run_attempt=2)
+
+    assert evidence.validate_readiness_job(jobs, run=_runs()["workflow_runs"][0]) == [
+        f"{name} run_attempt must match the selected CI run",
+        f"{name} must report runner label 'windows-11-arm'",
+    ]
+
+
+@pytest.mark.parametrize(("step_count", "expected"), [
+    (0, "must report exactly one"),
+    (1, "must complete successfully"),
+    (2, "must report exactly one"),
+])
+def test_readiness_requires_one_successful_frozen_cli_step(step_count, expected) -> None:
+    jobs = _jobs()
+    name = "Python 3.15 optional dependencies, GUI, and build on macos-15-intel"
+    step = "Build and launch a real Python 3.15 frozen CLI executable"
+    job = next(job for job in jobs["jobs"] if job["name"] == name)
+    job["steps"] = [entry for entry in job["steps"] if entry["name"] != step] + [
+        {"name": step, "status": "completed", "conclusion": "skipped"}
+        for _ in range(step_count)
+    ]
+
+    errors = evidence.validate_readiness_job(jobs, run=_runs()["workflow_runs"][0])
+    assert len(errors) == 1 and name in errors[0] and step in errors[0] and expected in errors[0]
+
+
+def test_native_windows_job_requires_conpty_and_paint_steps() -> None:
+    jobs = _jobs()
+    name = "Native Windows PyQt6 render and interactions"
+    job = next(job for job in jobs["jobs"] if job["name"] == name)
+    missing = {
+        "Verify real Windows ConPTY terminal transport",
+        "Capture native Windows terminal tab-switch paint turns",
+    }
+    job["steps"] = [step for step in job["steps"] if step["name"] not in missing]
+
+    assert set(evidence.validate_readiness_job(jobs, run=_runs()["workflow_runs"][0])) == {
+        f"{name} must report exactly one {step!r} step" for step in missing
+    }
 
 
 def test_urls_bind_workflow_sha_branch_run_and_attempt() -> None:
@@ -309,34 +447,10 @@ def test_collects_all_attempt_job_pages_before_validating_readiness() -> None:
         }
         for index in range(1, 29)
     ]
-    python_readiness = {
-        "id": 29,
-        "run_id": 123,
-        "run_attempt": 1,
-        "head_sha": SHA,
-        "name": "Python 3.15 readiness",
-        "status": "completed",
-        "conclusion": "success",
-    }
-    native_windows_readiness = {
-        "id": 30,
-        "run_id": 123,
-        "run_attempt": 1,
-        "head_sha": SHA,
-        "name": "Native Windows readiness",
-        "status": "completed",
-        "conclusion": "success",
-    }
+    all_jobs = ordinary_jobs + _jobs()["jobs"]
     pages = {
-        1: {"total_count": 30, "jobs": ordinary_jobs[:20]},
-        2: {
-            "total_count": 30,
-            "jobs": [
-                *ordinary_jobs[20:],
-                python_readiness,
-                native_windows_readiness,
-            ],
-        },
+        1: {"total_count": len(all_jobs), "jobs": all_jobs[:20]},
+        2: {"total_count": len(all_jobs), "jobs": all_jobs[20:]},
     }
     requested_pages: list[int] = []
 
@@ -347,8 +461,8 @@ def test_collects_all_attempt_job_pages_before_validating_readiness() -> None:
     payload = evidence.collect_paginated_attempt_jobs(fetch_page)
 
     assert requested_pages == [1, 2]
-    assert payload["total_count"] == 30
-    assert len(payload["jobs"]) == 30
+    assert payload["total_count"] == len(all_jobs)
+    assert payload["jobs"] == all_jobs
     assert evidence.validate_readiness_job(payload, run=_runs()["workflow_runs"][0]) == []
 
 

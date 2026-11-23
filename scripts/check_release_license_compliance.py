@@ -19,10 +19,12 @@ import json
 import os
 import re
 import sys
+import tarfile
 import zipfile
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,12 +33,22 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import check_platform_release_evidence_remote as platform_evidence  # noqa: E402
+from check_extended_platform_evidence import (  # noqa: E402
+    PROTECTED_PROJECTED_LOCK,
+    source_wheel_build_command,
+)
 from check_platform_verified_evidence import LINUX_TARGETS  # noqa: E402
 from check_release_publish_assets import normalize_version  # noqa: E402
+from debian_server_notices import VERSION_RE as DEBIAN_VERSION_RE  # noqa: E402
+from debian_server_notices import notice_path, read_verified_debian_notices  # noqa: E402
 from release_candidate_inventory import (  # noqa: E402
     MAX_JSON_BYTES,
     RUNTIME_REPORT_ARTIFACT_NAMES,
     RUNTIME_REPORT_NAME,
+    candidate_file_identities,
+    positive_int,
+    validate_inventory,
+    validate_managed_release_qualification,
     validate_runtime_report,
 )
 
@@ -95,6 +107,8 @@ def main(argv: list[str] | None = None) -> int:
             args.tag_governance_attestation is not None or args.tag_governance_signature is not None
         ):
             raise ValueError("redistribution-only audit does not take governance proof files")
+        if args.candidate_qualification_archives is not None and not args.verify_published_release:
+            raise ValueError("--candidate-qualification-archives requires --verify-published-release")
         required = {
             "--assets-dir": args.assets_dir,
             "--repository": args.repository,
@@ -171,6 +185,13 @@ def main(argv: list[str] | None = None) -> int:
             assert args.tag_governance_signature is not None
             from check_release_provenance import main as verify_release_provenance
 
+            audited_inputs = {
+                args.evidence: hashlib.sha256(evidence_bytes).hexdigest(),
+                args.signature: hashlib.sha256(signature_bytes).hexdigest(),
+            }
+            qualification_args = []
+            if args.candidate_qualification_archives is not None:
+                qualification_args = ["--candidate-qualification-archives", str(args.candidate_qualification_archives)]
             if verify_release_provenance([
                 "--assets-dir", str(args.assets_dir),
                 "--repository", repository,
@@ -178,13 +199,14 @@ def main(argv: list[str] | None = None) -> int:
                 "--sha", sha,
                 "--governance-attestation", str(args.tag_governance_attestation),
                 "--governance-signature", str(args.tag_governance_signature),
+                "--redistribution-evidence", str(args.evidence),
+                "--redistribution-signature", str(args.signature),
+                "--candidate-inventory", str(args.candidate_inventory),
+                *qualification_args,
+                "--protected-platform-registry", str(args.protected_platform_registry),
             ],
-                check_published_at=lambda published_at: check_review_window(evidence, now=published_at),
                 audited_policy=(policy_bytes, policy),
-                audited_inputs={
-                    args.evidence: hashlib.sha256(evidence_bytes).hexdigest(),
-                    args.signature: hashlib.sha256(signature_bytes).hexdigest(),
-                },
+                audited_inputs=audited_inputs,
             ):
                 raise RuntimeError("published release provenance and governance verification failed")
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
@@ -230,6 +252,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--platform-source-archives",
         type=Path,
         help="directory of original protected-platform Actions ZIPs retained for a published audit",
+    )
+    parser.add_argument(
+        "--candidate-qualification-archives",
+        type=Path,
+        help="directory of original Actions qualification ZIPs retained during candidate review",
     )
     parser.add_argument("--policy", type=Path, default=POLICY_PATH)
     parser.add_argument("--policy-root", type=Path)
@@ -409,10 +436,18 @@ def check_policy(
         )
 
         errors.extend(check_windows_xp_legacy_candidate_workflow(xp_workflow))
+    native_capture = ""
     if LINUX_TARGETS.keys() & locks.keys():
-        from check_extended_platform_evidence import check_extended_platform_evidence
+        from check_extended_platform_evidence import (
+            LINUX_CAPTURE_PATH,
+            check_extended_platform_evidence,
+            native_capture_for_target,
+        )
 
-        errors.extend(check_extended_platform_evidence(extended_workflow))
+        capture_path = ROOT / LINUX_CAPTURE_PATH
+        if capture_path.is_file():
+            native_capture = capture_path.read_text(encoding="utf-8")
+        errors.extend(check_extended_platform_evidence(extended_workflow, native_capture=native_capture))
     for target, raw_path in locks.items():
         if not safe_relative_path(raw_path):
             errors.append(f"release compliance lock for {target} has an unsafe path")
@@ -443,13 +478,11 @@ def check_policy(
         )
         job_block = workflow_job_block(producer_workflow, job)
         native_bootstrap_lock = None
-        source_bootstrap_lock = None
         if target in LINUX_TARGETS:
             expected_lock = f"{PROTECTED_LINUX_LOCK_DIR}/{target}.txt"
             if raw_path != expected_lock:
                 errors.append(f"{target} must consume the tracked protected Linux lock {expected_lock}")
             native_bootstrap_lock = f"{PROTECTED_LINUX_LOCK_DIR}/{target}-bootstrap.txt"
-            source_bootstrap_lock = PROTECTED_LINUX_CFFI_LOCK
         if matrix_arch is not None and not matrix_row_binds_lock(
             job_block,
             matrix_arch,
@@ -461,7 +494,7 @@ def check_policy(
             )
         errors.extend(
             check_native_job_lock_usage(
-                job_block,
+                native_capture_for_target(native_capture, target) if target in LINUX_TARGETS else job_block,
                 job,
                 target,
                 raw_path,
@@ -471,8 +504,8 @@ def check_policy(
                     if matrix_arch is not None
                     else native_bootstrap_lock
                 ),
-                source_bootstrap_lock_path=source_bootstrap_lock,
                 lock_root=policy_root,
+                direct_script=target in LINUX_TARGETS,
             )
         )
     verifier = policy.get("verifier_bootstrap")
@@ -639,6 +672,12 @@ def strict_b64(value: Any, label: str) -> bytes:
         raise ValueError(f"{label} must be valid base64") from exc
 
 
+class ApprovedPackageNotices(NamedTuple):
+    manifest_entry: dict[str, Any]
+    scans: list[dict[str, Any]]
+    components: list[dict[str, Any]]
+
+
 def check_evidence(
     evidence: dict[str, Any],
     *,
@@ -678,8 +717,14 @@ def check_evidence(
     if path_is_reparse(evidence_root) or not evidence_root.is_dir():
         return [*errors, f"compliance evidence root must be a real directory: {evidence_root}"]
 
+    from check_packaged_release_notices import expected_production_manifest_packages
+
+    manifest_packages = expected_production_manifest_packages(tag, matrix)
+    expected_packages = set().union(*manifest_packages.values())
+    approved_package_scans: dict[str, ApprovedPackageNotices] = {}
     candidate_record = evidence.get("candidate_inventory")
     runtime_reports: dict[str, Any] = {}
+    candidate_files: dict[str, dict[str, tuple[int, str]]] = {}
     if not isinstance(candidate_record, dict) or not valid_evidence_record(candidate_record):
         errors.append("compliance evidence candidate_inventory record is invalid")
     else:
@@ -706,10 +751,41 @@ def check_evidence(
                 "compliance candidate inventory input must be the signed bundle file"
             )
         else:
-            _, sealed_candidate = read_json_object(bound_candidate, "sealed release candidate inventory")
-            reports = sealed_candidate.get("runtime_reports")
-            if isinstance(reports, dict):
-                runtime_reports = reports
+            raw_candidate, sealed_candidate = read_json_object(bound_candidate, "sealed release candidate inventory")
+            if (
+                len(raw_candidate) != candidate_record["size_bytes"]
+                or hashlib.sha256(raw_candidate).hexdigest() != candidate_record["sha256"]
+            ):
+                errors.append("sealed release candidate inventory differs from its signed bytes")
+            else:
+                try:
+                    archives = validate_inventory(
+                        sealed_candidate, repository=repository, release_tag=tag, release_sha=sha,
+                        run_id=positive_int(sealed_candidate.get("build_run_id"), "candidate build run ID"),
+                        run_attempt=1,
+                    )
+                    identities = candidate_file_identities(file for archive in archives for file in archive["files"])
+                except ValueError as exc:
+                    errors.append(f"sealed release candidate inventory: {exc}")
+                else:
+                    runtime_reports = sealed_candidate["runtime_reports"]
+                    candidate_files = {
+                        archive["name"]: {file["path"]: identities[file["path"]] for file in archive["files"]}
+                        for archive in archives
+                    }
+            if "linux-x86_64" in policy["production_targets"]:
+                name = f"remote-ops-workspace-{tag}-linux-amd64.deb"
+                deb, deb_error = secure_regular_file(assets_dir, name, "managed Debian release installer")
+                if deb is None:
+                    errors.append(deb_error or "managed Debian release installer is missing")
+                else:
+                    try:
+                        validate_managed_release_qualification(
+                            sealed_candidate, repository=repository, release_tag=tag, release_sha=sha,
+                            deb_sha256=sha256_file(deb), deb_package=deb,
+                        )
+                    except (OSError, ValueError) as error:
+                        errors.append(f"managed Debian release qualification: {error}")
 
     registry_record = evidence.get("protected_platform_registry")
     protected_registry: dict[str, Any] = {}
@@ -821,6 +897,10 @@ def check_evidence(
                     published_audit=published_audit,
                 ))
             continue
+        package_scope_error = native_manifest_package_scope_error(name, entries, manifest_packages.get(name, set()))
+        if package_scope_error:
+            errors.append(package_scope_error)
+            continue
         profile = profile_for_manifest(name)
         if target in RUNTIME_REPORT_ARTIFACT_NAMES:
             realized = inventory.get("realized_environment")
@@ -831,6 +911,16 @@ def check_evidence(
                 or any(realized[key] != sealed.get(key) for key in ("sha256", "size_bytes"))
             ):
                 errors.append(f"{target} pip inspect evidence must match the exact sealed build report")
+            if candidate_files:
+                _, job, arch = producer_for_target(target, release_workflow="", extended_workflow="")
+                archive_name = f"release-{job}-{arch}"
+                release_files = {
+                    name: (path.stat().st_size, manifest_hash),
+                    **{asset: (entry.get("size_bytes"), entry.get("sha256")) for asset, entry in entries.items()},
+                }
+                for asset, identity in release_files.items():
+                    if candidate_files.get(archive_name, {}).get(asset) != identity:
+                        errors.append(f"{asset} does not match the sealed {archive_name} candidate archive")
         elif target in LINUX_TARGETS:
             errors.extend(check_protected_linux_runtime_report(
                 target, tag, protected_records.get(target), assets_dir, inventory.get("realized_environment"),
@@ -847,19 +937,89 @@ def check_evidence(
         if not isinstance(required, list):
             errors.append(f"no approved compliance profile for {name}")
             continue
-        errors.extend(
-            check_inventory(
-                inventory,
-                manifest_name=name,
-                profile=profile,
-                required_names=required,
-                versions=versions,
-                artifact_names=set(entries),
-                evidence_root=evidence_root,
-                expected_lock_file=expected_lock,
-                expected_lock_sha256=expected_lock_sha256,
-            )
+        debian_notices = {}
+        if target.startswith("linux-"):
+            for artifact in entries:
+                if not artifact.endswith(".deb"):
+                    continue
+                try:
+                    if notices := read_verified_debian_notices(assets_dir / artifact, target=target):
+                        debian_notices[artifact] = notices
+                except ValueError as exc:
+                    errors.append(f"{artifact}: {exc}")
+        inventory_errors = check_inventory(
+            inventory,
+            manifest_name=name,
+            profile=profile,
+            required_names=required,
+            versions=versions,
+            artifact_names=set(entries),
+            evidence_root=evidence_root,
+            expected_lock_file=expected_lock,
+            expected_lock_sha256=expected_lock_sha256,
+            debian_notices=debian_notices,
         )
+        if inventory_errors:
+            errors.extend(inventory_errors)
+            continue
+        scans = inventory["artifact_license_files"]
+        for artifact in sorted(entries):
+            approved_package_scans[artifact] = ApprovedPackageNotices(
+                entries[artifact], scans[artifact], inventory["components"],
+            )
+    if not errors:
+        errors.extend(check_packaged_notice_scans(assets_dir, expected_packages, approved_package_scans))
+    return errors
+
+
+def check_packaged_notice_scans(
+    assets_dir: Path,
+    expected_packages: set[str],
+    approved: dict[str, ApprovedPackageNotices],
+) -> list[str]:
+    from check_packaged_release_notices import observe_notices
+    from check_preview_redistribution import ComponentLicense
+
+    missing = expected_packages - approved.keys()
+    if missing:
+        return [f"signed native manifests are missing package notice scans for {sorted(missing)}"]
+    errors: list[str] = []
+    try:
+        for package in observe_notices(assets_dir, expected_packages):
+            entry, scans, components = approved[package.name]
+            if package.sha256 != entry.get("sha256") or package.size_bytes != entry.get("size_bytes"):
+                errors.append(f"{package.name} inspected package differs from the signed native manifest")
+                continue
+            observed = set()
+            component_licenses: dict[str, set[tuple[str, str, int]]] = {}
+            for item in package.files:
+                key = (item.path, hashlib.sha256(item.data).hexdigest(), len(item.data))
+                observed.add(key)
+                if isinstance(item, ComponentLicense):
+                    component_licenses.setdefault(normalize_component_name(item.component), set()).add(key)
+            required_paths = {path for path, _, _ in observed}
+            declared = [license_record_key(item) for item in scans if item["path"] in required_paths]
+            if len(declared) != len(observed) or set(declared) != observed:
+                errors.append(f"{package.name} signed license scan differs from the required packaged notices")
+            bundled = {
+                normalize_component_name(component["name"]): component["license_files"]
+                for component in components if component["scope"] == "bundled"
+            }
+            for name, required in component_licenses.items():
+                declared_for_component = {
+                    (
+                        record.get("artifact_paths", {}).get(package.name, record["path"]),
+                        record["sha256"],
+                        record["size_bytes"],
+                    )
+                    for record in bundled.get(name, [])
+                }
+                if not required <= declared_for_component:
+                    errors.append(
+                        f"{package.name} signed bundled component {name} does not bind its packaged licenses"
+                    )
+    except (OSError, ValueError, tarfile.TarError, zipfile.BadZipFile) as exc:
+        errors.append(f"exact native package notices: {exc}")
     return errors
 
 
@@ -1056,7 +1216,7 @@ def check_xp_inventory(
 ) -> list[str]:
     """Bind the independent XP decision to the .NET build and release bytes."""
     from check_xp_candidate_run import verify_candidate, verify_candidate_bytes
-    from release_candidate_inventory import GitHubClient, positive_int
+    from release_candidate_inventory import GitHubClient
 
     required = {
         "profile", "run_id", "run_attempt", "candidate_artifact", "receipt_artifact",
@@ -1305,6 +1465,16 @@ def native_manifest_entries(
     return entries, errors
 
 
+def native_manifest_package_scope_error(name: str, actual: Iterable[str], expected: set[str]) -> str | None:
+    files = set(actual)
+    if files == expected:
+        return None
+    return (
+        f"{name} package inventory differs from its release matrix target "
+        f"(missing {sorted(expected - files)}, unexpected {sorted(files - expected)})"
+    )
+
+
 def profile_for_manifest(name: str) -> str:
     if "-windows-x86-native-manifest.json" in name:
         return "minimal-cli"
@@ -1393,6 +1563,7 @@ def check_inventory(
     evidence_root: Path,
     expected_lock_file: str,
     expected_lock_sha256: str,
+    debian_notices: dict[str, dict[str, dict[str, Any]]] | None = None,
 ) -> list[str]:
     prefix = f"{manifest_name} signed inventory"
     errors: list[str] = []
@@ -1435,6 +1606,9 @@ def check_inventory(
     if not isinstance(components, list):
         return [*errors, f"{prefix} components must be a list"]
     indexed: dict[str, dict[str, Any]] = {}
+    debian_components = {
+        normalize_component_name(name) for rows in (debian_notices or {}).values() for name in rows
+    }
     for index, item in enumerate(components):
         label = f"{prefix} component {index}"
         if not isinstance(item, dict):
@@ -1447,7 +1621,8 @@ def check_inventory(
             errors.append(f"{label} name must be non-empty and unique")
             continue
         indexed[normalized_name] = item
-        if not isinstance(version, str) or VERSION_RE.fullmatch(version) is None:
+        version_pattern = DEBIAN_VERSION_RE if normalized_name in debian_components else VERSION_RE
+        if not isinstance(version, str) or version_pattern.fullmatch(version) is None:
             errors.append(f"{label} version must be exact")
         if item.get("scope") not in {"bundled", "build-only"}:
             errors.append(f"{label} scope must be bundled or build-only")
@@ -1523,6 +1698,7 @@ def check_inventory(
                 f"{prefix} component {name} version must be {expected_version!r}"
             )
 
+    scoped_notices = check_debian_notice_inventory(debian_notices or {}, indexed, prefix, errors)
     scans = inventory.get("artifact_license_files")
     if not isinstance(scans, dict) or set(scans) != artifact_names:
         errors.append(f"{prefix} must contain a license-file extraction scan for every artifact")
@@ -1537,21 +1713,10 @@ def check_inventory(
                     f"{prefix} {artifact_name} extracted license file",
                 )
             )
-        bundled_license_records = {
-            license_record_key(item)
-            for component in indexed.values()
-            if component.get("scope") == "bundled"
-            for item in component.get("license_files", [])
-            if isinstance(item, dict)
-        }
+        required_scans = required_artifact_license_records(indexed, artifact_names, scoped_notices, prefix, errors)
         for artifact_name, license_files in scans.items():
-            scanned = {
-                license_record_key(item)
-                for item in license_files
-                if isinstance(item, dict)
-            }
-            missing = bundled_license_records - scanned
-            if missing:
+            scanned = {license_record_key(item) for item in license_files}
+            if required_scans[artifact_name] - scanned:
                 errors.append(
                     f"{prefix} {artifact_name} scan is missing bundled component license files"
                 )
@@ -1567,6 +1732,64 @@ def check_inventory(
     elif inventory.get("pyqt_qt_channel") not in (None, {}):
         errors.append(f"{prefix} non-GUI profile must not claim a PyQt/Qt channel")
     return errors
+
+
+def required_artifact_license_records(
+    components: dict[str, dict[str, Any]],
+    artifact_names: set[str],
+    scoped_notices: dict[tuple[str, str, int], set[str]],
+    prefix: str,
+    errors: list[str],
+) -> dict[str, set[tuple[str, str, int]]]:
+    required: dict[str, set[tuple[str, str, int]]] = {name: set() for name in artifact_names}
+    for name, component in components.items():
+        license_files = component.get("license_files")
+        if component.get("scope") != "bundled" or not valid_license_files(license_files):
+            continue
+        for record in license_files:
+            key = license_record_key(record)
+            path, digest, size = key
+            scoped_assets = scoped_notices.get(key)
+            assets = artifact_names if scoped_assets is None else scoped_assets
+            paths = record.get("artifact_paths", {})
+            if (
+                not isinstance(paths, dict) or not paths.keys() <= assets
+                or not all(
+                    safe_relative_path(value) and value != "." and PurePosixPath(value).as_posix() == value
+                    for value in paths.values()
+                )
+            ):
+                errors.append(f"{prefix} {name} license artifact_paths must map known package names to relative paths")
+                continue
+            if scoped_assets is not None and any(value != path for value in paths.values()):
+                errors.append(f"{prefix} {name} license artifact_paths must preserve the verified Debian notice path")
+                continue
+            for artifact in assets:
+                required[artifact].add((paths.get(artifact, path), digest, size))
+    return required
+
+
+def check_debian_notice_inventory(
+    notices: dict[str, dict[str, dict[str, Any]]],
+    components: dict[str, dict[str, Any]],
+    prefix: str,
+    errors: list[str],
+) -> dict[tuple[str, str, int], set[str]]:
+    scoped: dict[tuple[str, str, int], set[str]] = {}
+    for artifact, records in notices.items():
+        for name, row in records.items():
+            component = components.get(normalize_component_name(name))
+            key = (notice_path(name).as_posix(), row["sha256"], row["size_bytes"])
+            if (
+                component is None or component.get("scope") != "bundled"
+                or component.get("origin") != "native-component" or component.get("version") != row["version"]
+                or not valid_license_files(license_files := component.get("license_files"))
+                or not any(license_record_key(record) == key for record in license_files)
+            ):
+                errors.append(f"{prefix} {artifact} requires the exact bundled Debian component and notice for {name}")
+                continue
+            scoped.setdefault(key, set()).add(artifact)
+    return scoped
 
 
 def check_qt_channel(value: Any, *, prefix: str, evidence_root: Path) -> list[str]:
@@ -1870,6 +2093,8 @@ def installs_hashed_requirements(command: str, lock_paths: tuple[str, ...]) -> b
     for path in lock_paths:
         if path in ("${{ matrix.lock }}", "${{ matrix.bootstrap_lock }}"):
             paths.append(re.escape(f'"{path}"'))
+        elif path == PROTECTED_PROJECTED_LOCK:
+            paths.append(re.escape(path))
         elif re.fullmatch(r"[A-Za-z0-9_./-]+", path) is not None:
             escaped = re.escape(path)
             paths.extend((escaped, f'"{escaped}"', f"'{escaped}'"))
@@ -1897,21 +2122,36 @@ def check_native_job_lock_usage(
     bootstrap_lock_path: str | None = None,
     source_bootstrap_lock_path: str | None = None,
     lock_root: Path = ROOT,
+    direct_script: bool = False,
 ) -> list[str]:
     errors: list[str] = []
-    commands = executable_run_commands(job_block)
+    commands = normalize_shell_commands(job_block.splitlines()) if direct_script else executable_run_commands(job_block)
     pip_commands = [
         (index, command)
         for index, command in enumerate(commands)
         if re.match(r"^(?:python|python3)\s+-m\s+pip\s+install(?:\s|$)", command)
     ]
+    builds_protected_source_wheels = direct_script and target in LINUX_TARGETS
     lock_tokens = (lock_path, "${{ matrix.lock }}") if allow_matrix_lock else (lock_path,)
+    if builds_protected_source_wheels:
+        lock_tokens = (PROTECTED_PROJECTED_LOCK,)
     bootstrap_tokens: tuple[str, ...] = ()
     lock_indexes = [
         index
         for index, command in pip_commands
         if installs_hashed_requirements(command, lock_tokens)
     ]
+    first_runtime_install = min(lock_indexes, default=len(commands))
+    lock_consumed = lock_path in job_block and bool(lock_indexes)
+    if builds_protected_source_wheels:
+        wheel_command = source_wheel_build_command(target)
+        wheel_builds = [index for index, command in enumerate(commands) if command == wheel_command]
+        lock_consumed = (
+            lock_path == f"{PROTECTED_LINUX_LOCK_DIR}/{target}.txt"
+            and len(wheel_builds) == 1 and len(lock_indexes) == 1 and wheel_builds[0] < lock_indexes[0]
+        )
+        if wheel_builds:
+            first_runtime_install = min(first_runtime_install, wheel_builds[0])
     for bootstrap, matrix_token in (
         (bootstrap_lock_path, "${{ matrix.bootstrap_lock }}" if allow_matrix_lock else None),
         (source_bootstrap_lock_path, None),
@@ -1923,14 +2163,14 @@ def check_native_job_lock_usage(
         if not bootstrap_errors:
             allowed = (bootstrap, matrix_token) if matrix_token else (bootstrap,)
             bootstrap_tokens += allowed
-            if source_bootstrap_lock_path is not None and (
-                not lock_indexes or not any(
-                    index < lock_indexes[0] and installs_hashed_requirements(command, allowed)
+            if (direct_script or source_bootstrap_lock_path is not None) and (
+                not lock_consumed or not any(
+                    index < first_runtime_install and installs_hashed_requirements(command, allowed)
                     for index, command in pip_commands
                 )
             ):
                 errors.append(f"{target} must install {bootstrap} before its final hashed lock")
-    if lock_path not in job_block or not lock_indexes:
+    if not lock_consumed:
         errors.append(
             f"release workflow {job} job does not consume {target} lock {lock_path} "
             "with executable pip --require-hashes"
@@ -2080,6 +2320,15 @@ def secure_regular_file(
     if not candidate.is_file():
         return None, f"{label} evidence file is missing: {raw_file}"
     return candidate, None
+
+
+def bound_evidence_file(root: Path, name: Any, digest: Any, label: str) -> Path:
+    path, error = secure_regular_file(root, name, label)
+    if path is None:
+        raise ValueError(error)
+    if not valid_sha256(digest) or sha256_file(path) != digest:
+        raise ValueError(f"{label} SHA-256 differs from the evidence")
+    return path
 
 
 def valid_sha256(value: Any) -> bool:

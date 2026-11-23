@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from scripts import release_evidence_file
+
 
 def checker():
     path = Path(__file__).resolve().parents[1] / "scripts/check_gui_two_window_result.py"
@@ -310,6 +312,39 @@ def test_durable_atomic_publication_retains_prior_complete_record_on_replace_fai
     with pytest.raises(OSError):
         module.persist_receipt(target, {"passed": False, "phase": "call-started"})
     assert target.read_bytes() == original
+    assert list(tmp_path.glob("*.partial")) == []
+
+
+@pytest.mark.parametrize("sharing_clears", [True, False])
+def test_durable_publication_retries_only_a_bounded_windows_rename(tmp_path, monkeypatch, sharing_clears):
+    module = checker()
+    target = tmp_path / "receipt.json"
+    original = b'{"passed":false,"phase":"initialized"}\n'
+    target.write_bytes(original)
+    real_replace = release_evidence_file.os.replace
+    attempts = []
+    delays = []
+
+    def temporarily_denied(source, destination):
+        attempts.append((source, destination))
+        assert target.read_bytes() == original
+        if len(attempts) == 2 and sharing_clears:
+            return real_replace(source, destination)
+        error = PermissionError("locked")
+        error.winerror = 5
+        raise error
+
+    monkeypatch.setattr(release_evidence_file.os, "replace", temporarily_denied)
+    monkeypatch.setattr(release_evidence_file.time, "sleep", delays.append)
+    if sharing_clears:
+        module.persist_receipt(target, {"passed": False, "phase": "call-started"})
+        assert json.loads(target.read_bytes())["phase"] == "call-started"
+        assert len(attempts) == 2 and delays == [0.01]
+    else:
+        with pytest.raises(PermissionError, match="locked"):
+            module.persist_receipt(target, {"passed": False, "phase": "call-started"})
+        assert target.read_bytes() == original
+        assert len(attempts) == 6 and sum(delays) < 0.5
     assert list(tmp_path.glob("*.partial")) == []
 
 

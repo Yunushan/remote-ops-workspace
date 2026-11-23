@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from remote_ops_workspace import cli
+from remote_ops_workspace import cli, cli_managed_runtime, cli_text, cli_transfers, cli_workspace
 from remote_ops_workspace.models import Profile
 
 
@@ -78,7 +78,7 @@ class _ProfileStore:
 
 def test_file_transfer_handlers_cover_all_command_shapes(monkeypatch) -> None:
     profile = Profile(name="edge", protocol="ssh", host="192.0.2.10")
-    monkeypatch.setattr(cli, "ProfileStore", lambda: _ProfileStore(profile))
+    monkeypatch.setattr(cli_transfers, "ProfileStore", lambda: _ProfileStore(profile))
     plan = _sftp_plan()
     builders = [
         "build_sftp_interactive_plan",
@@ -92,9 +92,9 @@ def test_file_transfer_handlers_cover_all_command_shapes(monkeypatch) -> None:
         "build_sftp_remote_preview_plan",
     ]
     for name in builders:
-        monkeypatch.setattr(cli, name, lambda *_args, **_kwargs: plan)
-    monkeypatch.setattr(cli, "run_sftp_interactive", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(cli, "run_sftp_batch", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(cli_transfers, name, lambda *_args, **_kwargs: plan)
+    monkeypatch.setattr(cli_transfers, "run_sftp_interactive", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(cli_transfers, "run_sftp_batch", lambda *_args, **_kwargs: None)
 
     assert cli.cmd_files_open(_ns(profile="edge", dry_run=True)) == 0
     assert cli.cmd_files_ls(_ns(profile="edge", remote="/tmp", dry_run=True)) == 0
@@ -143,9 +143,9 @@ def test_file_transfer_handlers_cover_all_command_shapes(monkeypatch) -> None:
         stdout="",
         stderr="",
     )
-    monkeypatch.setattr(cli, "parse_transfer_item_spec", lambda _spec: item)
-    monkeypatch.setattr(cli, "build_sftp_queue_plan", lambda *_args, **_kwargs: plan)
-    monkeypatch.setattr(cli, "run_sftp_queue", lambda *_args, **_kwargs: queue_result)
+    monkeypatch.setattr(cli_transfers, "parse_transfer_item_spec", lambda _spec: item)
+    monkeypatch.setattr(cli_transfers, "build_sftp_queue_plan", lambda *_args, **_kwargs: plan)
+    monkeypatch.setattr(cli_transfers, "run_sftp_queue", lambda *_args, **_kwargs: queue_result)
     queue_args = _ns(profile="edge", op=["get /a ./a"], force=False, dry_run=True, json=True)
     assert cli.cmd_files_queue(queue_args) == 0
     queue_args.json = False
@@ -164,7 +164,7 @@ def test_file_transfer_handlers_cover_all_command_shapes(monkeypatch) -> None:
         text="hello",
         error="",
     )
-    monkeypatch.setattr(cli, "preview_local_path", lambda *_args, **_kwargs: preview)
+    monkeypatch.setattr(cli_transfers, "preview_local_path", lambda *_args, **_kwargs: preview)
     preview_args = _ns(path=Path("note.txt"), bytes=100, entries=10, json=True)
     assert cli.cmd_files_preview_local(preview_args) == 0
     preview_args.json = False
@@ -180,16 +180,16 @@ def test_file_transfer_handlers_cover_all_command_shapes(monkeypatch) -> None:
 
 def test_ssh_browser_handlers_cover_preferences_and_reviews(monkeypatch) -> None:
     profile = Profile(name="edge", protocol="ssh", host="192.0.2.10")
-    monkeypatch.setattr(cli, "ProfileStore", lambda: _ProfileStore(profile))
+    monkeypatch.setattr(cli_transfers, "ProfileStore", lambda: _ProfileStore(profile))
     preferences = _Record(
         location="side-by-side",
         overwrite_confirmation=True,
         column_widths={"name": 220, "size": 100},
         updated_at="now",
     )
-    monkeypatch.setattr(cli, "load_moba_ssh_browser_preferences", lambda: preferences)
-    monkeypatch.setattr(cli, "update_moba_ssh_browser_location", lambda _location: preferences)
-    monkeypatch.setattr(cli, "update_moba_ssh_browser_columns", lambda _widths: preferences)
+    monkeypatch.setattr(cli_transfers, "load_moba_ssh_browser_preferences", lambda: preferences)
+    monkeypatch.setattr(cli_transfers, "update_moba_ssh_browser_location", lambda _location: preferences)
+    monkeypatch.setattr(cli_transfers, "update_moba_ssh_browser_columns", lambda _widths: preferences)
     assert cli.cmd_ssh_browser_status(_ns(json=True)) == 0
     assert cli.cmd_ssh_browser_status(_ns(json=False)) == 0
     preferences.overwrite_confirmation = False
@@ -210,7 +210,7 @@ def test_ssh_browser_handlers_cover_preferences_and_reviews(monkeypatch) -> None
         browser_visible=True,
         notes=["open note"],
     )
-    monkeypatch.setattr(cli, "build_moba_ssh_browser_open_plan", lambda _profile: plan)
+    monkeypatch.setattr(cli_transfers, "build_moba_ssh_browser_open_plan", lambda _profile: plan)
     assert cli.cmd_ssh_browser_open_plan(_ns(profile="edge", json=True)) == 0
     assert cli.cmd_ssh_browser_open_plan(_ns(profile="edge", json=False)) == 0
     plan.terminal_visible = False
@@ -223,7 +223,7 @@ def test_ssh_browser_handlers_cover_preferences_and_reviews(monkeypatch) -> None
         prompt="Overwrite?",
         notes=["review note"],
     )
-    monkeypatch.setattr(cli, "review_moba_ssh_browser_overwrite", lambda *_args, **_kwargs: review)
+    monkeypatch.setattr(cli_transfers, "review_moba_ssh_browser_overwrite", lambda *_args, **_kwargs: review)
     overwrite_args = _ns(
         action="upload",
         source="a",
@@ -373,20 +373,20 @@ def test_smartcard_handlers_cover_plans_reviews_and_evidence(monkeypatch) -> Non
 
 
 @pytest.mark.parametrize(
-    ("handler_name", "dependency_name"),
+    ("owner", "handler_name", "dependency_name"),
     [
-        ("cmd_smartcard_evidence_verify", "validate_smartcard_release_evidence"),
-        ("cmd_text_evidence_verify", "validate_moba_text_release_evidence"),
-        ("cmd_mobapt_cache_verify", "validate_mobapt_cache_evidence"),
-        ("cmd_servers_evidence_verify", "validate_moba_server_release_evidence"),
-        ("cmd_x11_evidence_verify", "validate_moba_x_server_release_evidence"),
+        (cli, "cmd_smartcard_evidence_verify", "validate_smartcard_release_evidence"),
+        (cli_text, "cmd_text_evidence_verify", "validate_moba_text_release_evidence"),
+        (cli, "cmd_mobapt_cache_verify", "validate_mobapt_cache_evidence"),
+        (cli_managed_runtime, "cmd_servers_evidence_verify", "validate_moba_server_release_evidence"),
+        (cli_managed_runtime, "cmd_x11_evidence_verify", "validate_moba_x_server_release_evidence"),
     ],
 )
 def test_operational_evidence_verifiers_cover_output_and_failures(
-    monkeypatch, handler_name: str, dependency_name: str
+    monkeypatch, owner, handler_name: str, dependency_name: str
 ) -> None:
     result = _validation(passed=True, summary=True)
-    monkeypatch.setattr(cli, dependency_name, lambda *_args, **_kwargs: result)
+    monkeypatch.setattr(owner, dependency_name, lambda *_args, **_kwargs: result)
     handler = getattr(cli, handler_name)
     args = _ns(evidence=Path("evidence.json"), assets_dir=Path("assets"), json=True)
     assert handler(args) == 0
@@ -402,7 +402,7 @@ def test_text_handlers_cover_preview_write_diff_remote_and_evidence(
     monkeypatch, tmp_path: Path
 ) -> None:
     profile = Profile(name="edge", protocol="ssh", host="192.0.2.10")
-    monkeypatch.setattr(cli, "ProfileStore", lambda: _ProfileStore(profile))
+    monkeypatch.setattr(cli_text, "ProfileStore", lambda: _ProfileStore(profile))
     preview = _Record(
         path=Path("note.txt"),
         exists=True,
@@ -413,7 +413,7 @@ def test_text_handlers_cover_preview_write_diff_remote_and_evidence(
         notes=["preview note"],
         text="hello\n",
     )
-    monkeypatch.setattr(cli, "preview_text_document", lambda *_args, **_kwargs: preview)
+    monkeypatch.setattr(cli_text, "preview_text_document", lambda *_args, **_kwargs: preview)
     preview_args = _ns(path=Path("note.txt"), bytes=100, lines=10, encoding="utf-8", json=True)
     assert cli.cmd_text_preview(preview_args) == 0
     preview_args.json = False
@@ -430,7 +430,7 @@ def test_text_handlers_cover_preview_write_diff_remote_and_evidence(
         backup_path=Path("note.txt.bak"),
         notes=["write note"],
     )
-    monkeypatch.setattr(cli, "write_text_document", lambda *_args, **_kwargs: write_result)
+    monkeypatch.setattr(cli_text, "write_text_document", lambda *_args, **_kwargs: write_result)
     write_args = _ns(
         path=Path("note.txt"),
         text="hello",
@@ -455,7 +455,7 @@ def test_text_handlers_cover_preview_write_diff_remote_and_evidence(
     assert cli.cmd_text_write(write_args) == 0
 
     diff = _Record(equal=True, added_lines=0, removed_lines=0, hunk_count=0, unified_diff="")
-    monkeypatch.setattr(cli, "diff_text_documents", lambda *_args, **_kwargs: diff)
+    monkeypatch.setattr(cli_text, "diff_text_documents", lambda *_args, **_kwargs: diff)
     diff_args = _ns(left=Path("a"), right=Path("b"), context=3, encoding="utf-8", json=True)
     assert cli.cmd_text_diff(diff_args) == 0
     diff_args.json = False
@@ -472,7 +472,7 @@ def test_text_handlers_cover_preview_write_diff_remote_and_evidence(
         upload_plan=sftp,
         notes=["remote note"],
     )
-    monkeypatch.setattr(cli, "build_remote_text_edit_plan", lambda *_args, **_kwargs: remote_plan)
+    monkeypatch.setattr(cli_text, "build_remote_text_edit_plan", lambda *_args, **_kwargs: remote_plan)
     remote_args = _ns(profile="edge", remote="/etc/app.conf", local=Path("app.conf"), json=True)
     assert cli.cmd_text_remote_plan(remote_args) == 0
     remote_args.json = False
@@ -489,7 +489,7 @@ def test_text_handlers_cover_preview_write_diff_remote_and_evidence(
         conflict_policy="compare-before-save",
         notes=["tab note"],
     )
-    monkeypatch.setattr(cli, "build_moba_text_editor_tab_plan", lambda *_args, **_kwargs: tab_plan)
+    monkeypatch.setattr(cli_text, "build_moba_text_editor_tab_plan", lambda *_args, **_kwargs: tab_plan)
     open_args = _ns(
         profile="edge",
         remote="/etc/app.conf",
@@ -515,7 +515,7 @@ def test_text_handlers_cover_preview_write_diff_remote_and_evidence(
         upload_plan=sftp,
         notes=["save note"],
     )
-    monkeypatch.setattr(cli, "review_moba_remote_text_save", lambda *_args, **_kwargs: review)
+    monkeypatch.setattr(cli_text, "review_moba_remote_text_save", lambda *_args, **_kwargs: review)
     review_args = _ns(
         profile="edge",
         remote="/etc/app.conf",
@@ -540,8 +540,8 @@ def test_text_handlers_cover_preview_write_diff_remote_and_evidence(
         evidence_path=Path("text.json"),
         notes=["bundle note"],
     )
-    monkeypatch.setattr(cli, "build_moba_text_release_evidence_bundle_plan", lambda *_args, **_kwargs: _Record())
-    monkeypatch.setattr(cli, "write_moba_text_release_evidence_bundle", lambda *_args, **_kwargs: bundle)
+    monkeypatch.setattr(cli_text, "build_moba_text_release_evidence_bundle_plan", lambda *_args, **_kwargs: _Record())
+    monkeypatch.setattr(cli_text, "write_moba_text_release_evidence_bundle", lambda *_args, **_kwargs: bundle)
     evidence_args = _ns(
         profile="edge",
         remote="/etc/app.conf",
@@ -722,7 +722,7 @@ def test_server_handlers_cover_status_bundle_and_lifecycle(monkeypatch) -> None:
         ],
         notes=["server note"],
     )
-    monkeypatch.setattr(cli, "build_moba_server_suite_status", lambda: status)
+    monkeypatch.setattr(cli_managed_runtime, "build_moba_server_suite_status", lambda: status)
     assert cli.cmd_servers_status(_ns(json=True)) == 0
     assert cli.cmd_servers_status(_ns(json=False)) == 0
     lifecycle.pid = None
@@ -734,7 +734,7 @@ def test_server_handlers_cover_status_bundle_and_lifecycle(monkeypatch) -> None:
         service_coverage={"ssh": True, "ftp": False},
         notes=["runtime note"],
     )
-    monkeypatch.setattr(cli, "build_moba_server_runtime_status", lambda **_kwargs: runtime)
+    monkeypatch.setattr(cli_managed_runtime, "build_moba_server_runtime_status", lambda **_kwargs: runtime)
     runtime_args = _ns(root=[Path("servers")], json=True)
     assert cli.cmd_servers_runtime_status(runtime_args) == 0
     runtime_args.json = False
@@ -759,8 +759,8 @@ def test_server_handlers_cover_status_bundle_and_lifecycle(monkeypatch) -> None:
         placeholder=True,
         notes=["bundle note"],
     )
-    monkeypatch.setattr(cli, "build_moba_server_runtime_bundle_plan", lambda *_args, **_kwargs: plan)
-    monkeypatch.setattr(cli, "write_moba_server_runtime_bundle", lambda _plan: bundle)
+    monkeypatch.setattr(cli_managed_runtime, "build_moba_server_runtime_bundle_plan", lambda *_args, **_kwargs: plan)
+    monkeypatch.setattr(cli_managed_runtime, "write_moba_server_runtime_bundle", lambda _plan: bundle)
     bundle_args = _ns(
         out=Path("bundle"),
         service="ssh",
@@ -779,7 +779,7 @@ def test_server_handlers_cover_status_bundle_and_lifecycle(monkeypatch) -> None:
     bundle.runtime_status.service_coverage["ssh"] = False
     assert cli.cmd_servers_bundle_runtime(bundle_args) == 1
 
-    monkeypatch.setattr(cli, "build_moba_server_config_plan", lambda *_args, **_kwargs: plan)
+    monkeypatch.setattr(cli_managed_runtime, "build_moba_server_config_plan", lambda *_args, **_kwargs: plan)
     config_args = _ns(
         service="ssh",
         host="127.0.0.1",
@@ -798,8 +798,8 @@ def test_server_handlers_cover_status_bundle_and_lifecycle(monkeypatch) -> None:
     assert cli.cmd_servers_config_plan(config_args) == 0
 
     record = _Record(state="running", pid=42, state_path=Path("server.json"))
-    monkeypatch.setattr(cli, "build_moba_server_plan", lambda *_args, **_kwargs: plan)
-    monkeypatch.setattr(cli, "start_moba_server", lambda *_args, **_kwargs: record)
+    monkeypatch.setattr(cli_managed_runtime, "build_moba_server_plan", lambda *_args, **_kwargs: plan)
+    monkeypatch.setattr(cli_managed_runtime, "start_moba_server", lambda *_args, **_kwargs: record)
     start_args = _ns(
         service="ssh",
         host="127.0.0.1",
@@ -814,7 +814,7 @@ def test_server_handlers_cover_status_bundle_and_lifecycle(monkeypatch) -> None:
     assert cli.cmd_servers_start(start_args) == 0
     record.pid = None
     assert cli.cmd_servers_start(start_args) == 0
-    monkeypatch.setattr(cli, "stop_moba_server", lambda _service: record)
+    monkeypatch.setattr(cli_managed_runtime, "stop_moba_server", lambda _service: record)
     assert cli.cmd_servers_stop(_ns(service="ssh", json=True)) == 0
     assert cli.cmd_servers_stop(_ns(service="ssh", json=False)) == 0
 
@@ -822,8 +822,8 @@ def test_server_handlers_cover_status_bundle_and_lifecycle(monkeypatch) -> None:
 def test_x11_handlers_cover_runtime_lifecycle_and_smoke(monkeypatch) -> None:
     plan = _Record(command=["xvfb", ":9"], notes=["start note"])
     lifecycle = _Record(state="running", pid=42, state_path=Path("x11.json"), running=True)
-    monkeypatch.setattr(cli, "build_moba_x_server_plan", lambda **_kwargs: plan)
-    monkeypatch.setattr(cli, "start_moba_x_server", lambda *_args, **_kwargs: lifecycle)
+    monkeypatch.setattr(cli_managed_runtime, "build_moba_x_server_plan", lambda **_kwargs: plan)
+    monkeypatch.setattr(cli_managed_runtime, "start_moba_x_server", lambda *_args, **_kwargs: lifecycle)
     start_args = _ns(display=":9", dry_run=True, json=True)
     assert cli.cmd_x11_start(start_args) == 0
     start_args.json = False
@@ -844,7 +844,7 @@ def test_x11_handlers_cover_runtime_lifecycle_and_smoke(monkeypatch) -> None:
         extensions=[_Record(key="render", status="available", label="Render")],
         notes=["status note"],
     )
-    monkeypatch.setattr(cli, "build_moba_x_server_status", lambda **_kwargs: status)
+    monkeypatch.setattr(cli_managed_runtime, "build_moba_x_server_status", lambda **_kwargs: status)
     status_args = _ns(display=":9", json=True)
     assert cli.cmd_x11_status(status_args) == 0
     status_args.json = False
@@ -861,7 +861,7 @@ def test_x11_handlers_cover_runtime_lifecycle_and_smoke(monkeypatch) -> None:
         candidates=[_Record(key="xvfb", executable="Xvfb")],
         notes=["package note"],
     )
-    monkeypatch.setattr(cli, "build_moba_x_server_package_status", lambda **_kwargs: package_status)
+    monkeypatch.setattr(cli_managed_runtime, "build_moba_x_server_package_status", lambda **_kwargs: package_status)
     package_args = _ns(root=[Path("x11")], json=True)
     assert cli.cmd_x11_package_status(package_args) == 0
     package_args.json = False
@@ -879,8 +879,8 @@ def test_x11_handlers_cover_runtime_lifecycle_and_smoke(monkeypatch) -> None:
         placeholder=True,
         notes=["bundle note"],
     )
-    monkeypatch.setattr(cli, "build_moba_x_server_runtime_bundle_plan", lambda *_args, **_kwargs: plan)
-    monkeypatch.setattr(cli, "write_moba_x_server_runtime_bundle", lambda _plan: bundle)
+    monkeypatch.setattr(cli_managed_runtime, "build_moba_x_server_runtime_bundle_plan", lambda *_args, **_kwargs: plan)
+    monkeypatch.setattr(cli_managed_runtime, "write_moba_x_server_runtime_bundle", lambda _plan: bundle)
     bundle_args = _ns(
         out=Path("bundle"),
         runtime="xvfb",
@@ -898,7 +898,7 @@ def test_x11_handlers_cover_runtime_lifecycle_and_smoke(monkeypatch) -> None:
     bundle.package_status.packaged_available = False
     assert cli.cmd_x11_bundle_runtime(bundle_args) == 1
 
-    monkeypatch.setattr(cli, "stop_moba_x_server", lambda: lifecycle)
+    monkeypatch.setattr(cli_managed_runtime, "stop_moba_x_server", lambda: lifecycle)
     assert cli.cmd_x11_stop(_ns(json=True)) == 0
     assert cli.cmd_x11_stop(_ns(json=False)) == 0
 
@@ -910,8 +910,8 @@ def test_x11_handlers_cover_runtime_lifecycle_and_smoke(monkeypatch) -> None:
         evidence_sha256="b" * 64,
         notes=["smoke note"],
     )
-    monkeypatch.setattr(cli, "run_moba_x_server_smoke", lambda **_kwargs: evidence)
-    monkeypatch.setattr(cli, "write_moba_x_server_smoke_evidence", lambda item, _path: item)
+    monkeypatch.setattr(cli_managed_runtime, "run_moba_x_server_smoke", lambda **_kwargs: evidence)
+    monkeypatch.setattr(cli_managed_runtime, "write_moba_x_server_smoke_evidence", lambda item, _path: item)
     smoke_args = _ns(
         display=":9",
         probe_command="xclock",
@@ -936,8 +936,8 @@ def test_import_team_client_serve_web_and_remaining_helpers(monkeypatch, tmp_pat
         source_format="moba",
         warnings=["import warning"],
     )
-    monkeypatch.setattr(cli, "import_profiles_into_store", lambda *_args, **_kwargs: result)
-    monkeypatch.setattr(cli, "ProfileStore", lambda: object())
+    monkeypatch.setattr(cli_workspace, "import_profiles_into_store", lambda *_args, **_kwargs: result)
+    monkeypatch.setattr(cli_workspace, "ProfileStore", lambda: object())
     assert (
         cli.cmd_import(
             _ns(input=Path("profiles.ini"), format="auto", replace=False)
@@ -948,10 +948,10 @@ def test_import_team_client_serve_web_and_remaining_helpers(monkeypatch, tmp_pat
     profile_store = object()
     backend = object()
     sentinel = object()
-    monkeypatch.setattr(cli, "ProfileStore", lambda: profile_store)
-    monkeypatch.setattr(cli, "TeamSyncBackend", lambda root: backend if root == tmp_path else None)
+    monkeypatch.setattr(cli_workspace, "ProfileStore", lambda: profile_store)
+    monkeypatch.setattr(cli_workspace, "TeamSyncBackend", lambda root: backend if root == tmp_path else None)
     monkeypatch.setattr(
-        cli,
+        cli_workspace,
         "TeamSyncClient",
         lambda store, candidate: sentinel if store is profile_store and candidate is backend else None,
     )

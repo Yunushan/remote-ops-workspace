@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "remote-ops-workspace"
-version = "1.0.27"
+version = "1.0.28"
 description = "Operator-first cross-platform remote terminal and connection workspace."
 readme = "README.md"
 requires-python = ">=3.10,<3.16"
@@ -71,7 +71,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-remote_ops_workspace = ["py.typed", "assets/*.svg", "assets/*.ico", "assets/*.manifest", "assets/*.qss", "configs/*.json", "web/*.css", "web/*.html", "web/*.js", "web/*.json"]
+remote_ops_workspace = ["py.typed", "assets/*.svg", "assets/*.ico", "assets/*.manifest", "assets/*.qss", "assets/workspace-styles.json", "configs/*.json", "web/*.css", "web/*.html", "web/*.js", "web/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -709,8 +709,8 @@ def check_protected_requirement_boundary(target: object, raw_boundary: object) -
 
 def expected_builder_or_host_evidence(target: str) -> str:
     return {
-        "linux-i386": "matching self-hosted i386/i686 Linux runner or equivalent real i386 builder",
-        "linux-armhf": "matching self-hosted armv7l/armhf Linux runner or equivalent real armhf builder",
+        "linux-i386": "native i386/i686 Linux builder with a separate self-hosted Linux x64 collector",
+        "linux-armhf": "native armv7l/armhf Linux builder with a separate self-hosted Linux x64 collector",
         "windows-xp-native-x86": (
             "Windows XP SP3 32-bit VM or physical host running scripts/xp_smoke_runner.cmd "
             "and artifact validation; collector: modern self-hosted xp-evidence collector "
@@ -907,7 +907,7 @@ def expected_linux_protected_requirement_commands(target: str) -> dict[str, str]
             "--local-evidence-root . "
             f"--staged-upload-out-dir {upload_dir} "
             f"--runner-label self-hosted --runner-label linux --runner-label {arch} "
-            f"--out <{candidate}>"
+            f"--runner-label x64 --out <{candidate}>"
         ),
         "review_bundle_command": (
             "python scripts/make_extended_linux_evidence_bundle.py "
@@ -916,6 +916,7 @@ def expected_linux_protected_requirement_commands(target: str) -> dict[str, str]
             "--builder-evidence <builder-identity.json> "
             "--smoke-evidence <native-smoke-log> "
             "--runtime-report <target-release-evidence-dir>/candidate-pip-inspect.json "
+            "--require-source-wheel-inventory "
             f"--candidate-record <{candidate}> "
             "--out-dir <target-release-artifact-dir>"
         ),

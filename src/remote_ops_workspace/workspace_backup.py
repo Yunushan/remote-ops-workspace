@@ -33,15 +33,24 @@ from .file_safety import (
     write_bytes_atomic,
     write_json_atomic,
 )
-from .state_lock import DEFAULT_LOCK_TIMEOUT_SECONDS, exclusive_file_lock
+from .moba_servers import SERVER_CONTROL_PORTS
+from .state_lock import DEFAULT_LOCK_TIMEOUT_SECONDS, exclusive_file_lock, lock_path_for
 
 MAX_TOTAL_BYTES = 64 * 1024 * 1024
 MAX_FILES = 10_000
 SCHEMA = "row.workspace-backup"
 KDF = {"name": "scrypt", "n": 2**15, "r": 8, "p": 3, "length": 32}
 KNOWN_STORES = ("profiles.json", "vault.json", "layouts.json", "snippets.json", "moba-macros.json")
-MANAGED_RECORDS = {"xserver-state.json", *(f"servers/{service}-server-state.json" for service in ("http", "ftp", "tftp", "ssh", "sftp", "telnet", "vnc", "nfs"))}
-KNOWN_ATOMIC_PATHS = {*KNOWN_STORES, *MANAGED_RECORDS}
+MANAGED_RECORDS = {"xserver-state.json", *(f"servers/{service}-server-state.json" for service in SERVER_CONTROL_PORTS)}
+CRON_CONTROL = "servers/cron-server-state.control"
+CRON_WORKER = Path(CRON_CONTROL).with_suffix(".worker")
+SERVER_SETTINGS = {"server-preferences.json", "servers/crontab"}
+# Older v1 backups could include advisory locks and atomic write temporaries
+# for these files. Validate their archived bytes before omitting them on restore.
+NEW_SERVER_ATOMIC_PATHS = {"servers/cron-server-state.json", "servers/iperf-server-state.json", CRON_CONTROL, *SERVER_SETTINGS}
+KNOWN_ATOMIC_PATHS = {*KNOWN_STORES, *MANAGED_RECORDS, *NEW_SERVER_ATOMIC_PATHS}
+_LOCK_TARGETS = {lock_path_for(Path(name)).as_posix(): name for name in (*KNOWN_ATOMIC_PATHS, CRON_WORKER.as_posix())}
+_LEGACY_SERVER_TRANSIENT_TARGETS = {*NEW_SERVER_ATOMIC_PATHS, CRON_WORKER.as_posix()}
 _RESERVED_NAMES = {"con", "prn", "aux", "nul", "conin$", "conout$", *(f"com{number}" for number in "123456789¹²³"), *(f"lpt{number}" for number in "123456789¹²³")}
 
 
@@ -70,9 +79,18 @@ def create_workspace_backup(
     salt = secrets.token_bytes(16)
     cipher = _cipher(passphrase, salt)
     with ExitStack() as locks:
-        lock_names = {*KNOWN_STORES, *(name for name in MANAGED_RECORDS if (source / name).exists())}
+        lock_names = {*KNOWN_STORES, *(name for name in MANAGED_RECORDS | SERVER_SETTINGS if (source / name).exists())}
+        # Serialize with the first start too, before a PID record exists.
+        if (source / "servers").is_dir():
+            lock_names.update(("servers/cron-server-state.json", "servers/iperf-server-state.json"))
         for name in sorted(lock_names):
             locks.enter_context(exclusive_file_lock(source / name, timeout_seconds=lock_timeout_seconds))
+        # The controller holds the lifecycle lock before changing a generation.
+        # A macOS worker holds its lease before acknowledging that generation.
+        if lock_path_for(source / CRON_WORKER).exists():
+            locks.enter_context(exclusive_file_lock(source / CRON_WORKER, timeout_seconds=lock_timeout_seconds))
+        if (source / CRON_CONTROL).exists():
+            locks.enter_context(exclusive_file_lock(source / CRON_CONTROL, timeout_seconds=lock_timeout_seconds))
         manifest, fingerprint = _inventory(source, max_total_bytes, max_files)
         token = cipher.encrypt(_json_bytes(manifest)).decode("ascii")
         _current, observed = _inventory(source, max_total_bytes, max_files)
@@ -247,19 +265,31 @@ def _read_regular(path: Path, limit: int) -> tuple[bytes, tuple[int, ...]]:
     return payload, (*_metadata(initial), *_metadata(opened))
 
 
-def _excluded(relative: str) -> bool:
+def _transient_target(relative: str) -> str | None:
     relative = unicodedata.normalize("NFC", relative).casefold()
-    path = Path(relative)
-    name = path.name
-    if relative in {(Path(known).parent / f".{Path(known).name}.lock").as_posix() for known in KNOWN_ATOMIC_PATHS}:
-        return True
     # A retained rollback copy can be the only verified predecessor after a
     # failed write and rollback; include its bytes as opaque recovery state.
-    return any(path.parent == Path(known).parent and re.fullmatch(rf"\.{re.escape(Path(known).name)}\.[A-Za-z0-9_-]+\.tmp", name) for known in KNOWN_ATOMIC_PATHS)
+    if relative.endswith(".tmp"):
+        path = Path(relative)
+        match = re.fullmatch(r"\.(.+)\.[a-z0-9_-]+\.tmp", path.name)
+        if match:
+            target = (path.parent / match[1]).as_posix()
+            if target in KNOWN_ATOMIC_PATHS:
+                return target
+    return _LOCK_TARGETS.get(relative)
+
+
+def _excluded(relative: str) -> bool:
+    return _transient_target(relative) is not None
 
 
 def _offline_record(name: str, payload: bytes) -> None:
-    if unicodedata.normalize("NFC", name).casefold() not in MANAGED_RECORDS:
+    key = unicodedata.normalize("NFC", name).casefold()
+    if key == CRON_CONTROL:
+        if not re.fullmatch(rb"revoked [0-9a-f]{32}", payload):
+            raise WorkspaceBackupError("Cron control is active or ambiguous; stop the scheduler before offline recovery")
+        return
+    if key not in MANAGED_RECORDS:
         return
     record = _load_json(payload)
     if not isinstance(record, dict) or "pid" not in record or record["pid"] is not None or record.get("state") not in ("stopped", "dry-run") or (record.get("running") is not None and record.get("running") is not False):
@@ -332,6 +362,7 @@ def _validate_manifest(raw: Any, max_bytes: int, max_files: int) -> tuple[dict[s
     names: set[str] = set()
     directories: set[str] = set()
     contents: dict[str, bytes] = {}
+    legacy_transients: set[str] = set()
     total = 0
     for name in raw["directories"]:
         key = _path_key(name)
@@ -344,8 +375,13 @@ def _validate_manifest(raw: Any, max_bytes: int, max_files: int) -> tuple[dict[s
             raise WorkspaceBackupError("invalid workspace file manifest")
         name = row["filename"]
         key = _path_key(name)
-        if key in names or _excluded(name):
-            raise WorkspaceBackupError("workspace manifest contains duplicate, case-colliding or transient paths")
+        if key in names:
+            raise WorkspaceBackupError("workspace manifest contains duplicate or case-colliding paths")
+        transient_target = _transient_target(name)
+        if transient_target is not None:
+            if transient_target not in _LEGACY_SERVER_TRANSIENT_TARGETS:
+                raise WorkspaceBackupError("workspace manifest contains a transient path")
+            legacy_transients.add(name)
         names.add(key)
         total += row["size"]
         if total > max_bytes:
@@ -359,7 +395,11 @@ def _validate_manifest(raw: Any, max_bytes: int, max_files: int) -> tuple[dict[s
         for parent in Path(name).parents:
             if parent.as_posix() != "." and parent.as_posix() not in directories:
                 raise WorkspaceBackupError("workspace manifest has a missing or conflicting parent directory")
-    canonical = {"schema": SCHEMA, "version": 1, "directories": sorted(directories), "files": sorted(raw["files"], key=lambda row: row["filename"])}
+    # Every original entry has passed the bounds, hash, collision and parent
+    # checks. Historical lock bytes cannot represent a lease in the new home.
+    for name in legacy_transients:
+        del contents[name]
+    canonical = {"schema": SCHEMA, "version": 1, "directories": sorted(directories), "files": sorted((row for row in raw["files"] if row["filename"] in contents), key=lambda row: row["filename"])}
     return canonical, contents
 
 

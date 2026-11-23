@@ -66,6 +66,8 @@ MOUNT_DIR="$SMOKE_ROOT/dmg-mount"
 DMG_APP_DIR="$SMOKE_ROOT/dmg-app"
 DMG_APP="$DMG_APP_DIR/$APP_NAME"
 PKG_APP="/Applications/$APP_NAME"
+PKG_EXPANDED="$SMOKE_ROOT/pkg-expanded"
+PKG_BOM_PATHS="$SMOKE_ROOT/pkg-bom-paths.txt"
 
 for artifact in "$DMG" "$PKG"; do
   if [[ ! -f "$artifact" ]]; then
@@ -88,12 +90,22 @@ mkdir -p "$MOUNT_DIR" "$DMG_APP_DIR"
 
 BINDING_TARGET="macos-${ARCH}"
 BINDING_REPORT="$SMOKE_ROOT/candidate-runtime-byte-binding.json"
-python3 scripts/candidate_posix_byte_binding.py init --target "$BINDING_TARGET" --report "$BINDING_REPORT" --root "$ROOT"
+binding_options=(--target "$BINDING_TARGET" --report "$BINDING_REPORT")
+if [[ "$REQUIRE_RELEASE_SIGNING" == true ]]; then
+  binding_options+=(--installer "$DMG" --installer "$PKG")
+fi
+python3 scripts/candidate_posix_byte_binding.py init --root "$ROOT" "${binding_options[@]}"
 
 candidate_check_app() {
   local executable="$1" public_path="$2" phase="$3" probe="$4"
   python3 scripts/candidate_posix_byte_binding.py check --target "$BINDING_TARGET" --report "$BINDING_REPORT" \
     --path "$executable" --public-path "$public_path" --stage "$phase" --probe "$probe"
+}
+
+candidate_check_bundle() {
+  local app="$1" kind="$2" phase="$3"
+  python3 scripts/candidate_posix_byte_binding.py bundle --target "$BINDING_TARGET" --report "$BINDING_REPORT" \
+    --path "$app" --public-path "$kind/$APP_NAME" --stage "$phase"
 }
 
 cleanup() {
@@ -197,13 +209,14 @@ require_pkg_absent() {
 }
 
 verify_pkg_receipt() {
-  local phase="$1" receipt
-  receipt="$(pkgutil --pkg-info "$APP_ID")" || return 1
-  if ! grep -Fxq -- "version: $VERSION" <<< "$receipt"; then
-    echo "$phase expected the package receipt for $APP_ID to report version $VERSION" >&2
+  local phase="$1" info="$SMOKE_ROOT/pkg-receipt-info.txt" files="$SMOKE_ROOT/pkg-receipt-files.txt"
+  LC_ALL=C pkgutil --pkg-info "$APP_ID" > "$info" || return 1
+  LC_ALL=C pkgutil --files "$APP_ID" > "$files" || return 1
+  python3 -I "$ROOT/scripts/check_macos_pkg_receipt.py" receipt --version "$VERSION" \
+    --bom-paths "$PKG_BOM_PATHS" --info "$info" --files "$files" || {
+    echo "$phase could not verify the installed receipt against the package" >&2
     return 1
-  fi
-  echo "native installer smoke PKG receipt: $phase $APP_ID $VERSION"
+  }
 }
 
 echo "native installer smoke: DMG install"
@@ -215,6 +228,7 @@ fi
 ditto "$MOUNT_DIR/$APP_NAME" "$DMG_APP"
 
 echo "native installer smoke: DMG verify"
+candidate_check_bundle "$DMG_APP" dmg install
 codesign --verify --deep --strict "$DMG_APP"
 verify_app_macos_minimum "$DMG_APP" "DMG verify"
 verify_app_runtime_resources "$DMG_APP" "DMG verify" "dmg/$APP_NAME/Contents/MacOS/$APP_EXECUTABLE_NAME" install
@@ -223,6 +237,7 @@ verify_app_gui "$DMG_APP" "DMG verify" "dmg/$APP_NAME/Contents/MacOS/$APP_EXECUT
 echo "native installer smoke: DMG upgrade"
 rm -rf "$DMG_APP"
 ditto "$MOUNT_DIR/$APP_NAME" "$DMG_APP"
+candidate_check_bundle "$DMG_APP" dmg reinstall
 codesign --verify --deep --strict "$DMG_APP"
 verify_app_macos_minimum "$DMG_APP" "DMG upgrade"
 verify_app_runtime_resources "$DMG_APP" "DMG upgrade" "dmg/$APP_NAME/Contents/MacOS/$APP_EXECUTABLE_NAME" reinstall
@@ -238,25 +253,10 @@ trap - EXIT
 
 require_pkg_absent "PKG preflight"
 echo "native installer smoke: PKG install"
-pkgutil --expand "$PKG" "$SMOKE_ROOT/pkg-expanded"
-python3 - "$SMOKE_ROOT/pkg-expanded/Distribution" "$APP_ID" <<'PY'
-import sys
-from xml.etree import ElementTree
-
-distribution_path, app_id = sys.argv[1:]
-distribution = ElementTree.parse(distribution_path)
-supported = distribution.findall("./volume-check/allowed-os-versions/os-version")
-if len(supported) != 1 or supported[0].attrib not in ({"min": "14.4"}, {"min": "14.4.0"}):
-    raise SystemExit("PKG distribution must require macOS 14.4 or later")
-packages = [
-    (package.get("id"), package.text.strip().removeprefix("#"))
-    for package in distribution.findall("pkg-ref")
-    if package.text and package.text.strip()
-]
-if packages != [(app_id, "remote-ops-workspace-component.pkg")]:
-    raise SystemExit("PKG distribution must reference the expected application component")
-print("native installer smoke PKG distribution: macOS 14.4 minimum")
-PY
+pkgutil --expand "$PKG" "$PKG_EXPANDED"
+/usr/bin/lsbom -p f "$PKG_EXPANDED/remote-ops-workspace-component.pkg/Bom" > "$PKG_BOM_PATHS"
+python3 -I "$ROOT/scripts/check_macos_pkg_receipt.py" package --expanded "$PKG_EXPANDED" \
+  --bom-paths "$PKG_BOM_PATHS" --version "$VERSION"
 sudo installer -pkg "$PKG" -target /
 if [[ ! -d "$PKG_APP" ]]; then
   echo "PKG install did not create $PKG_APP" >&2
@@ -265,6 +265,7 @@ fi
 
 echo "native installer smoke: PKG verify"
 verify_pkg_receipt "PKG verify"
+candidate_check_bundle "$PKG_APP" pkg install
 codesign --verify --deep --strict "$PKG_APP"
 verify_app_macos_minimum "$PKG_APP" "PKG verify"
 verify_app_runtime_resources "$PKG_APP" "PKG verify" "pkg/$APP_NAME/Contents/MacOS/$APP_EXECUTABLE_NAME" install
@@ -277,6 +278,7 @@ if [[ ! -d "$PKG_APP" ]]; then
   exit 1
 fi
 verify_pkg_receipt "PKG upgrade"
+candidate_check_bundle "$PKG_APP" pkg reinstall
 codesign --verify --deep --strict "$PKG_APP"
 verify_app_macos_minimum "$PKG_APP" "PKG upgrade"
 verify_app_runtime_resources "$PKG_APP" "PKG upgrade" "pkg/$APP_NAME/Contents/MacOS/$APP_EXECUTABLE_NAME" reinstall
@@ -286,5 +288,5 @@ sudo rm -rf "$PKG_APP"
 sudo pkgutil --forget "$APP_ID"
 require_pkg_absent "PKG uninstall"
 
-python3 scripts/candidate_posix_byte_binding.py complete --target "$BINDING_TARGET" --report "$BINDING_REPORT"
+python3 scripts/candidate_posix_byte_binding.py complete "${binding_options[@]}"
 echo "native installer smoke passed for macOS $ARCH"

@@ -22,6 +22,11 @@ from pathlib import Path
 from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.release_evidence_file import replace_evidence_file  # noqa: E402
+
 DIST = ROOT / "dist"
 NAME = "remote-ops-workspace"
 RELEASE_TOOLCHAIN = ROOT / "configs" / "release_toolchain.json"
@@ -380,7 +385,7 @@ def normalize_python_sdist(path: Path) -> None:
                     member.gname = ""
                     member.pax_headers = {}
                     archive.addfile(member, BytesReader(payload) if payload is not None else None)
-    temporary.replace(path)
+    replace_evidence_file(temporary, path)
 
 
 def build_release_environment_sbom(version: str, dist: Path) -> dict[str, object]:

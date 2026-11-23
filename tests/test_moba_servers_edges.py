@@ -5,6 +5,7 @@ import json
 import os
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -53,19 +54,23 @@ def test_server_status_plans_and_validation_are_json_ready(tmp_path: Path) -> No
     assert validation.to_dict()["errors"] == ["bad"]
 
 
-def test_pyftpdlib_discovery_uses_current_python(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(servers.importlib.util, "find_spec", lambda name: object() if name == "pyftpdlib" else None)
+@pytest.mark.parametrize(("installed", "frozen"), [(True, True), (True, False), (False, True)])
+def test_pyftpdlib_discovery_uses_current_python(monkeypatch: pytest.MonkeyPatch, installed: bool, frozen: bool) -> None:
+    monkeypatch.setattr(servers.importlib.util, "find_spec", lambda name: object() if installed and name == "pyftpdlib" else None)
+    monkeypatch.setattr(servers.sys, "frozen", frozen, raising=False)
 
     runtimes = servers.discover_moba_server_runtimes(
         "ftp",
         system="Linux",
-        which=lambda _name: None,
+        which=lambda name: "/other/python/bin/pyftpdlib" if name == "pyftpdlib" else None,
         packaged_roots=[],
     )
 
     assert runtimes[0].key == "pyftpdlib"
-    assert runtimes[0].available is True
+    assert runtimes[0].available is installed
+    assert runtimes[0].builtin is (installed and frozen)
     assert runtimes[0].executable == servers.sys.executable
+    assert "ROW Python runtime" in runtimes[0].notes[0]
 
 
 def test_runtime_status_reports_complete_packaged_coverage(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -185,6 +190,7 @@ def test_runtime_manifest_merges_services_and_tolerates_bad_existing_data(tmp_pa
         system="linux",
         service_record=ssh,
     )
+    first["openssh_helpers"] = dict.fromkeys(servers.SERVER_OPENSSH_HELPERS, "a" * 64)
     manifest.write_text(json.dumps(first), encoding="utf-8")
     merged = servers._merged_server_runtime_manifest(
         manifest,
@@ -194,6 +200,7 @@ def test_runtime_manifest_merges_services_and_tolerates_bad_existing_data(tmp_pa
     )
 
     assert [item["service"] for item in merged["services"]] == ["ftp", "ssh"]
+    assert merged["openssh_helpers"] == first["openssh_helpers"]
 
     manifest.write_text(json.dumps({"schema": servers.SERVER_RUNTIME_BUNDLE_SCHEMA, "services": "bad"}), encoding="utf-8")
     reset = servers._merged_server_runtime_manifest(
@@ -218,6 +225,42 @@ def test_server_runtime_roots_include_environment_and_deduplicate(
 
     assert roots.count(shared) == 1
     assert extra in roots
+
+
+@pytest.mark.parametrize(
+    ("platform_name", "frozen", "has_manifest", "expected"),
+    [
+        ("linux", True, True, True),
+        ("linux", True, False, False),
+        ("linux", False, True, False),
+        ("win32", True, True, False),
+    ],
+)
+def test_frozen_linux_launcher_discovers_the_installed_server_payload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    platform_name: str,
+    frozen: bool,
+    has_manifest: bool,
+    expected: bool,
+) -> None:
+    prefix = tmp_path / "usr"
+    root = prefix / "lib" / "remote-ops-workspace" / "servers"
+    daemon = root / "linux" / "ssh" / "bin" / "sshd"
+    daemon.parent.mkdir(parents=True)
+    daemon.write_bytes(b"Debian runtime fixture")
+    if has_manifest:
+        (root / servers.SERVER_RUNTIME_MANIFEST_NAME).write_text("{}", encoding="utf-8")
+    monkeypatch.delenv(servers.SERVER_RUNTIME_DIR_ENV, raising=False)
+    monkeypatch.setattr(servers.sys, "executable", str(prefix / "bin" / "row"))
+    monkeypatch.setattr(servers.sys, "platform", platform_name)
+    monkeypatch.setattr(servers.sys, "frozen", frozen, raising=False)
+
+    status = servers.build_moba_server_runtime_status(system="linux")
+
+    assert (str(root) in status.roots) is expected
+    assert status.service_coverage["ssh"] is expected
+    assert [runtime.executable for runtime in status.runtimes] == ([str(daemon)] if expected else [])
 
 
 def test_public_server_config_and_gui_actions(tmp_path: Path) -> None:
@@ -395,8 +438,9 @@ def test_release_asset_validation_rejects_bad_paths_and_hashes(tmp_path: Path) -
         ("pyftpdlib", "ftp", "python.exe", "root", "127.0.0.1", [servers.sys.executable, "-m", "remote_ops_workspace.embedded_ftp"]),
         ("pyftpdlib", "ftp", "pyftpdlib", "root", "127.0.0.1", [servers.sys.executable, "-m", "remote_ops_workspace.embedded_ftp"]),
         ("ftpd", "ftp", "ftpd", "root", "127.0.0.1", ["ftpd", "-D"]),
-        ("tftpd", "tftp", "tftpd", "root", "127.0.0.1", ["tftpd", "--foreground"]),
-        ("atftpd", "tftp", "atftpd", "root", "127.0.0.1", ["atftpd", "--foreground"]),
+        ("tftpd", "tftp", "tftpd", "root", "127.0.0.1", ["tftpd", "--foreground", "--address", "127.0.0.1:2222"]),
+        ("tftpd", "tftp", "tftpd", "root", "::1", ["tftpd", "--foreground", "--address", "[::1]:2222"]),
+        ("atftpd", "tftp", "atftpd", "root", "127.0.0.1", ["atftpd", "--daemon", "--no-fork", "--bind-address", "127.0.0.1", "--port", "2222"]),
         ("sshd-sftp", "sftp", "sshd", None, "127.0.0.1", ["sshd", "-D"]),
         ("x11vnc", "vnc", "x11vnc", None, "127.0.0.1", ["x11vnc", "-listen"]),
         ("vncserver", "vnc", "vncserver", None, "127.0.0.1", ["vncserver", "-rfbport"]),
@@ -424,6 +468,29 @@ def test_file_server_runtime_commands_require_root(key: str) -> None:
     service = "http" if key == "python-http" else "tftp" if key == "tftpd" else "ftp"
     with pytest.raises(ValueError, match="requires a root directory"):
         servers._runtime_command(_runtime(key, service=service), "127.0.0.1", 1234, None)
+
+
+@pytest.mark.parametrize(("host", "public"), [("127.0.0.1", False), ("192.0.2.1", True)])
+def test_frozen_http_starts_an_independent_packaged_cli(tmp_path, monkeypatch, host, public) -> None:
+    helper = tmp_path / ("row.exe" if servers.os.name == "nt" else "row")
+    helper.touch()
+    monkeypatch.setattr(servers.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(servers.sys, "executable", str(helper))
+    monkeypatch.delenv("PYINSTALLER_RESET_ENVIRONMENT", raising=False)
+    plan = servers.build_moba_server_plan("http", host=host, port=8080, root=tmp_path, allow_public_bind=public)
+    command = [str(helper), "servers", "_http-runtime", "--host", host, "--port", "8080", "--root", str(tmp_path)]
+    if public:
+        command.append("--allow-public-bind")
+    assert plan.command == command
+    launched = []
+    process = SimpleNamespace(pid=2468, poll=lambda: None)
+    record = servers.start_moba_server(
+        plan, state_dir=tmp_path,
+        popen_factory=lambda argv, *, env: launched.append((argv, env)) or process,
+        identity_factory=lambda child: {"pid": child.pid},
+    )
+    assert record.pid == process.pid
+    assert launched[0][1]["PYINSTALLER_RESET_ENVIRONMENT"] == "1"
 
 
 def test_runtime_command_and_definition_validation(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -513,6 +580,60 @@ def test_packaged_runtime_integrity_accepts_matching_and_skips_unbundled(tmp_pat
     runtime = _packaged_runtime(tmp_path / "bundle", digest=_matching_digest())
     servers.verify_packaged_runtime_integrity(runtime)
     servers.verify_packaged_runtime_integrity(replace(runtime, bundled=False))
+
+
+@pytest.mark.parametrize("service", ["ssh", "sftp"])
+def test_packaged_openssh_checks_both_private_helpers_before_start(tmp_path: Path, service: str) -> None:
+    runtime = replace(_packaged_runtime(tmp_path, digest=_matching_digest()), service=service)
+    manifest = tmp_path / servers.SERVER_RUNTIME_MANIFEST_NAME
+    record = json.loads(manifest.read_bytes())
+    record["services"][0]["service"] = service
+    hashes = {}
+    for name in servers.SERVER_OPENSSH_HELPERS:
+        helper = tmp_path / servers.SERVER_OPENSSH_HELPER_DIR / name
+        helper.parent.mkdir(parents=True, exist_ok=True)
+        helper.write_bytes(name.encode())
+        hashes[name] = hashlib.sha256(helper.read_bytes()).hexdigest()
+    record["openssh_helpers"] = hashes
+    manifest.write_text(json.dumps(record), encoding="utf-8")
+
+    servers.verify_packaged_runtime_integrity(runtime)
+
+    helper.write_bytes(b"replacement")
+    with pytest.raises(ValueError, match="OpenSSH helper failed its integrity check"):
+        servers.verify_packaged_runtime_integrity(runtime)
+
+
+def test_packaged_openssh_rejects_invalid_hash_records_and_untrusted_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    digest = hashlib.sha256(b"a").hexdigest()
+    hashes = dict.fromkeys(servers.SERVER_OPENSSH_HELPERS, digest)
+    helper = tmp_path / servers.SERVER_OPENSSH_HELPER_DIR / "sshd-session"
+    helper.parent.mkdir(parents=True)
+    for malformed in (None, {"sshd-session": digest}):
+        with pytest.raises(ValueError, match="must record sshd-session and sshd-auth"):
+            servers.verify_packaged_openssh_helpers(tmp_path, malformed)
+    for invalid in (7, "not-a-hash"):
+        with pytest.raises(ValueError, match="invalid SHA-256"):
+            servers.verify_packaged_openssh_helpers(tmp_path, {**hashes, "sshd-session": invalid})
+    with pytest.raises(ValueError, match="must be a regular package file"):
+        servers.verify_packaged_openssh_helpers(tmp_path, hashes)
+    helper.touch()
+    with pytest.raises(ValueError, match="must be a regular package file"):
+        servers.verify_packaged_openssh_helpers(tmp_path, hashes)
+    helper.write_bytes(b"too long")
+    monkeypatch.setattr(servers, "SERVER_RUNTIME_MAX_BYTES", 1)
+    with pytest.raises(ValueError, match="must be a regular package file"):
+        servers.verify_packaged_openssh_helpers(tmp_path, hashes)
+
+    resolve = Path.resolve
+    monkeypatch.setattr(
+        Path, "resolve",
+        lambda path: tmp_path / "outside" if path == helper else resolve(path),
+    )
+    with pytest.raises(ValueError, match="must be a regular package file"):
+        servers.verify_packaged_openssh_helpers(tmp_path, hashes)
 
 
 def test_packaged_runtime_integrity_refuses_missing_manifest(tmp_path: Path) -> None:

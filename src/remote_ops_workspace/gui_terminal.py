@@ -1,12 +1,26 @@
 from __future__ import annotations
 
 import codecs
+import ntpath
 import re
 import time
+from bisect import bisect_left, bisect_right
 from collections.abc import Callable
 from dataclasses import replace
+from itertools import groupby
 
-from PyQt6.QtCore import QEvent, QEventLoop, QPoint, QProcess, QProcessEnvironment, Qt, QTimer, QUrl
+from PyQt6.QtCore import (
+    QEvent,
+    QEventLoop,
+    QPoint,
+    QProcess,
+    QProcessEnvironment,
+    QRect,
+    Qt,
+    QTimer,
+    QUrl,
+    pyqtSignal,
+)
 from PyQt6.QtGui import (
     QClipboard,
     QColor,
@@ -18,6 +32,7 @@ from PyQt6.QtGui import (
     QPalette,
     QTextCharFormat,
     QTextCursor,
+    QTextDocument,
 )
 from PyQt6.QtWidgets import (
     QApplication,
@@ -27,6 +42,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMenu,
+    QMessageBox,
     QSizePolicy,
     QStyle,
     QTextEdit,
@@ -38,6 +54,7 @@ from PyQt6.QtWidgets import (
 from .enterprise_policy import assert_profile_launch_allowed
 from .gui_lifecycle import ProcessStopPolicy, ProcessStopResult, stop_process
 from .gui_processes import _terminal_process_backend
+from .gui_ssh_connection import SharedSshConnection, SharedSshConnectionState
 from .gui_values import _required_gui_value, _safe_tooltip_html
 from .moba_macros import (
     MOBA_MACRO_TERMINAL_CAPTURE_SCHEMA,
@@ -62,8 +79,17 @@ from .terminal import (
     ssh_connection_key,
     ssh_control_path_for_profile,
 )
-from .terminal_emulation import TERMINAL_EMULATOR_BACKEND, AnsiTerminalTranscript, AnsiTextStyle
+from .terminal_emulation import (
+    DEFAULT_CURSOR_STYLE,
+    SOFT_LINE_BREAK,
+    TERMINAL_EMULATOR_BACKEND,
+    AnsiTerminalTranscript,
+    AnsiTextStyle,
+    TerminalCursorStyle,
+    TerminalScreenRow,
+)
 from .terminal_highlighting import (
+    TerminalHighlightSpan,
     default_terminal_syntax_rules,
     highlight_terminal_text,
     terminal_syntax_rule_keys,
@@ -99,6 +125,35 @@ def _widget_style(widget: QWidget) -> QStyle:
     return _required_gui_value(widget.style(), f"style for {type(widget).__name__}")
 
 
+def _qt_text_units(text: str) -> int:
+    return len(text) if text.isascii() else len(text.encode("utf-16-le", "surrogatepass")) // 2
+
+
+def _logical_qt_position(display: str, position: int) -> int:
+    prefix = display.encode("utf-16-le", "surrogatepass")[: 2 * position]
+    return position - prefix.decode("utf-16-le", "surrogatepass").count(SOFT_LINE_BREAK)
+
+
+def _display_qt_position(display: str, position: int) -> int:
+    offset = 0
+    for line in display.split(SOFT_LINE_BREAK)[:-1]:
+        units = _qt_text_units(line)
+        if position <= units:
+            return offset + position
+        position -= units
+        offset += units + 1
+    return offset + position
+
+
+def _same_qt_selection(before: str, after: str, start: int, end: int) -> bool:
+    if before.isascii() and after.isascii():
+        return end <= len(before) and end <= len(after) and before[start:end] == after[start:end]
+    old_units = before.encode("utf-16-le", "surrogatepass")
+    new_units = after.encode("utf-16-le", "surrogatepass")
+    lower, upper = 2 * start, 2 * end
+    return upper <= len(old_units) and upper <= len(new_units) and old_units[lower:upper] == new_units[lower:upper]
+
+
 class TerminalTextEdit(QTextEdit):
     """Read-only transcript view with a stable remote-terminal cursor overlay."""
 
@@ -107,6 +162,40 @@ class TerminalTextEdit(QTextEdit):
         self._remote_cursor_position: int | None = None
         self._remote_cursor_trailing_cells = 0
         self._remote_cursor_visible = False
+        self._remote_cursor_style = DEFAULT_CURSOR_STYLE
+        self._remote_cursor_phase_visible = True
+        self._remote_cursor_blink = QTimer(self)
+        self._remote_cursor_blink.timeout.connect(self._toggle_remote_cursor_blink)
+        style_hints = _required_gui_value(QApplication.styleHints(), "application style hints")
+        style_hints.cursorFlashTimeChanged.connect(self._sync_remote_cursor_blink)
+
+    def toPlainText(self) -> str:  # noqa: N802
+        """Return logical terminal lines, as used by copy and search."""
+        document = _required_gui_value(self.document(), "terminal output document")
+        return document.toRawText().replace(SOFT_LINE_BREAK, "").replace("\u2029", "\n").replace("\u00a0", " ")
+
+    def find_terminal_text(self, needle: str) -> bool:
+        document = _required_gui_value(self.document(), "terminal output document")
+        display = document.toRawText()
+        if SOFT_LINE_BREAK not in display:
+            return self.find(needle)
+
+        # Search the same logical text that Copy returns, including a
+        # match whose characters straddle a soft wrap.
+        logical = QTextDocument()
+        logical.setPlainText(display.replace(SOFT_LINE_BREAK, "").replace("\u2029", "\n"))
+        start = _logical_qt_position(display, self.textCursor().selectionEnd())
+        found = logical.find(needle, start)
+        if found.isNull():
+            return False
+        cursor = QTextCursor(document)
+        cursor.setPosition(_display_qt_position(display, found.selectionStart()))
+        cursor.setPosition(
+            _display_qt_position(display, found.selectionEnd()),
+            QTextCursor.MoveMode.KeepAnchor,
+        )
+        self.setTextCursor(cursor)
+        return True
 
     def set_remote_cursor_state(
         self,
@@ -114,6 +203,7 @@ class TerminalTextEdit(QTextEdit):
         *,
         trailing_cells: int = 0,
         visible: bool,
+        style: TerminalCursorStyle = DEFAULT_CURSOR_STYLE,
     ) -> None:
         document = _required_gui_value(
             self.document(),
@@ -123,6 +213,11 @@ class TerminalTextEdit(QTextEdit):
         self._remote_cursor_position = max(0, min(maximum, int(position)))
         self._remote_cursor_trailing_cells = max(0, int(trailing_cells))
         self._remote_cursor_visible = bool(visible)
+        if self._remote_cursor_style != style:
+            self._remote_cursor_blink.stop()
+            self._remote_cursor_style = style
+        self.setProperty("terminalRemoteCursorShape", style[0])
+        self.setProperty("terminalRemoteCursorBlinking", style[1])
         self.setProperty("terminalRemoteCursorVisible", self._remote_cursor_visible)
         self.setProperty(
             "terminalRemoteCursorDocumentPosition",
@@ -132,58 +227,85 @@ class TerminalTextEdit(QTextEdit):
             "terminalRemoteCursorTrailingCells",
             self._remote_cursor_trailing_cells,
         )
-        _required_gui_value(
-            self.viewport(),
-            "terminal text viewport",
-        ).update()
+        self._sync_remote_cursor_blink()
+
+    def _sync_remote_cursor_blink(self) -> None:
+        flash_time = QApplication.cursorFlashTime() if self._remote_cursor_style[1] else 0
+        if self._remote_cursor_visible and self.isVisible() and flash_time > 0:
+            interval = max(1, flash_time // 2)
+            if not self._remote_cursor_blink.isActive() or self._remote_cursor_blink.interval() != interval:
+                self._remote_cursor_phase_visible = True
+                self._remote_cursor_blink.start(interval)
+        else:
+            self._remote_cursor_blink.stop()
+            self._remote_cursor_phase_visible = True
+        _required_gui_value(self.viewport(), "terminal text viewport").update()
+
+    def _toggle_remote_cursor_blink(self) -> None:
+        self._remote_cursor_phase_visible = not self._remote_cursor_phase_visible
+        _required_gui_value(self.viewport(), "terminal text viewport").update()
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._sync_remote_cursor_blink()
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        super().hideEvent(event)
+        self._sync_remote_cursor_blink()
+
+    def terminal_cursor_rect(self) -> QRect:
+        document = _required_gui_value(self.document(), "terminal text document")
+        end = document.characterCount() - 1
+        position = end if self._remote_cursor_position is None else self._remote_cursor_position
+        cursor = QTextCursor(document)
+        cursor.setPosition(max(0, min(end, position)))
+        rectangle = self.cursorRect(cursor)
+        cell_width = max(1, self.fontMetrics().horizontalAdvance("M"))
+        rectangle.translate(self._remote_cursor_trailing_cells * cell_width, 0)
+        rectangle.setWidth(cell_width)
+        return rectangle
 
     def paintEvent(self, event) -> None:  # noqa: N802
         if bool(self.property("terminalTabPaintFrozen")):
             return
         super().paintEvent(event)
-        if not self._remote_cursor_visible or self._remote_cursor_position is None:
+        if (
+            not self._remote_cursor_visible
+            or self._remote_cursor_position is None
+            or not self._remote_cursor_phase_visible
+        ):
             return
         viewport = _required_gui_value(
             self.viewport(),
             "terminal paint viewport",
         )
-        document = _required_gui_value(
-            self.document(),
-            "terminal paint document",
-        )
-        cursor = QTextCursor(document)
-        cursor.setPosition(
-            max(
-                0,
-                min(document.characterCount() - 1, self._remote_cursor_position),
-            )
-        )
-        rectangle = self.cursorRect(cursor)
-        if self._remote_cursor_trailing_cells:
-            cell_width = max(1, self.fontMetrics().horizontalAdvance("M"))
-            rectangle.translate(
-                self._remote_cursor_trailing_cells * cell_width,
-                0,
-            )
+        rectangle = self.terminal_cursor_rect()
+        cell_width = rectangle.width()
+        thickness = max(2, round(self.devicePixelRatioF()))
+        x = rectangle.x()
+        y = rectangle.y() + 1
+        height = max(1, rectangle.height() - 2)
+        shape = self._remote_cursor_style[0]
+        if shape == "block":
+            rectangle = QRect(x, y, cell_width, height)
+        elif shape == "underline":
+            line_height = min(thickness, height)
+            rectangle = QRect(x, y + height - line_height, cell_width, line_height)
+        else:
+            rectangle = QRect(x, y, thickness, height)
         if not rectangle.intersects(viewport.rect()):
             return
         color = self.palette().color(QPalette.ColorRole.Text)
-        color.setAlpha(230)
+        color.setAlpha(120 if shape == "block" else 230)
         painter = QPainter(viewport)
         try:
-            cursor_width = max(2, round(self.devicePixelRatioF()))
-            painter.fillRect(
-                rectangle.x(),
-                rectangle.y() + 1,
-                cursor_width,
-                max(1, rectangle.height() - 2),
-                color,
-            )
+            painter.fillRect(rectangle, color)
         finally:
             painter.end()
 
 
 class TerminalPane(QWidget):
+    macroRecordingChanged = pyqtSignal()
     STOP_POLICY = ProcessStopPolicy()
     OUTPUT_RENDER_BATCH_BYTES = 16 * 1024
     OUTPUT_RENDER_TURN_BUDGET_BYTES = 256 * 1024
@@ -241,6 +363,8 @@ class TerminalPane(QWidget):
         self._restart_after_stop = False
         self._rendered_terminal_text = ""
         self._rendered_terminal_revision = -1
+        self._rendered_alternate_rows: tuple[TerminalScreenRow, ...] | None = None
+        self._rendered_alternate_palette: tuple[str, str] | None = None
         self._pending_terminal_transcript: str | None = None
         self._pty_initial_clear_pending = False
         self._pty_startup_probe = ""
@@ -339,7 +463,12 @@ class TerminalPane(QWidget):
             "terminal vertical scroll bar",
         )
         terminal_scroll_bar.valueChanged.connect(self._on_terminal_scroll_value_changed)
-        self.terminal_emulator = AnsiTerminalTranscript()
+        self.terminal_emulator = AnsiTerminalTranscript(
+            # Linux delivers the PTY byte stream. ConPTY also emits console
+            # repaint frames during resize, which need separate handling.
+            primary_reflow=getattr(self.process, "transport_backend", None) == "linux-pty",
+            reflow_on_cursor_address=not getattr(self.process, "is_pty", False),
+        )
         self._terminal_mouse_mode = 0
         self._terminal_mouse_buttons: list[Qt.MouseButton] = []
         self._terminal_mouse_cell: tuple[int, int] | None = None
@@ -352,7 +481,11 @@ class TerminalPane(QWidget):
         )
         self.output.setProperty(
             "terminalProcessBackend",
-            "windows-conpty" if bool(getattr(self.process, "is_pty", False)) else "qt-process-pipe",
+            getattr(
+                self.process,
+                "transport_backend",
+                "windows-conpty" if bool(getattr(self.process, "is_pty", False)) else "qt-process-pipe",
+            ),
         )
         process_property = getattr(self.process, "property", lambda _name: None)
         self.output.setProperty(
@@ -576,6 +709,13 @@ class TerminalPane(QWidget):
         self.process.started.connect(self.on_started)
         self.process.errorOccurred.connect(self.on_error)
         self.process.finished.connect(self.on_finished)
+        self.ssh_connection: SharedSshConnection | None = None
+        if self.ssh_control_path:
+            program = self.plan.command[0]
+            ssh = program if ntpath.basename(program).lower() in {"ssh", "ssh.exe"} else "ssh"
+            self.ssh_connection = SharedSshConnection(self.ssh_control_path, ssh, self)
+            self.ssh_connection.changed.connect(self.publish_ssh_connection)
+            self.publish_ssh_connection(self.ssh_connection.state)
         self.set_status("ready", "ready")
         self.apply_moba_macro_runtime_properties()
         self.update_process_actions()
@@ -641,11 +781,16 @@ class TerminalPane(QWidget):
         return max(1, metrics.horizontalAdvance("M")), max(1, metrics.lineSpacing())
 
     def resize_terminal_backend(self) -> None:
+        if self._terminal_scroll_closed:
+            return
         cell_width, cell_height = self.terminal_cell_size()
         viewport = self.output_viewport.size()
-        columns = max(20, viewport.width() // cell_width)
-        rows = max(5, viewport.height() // cell_height)
-        self.terminal_emulator.set_screen_size(columns, rows)
+        if viewport.isEmpty():
+            return
+        document = _required_gui_value(self.output.document(), "terminal text document")
+        margin = 2 * document.documentMargin()
+        columns = max(20, int((viewport.width() - margin) // cell_width))
+        rows = max(5, int((viewport.height() - margin) // cell_height))
         self._pending_terminal_size = (columns, rows)
         if not self._terminal_resize_timer.isActive():
             self._terminal_resize_timer.start()
@@ -653,8 +798,13 @@ class TerminalPane(QWidget):
     def flush_terminal_resize(self) -> None:
         pending = self._pending_terminal_size
         self._pending_terminal_size = None
-        if pending is None:
+        if pending is None or self._terminal_scroll_closed:
             return
+        # Apply the new grid and forward its dimensions in the same turn.
+        # Viewport resize events can arrive inside a document update.
+        self.terminal_emulator.set_screen_size(*pending)
+        if self.terminal_emulator.primary_reflow or self.terminal_emulator.alternate_screen_active:
+            self.render_terminal_transcript(self.terminal_emulator.screen_text())
         resize = getattr(self.process, "setTerminalSize", None)
         if resize is not None:
             resize(*pending)
@@ -722,6 +872,8 @@ class TerminalPane(QWidget):
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802
         terminal_targets = (self.output, self.output_viewport)
+        if watched is self.output_viewport and event.type() == QEvent.Type.Resize:
+            self.resize_terminal_backend()
         if watched in terminal_targets and event.type() == QEvent.Type.FocusIn:
             # QApplication.focusChanged can lag behind native focus
             # delivery. Track the terminal surface at the source so a
@@ -801,10 +953,15 @@ class TerminalPane(QWidget):
         if watched in terminal_targets and event.type() == QEvent.Type.InputMethod:
             committed = event.commitString()
             if committed:
-                self.send_raw_input(committed.encode("utf-8"))
+                self.send_raw_input(committed.encode("utf-8"), record_macro=True)
                 event.accept()
                 return True
         if watched in terminal_targets and event.type() == QEvent.Type.KeyPress:
+            if event.key() == Qt.Key.Key_Space and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+                chooser = getattr(self.window(), "open_moba_quick_macros", None)
+                if chooser is not None and chooser(self):
+                    event.accept()
+                    return True
             # The terminal event filter normally owns key delivery so
             # that readline, Vim, and ncurses receive exact TTY bytes.
             # Ctrl+Tab is the workspace traversal gesture, however; if
@@ -851,7 +1008,7 @@ class TerminalPane(QWidget):
                 # transcript.  Collapse the stale selection first so the
                 # next output update starts from an unambiguous cursor.
                 self.clear_terminal_selection_for_remote_input()
-                self.send_raw_input(payload)
+                self.send_raw_input(payload, record_macro=True)
                 return True
         return super().eventFilter(watched, event)
 
@@ -1162,7 +1319,7 @@ class TerminalPane(QWidget):
             payload = text.encode("utf-8")
         return b"\x1b" + payload if alt and payload != b"\x1b" else payload
 
-    def send_raw_input(self, payload: bytes) -> None:
+    def send_raw_input(self, payload: bytes, *, record_macro: bool = False) -> None:
         if not payload:
             return
         if not self.is_running():
@@ -1171,6 +1328,11 @@ class TerminalPane(QWidget):
         accepted = self.process.write(payload)
         if accepted is None:
             accepted = len(payload)
+        if record_macro:
+            if accepted == len(payload):
+                self.capture_macro_terminal_payload(payload)
+            else:
+                self.invalidate_macro_session()
         self.output.setProperty("terminalLastInputBytesRequested", len(payload))
         self.output.setProperty("terminalLastInputBytesAccepted", int(accepted))
         # Rendering the process response decides whether the user was
@@ -1233,7 +1395,7 @@ class TerminalPane(QWidget):
                 self.output.setProperty("terminalLastPasteWasBracketed", True)
             else:
                 self.output.setProperty("terminalLastPasteWasBracketed", False)
-            self.send_raw_input(payload)
+            self.send_raw_input(payload, record_macro=True)
             return
         self.input.insert(text)
         self.input.setFocus(Qt.FocusReason.OtherFocusReason)
@@ -1258,7 +1420,9 @@ class TerminalPane(QWidget):
         )
 
     def copy_terminal_selection(self) -> None:
-        selection = self.output.textCursor().selectedText().replace("\u2029", "\n")
+        selection = (
+            self.output.textCursor().selectedText().replace(SOFT_LINE_BREAK, "").replace("\u2029", "\n")
+        )
         if selection:
             self.output.setProperty("terminalLastCopiedText", selection)
             clipboard = self._terminal_clipboard_provider()
@@ -1383,8 +1547,8 @@ class TerminalPane(QWidget):
                 self.append_text(f"[policy blocked] {exc}\n")
                 self.update_process_actions()
                 return
-        self.output.clear()
-        self._rendered_terminal_text = ""
+        self.invalidate_macro_session()
+        self._clear_terminal_document()
         self.terminal_emulator.reset()
         self.sync_terminal_emulator_mode_properties()
         self._terminal_follow_output = True
@@ -1423,6 +1587,9 @@ class TerminalPane(QWidget):
                 environment.insert(key, value)
             self.process.setProcessEnvironment(environment)
         self.resize_terminal_backend()
+        self.flush_terminal_resize()
+        if self.ssh_connection is not None:
+            self.ssh_connection.start_attempt()
         self.process.start()
         self.update_process_actions()
 
@@ -1451,9 +1618,12 @@ class TerminalPane(QWidget):
             self.update_process_actions()
             return False
         active_policy = policy or self.STOP_POLICY
+        self.invalidate_macro_session()
         self.set_status("stopping", "stopping")
         self.stop_button.setEnabled(False)
         self.append_text("\n[process stopping]\n")
+        if self.ssh_connection is not None:
+            self.ssh_connection.begin_close("restart-requested" if restart else "operator-stop")
         self.process.terminate()
         self._stop_timer.start(active_policy.terminate_timeout_ms)
         return True
@@ -1471,6 +1641,9 @@ class TerminalPane(QWidget):
         self._terminal_scroll_generation += 1
         self._terminal_scroll_timer.stop()
         self.setProperty("terminalClosing", True)
+        if self.ssh_connection is not None:
+            self.ssh_connection.begin_close("tab-closed")
+        self.invalidate_macro_session()
         self._stop_timer.stop()
         self.reset_process_output_pipeline()
         self._restart_when_output_drained = False
@@ -1487,9 +1660,12 @@ class TerminalPane(QWidget):
                 kill_requested=False,
                 finished=True,
             )
+        self.invalidate_macro_session()
         self.set_status("stopping", "stopping")
         self.stop_button.setEnabled(False)
         self.append_text("\n[process stopping]\n")
+        if self.ssh_connection is not None:
+            self.ssh_connection.begin_close("operator-stop")
         result = stop_process(
             self.process,
             not_running_state=QProcess.ProcessState.NotRunning,
@@ -1503,7 +1679,9 @@ class TerminalPane(QWidget):
         return result
 
     def copy_command(self) -> None:
-        selection = self.output.textCursor().selectedText().replace("\u2029", "\n")
+        selection = (
+            self.output.textCursor().selectedText().replace(SOFT_LINE_BREAK, "").replace("\u2029", "\n")
+        )
         clipboard_text = selection or self.plan.printable()
         self.append_text("\n[selected output copied]\n" if selection else "\n[command copied]\n")
         # Updating the transcript can invalidate delayed clipboard ownership
@@ -1531,8 +1709,7 @@ class TerminalPane(QWidget):
         self._terminal_follow_output = True
         self._terminal_force_follow_output = False
         self.output.setProperty("terminalFollowOutput", True)
-        self.output.clear()
-        self._rendered_terminal_text = ""
+        self._clear_terminal_document()
         self.terminal_emulator.reset()
         self.sync_terminal_emulator_mode_properties()
         self.reset_process_output_pipeline()
@@ -1556,7 +1733,7 @@ class TerminalPane(QWidget):
         if self.show_launch_command or not rewrite_current:
             return
         command_line = f"$ {self.plan.printable()}\n"
-        current = self._rendered_terminal_text
+        current = self._rendered_terminal_text.replace(SOFT_LINE_BREAK, "")
         if command_line not in current:
             return
         self.set_terminal_transcript(current.replace(command_line, "", 1))
@@ -1573,7 +1750,7 @@ class TerminalPane(QWidget):
         )
         if not inject_current or not self.startup_preamble:
             return
-        current = self._rendered_terminal_text
+        current = self._rendered_terminal_text.replace(SOFT_LINE_BREAK, "")
         if current.startswith(self.startup_preamble):
             return
         self.set_terminal_transcript(f"{self.startup_preamble}{current}")
@@ -1601,8 +1778,8 @@ class TerminalPane(QWidget):
         if not secret_input:
             self.capture_macro_input(raw_line)
             line = normalise_local_shell_input(raw_line, self.plan)
-        self.input.setProperty("terminalLastSubmittedText", raw_line)
-        self.input.setProperty("terminalLastCommandSent", line)
+        self.input.setProperty("terminalLastSubmittedText", "" if secret_input else raw_line)
+        self.input.setProperty("terminalLastCommandSent", "" if secret_input else line)
         self.input.setProperty("terminalLastCommandTranslated", line != raw_line)
         # A terminal Enter key is carriage return.  Preserve LF for the
         # ordinary pipe backend so conventional line readers still receive
@@ -1625,13 +1802,15 @@ class TerminalPane(QWidget):
         if self._secret_prompt_active:
             self.append_text("\n[macro recording unavailable during secret input]\n")
             return
-        if self.macro_capture_state is not None and self.macro_capture_state.active:
+        if self.macro_replay_active or (self.macro_capture_state is not None and self.macro_capture_state.active):
             return
+        self.macro_replay_sequence += 1
         self.macro_capture_state = start_terminal_macro_capture(
             self.macro_capture_name(),
             pane_id=self.macro_pane_id(),
         )
         self.macro_last_event_at = time.monotonic()
+        self.macroRecordingChanged.emit()
         self.append_text("\n[macro recording started]\n")
         self.apply_moba_macro_runtime_properties()
         self.update_process_actions()
@@ -1642,19 +1821,35 @@ class TerminalPane(QWidget):
         self.macro_last_event_at = now
         return max(0, int((now - previous) * 1000))
 
-    def capture_macro_input(self, line: str) -> None:
+    def capture_macro_input(self, line: str, *, enter: bool = True) -> None:
         state = self.macro_capture_state
         if state is None or not state.active:
             return
-        capture_terminal_macro_input(state, line, delay_ms=self.macro_event_delay_ms())
+        capture_terminal_macro_input(state, line, enter=enter, delay_ms=self.macro_event_delay_ms())
         self.apply_moba_macro_runtime_properties()
 
-    def stop_macro_capture(self) -> None:
+    def capture_macro_terminal_payload(self, payload: bytes) -> None:
+        state = self.macro_capture_state
+        if self._secret_prompt_active or state is None or not state.active:
+            return
+        enter = payload in (b"\r", b"\n")
+        try:
+            self.capture_macro_input("" if enter else payload.decode("utf-8"), enter=enter)
+        except ValueError:
+            self.cancel_macro_capture(announce=False)
+            self.append_text("\n[macro recording stopped on an unsupported terminal key or paste]\n")
+
+    def stop_macro_capture(
+        self, *, save: Callable[[MobaMacroRecording], MobaMacroRecording | None] | None = None,
+    ) -> None:
         state = self.macro_capture_state
         if state is None or not state.active:
             return
+        self.macro_capture_state = None
+        self.macro_last_event_at = None
+        self.macroRecordingChanged.emit()
         try:
-            self.macro_last_recording = finish_terminal_macro_capture(
+            recording = finish_terminal_macro_capture(
                 state,
                 description="Captured from the PyQt terminal pane.",
                 tags=["gui", "live"],
@@ -1662,60 +1857,107 @@ class TerminalPane(QWidget):
         except ValueError as exc:
             self.append_text(f"\n[macro recording ignored: {exc}]\n")
         else:
-            self.append_text(f"\n[macro recording saved: {self.macro_last_recording.name}]\n")
-        self.macro_capture_state = None
-        self.macro_last_event_at = None
+            result = save(recording) if save is not None else recording
+            if self._terminal_scroll_closed:
+                return
+            if result is not None:
+                self.macro_last_recording = result
+                self.append_text(f"\n[macro recording saved: {result.name}]\n")
         self.apply_moba_macro_runtime_properties()
         self.update_process_actions()
 
-    def cancel_macro_capture(self) -> None:
+    def cancel_macro_capture(self, *, announce: bool = True) -> None:
+        self.macro_replay_sequence += 1
         state = self.macro_capture_state
         if state is not None and state.active:
             cancel_terminal_macro_capture(state)
-            self.append_text("\n[macro recording cancelled]\n")
+            if announce:
+                self.append_text("\n[macro recording cancelled]\n")
             self.macro_capture_state = None
             self.macro_last_event_at = None
+            self.macroRecordingChanged.emit()
         elif self.macro_replay_active:
             self.macro_replay_cancelled = True
-            self.macro_replay_sequence += 1
             self.macro_replay_active = False
-            self.append_text("\n[macro replay cancelled]\n")
+            if announce:
+                self.append_text("\n[macro replay cancelled]\n")
         self.apply_moba_macro_runtime_properties()
         self.update_process_actions()
 
-    def replay_macro_capture(self) -> None:
+    def invalidate_macro_session(self, *, announce: bool = True) -> None:
+        if self.macro_capture_state is not None or self.macro_replay_active:
+            self.cancel_macro_capture(announce=announce)
+        else:
+            self.macro_replay_sequence += 1
+
+    def confirm_macro_replay(self, recording: MobaMacroRecording) -> bool:
+        dialog = QMessageBox(self)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dialog.setWindowTitle("Replay terminal macro")
+        dialog.setTextFormat(Qt.TextFormat.PlainText)
+        dialog.setText(f"Replay {recording.name} in {self.plan.title}?")
+        dialog.setInformativeText(f"This sends {len(recording.events)} recorded events to the running session.")
+        dialog.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
+        dialog.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        return dialog.exec() == QMessageBox.StandardButton.Yes
+
+    def replay_macro_capture(
+        self, *, saved: MobaMacroRecording | None = None, still_current: Callable[[], bool] | None = None,
+    ) -> None:
         if self._secret_prompt_active:
             self.append_text("\n[macro replay unavailable during secret input]\n")
             return
-        if self.macro_last_recording is None:
+        recording = saved if saved is not None else self.macro_last_recording
+        if recording is None:
             self.append_text("\n[macro replay unavailable: no recorded macro]\n")
             return
-        if not self.is_running():
+        if self.process.state() != QProcess.ProcessState.Running:
             self.append_text("\n[macro replay unavailable: process is not running]\n")
             return
-        injection = build_terminal_macro_replay_injection(
-            self.macro_last_recording, pane_id=self.macro_pane_id()
-        )
+        if self.macro_replay_active:
+            return
+        process, reviewed_sequence = self.process, self.macro_replay_sequence
+        if not self.confirm_macro_replay(recording):
+            return
+        if self._terminal_scroll_closed:
+            return
+        # The modal question runs a nested event loop. Output, disconnects,
+        # and restart can occur before the operator answers it.
+        if (
+            reviewed_sequence != self.macro_replay_sequence
+            or process is not self.process
+            or process.state() != QProcess.ProcessState.Running
+            or (saved is None and recording is not self.macro_last_recording)
+            or (still_current is not None and not still_current())
+        ):
+            self.append_text("\n[macro replay cancelled because the session changed during review]\n")
+            return
+        injection = build_terminal_macro_replay_injection(recording, pane_id=self.macro_pane_id())
         self.macro_last_injection = injection
         self.macro_replay_sequence += 1
         self.macro_replay_cancelled = False
         self.macro_replay_active = True
         sequence = self.macro_replay_sequence
-        for step, payload in zip(injection.steps, injection.injected_payloads, strict=False):
-            delay = max(0, int(step.scheduled_after_ms))
-            QTimer.singleShot(
-                delay,
-                lambda payload=payload, sequence=sequence: self.write_macro_replay_payload(
-                    payload, sequence
-                ),
-            )
-        QTimer.singleShot(
-            max(0, int(injection.total_delay_ms)) + 1,
-            lambda sequence=sequence: self.finish_macro_replay_queue(sequence),
-        )
+        self._schedule_macro_replay_step(injection, sequence, 0)
         self.append_text(f"\n[macro replay queued: {injection.event_count} event(s)]\n")
         self.apply_moba_macro_runtime_properties()
         self.update_process_actions()
+
+    def _schedule_macro_replay_step(
+        self, injection: MobaMacroTerminalReplayInjection, sequence: int, index: int,
+    ) -> None:
+        def send_next() -> None:
+            if sequence != self.macro_replay_sequence or not self.macro_replay_active:
+                return
+            self.write_macro_replay_payload(injection.injected_payloads[index], sequence)
+            if not self.macro_replay_active:
+                return
+            if index + 1 == injection.event_count:
+                self.finish_macro_replay_queue(sequence)
+            else:
+                self._schedule_macro_replay_step(injection, sequence, index + 1)
+
+        QTimer.singleShot(injection.steps[index].delay_ms, Qt.TimerType.PreciseTimer, send_next)
 
     def write_macro_replay_payload(self, payload: str, sequence: int) -> None:
         if sequence != self.macro_replay_sequence or self.macro_replay_cancelled:
@@ -1724,7 +1966,17 @@ class TerminalPane(QWidget):
             self.append_text("\n[macro replay stopped: process is not running]\n")
             self.finish_macro_replay_queue(sequence)
             return
-        self.process.write(payload.encode("utf-8"))
+        if self._secret_prompt_active:
+            self.invalidate_macro_session(announce=False)
+            return
+        if bool(getattr(self.process, "is_pty", False)) and payload.endswith("\n"):
+            payload = payload[:-1] + "\r"
+        data = payload.encode("utf-8")
+        accepted = self.process.write(data)
+        if accepted is not None and accepted != len(data):
+            self.append_text("\n[macro replay stopped: terminal did not accept the complete event]\n")
+            self.invalidate_macro_session()
+            return
         self.setProperty("mobaMacroReplayInjectedPayload", payload)
         self.input.setProperty("mobaMacroReplayInjectedPayload", payload)
         self.output.setProperty("mobaMacroReplayInjectedPayload", payload)
@@ -2103,7 +2355,9 @@ class TerminalPane(QWidget):
 
     def arm_initial_pty_clear_recovery(self) -> None:
         armed = bool(
-            getattr(self.process, "is_pty", False) and self.terminal_startup_context_text()
+            getattr(self.process, "is_pty", False)
+            and getattr(self.process, "transport_backend", "windows-conpty") == "windows-conpty"
+            and self.terminal_startup_context_text()
         )
         self._pty_initial_clear_pending = armed
         self._pty_startup_probe = ""
@@ -2134,10 +2388,11 @@ class TerminalPane(QWidget):
             # Vim/ncurses owns the alternate screen, rewriting the
             # transcript would reset its cursor and make it appear stuck.
             self.disarm_initial_pty_clear_recovery()
+        logical = transcript.replace(SOFT_LINE_BREAK, "")
         if self._pty_initial_clear_pending and not alternate_screen_active:
             self._pty_startup_probe = (self._pty_startup_probe + text)[-16_384:]
             if self.is_initial_conpty_screen_clear(self._pty_startup_probe):
-                body = self.normalized_initial_pty_body(transcript)
+                body = self.normalized_initial_pty_body(logical)
                 self.disarm_initial_pty_clear_recovery()
                 self.set_terminal_transcript(f"{self.terminal_startup_context_text()}{body}")
                 self.output.setProperty(
@@ -2147,22 +2402,22 @@ class TerminalPane(QWidget):
                 return
             startup_context = self.terminal_startup_context_text()
             visible_tail = (
-                transcript[len(startup_context) :]
-                if transcript.startswith(startup_context)
-                else transcript
+                logical[len(startup_context) :]
+                if logical.startswith(startup_context)
+                else logical
             )
             if visible_tail.strip() or len(self._pty_startup_probe) >= 16_384:
                 self.disarm_initial_pty_clear_recovery()
-                normalized = self.normalized_initial_pty_transcript(transcript)
-                if normalized != transcript:
+                normalized = self.normalized_initial_pty_transcript(logical)
+                if normalized != logical:
                     self.set_terminal_transcript(normalized)
                     self.output.setProperty(
                         "terminalInitialPtyClearNormalized",
                         True,
                     )
                     return
-        normalized = self.normalized_initial_prompt_transcript(transcript)
-        if normalized != transcript:
+        normalized = self.normalized_initial_prompt_transcript(logical)
+        if normalized != logical:
             self.set_terminal_transcript(normalized)
             self.output.setProperty("terminalInitialPromptPaddingNormalized", True)
             return
@@ -2280,11 +2535,59 @@ class TerminalPane(QWidget):
         self._terminal_force_follow_output = False
         self.output.setProperty("terminalFollowOutput", True)
         self.terminal_emulator.reset()
-        self.output.clear()
-        self._rendered_terminal_text = ""
+        self._clear_terminal_document()
         transcript = self.terminal_emulator.feed(text)
+        if self.terminal_emulator.alternate_screen_active:
+            transcript = self.terminal_emulator.screen_text()
         self.sync_terminal_emulator_mode_properties()
         self.render_terminal_transcript(transcript)
+
+    def _clear_terminal_document(self) -> None:
+        self.output.clear()
+        self._rendered_terminal_text = ""
+        self._rendered_terminal_revision = -1
+        self._rendered_alternate_rows = None
+        self._rendered_alternate_palette = None
+
+    def _alternate_screen_changes(
+        self, rows: tuple[TerminalScreenRow, ...] | None,
+        palette: tuple[str, str] | None,
+    ) -> list[tuple[int, TerminalScreenRow]] | None:
+        previous = self._rendered_alternate_rows
+        if (
+            rows is None
+            or previous is None
+            or len(rows) != len(previous)
+            or palette != self._rendered_alternate_palette
+        ):
+            return None
+        document = _required_gui_value(self.output.document(), "terminal text document")
+        if len(rows) != document.blockCount():
+            return None
+        return [
+            (index, row)
+            for index, (old_row, row) in enumerate(zip(previous, rows, strict=True))
+            if old_row != row
+        ]
+
+    def _patch_alternate_screen(self, changes: list[tuple[int, TerminalScreenRow]]) -> None:
+        document = _required_gui_value(self.output.document(), "terminal text document")
+        edit = QTextCursor(document)
+        edit.beginEditBlock()
+        try:
+            for index, (text, styles) in changes:
+                cursor = QTextCursor(document.findBlockByNumber(index))
+                cursor.movePosition(
+                    QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor,
+                )
+                cursor.removeSelectedText()
+                start = 0
+                for style, run in groupby(styles):
+                    end = start + sum(1 for _ in run)
+                    cursor.insertText(text[start:end], self.terminal_text_format(style, ""))
+                    start = end
+        finally:
+            edit.endEditBlock()
 
     def render_terminal_transcript(self, transcript: str) -> None:
         if bool(self.output.property("terminalTabPaintFrozen")):
@@ -2302,10 +2605,24 @@ class TerminalPane(QWidget):
         selection_end = selected_cursor.selectionEnd()
         selection_text_unchanged = bool(
             selected_cursor.hasSelection()
-            and selection_end <= len(previous)
-            and selection_end <= len(transcript)
-            and previous[selection_start:selection_end] == transcript[selection_start:selection_end]
+            and _same_qt_selection(previous, transcript, selection_start, selection_end)
         )
+        if (
+            selected_cursor.hasSelection()
+            and previous != transcript
+            and (SOFT_LINE_BREAK in previous or SOFT_LINE_BREAK in transcript)
+        ):
+            anchor = _logical_qt_position(previous, selection_anchor)
+            position = _logical_qt_position(previous, selection_position)
+            if _same_qt_selection(
+                previous.replace(SOFT_LINE_BREAK, ""),
+                transcript.replace(SOFT_LINE_BREAK, ""),
+                min(anchor, position),
+                max(anchor, position),
+            ):
+                selection_anchor = _display_qt_position(transcript, anchor)
+                selection_position = _display_qt_position(transcript, position)
+                selection_text_unchanged = True
         scroll_bar = _required_gui_value(
             self.output.verticalScrollBar(),
             "terminal vertical scroll bar",
@@ -2342,10 +2659,18 @@ class TerminalPane(QWidget):
             alternate_screen_active,
         )
         terminal_revision = int(getattr(self.terminal_emulator, "_render_revision", 0))
-        if transcript == previous and terminal_revision == self._rendered_terminal_revision:
+        alternate_rows = self.terminal_emulator.styled_alternate_rows() if alternate_screen_active else None
+        alternate_palette = self._terminal_document_palette() if alternate_screen_active else None
+        alternate_changes = self._alternate_screen_changes(alternate_rows, alternate_palette)
+        if alternate_changes == [] or (
+            not alternate_screen_active
+            and transcript == previous
+            and terminal_revision == self._rendered_terminal_revision
+        ):
             # Cursor/selection state can change without changing a frame's
             # text. Avoid rebuilding the document in that case; this is a
             # common path for htop's cursor and status queries.
+            self._rendered_terminal_revision = terminal_revision
             self.update_remote_cursor_overlay(transcript)
             self.refresh_terminal_input_security(transcript)
             return
@@ -2355,6 +2680,71 @@ class TerminalPane(QWidget):
         # including normal shell output arriving beside an alternate screen.
         self.output.setProperty("terminalAlternateScreenRedraw", True)
         self.output.setUpdatesEnabled(False)
+        try:
+            if alternate_changes is None:
+                self._replace_terminal_document(transcript, previous, full_redraw_hint, alternate_screen_active)
+            else:
+                self._patch_alternate_screen(alternate_changes)
+        except Exception:
+            self._rendered_terminal_text = ""
+            self._rendered_terminal_revision = -1
+            self._rendered_alternate_rows = None
+            self._rendered_alternate_palette = None
+            self.output.setProperty("terminalAlternateScreenRedraw", False)
+            self.output.setUpdatesEnabled(updates_were_enabled)
+            raise
+        self._rendered_alternate_rows = alternate_rows
+        self._rendered_alternate_palette = alternate_palette
+        self._rendered_terminal_text = transcript
+        self._rendered_terminal_revision = terminal_revision
+        if alternate_screen_active:
+            # The retained screen is a viewport, not scrollback.  Always
+            # anchor it at row zero even if the previous shell page had a
+            # large scrollbar value.
+            self._set_terminal_scroll_value(0)
+            self._terminal_follow_output = False
+            self._terminal_force_follow_output = False
+            self.output.setProperty("terminalFollowOutput", False)
+        elif self._terminal_force_follow_output:
+            self._terminal_force_follow_output = False
+            self.scroll_terminal_to_end()
+        elif selection_text_unchanged:
+            restored = QTextCursor(self.output.document())
+            restored.setPosition(selection_anchor)
+            restored.setPosition(
+                selection_position,
+                QTextCursor.MoveMode.KeepAnchor,
+            )
+            self.output.setTextCursor(restored)
+            self._set_terminal_scroll_value(scroll_value)
+            self._terminal_follow_output = follow_output
+            self.output.setProperty("terminalFollowOutput", follow_output)
+            self.output.setProperty("terminalSelectionPreservedOnOutput", True)
+        elif follow_output:
+            self.scroll_terminal_to_end()
+        else:
+            self._set_terminal_scroll_value(scroll_value)
+            self._terminal_follow_output = False
+            self.output.setProperty("terminalFollowOutput", False)
+        if not alternate_screen_active:
+            self.output.setProperty(
+                "terminalAlternateScreenScrollbarsHidden",
+                False,
+            )
+        self.output.setProperty("terminalAlternateScreenRedraw", False)
+        self.output.setUpdatesEnabled(updates_were_enabled)
+        self.output_viewport.update()
+        self.output.update()
+        self.update_remote_cursor_overlay(transcript)
+        self.refresh_terminal_input_security(transcript)
+
+    def _replace_terminal_document(
+        self,
+        transcript: str,
+        previous: str,
+        full_redraw_hint: bool,
+        alternate_screen_active: bool,
+    ) -> None:
         append_only = bool(
             previous
             and transcript.startswith(previous)
@@ -2365,7 +2755,7 @@ class TerminalPane(QWidget):
         if append_only:
             replace_from = previous.rfind("\n") + 1
             cursor = self.output.textCursor()
-            cursor.setPosition(replace_from)
+            cursor.setPosition(_qt_text_units(previous[:replace_from]))
             cursor.movePosition(
                 QTextCursor.MoveOperation.End,
                 QTextCursor.MoveMode.KeepAnchor,
@@ -2382,11 +2772,22 @@ class TerminalPane(QWidget):
             start=replace_from if append_only else 0,
             screen=alternate_screen_active,
         )
-        syntax_spans = (
-            ()
-            if alternate_screen_active
-            else highlight_terminal_text(fragment_source, self.syntax_rules)
-        )
+        syntax_spans: tuple[TerminalHighlightSpan, ...] = ()
+        if not alternate_screen_active:
+            logical = fragment_source.replace(SOFT_LINE_BREAK, "")
+            syntax_spans = highlight_terminal_text(logical, self.syntax_rules)
+            if logical != fragment_source:
+                breaks = []
+                position = 0
+                for line in fragment_source.split(SOFT_LINE_BREAK)[:-1]:
+                    position += len(line)
+                    breaks.append(position)
+                syntax_spans = tuple(
+                    replace(span,
+                            start=span.start + bisect_right(breaks, span.start),
+                            end=span.end + bisect_left(breaks, span.end))
+                    for span in syntax_spans
+                )
         source_offset = replace_from if append_only else 0
         boundaries = {0, len(fragment_source)}
         ansi_ranges = []
@@ -2438,59 +2839,18 @@ class TerminalPane(QWidget):
                     ),
                 ),
             )
-        self._rendered_terminal_text = transcript
-        self._rendered_terminal_revision = terminal_revision
-        if alternate_screen_active:
-            # The retained screen is a viewport, not scrollback.  Always
-            # anchor it at row zero even if the previous shell page had a
-            # large scrollbar value.
-            self._set_terminal_scroll_value(0)
-            self._terminal_follow_output = False
-            self._terminal_force_follow_output = False
-            self.output.setProperty("terminalFollowOutput", False)
-        elif self._terminal_force_follow_output:
-            self._terminal_force_follow_output = False
-            self.scroll_terminal_to_end()
-        elif selection_text_unchanged:
-            restored = QTextCursor(self.output.document())
-            restored.setPosition(selection_anchor)
-            restored.setPosition(
-                selection_position,
-                QTextCursor.MoveMode.KeepAnchor,
-            )
-            self.output.setTextCursor(restored)
-            self._set_terminal_scroll_value(scroll_value)
-            self._terminal_follow_output = follow_output
-            self.output.setProperty("terminalFollowOutput", follow_output)
-            self.output.setProperty("terminalSelectionPreservedOnOutput", True)
-        elif follow_output:
-            self.scroll_terminal_to_end()
-        else:
-            self._set_terminal_scroll_value(scroll_value)
-            self._terminal_follow_output = False
-            self.output.setProperty("terminalFollowOutput", False)
-        if not alternate_screen_active:
-            self.output.setProperty(
-                "terminalAlternateScreenScrollbarsHidden",
-                False,
-            )
-        self.output.setProperty("terminalAlternateScreenRedraw", False)
-        self.output.setUpdatesEnabled(updates_were_enabled)
-        self.output_viewport.update()
-        self.output.update()
-        self.update_remote_cursor_overlay(transcript)
-        self.refresh_terminal_input_security(transcript)
 
     def update_remote_cursor_overlay(self, transcript: str) -> None:
         """Place the painted cursor at the emulator's active grid cell."""
 
-        lines = transcript.split("\n")
-        row = max(0, min(len(lines) - 1, self.terminal_emulator.cursor_row))
-        column = max(0, self.terminal_emulator.cursor_column)
+        lines = transcript.replace(SOFT_LINE_BREAK, "\n").split("\n")
+        grid_row, grid_column = self.terminal_emulator.cursor_display_position()
+        row = max(0, min(len(lines) - 1, grid_row))
+        column = max(0, grid_column)
         line = lines[row]
-        document_position = sum(len(value) + 1 for value in lines[:row])
-        document_position += min(column, len(line))
-        trailing_cells = max(0, column - len(line))
+        offset, trailing_cells = self.terminal_emulator.cursor_text_column()
+        document_position = sum(_qt_text_units(value) + 1 for value in lines[:row])
+        document_position += _qt_text_units(line[:offset])
         self.output.setProperty("terminalRemoteCursorRow", row)
         self.output.setProperty("terminalRemoteCursorColumn", column)
         self.output.setProperty(
@@ -2501,6 +2861,7 @@ class TerminalPane(QWidget):
             document_position,
             trailing_cells=trailing_cells,
             visible=self.terminal_emulator.cursor_visible and self.is_running(),
+            style=self.terminal_emulator.cursor_style,
         )
 
     def scroll_terminal_to_end(self) -> None:
@@ -2575,11 +2936,7 @@ class TerminalPane(QWidget):
         """Translate retained SGR state into a Qt document character format."""
 
         text_format = QTextCharFormat()
-        palette = self.output.palette()
-        foreground, background = ansi_style.resolved_colors(
-            palette.color(QPalette.ColorRole.Text).name(),
-            palette.color(QPalette.ColorRole.Base).name(),
-        )
+        foreground, background = ansi_style.resolved_colors(*self._terminal_document_palette())
         if foreground:
             text_format.setForeground(QColor(foreground))
         elif syntax_color:
@@ -2600,23 +2957,32 @@ class TerminalPane(QWidget):
             text_format.setFontUnderline(True)
         return text_format
 
+    def _terminal_document_palette(self) -> tuple[str, str]:
+        palette = self.output.palette()
+        return palette.color(QPalette.ColorRole.Text).name(), palette.color(QPalette.ColorRole.Base).name()
+
     @staticmethod
     def terminal_secret_prompt_visible(transcript: str) -> bool:
         tail = transcript[-512:]
         return bool(
             re.search(
-                r"(?i)(?:password|passphrase)[^:\r\n]{0,240}:\s*$",
+                r"(?i)(?:(?:password|passphrase)[^:\r\n]{0,240}|\benter pin for [^\r\n]{1,240}):\s*$",
                 tail,
             )
         )
 
     def refresh_terminal_input_security(self, transcript: str) -> None:
+        transcript = transcript.replace(SOFT_LINE_BREAK, "")
         active = self.terminal_secret_prompt_visible(transcript)
         if active == self._secret_prompt_active:
             return
         self._secret_prompt_active = active
         if active:
             self.input.clear()
+            if self.macro_replay_active:
+                self.cancel_macro_capture(announce=False)
+            else:
+                self.macro_replay_sequence += 1
         echo_mode = QLineEdit.EchoMode.Password if active else QLineEdit.EchoMode.Normal
         self.input.setEchoMode(echo_mode)
         self.input.setPlaceholderText(
@@ -2641,7 +3007,16 @@ class TerminalPane(QWidget):
             # transcript widget, so restore focus before the user types.
             QTimer.singleShot(0, self.focus_terminal_input)
 
+    def publish_ssh_connection(self, state: SharedSshConnectionState) -> None:
+        properties = state.properties()
+        for widget in (self, self.output, self.status):
+            widget.setProperty("sshConnectionState", properties)
+        self.status.setToolTip(_safe_tooltip_html(state.description()))
+        self.status.setAccessibleDescription(state.description())
+
     def on_started(self) -> None:
+        if self.ssh_connection is not None:
+            self.ssh_connection.process_started()
         self.set_status("running", "running")
         self.update_process_actions()
         QTimer.singleShot(0, self.resize_terminal_backend)
@@ -2658,6 +3033,8 @@ class TerminalPane(QWidget):
     def on_error(self, error) -> None:
         if self.process.state() == QProcess.ProcessState.NotRunning:
             self.mark_process_output_end()
+            if self.ssh_connection is not None and error == QProcess.ProcessError.FailedToStart:
+                self.ssh_connection.finish(None, error.name)
         self.set_status("error", "error")
         detail = str(self.process.errorString()).strip()
         suffix = f": {detail}" if detail and detail != error.name else ""
@@ -2667,6 +3044,9 @@ class TerminalPane(QWidget):
 
     def on_finished(self, exit_code: int, exit_status: QProcess.ExitStatus) -> None:
         self._stop_timer.stop()
+        if self.ssh_connection is not None:
+            self.ssh_connection.finish(exit_code, exit_status.name)
+        self.invalidate_macro_session()
         self.mark_process_output_end()
         self.refresh_terminal_input_security("")
         state = "ready" if exit_code == 0 else "error"
@@ -2711,6 +3091,7 @@ class TerminalPane(QWidget):
             running
             and self.macro_last_recording is not None
             and not capture_active
+            and not self.macro_replay_active
             and not self._secret_prompt_active
         )
         self.apply_moba_macro_runtime_properties()

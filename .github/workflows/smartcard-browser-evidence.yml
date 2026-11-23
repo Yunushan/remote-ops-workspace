@@ -1,0 +1,104 @@
+name: Physical smart-card SSH browser release evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_inventory:
+        description: Optional sealed candidate coordinates as RUN_ID ARTIFACT_ID sha256:DIGEST
+        required: false
+        type: string
+
+permissions:
+  actions: read
+  attestations: read
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  qualify-smartcard:
+    name: Qualify physical smart-card SSH and SFTP
+    if: github.repository == 'Yunushan/remote-ops-workspace' && github.ref_type == 'tag'
+    runs-on: [self-hosted, linux, x64, smartcard-evidence]
+    environment: smartcard-evidence
+    timeout-minutes: 60
+    steps:
+      - name: Require an exact release tag
+        shell: bash
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$GITHUB_REF" = "refs/tags/$GITHUB_REF_NAME"
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ && "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          work="$RUNNER_TEMP/row-smartcard-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          umask 077
+          mkdir -- "$work" "$work/release" "$work/review" "$work/workspace"
+          printf 'SMARTCARD_WORK=%s\n' "$work" >> "$GITHUB_ENV"
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          clean: true
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          architecture: x64
+          python-version: "3.14.10"
+      - name: Verify the exact wheel from the release or sealed inventory
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROW_QUALIFICATION_CANDIDATE_INVENTORY: ${{ inputs.candidate_inventory }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python -I scripts/fetch_qualification_release_asset.py --kind wheel --directory "$SMARTCARD_WORK/release" \
+            --repository "$GITHUB_REPOSITORY" --tag "$GITHUB_REF_NAME" --sha "$GITHUB_SHA"
+      - name: Install the verified release wheel in a private desktop environment
+        shell: bash
+        run: |
+          wheel="remote_ops_workspace-${GITHUB_REF_NAME#v}-py3-none-any.whl"
+          python -m venv "$SMARTCARD_WORK/venv"
+          python="$SMARTCARD_WORK/venv/bin/python"
+          "$python" -I -m pip --isolated install --require-hashes --only-binary=:all: \
+            -r requirements-locks/source-linux-x86_64-bootstrap.txt
+          "$python" -I -m pip --isolated install --require-hashes --no-build-isolation \
+            --only-binary=:all: --no-binary=pyftpdlib -r requirements-locks/source-linux-x86_64.txt
+          "$python" -I -m pip --isolated install --no-index --no-deps "$SMARTCARD_WORK/release/$wheel"
+      - name: Issue the per-attempt physical capture request
+        id: request
+        shell: bash
+        run: |
+          umask 077
+          wheel="remote_ops_workspace-${GITHUB_REF_NAME#v}-py3-none-any.whl"
+          fixture=$("$SMARTCARD_WORK/venv/bin/python" -I scripts/stage_smartcard_release_evidence.py \
+            --wheel "$SMARTCARD_WORK/release/$wheel" --work "$SMARTCARD_WORK" prepare)
+          echo "fixture=$fixture" >> "$GITHUB_OUTPUT"
+          printf 'Complete the local hardware capture described in docs/MOBAXTERM_PARITY.md.\n'
+          printf 'Runner work directory: %s\n' "$SMARTCARD_WORK"
+      - name: Validate the hardware capture and generate a review candidate
+        timeout-minutes: 40
+        shell: bash
+        env:
+          SMARTCARD_FIXTURE: ${{ steps.request.outputs.fixture }}
+        run: |
+          while [[ ! -e "$SMARTCARD_WORK/inbox/ready" && ! -L "$SMARTCARD_WORK/inbox/ready" ]]; do
+            sleep 3
+          done
+          article=ssh-browser-26-4-smartcard
+          wheel="remote_ops_workspace-${GITHUB_REF_NAME#v}-py3-none-any.whl"
+          python="$SMARTCARD_WORK/venv/bin/python"
+          evidence="$SMARTCARD_WORK/review/$article"
+          "$python" -I scripts/stage_smartcard_release_evidence.py \
+            --wheel "$SMARTCARD_WORK/release/$wheel" --work "$SMARTCARD_WORK" collect --fixture "$SMARTCARD_FIXTURE"
+          "$python" scripts/make_mobaxterm_parity_evidence_record.py \
+            --article-id "$article" --release-tag "$GITHUB_REF_NAME" --release-target linux-x86_64 \
+            --evidence "$evidence/evidence.json" --assets-dir "$evidence" \
+            --release-asset-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$wheel" \
+            --artifact "$wheel=$SMARTCARD_WORK/release/$wheel" --out "$SMARTCARD_WORK/review/candidate.json"
+      - name: Retain the candidate and exact physical card captures
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: smartcard-browser-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/row-smartcard-${{ github.run_id }}-${{ github.run_attempt }}/review/
+          if-no-files-found: error
+          retention-days: 30

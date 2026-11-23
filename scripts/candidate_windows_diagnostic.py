@@ -9,6 +9,7 @@ from pathlib import Path
 
 import tomllib
 from candidate_windows_owned import owned_result_succeeded, run_owned, utc
+from release_evidence_file import replace_evidence_file
 
 
 def sha(path):
@@ -21,7 +22,7 @@ def save_record(path, record):
         stream.write(json.dumps(record, indent=2) + "\n")
         stream.flush()
         os.fsync(stream.fileno())
-    os.replace(temporary, path)
+    replace_evidence_file(temporary, path)
 
 
 def main():

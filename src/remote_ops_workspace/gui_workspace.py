@@ -152,6 +152,7 @@ class MobaWorkspaceTabBar(QTabBar):
         super().__init__(parent)
         self.special_tab_handler: Callable[[int], None] | None = None
         self.tab_switch_prepare_handler: Callable[[int], None] | None = None
+        self.can_double_click_close: Callable[[int], bool] | None = None
         self._pressed_special_key = ""
         self._stabilizing_special_tabs = False
         self._tab_resize_index = -1
@@ -204,6 +205,18 @@ class MobaWorkspaceTabBar(QTabBar):
             # minimum geometry in the middle of the workspace.
             self.tab_switch_prepare_handler(index)
         super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
+        index = self.tabAt(event.position().toPoint())
+        if (
+            event.button() == Qt.MouseButton.LeftButton
+            and self.can_double_click_close is not None
+            and self.can_double_click_close(index)
+        ):
+            event.accept()
+            self.tabCloseRequested.emit(index)
+            return
+        super().mouseDoubleClickEvent(event)
 
     def keyPressEvent(self, event) -> None:  # noqa: N802
         if (

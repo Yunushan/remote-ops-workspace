@@ -6,6 +6,7 @@ from typing import Any
 
 from . import command_safety as safe
 from .models import Profile, Tunnel
+from .smartcard_keys import PINNED_SMARTCARD_KEY
 
 SUPPORTED_PROFILE_PROTOCOLS = frozenset(
     {
@@ -71,6 +72,7 @@ CLEARTEXT_PROTOCOL_OPT_IN = "allow_insecure_cleartext"
 PROFILE_ONLY_SECURITY_OPTIONS = frozenset(
     {
         CLEARTEXT_PROTOCOL_OPT_IN,
+        PINNED_SMARTCARD_KEY,
         "allow_insecure_legacy_crypto",
         "allow_insecure_rdp_security",
         "allow_insecure_sshv1",

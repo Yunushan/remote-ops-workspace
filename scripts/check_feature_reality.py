@@ -49,11 +49,11 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
     },
     "moba.telemetry-status-bar": {
         "module_attrs": ["remote_ops_workspace.moba_connected:RemoteMonitoringSnapshot"],
-        "source_tokens": {"src/remote_ops_workspace/gui_connected.py": ["mobaTelemetryBar", "mobaTelemetryItem"]},
+        "source_tokens": {"src/remote_ops_workspace/gui_connected_terminal.py": ["mobaTelemetryBar", "mobaTelemetryItem"]},
     },
     "moba.ssh-connection-banner": {
         "module_attrs": ["remote_ops_workspace.moba_connected:build_ssh_connection_banner"],
-        "source_tokens": {"src/remote_ops_workspace/gui_connected.py": ["mobaSshBanner", "mobaSshBannerCapability"]},
+        "source_tokens": {"src/remote_ops_workspace/gui_connected_terminal.py": ["mobaSshBanner", "mobaSshBannerCapability"]},
     },
     "moba.open-sftp-same-parameters": {
         "module_attrs": ["remote_ops_workspace.moba_connected:build_same_parameters_sftp_plan"],
@@ -149,7 +149,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "multiplex_mode",
                 "Production parity requires the supplied evidence files",
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_operator_workflows.py": [
                 "show_moba_smartcards_status",
                 "build_smartcard_management_gui_surface",
                 "mobaSmartcardGuiManagementSchema",
@@ -168,8 +168,8 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
             "remote_ops_workspace.moba_multiexec:build_moba_multiexec_plan",
         ],
         "source_tokens": {
-            "src/remote_ops_workspace/gui.py": ["show_moba_multiexec_status", "build_moba_multiexec_plan"],
-            "src/remote_ops_workspace/gui_designs.py": ["multiexec", "Preview broadcast command plans"],
+            "src/remote_ops_workspace/gui_operator_workflows.py": ["show_moba_multiexec_status", "build_moba_multiexec_plan"],
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": ["multiexec", "Preview broadcast command plans"],
         },
     },
     "moba.professional-customizer": {
@@ -179,7 +179,8 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
             "remote_ops_workspace.moba_customizer:write_moba_professional_customizer_bundle",
         ],
         "source_tokens": {
-            "src/remote_ops_workspace/cli.py": ["--brand-name", "--lock-setting", "cmd_customizer_build"],
+            "src/remote_ops_workspace/cli.py": ["add_customizer_commands(sub)"],
+            "src/remote_ops_workspace/cli_customizer.py": ["--brand-name", "--lock-setting", "cmd_customizer_build"],
             "src/remote_ops_workspace/moba_customizer.py": [
                 "MobaProfessionalCustomizerPlan",
                 "SHA256SUMS.txt",
@@ -221,7 +222,8 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
             "remote_ops_workspace.enterprise_policy:EnterprisePolicyReview",
         ],
         "source_tokens": {
-            "src/remote_ops_workspace/cli.py": [
+            "src/remote_ops_workspace/cli.py": ["add_customizer_commands(sub)", "assert_profile_launch_allowed"],
+            "src/remote_ops_workspace/cli_customizer.py": [
                 "cmd_customizer_deployment_plan",
                 "cmd_customizer_evidence_bundle",
                 "cmd_customizer_evidence_verify",
@@ -229,14 +231,13 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "evidence-bundle",
                 "--bundle-manifest-sha256",
                 "--update-public-key",
-                "assert_profile_launch_allowed",
             ],
             "src/remote_ops_workspace/storage.py": [
                 "assert_profile_write_allowed",
                 "assert_settings_write_allowed",
                 "policy_path",
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_profile_actions.py": [
                 "assert_profile_launch_allowed",
                 "surface=\"profile-editor\"",
                 "surface=\"quick-connect\"",
@@ -266,7 +267,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "Production parity requires the supplied evidence files",
             ],
             "scripts/check_moba_professional_deployment_evidence.py": [
-                "validate_professional_deployment_evidence",
+                "validate_professional_release_evidence",
                 "--assets-dir",
             ],
             "scripts/check_moba_professional_update_manifest.py": [
@@ -354,7 +355,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
             "remote_ops_workspace.moba_servers:SERVER_GUI_CONFIG_SCHEMA",
         ],
         "source_tokens": {
-            "src/remote_ops_workspace/cli.py": [
+            "src/remote_ops_workspace/cli_managed_runtime.py": [
                 "cmd_servers_status",
                 "cmd_servers_start",
                 "cmd_servers_stop",
@@ -368,7 +369,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "gui_controls",
                 "Full proprietary parity",
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_operator_workflows.py": [
                 "show_moba_servers_status",
                 "build_moba_server_gui_config_surface",
                 "mobaEmbeddedServerGuiConfigSchema",
@@ -395,7 +396,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
             "remote_ops_workspace.moba_servers:build_moba_server_gui_config_surface",
         ],
         "source_tokens": {
-            "src/remote_ops_workspace/cli.py": [
+            "src/remote_ops_workspace/cli_managed_runtime.py": [
                 "cmd_servers_runtime_status",
                 "cmd_servers_bundle_runtime",
                 "cmd_servers_config_plan",
@@ -414,13 +415,13 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "services missing release evidence",
                 "Placeholder daemon requires replacement",
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_operator_workflows.py": [
                 "show_moba_servers_status",
                 "mobaEmbeddedServerPackagedServiceCount",
                 "mobaEmbeddedServerGuiConfigControls",
             ],
             "scripts/check_moba_server_release_evidence.py": [
-                "validate_moba_server_release_evidence",
+                "validate_live_server_release_evidence",
                 "--assets-dir",
             ],
         },
@@ -435,7 +436,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
             "remote_ops_workspace.moba_text:MobaRemoteTextEditPlan",
         ],
         "source_tokens": {
-            "src/remote_ops_workspace/cli.py": [
+            "src/remote_ops_workspace/cli_text.py": [
                 "cmd_text_preview",
                 "cmd_text_write",
                 "cmd_text_diff",
@@ -469,7 +470,15 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
             "remote_ops_workspace.moba_connected:build_moba_connected_text_editor_state",
             "remote_ops_workspace.moba_connected:moba_connected_text_editor_route",
         ],
-        "source_tokens": {"src/remote_ops_workspace/gui.py": ["QPlainTextEdit"], "src/remote_ops_workspace/gui_connected.py": ["MobaTextEditorHighlighter", "mobaTextEditor", "handle_moba_text_editor_open_from_item", "mobaTextEditorSaveAction"]},
+        "source_tokens": {
+            "src/remote_ops_workspace/gui_sftp_editor.py": [
+                "QPlainTextEdit", "MobaTextEditorHighlighter", "mobaTextEditor",
+                "handle_moba_text_editor_open_from_item", "mobaTextEditorSaveAction",
+            ],
+            "scripts/check_moba_text_remote_edit_evidence.py": [
+                "validate_remote_editor_release_evidence", "--assets-dir",
+            ],
+        },
     },
     "moba.ssh-browser-26-4-state": {
         "cli": [
@@ -487,7 +496,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
             "remote_ops_workspace.moba_ssh_browser:review_moba_ssh_browser_overwrite",
         ],
         "source_tokens": {
-            "src/remote_ops_workspace/cli.py": [
+            "src/remote_ops_workspace/cli_transfers.py": [
                 "cmd_ssh_browser_status",
                 "cmd_ssh_browser_open_plan",
                 "cmd_ssh_browser_overwrite",
@@ -582,7 +591,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "mobaMacroReplayInjectedPayload",
             ],
             "scripts/check_moba_macro_live_evidence.py": [
-                "validate_macro_live_replay_evidence",
+                "validate_macro_release_replay_evidence",
                 "--assets-dir",
             ],
         },
@@ -606,7 +615,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "XDMCP",
                 "ROW_XSERVER_RUNTIME_DIR",
             ],
-            "src/remote_ops_workspace/cli.py": ["x11_status", "cmd_x11_status", "cmd_x11_package_status"],
+            "src/remote_ops_workspace/cli_managed_runtime.py": ["x11_status", "cmd_x11_status", "cmd_x11_package_status"],
         },
     },
     "moba.xserver-lifecycle-supervision": {
@@ -642,7 +651,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "WaitForSingleObject",
                 "process identity changed; refusing to use a reused PID",
             ],
-            "src/remote_ops_workspace/cli.py": ["x11_stop", "cmd_x11_stop", "managed lifecycle"],
+            "src/remote_ops_workspace/cli_managed_runtime.py": ["x11_stop", "cmd_x11_stop", "managed lifecycle"],
         },
     },
     "moba.xserver-smoke-evidence": {
@@ -660,7 +669,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "evidence_sha256",
                 "missing-probe-command",
             ],
-            "src/remote_ops_workspace/cli.py": ["x11_smoke", "cmd_x11_smoke", "--probe-command"],
+            "src/remote_ops_workspace/cli_managed_runtime.py": ["x11_smoke", "cmd_x11_smoke", "--probe-command"],
         },
     },
     "moba.xserver-packaged-runtime-evidence": {
@@ -687,7 +696,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "ROW_XSERVER_RUNTIME_DIR",
                 "Placeholder runtime requires replacement",
             ],
-            "src/remote_ops_workspace/cli.py": [
+            "src/remote_ops_workspace/cli_managed_runtime.py": [
                 "cmd_x11_package_status",
                 "cmd_x11_bundle_runtime",
                 "cmd_x11_evidence_verify",
@@ -725,12 +734,15 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
     },
     "terminal.splits": {
         "module_attrs": ["remote_ops_workspace.terminal:split_shell_plans"],
-        "source_tokens": {"src/remote_ops_workspace/gui.py": ["def add_split"]},
+        "source_tokens": {"src/remote_ops_workspace/gui_session_tabs.py": ["def add_split"]},
     },
     "terminal.layouts": {
         "cli": ["layout save", "layout run"],
         "module_attrs": ["remote_ops_workspace.layouts:build_layout_terminal_plans"],
-        "source_tokens": {"src/remote_ops_workspace/gui.py": ["open_selected_layout"]},
+        "source_tokens": {
+            "src/remote_ops_workspace/gui_toolbars.py": ["self.open_selected_layout"],
+            "src/remote_ops_workspace/gui_layouts.py": ["def open_selected_layout"],
+        },
     },
     "terminal.broadcast": {
         "cli": ["broadcast"],
@@ -780,7 +792,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
     },
     "session.quick-connect": {
         "cli": ["connect"],
-        "source_tokens": {"src/remote_ops_workspace/gui.py": ["def connect_selected"]},
+        "source_tokens": {"src/remote_ops_workspace/gui_profile_actions.py": ["def connect_selected"]},
     },
     "session.import-export": {
         "cli": ["export", "import"],

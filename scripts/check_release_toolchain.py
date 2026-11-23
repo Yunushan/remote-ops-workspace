@@ -50,6 +50,7 @@ def main() -> int:
             signer,
             smoke,
             (ROOT / "scripts/make_macos_native.sh").read_text(encoding="utf-8"),
+            (ROOT / "scripts/macos_notarization.py").read_text(encoding="utf-8"),
         ))
     if errors:
         for error in errors:
@@ -693,23 +694,35 @@ def check_native_release_tag_guards() -> list[str]:
 
 def check_windows_timestamp_digest(windows: str, xp: str) -> list[str]:
     errors: list[str] = []
-    for name, source in (("Windows native", windows), ("Windows XP", xp)):
-        signing_commands = re.findall(
-            r"(?m)^ *& \$SignTool sign [^\n]+",
-            strip_unquoted_comments(source),
-        )
-        if len(signing_commands) != 1 or not re.search(
-            r" /fd SHA256 /tr \S+ /td SHA256 ", signing_commands[0],
-        ):
-            errors.append(f"{name} signing must select SHA256 after the RFC 3161 timestamp URL")
+    windows = strip_unquoted_comments(windows)
+    signing_args = re.findall(r"(?m)^ *\$SignArgs = ([^\n]+)", windows)
+    expected = (
+        '@("sign", "/fd", "SHA256", "/tr", $Timestamp.AbsoluteUri, "/td", "SHA256") '
+        '+ $CertificateArgs + @($ArtifactPath)'
+    )
+    if signing_args != [expected] or not re.search(
+        r"(?m)^ *if \(\(Invoke-SignTool \$SignTool \$SignArgs\) -ne 0\) \{$", windows,
+    ):
+        errors.append("Windows native signing must select SHA256 after the RFC 3161 timestamp URL")
+    xp = strip_unquoted_comments(xp)
+    signer_calls = set(re.findall(r"(?m)^ *(& \$ArtifactSigner[^\n]+)", xp))
+    if (
+        '$ArtifactSigner = Join-Path $PSScriptRoot "sign_windows_artifact.ps1"' not in xp
+        or signer_calls != {
+            "& $ArtifactSigner -ArtifactPath $Path",
+            "& $ArtifactSigner -ArtifactPath $Path -CertificatePath $Certificate",
+        }
+        or re.search(r"(?im)^ *& \$SignTool sign\b", xp)
+    ):
+        errors.append("Windows XP signing must use the shared Authenticode and timestamp verifier")
     return errors
 
 
-def check_native_signing_verification(windows: str, signer: str, smoke: str, macos: str) -> list[str]:
+def check_native_signing_verification(windows: str, signer: str, smoke: str, macos: str, notary: str) -> list[str]:
     errors: list[str] = []
     windows = strip_unquoted_comments(windows)
     if not re.search(
-        r"(?m)^& \$SignTool verify /pa /all /tw \$ArtifactPath\nif \(\$LASTEXITCODE -ne 0\) \{",
+        r'(?m)^ *if \(\(Invoke-SignTool \$SignTool @\("verify", "/pa", "/all", "/tw", \$ArtifactPath\)\) -ne 0\) \{$',
         strip_unquoted_comments(signer),
     ):
         errors.append("Windows production signing must require successful Authenticode and timestamp verification")
@@ -741,20 +754,30 @@ def check_native_signing_verification(windows: str, signer: str, smoke: str, mac
     commands = (
         'productsign --sign "$ROW_MACOS_INSTALLER_SIGN_IDENTITY" ${macos_keychain_args[@]+"${macos_keychain_args[@]}"} "$PKG" "$SIGNED_PKG"',
         'codesign --timestamp --sign "$ROW_MACOS_SIGN_IDENTITY"',
-        'xcrun notarytool submit "$PKG"',
-        'xcrun stapler staple "$PKG"',
-        'xcrun stapler validate "$PKG"',
-        'pkgutil --check-signature "$PKG"',
-        'spctl --assess --type install --verbose=2 "$PKG"',
-        'xcrun notarytool submit "$DMG"',
-        'xcrun stapler staple "$DMG"',
-        'xcrun stapler validate "$DMG"',
-        'codesign --verify --strict --verbose=2 "$DMG"',
-        'spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"',
+        '"$PYTHON_BIN" scripts/macos_notarization.py "$PKG" "$BUILD_DIR/notary-pkg.json"',
+        '"$PYTHON_BIN" scripts/macos_notarization.py "$DMG" "$BUILD_DIR/notary-dmg.json"',
         'production_signing = sys.argv[7] == "1"',
+        'check_release_receipt(receipt, archive=Path(item["file"]).name, stapled_sha256=item["sha256"])',
+        'item["notarization"] = receipt',
     )
     positions = [macos.find(command) for command in commands]
-    if any(position < 0 for position in positions) or positions != sorted(positions):
+    notary = strip_unquoted_comments(notary)
+    notary_commands = (
+        '"notarytool", "submit", str(artifact), *profile_args, "--wait", "--output-format", "json"',
+        'submission.get("status") != "Accepted"',
+        '"notarytool", "log", accepted_id, *profile_args, str(log_path)',
+        'log.get("sha256") != submitted_sha256',
+        '"stapler", "staple", str(artifact)',
+        '"stapler", "validate", str(artifact)',
+        '"pkgutil", "--check-signature", str(artifact)',
+        '"spctl", "--assess", "--type", "install", "--verbose=2", str(artifact)',
+        '"codesign", "--verify", "--strict", "--verbose=2", str(artifact)',
+        '"spctl", "--assess", "--type", "open", "--context", "context:primary-signature", "--verbose=2", str(artifact)',
+        '"stapled_sha256": stapled_sha256',
+    )
+    notary_positions = [notary.find(command) for command in notary_commands]
+    if (min(positions) < 0 or positions != sorted(positions)
+            or min(notary_positions) < 0 or notary_positions != sorted(notary_positions)):
         errors.append("macOS must sign, notarize, staple and verify both final packages before recording signing metadata")
     return errors
 

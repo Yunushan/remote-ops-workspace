@@ -7,8 +7,9 @@ The open-source channel requires exact PyQt6 GPLv3 and Qt LGPLv3 license texts,
 version-pinned upstream source archive URLs and digests, LGPL relink instructions,
 and third-party notices.
 The license texts and notices must be found in every actual native package;
-GUI packages must also contain the PyQt6 and Qt texts.  All downloaded release
-asset hashes are recorded in the output report.
+GUI packages must also contain the PyQt6 and Qt texts, source records and
+relink instructions. All downloaded release asset hashes are recorded in the
+output report.
 
 There is intentionally no self-asserted commercial bypass.  A commercial
 channel needs a separately verifiable vendor grant/trust anchor first.
@@ -32,9 +33,11 @@ import tarfile
 import tempfile
 import urllib.request
 import zipfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from importlib import metadata
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,7 +59,7 @@ REQUIRED_RECORDS = {
     "qt_lgplv3": "Qt-LGPL-3.0.txt",
     "pyqt6_source": None,
     "qt_source": None,
-    "qt_relink_instructions": None,
+    "qt_relink_instructions": "Qt-Relinking.md",
 }
 BUILD_TARGETS = {
     "windows-x86": ("windows-x86",),
@@ -69,18 +72,44 @@ BUILD_TARGETS = {
 }
 
 
-def check_packaged_legal_material(package: Path, expected: dict[str, str]) -> None:
-    """Compare the packaged files against the expected SHA-256 digests."""
+class EmbeddedFile(NamedTuple):
+    path: str
+    data: bytes
+
+
+class ComponentLicense(NamedTuple):
+    path: str
+    data: bytes
+    component: str
+    version: str | None = None
+
+
+def check_packaged_legal_material(package: Path, expected: dict[str, str]) -> list[EmbeddedFile]:
+    """Verify the packaged files and return their member paths and exact bytes."""
+    verified = []
     for filename, digest in expected.items():
-        embedded = embedded_file_bytes(package, filename)
+        embedded = embedded_file(package, filename)
         if embedded is None:
             raise ValueError(f"{package.name} does not contain {filename}")
-        if len(embedded) > MAX_LICENSE_BYTES or hashlib.sha256(embedded).hexdigest() != digest:
+        if len(embedded.data) > MAX_LICENSE_BYTES or hashlib.sha256(embedded.data).hexdigest() != digest:
             raise ValueError(f"{package.name} contains different bytes for {filename}")
+        verified.append(embedded)
+    qt_dirs = {
+        path.parent for member in verified
+        if (path := PurePosixPath(member.path)).name != "THIRD_PARTY_NOTICES.md"
+    }
+    if len(qt_dirs) > 1:
+        raise ValueError(f"{package.name} must install Qt source records beside Qt-Relinking.md")
+    if GUI_TARGET.search(package.name):
+        location = "docs/licenses" if "-windows-" in package.name else "*.app/Contents/Resources/licenses"
+        if any(not directory.match(location) for directory in qt_dirs):
+            raise ValueError(f"{package.name} must install Qt redistribution material under {location}")
+    return verified
 
 
-def expected_native_assets(tag: str) -> set[str]:
-    matrix = json.loads(MATRIX_PATH.read_text(encoding="utf-8"))
+def expected_native_assets(tag: str, *, matrix: dict[str, Any] | None = None) -> set[str]:
+    if matrix is None:
+        matrix = json.loads(MATRIX_PATH.read_text(encoding="utf-8"))
     names: set[str] = set()
     for job in matrix["default_github_release"]["native_jobs"]:
         for pattern in job["asset_patterns"]:
@@ -102,6 +131,14 @@ def pinned_gui_versions() -> dict[str, str]:
             raise ValueError(f"{name} is not exactly pinned in release requirements")
         versions[name] = match.group(1)
     return versions
+
+
+def pinned_gui_source_records() -> dict[str, str]:
+    versions = pinned_gui_versions()
+    return {
+        "pyqt6_source": f"PyQt6-{versions['PyQt6']}-source.json",
+        "qt_source": f"qt-everywhere-src-{versions['PyQt6-Qt6']}-source.json",
+    }
 
 
 def target_asset_names(tag: str, target: str) -> set[str]:
@@ -313,7 +350,7 @@ def evidence_materials(evidence_dir: Path, tag: str) -> dict[str, tuple[Path, st
     if not isinstance(records, dict) or set(records) != set(REQUIRED_RECORDS):
         raise ValueError(f"preview evidence materials must contain exactly {sorted(REQUIRED_RECORDS)}")
     verified: dict[str, tuple[Path, str]] = {}
-    for key, required_name in REQUIRED_RECORDS.items():
+    for key, required_name in (REQUIRED_RECORDS | pinned_gui_source_records()).items():
         record = records[key]
         if not isinstance(record, dict) or set(record) != {"file", "sha256"}:
             raise ValueError(f"{key} must provide file and sha256")
@@ -493,7 +530,7 @@ def appimage_squashfs_offset(archive: Path) -> int:
         return offset
 
 
-def cpio_embedded_file_bytes(payload: bytes, archive: Path, wanted: str) -> bytes | None:
+def cpio_embedded_file(payload: bytes, archive: Path, wanted: str) -> EmbeddedFile | None:
     """Read one CPIO member to stdout without writing package paths."""
     try:
         listing = subprocess.run(
@@ -542,11 +579,10 @@ def cpio_embedded_file_bytes(payload: bytes, archive: Path, wanted: str) -> byte
             f"(exit {extracted.returncode})"
             + (f": {detail}" if detail else "")
         )
-    return extracted.stdout
+    return EmbeddedFile(member_path.as_posix(), extracted.stdout)
 
 
-def rpm_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
-    """Read a file from an RPM's CPIO payload without writing package paths."""
+def rpm_cpio_payload(archive: Path) -> bytes:
     try:
         converted = subprocess.run(
             ["rpm2cpio", str(archive)],
@@ -562,10 +598,15 @@ def rpm_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
             f"cannot convert {archive.name} to CPIO (exit {converted.returncode})"
             + (f": {detail}" if detail else "")
         )
-    return cpio_embedded_file_bytes(converted.stdout, archive, wanted)
+    return converted.stdout
 
 
-def pkg_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
+def rpm_embedded_file(archive: Path, wanted: str) -> EmbeddedFile | None:
+    """Read a file from an RPM's CPIO payload without writing package paths."""
+    return cpio_embedded_file(rpm_cpio_payload(archive), archive, wanted)
+
+
+def pkg_cpio_payload(archive: Path) -> bytes:
     """Read the single component payload in a macOS installer."""
     try:
         listing = subprocess.run(
@@ -603,17 +644,20 @@ def pkg_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
             + (f": {detail}" if detail else "")
         )
     try:
-        payload = gzip.decompress(result.stdout)
+        return gzip.decompress(result.stdout)
     except (OSError, EOFError) as exc:
         raise ValueError(f"cannot decompress {archive.name} CPIO payload: {exc}") from exc
-    return cpio_embedded_file_bytes(payload, archive, wanted)
+def pkg_embedded_file(archive: Path, wanted: str) -> EmbeddedFile | None:
+    return cpio_embedded_file(pkg_cpio_payload(archive), archive, wanted)
 
 
-def dmg_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
-    """Read a regular DMG member without extracting unrelated app symlinks."""
+def seven_zip_members(archive: Path, *, archive_format: str | None = None) -> list[dict[str, str]]:
+    command = ["7z", "l", "-slt", "-ba"]
+    if archive_format is not None:
+        command.append(f"-t{archive_format}")
     try:
         listing = subprocess.run(
-            ["7z", "l", "-slt", "-ba", str(archive)],
+            [*command, str(archive)],
             capture_output=True, text=True, timeout=300, check=False,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
@@ -630,8 +674,13 @@ def dmg_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
         elif " = " in line:
             key, value = line.split(" = ", 1)
             record[key] = value
+    return records
+
+
+def dmg_embedded_file(archive: Path, wanted: str) -> EmbeddedFile | None:
+    """Read a regular DMG member without extracting unrelated app symlinks."""
     matches = [
-        record["Path"] for record in records
+        record["Path"] for record in seven_zip_members(archive)
         if "Path" in record and PurePosixPath(record["Path"]).name == wanted
         and record.get("Mode", "").startswith("-") and not record.get("Symbolic Link")
     ]
@@ -641,19 +690,26 @@ def dmg_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
     member_path = PurePosixPath(member)
     if member_path.is_absolute() or ".." in member_path.parts or member.startswith("-"):
         raise ValueError(f"unsafe DMG member path in {archive.name}")
+    return EmbeddedFile(member_path.as_posix(), seven_zip_read(archive, member))
+
+
+def seven_zip_read(archive: Path, member: str, *, archive_format: str | None = None) -> bytes:
+    command = ["7z", "x", "-so", "-spd"]
+    if archive_format is not None:
+        command.append(f"-t{archive_format}")
     try:
         result = subprocess.run(
-            ["7z", "x", "-so", "-spd", str(archive), member],
+            [*command, str(archive), member],
             capture_output=True, timeout=300, check=False,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-        raise ValueError(f"cannot read {wanted} from {archive.name}: {exc}") from exc
+        raise ValueError(f"cannot read {member} from {archive.name}: {exc}") from exc
     if result.returncode != 0:
-        raise ValueError(f"cannot read {wanted} from {archive.name} (exit {result.returncode})")
+        raise ValueError(f"cannot read {member} from {archive.name} (exit {result.returncode})")
     return result.stdout
 
 
-def extracted_file_bytes(destination: Path, wanted: str) -> bytes | None:
+def extracted_file(destination: Path, wanted: str) -> EmbeddedFile | None:
     resolved_destination = destination.resolve()
     matches = [
         path for path in destination.rglob(wanted)
@@ -662,11 +718,11 @@ def extracted_file_bytes(destination: Path, wanted: str) -> bytes | None:
     ]
     if len(matches) != 1 or matches[0].stat().st_size > MAX_LICENSE_BYTES:
         return None
-    return matches[0].read_bytes()
+    return EmbeddedFile(matches[0].relative_to(destination).as_posix(), matches[0].read_bytes())
 
 
-def windows_installer_file_bytes(archive: Path, wanted: str) -> bytes | None:
-    """Decode Inno Setup and MSI installed files with their format readers."""
+@contextmanager
+def windows_installer_payload(archive: Path, include: str) -> Iterator[Path]:
     with tempfile.TemporaryDirectory(prefix="row-license-extract-") as temp:
         destination = Path(temp)
         if archive.suffix.lower() == ".msi":
@@ -674,7 +730,7 @@ def windows_installer_file_bytes(archive: Path, wanted: str) -> bytes | None:
         else:
             command = [
                 "innoextract", "--silent", "--extract", "--test", "--no-extract-unknown",
-                "--include", wanted, "--output-dir", str(destination), str(archive),
+                "--include", include, "--output-dir", str(destination), str(archive),
             ]
         try:
             result = subprocess.run(
@@ -688,11 +744,16 @@ def windows_installer_file_bytes(archive: Path, wanted: str) -> bytes | None:
                 f"cannot extract {archive.name} with {command[0]} (exit {result.returncode})"
                 + (f": {detail}" if detail else "")
             )
-        return extracted_file_bytes(destination, wanted)
+        yield destination
 
 
-def deb_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
-    """Read a packaged file from a Debian filesystem tar stream."""
+def windows_installer_file(archive: Path, wanted: str) -> EmbeddedFile | None:
+    """Decode Inno Setup and MSI installed files with their format readers."""
+    with windows_installer_payload(archive, wanted) as destination:
+        return extracted_file(destination, wanted)
+
+
+def deb_tar_payload(archive: Path) -> bytes:
     try:
         result = subprocess.run(
             ["dpkg-deb", "--fsys-tarfile", str(archive)],
@@ -708,14 +769,19 @@ def deb_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
             f"cannot read {archive.name} filesystem tar stream (exit {result.returncode})"
             + (f": {detail}" if detail else "")
         )
+    return result.stdout
+
+
+def deb_embedded_file(archive: Path, wanted: str) -> EmbeddedFile | None:
+    """Read a packaged file from a Debian filesystem tar stream."""
     try:
-        with tarfile.open(fileobj=io.BytesIO(result.stdout), mode="r:*") as package:
-            return tar_notice_bytes(package, wanted)
+        with tarfile.open(fileobj=io.BytesIO(deb_tar_payload(archive)), mode="r:*") as package:
+            return tar_notice(package, wanted)
     except tarfile.TarError as exc:
         raise ValueError(f"cannot read {archive.name} filesystem tar stream: {exc}") from exc
 
 
-def tar_notice_bytes(package: tarfile.TarFile, wanted: str) -> bytes | None:
+def tar_notice(package: tarfile.TarFile, wanted: str) -> EmbeddedFile | None:
     matches = [member for member in package if PurePosixPath(member.name).name == wanted]
     if len(matches) != 1:
         return None
@@ -727,10 +793,10 @@ def tar_notice_bytes(package: tarfile.TarFile, wanted: str) -> bytes | None:
     if stream is None:
         return None
     with stream:
-        return stream.read()
+        return EmbeddedFile(path.as_posix(), stream.read())
 
 
-def embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
+def embedded_file(archive: Path, wanted: str) -> EmbeddedFile | None:
     """Read the actual installed file from each native package format."""
     name = archive.name.lower()
     if name.endswith(".zip"):
@@ -750,22 +816,22 @@ def embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
                 or item.file_size > MAX_LICENSE_BYTES
             ):
                 return None
-            return package.read(item)
+            return EmbeddedFile(path.as_posix(), package.read(item))
     if name.endswith(".tar.gz"):
         with tarfile.open(archive, "r:gz") as package:
-            return tar_notice_bytes(package, wanted)
+            return tar_notice(package, wanted)
     if zipfile.is_zipfile(archive) or tarfile.is_tarfile(archive):
         raise ValueError(f"{archive.name} is a ZIP or TAR with a different package extension")
     if archive.suffix.lower() == ".rpm":
-        return rpm_embedded_file_bytes(archive, wanted)
+        return rpm_embedded_file(archive, wanted)
     if archive.suffix.lower() == ".deb":
-        return deb_embedded_file_bytes(archive, wanted)
+        return deb_embedded_file(archive, wanted)
     if archive.suffix.lower() == ".pkg":
-        return pkg_embedded_file_bytes(archive, wanted)
+        return pkg_embedded_file(archive, wanted)
     if archive.suffix.lower() == ".dmg":
-        return dmg_embedded_file_bytes(archive, wanted)
+        return dmg_embedded_file(archive, wanted)
     if archive.suffix.lower() in {".exe", ".msi"}:
-        return windows_installer_file_bytes(archive, wanted)
+        return windows_installer_file(archive, wanted)
     if archive.suffix.lower() == ".appimage":
         offset = appimage_squashfs_offset(archive)
         with tempfile.TemporaryDirectory(prefix="row-license-extract-") as temp:
@@ -786,8 +852,14 @@ def embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
                     f"cannot extract {archive.name} with unsquashfs (exit {result.returncode})"
                     + (f": {detail}" if detail else "")
                 )
-            return extracted_file_bytes(destination, wanted)
+            return extracted_file(destination, wanted)
     raise ValueError(f"unsupported native package extension for {archive.name}")
+
+
+def embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
+    """Read one packaged member when its installed path is unneeded."""
+    member = embedded_file(archive, wanted)
+    return member.data if member is not None else None
 
 
 def audit(
@@ -814,7 +886,7 @@ def audit(
             raise ValueError(f"native package belongs to another version: {package.name}")
         required = ["third_party_notices"]
         if GUI_TARGET.search(package.name):
-            required += ["pyqt6_gplv3", "qt_lgplv3", "qt_relink_instructions"]
+            required += ["pyqt6_gplv3", "qt_lgplv3", "qt_relink_instructions", "pyqt6_source", "qt_source"]
         check_packaged_legal_material(
             package, {materials[key][0].name: materials[key][1] for key in required},
         )

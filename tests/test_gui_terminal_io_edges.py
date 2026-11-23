@@ -56,6 +56,330 @@ def _new_pane(window):
     )
 
 
+@pytest.mark.parametrize(("platform", "program", "source", "fallback"), [
+    ("win32", "python.exe", "test", "terminalWindowsConsoleSuppressed"),
+    ("win32", "ssh.exe", "ssh", "terminalOpenSshPipeFallback"),
+    ("win32", "powershell.exe", "shell", "terminalLineInputFallback"),
+    ("darwin", "ssh", "ssh", None),
+    ("linux", "python", "test", None),
+])
+def test_pipe_pane_renders_restored_primary_cursor(gui_window, monkeypatch, platform, program, source, fallback) -> None:
+    from PyQt6.QtCore import QProcess
+
+    from remote_ops_workspace import gui_processes, windows_conpty
+
+    _app, window = gui_window
+    monkeypatch.setattr(gui_processes.sys, "platform", platform)
+    monkeypatch.setattr(windows_conpty, "conpty_support", lambda: SimpleNamespace(supported=False, reason="test"))
+    pane = window.new_terminal_pane(TerminalPanePlan("pipe", [program], source), autostart=False)
+    if fallback:
+        assert pane.process.property(fallback) is True
+    else:
+        assert isinstance(pane.process, QProcess)
+    assert not pane.terminal_emulator.primary_reflow
+    pane.terminal_emulator.set_screen_size(40, 10)
+    pane.append_process_text("\x1b[3;4H\x1b7\x1b[8;12H.\x1b8\x1b[6n!")
+    assert pane.output.property("terminalLastEmulatorResponse") == b"\x1b[3;4R"
+    assert pane.output.toPlainText().split("\n") == ["", "", "   !", "", "", "", "", " " * 11 + "."]
+    assert pane.output.property("terminalRemoteCursorRow") == 2
+    assert pane.output.property("terminalRemoteCursorColumn") == 4
+
+
+def test_unicode_terminal_append_selection_and_grid_cursor(gui_window) -> None:
+    from PyQt6.QtGui import QTextCursor
+
+    _app, window = gui_window
+    pane = _new_pane(window)
+    pane.append_process_text("😀\r\ne\u0301界")
+    cursor = pane.output.textCursor()
+    cursor.setPosition(5)
+    cursor.setPosition(6, QTextCursor.MoveMode.KeepAnchor)
+    pane.output.setTextCursor(cursor)
+    assert cursor.selectedText() == "界"
+
+    pane.append_process_text("X")
+    assert pane.output.toPlainText() == "😀\ne\u0301界X"
+    assert pane.output.textCursor().selectedText() == "界"
+    assert pane.output.property("terminalSelectionPreservedOnOutput") is True
+    assert pane.output.property("terminalRemoteCursorDocumentPosition") == 7
+
+    pane.append_process_text("\x1b[3G")
+    assert pane.output.property("terminalRemoteCursorColumn") == 2
+    assert pane.output.property("terminalRemoteCursorDocumentPosition") == 5
+    assert pane.output.property("terminalRemoteCursorTrailingCells") == 1
+
+    pane.append_process_text("Z")
+    assert pane.output.toPlainText() == "😀\ne\u0301 ZX"
+    assert pane.output.textCursor().hasSelection() is False
+
+
+def test_alternate_screen_changes_only_dirty_rows_and_keeps_the_shell(gui_window) -> None:
+    from PyQt6.QtGui import QTextCursor
+
+    _app, window = gui_window
+    pane = _new_pane(window)
+    pane.terminal_emulator.set_screen_size(40, 5)
+    pane.append_process_text("shell\x1b[?1049h\x1b[1;1H😀keep\x1b[2;1H\x1b[31mrow\x1b[3;1H\x1b[0mtail")
+    document = pane.output.document()
+    first = document.findBlockByNumber(0)
+    middle = document.findBlockByNumber(1)
+    last = document.findBlockByNumber(2)
+    first.setUserState(17)
+    last.setUserState(23)
+    cursor = QTextCursor(last)
+    cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+    pane.output.setTextCursor(cursor)
+    changes: list[tuple[int, int, int]] = []
+    document.contentsChange.connect(lambda *geometry: changes.append(geometry))
+
+    pane.append_process_text("\x1b[2;1H\x1b[32mrow")
+    assert changes == [(middle.position(), 3, 3)]
+    assert middle.begin().fragment().charFormat().foreground().color().name() == "#0dbc79"
+    changes.clear()
+    pane.append_process_text("\x1b[2;1H\x1b[6 q\x1b[?25l")
+    assert changes == []
+    assert pane.output.property("terminalRemoteCursorRow") == 1
+    assert pane.output.property("terminalRemoteCursorVisible") is False
+
+    pane.append_process_text("\x1b[2;1H\x1b[0m\x1b[2K界e\u0301x")
+    assert changes == [(middle.position(), 3, 4)]
+    assert pane.output.toPlainText() == "😀keep\n界e\u0301x\ntail\n\n"
+    assert (first.userState(), last.userState()) == (17, 23)
+    assert pane.output.textCursor().selectedText() == "tail"
+
+    changes.clear()
+    pane.append_process_text("\x1b[2;1H\x1b[2K")
+    assert changes == [(middle.position(), 4, 0)]
+    assert pane.output.toPlainText() == "😀keep\n\ntail\n\n"
+    pane.terminal_emulator.set_screen_size(40, 6)
+    pane.append_process_text("\x1b[6 q")
+    assert document.blockCount() == 6
+    assert pane.output.toPlainText() == "😀keep\n\ntail\n\n\n"
+    pane.append_process_text("\x1b[?1049l")
+    assert pane.output.toPlainText() == "shell"
+
+
+def test_alternate_screen_redraw_recovers_after_document_edit_error(gui_window, monkeypatch) -> None:
+    _app, window = gui_window
+    pane = _new_pane(window)
+    pane.set_terminal_transcript("\x1b[?1049h\x1b[2;1Hold")
+    document = pane.output.document()
+    assert document.blockCount() > 2
+
+    def fail(_changes):
+        document.clear()
+        raise RuntimeError("test interrupted document edit")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(pane, "_patch_alternate_screen", fail)
+        with pytest.raises(RuntimeError, match="interrupted document edit"):
+            pane.append_process_text("\x1b[2;1Hnew")
+    assert pane.output.updatesEnabled()
+    assert not pane.output.property("terminalAlternateScreenRedraw")
+    pane.append_process_text("\x1b[2;1H")
+    assert pane.output.toPlainText().split("\n")[1] == "new"
+    document.clear()
+    pane.append_process_text("\x1b[2;4H!")
+    assert pane.output.toPlainText().split("\n")[1] == "new!"
+
+
+def test_alternate_screen_palette_change_updates_inverse_colors(gui_window) -> None:
+    from PyQt6.QtGui import QColor, QPalette
+
+    _app, window = gui_window
+    pane = _new_pane(window)
+    pane.append_process_text("\x1b[?1049h\x1b[7mselected")
+    document = pane.output.document()
+    palette = pane.output.palette()
+    initial = document.firstBlock().begin().fragment().charFormat()
+    assert initial.foreground().color() == palette.color(QPalette.ColorRole.Base)
+    assert initial.background().color() == palette.color(QPalette.ColorRole.Text)
+    palette.setColor(QPalette.ColorRole.Base, QColor("#102030"))
+    palette.setColor(QPalette.ColorRole.Text, QColor("#a1b2c3"))
+    pane.output.setPalette(palette)
+
+    pane.render_terminal_transcript(pane.terminal_emulator.screen_text())
+    updated = document.firstBlock().begin().fragment().charFormat()
+    assert updated.foreground().color().name() == "#102030"
+    assert updated.background().color().name() == "#a1b2c3"
+    assert pane.output.toPlainText().split("\n")[0] == "selected"
+
+
+def test_viewport_resize_refreshes_alternate_grid_without_waiting_for_output(gui_window, monkeypatch) -> None:
+    from PyQt6.QtCore import QSize
+    from PyQt6.QtGui import QResizeEvent
+
+    app, window = gui_window
+    pane = _new_pane(window)
+    pane.terminal_emulator.set_screen_size(40, 9)
+    pane.append_process_text("shell\x1b[?1049hfirst")
+    document = pane.output.document()
+    assert document.blockCount() == 9
+    document.setDocumentMargin(4)
+    size = QSize(320, 85)
+    monkeypatch.setattr(pane.output_viewport, "size", lambda: size)
+    monkeypatch.setattr(pane, "terminal_cell_size", lambda: (10, 10))
+    sent = []
+    monkeypatch.setattr(
+        pane.process, "setTerminalSize", lambda columns, rows: sent.append((columns, rows)), raising=False,
+    )
+
+    pane.eventFilter(pane.output_viewport, QResizeEvent(size, QSize(400, 100)))
+    app.processEvents()
+    pane.flush_terminal_resize()
+    assert sent and sent[-1] == (31, 7)
+    assert document.blockCount() == 7
+    assert pane.output.toPlainText() == "first" + "\n" * 6
+    size = QSize()
+    sent.clear()
+    pane.resize_terminal_backend()
+    pane.flush_terminal_resize()
+    assert sent == []
+    assert document.blockCount() == 7
+    pane.append_process_text("\x1b[?1049l")
+    assert pane.output.toPlainText() == "shell"
+
+    size = QSize(500, 160)
+    pane.resize_terminal_backend()
+    pane.prepare_for_close()
+    pane.flush_terminal_resize()
+    pane.resize_terminal_backend()
+    assert sent == []
+
+
+def test_primary_viewport_reflow_preserves_selection_links_and_search(gui_window, monkeypatch) -> None:
+    from PyQt6.QtCore import QSize
+    from PyQt6.QtGui import QTextCursor
+
+    from remote_ops_workspace.terminal_emulation import SOFT_LINE_BREAK
+
+    _app, window = gui_window
+    pane = _new_pane(window)
+    pane.terminal_emulator.primary_reflow = True
+    pane.terminal_emulator.set_screen_size(20, 6)
+    url = "https://example.test/reflow/path"
+    content = "a" * 18 + " " + url + " 😀界"
+    pane.append_process_text(content)
+    assert "\n" in pane.output.document().toPlainText()
+    assert pane.output.toPlainText() == content
+
+    cursor = pane.output.textCursor()
+    cursor.movePosition(QTextCursor.MoveOperation.Start)
+    pane.output.setTextCursor(cursor)
+    assert window.find_in_text_widget(pane.output, url)
+    assert pane.output.textCursor().selectedText().replace(SOFT_LINE_BREAK, "") == url
+    cursor.setPosition(20)
+    assert cursor.charFormat().anchorHref() == url
+
+    monkeypatch.setattr(pane, "terminal_cell_size", lambda: (10, 10))
+    monkeypatch.setattr(pane.output_viewport, "size", lambda: QSize(448, 88))
+    pane.resize_terminal_backend()
+    pane.flush_terminal_resize()
+    assert pane.output.toPlainText() == content
+    assert pane.output.document().toPlainText().count("\n") == 1
+    assert pane.output.textCursor().selectedText().replace(SOFT_LINE_BREAK, "") == url
+    assert pane.output.property("terminalSelectionPreservedOnOutput") is True
+    assert pane.output.property("terminalRemoteCursorRow") == 1
+    copied = []
+    monkeypatch.setattr(
+        pane, "_terminal_clipboard_provider",
+        lambda: SimpleNamespace(setText=copied.append, text=lambda: copied[-1]),
+    )
+    pane.copy_terminal_selection()
+    assert copied == [url]
+
+    pane.append_process_text("\x1b[1;20HX")
+    assert not pane.output.textCursor().hasSelection()
+    assert not window.find_in_text_widget(pane.output, url)
+
+    monkeypatch.setattr(pane.output_viewport, "size", lambda: QSize(900, 88))
+    pane.resize_terminal_backend()
+    pane.flush_terminal_resize()
+    assert SOFT_LINE_BREAK not in pane.output.document().toRawText()
+    assert window.find_in_text_widget(pane.output, "Xttps://example.test/reflow/path")
+
+
+def test_remote_cursor_paints_each_shape_and_obeys_desktop_blink_setting(gui_window, monkeypatch) -> None:
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QTextCursor
+    from PyQt6.QtWidgets import QApplication
+
+    app, window = gui_window
+    pane = _new_pane(window)
+    pane.setParent(window, Qt.WindowType.Window)
+    pane.resize(640, 360)
+    pane.show()
+    app.processEvents()
+    output = pane.output
+    viewport = output.viewport()
+    flash_time = 4000
+
+    with monkeypatch.context() as patch:
+        patch.setattr(pane, "is_running", lambda: True)
+        patch.setattr(QApplication, "cursorFlashTime", staticmethod(lambda: flash_time))
+        pane.terminal_emulator.set_screen_size(40, 5)
+        pane.append_process_text("\x1b[2J\x1b[?25l")
+        app.processEvents()
+        assert output.isVisible()
+        rect = output.cursorRect(QTextCursor(output.document()))
+        assert viewport.rect().contains(rect.center())
+        middle_x = rect.x() + output.fontMetrics().horizontalAdvance("M") // 2
+        middle_y = rect.y() + rect.height() // 2
+        bottom_y = rect.bottom() - 1
+        positions = [(rect.x(), middle_y), (middle_x, middle_y), (middle_x, bottom_y)]
+
+        def samples():
+            frame = viewport.grab()
+            image = frame.toImage()
+            ratio = frame.devicePixelRatio()
+            return tuple(image.pixelColor(round(x * ratio), round(y * ratio)) for x, y in positions)
+
+        hidden = samples()
+
+        def changed_pixels():
+            return tuple(actual != clean for actual, clean in zip(samples(), hidden, strict=True))
+
+        pane.append_process_text("\x1b[?25h\x1b[6 q")
+        assert output.property("terminalRemoteCursorVisible") is True
+        assert output.property("terminalRemoteCursorDocumentPosition") == 0
+        assert not output.property("terminalTabPaintFrozen")
+        app.processEvents()
+        assert changed_pixels() == (True, False, False)
+        assert output.property("terminalRemoteCursorShape") == "bar"
+        pane.append_process_text("\x1b[4 q")
+        assert changed_pixels() == (False, False, True)
+        assert output.property("terminalRemoteCursorShape") == "underline"
+        pane.append_process_text("\x1b[2 q")
+        assert changed_pixels() == (True, True, True)
+        assert output.property("terminalRemoteCursorShape") == "block"
+
+        pane.append_process_text("\x1b[1 q")
+        timer = output._remote_cursor_blink
+        assert output.property("terminalRemoteCursorBlinking") is True
+        assert timer.isActive() and timer.interval() == 2000
+        assert changed_pixels() == (True, True, True)
+        timer.timeout.emit()
+        assert changed_pixels() == (False, False, False)
+        pane.append_process_text("\x1b[1 q")
+        assert changed_pixels() == (False, False, False)
+        timer.timeout.emit()
+        assert changed_pixels() == (True, True, True)
+
+        output.hide()
+        assert not timer.isActive()
+        output.show()
+        assert timer.isActive()
+        hints = QApplication.styleHints()
+        assert hints is not None
+        flash_time = 5000
+        hints.cursorFlashTimeChanged.emit(flash_time)
+        assert timer.interval() == 2500
+        flash_time = -1
+        hints.cursorFlashTimeChanged.emit(flash_time)
+        assert not timer.isActive()
+        assert changed_pixels() == (True, True, True)
+
+
 def test_terminal_auth_prompt_transitions_are_notified_once(gui_window) -> None:
     _app, window = gui_window
     pane_without_handler = _new_pane(window)
@@ -321,6 +645,7 @@ def test_terminal_backend_fallback_and_literal_message_box_edges(
     from PyQt6.QtWidgets import QMessageBox
 
     from remote_ops_workspace import gui, gui_processes, windows_conpty
+    from remote_ops_workspace.qt_terminal_process import QtLinuxPtyProcess
 
     _app, window = gui_window
     _pane = _new_pane(window)
@@ -337,7 +662,12 @@ def test_terminal_backend_fallback_and_literal_message_box_edges(
         ),
         None,
     )
-    assert isinstance(linux_process, QProcess)
+    assert isinstance(linux_process, QtLinuxPtyProcess)
+    assert warning == ""
+    linux_pipe, warning = backend(
+        window, TerminalPanePlan("linux helper", ["python", "-V"], "test"), None,
+    )
+    assert isinstance(linux_pipe, QProcess)
     assert warning == ""
 
     monkeypatch.setattr(gui.sys, "platform", "win32")
@@ -400,7 +730,7 @@ def test_terminal_backend_fallback_and_literal_message_box_edges(
     monkeypatch.setattr(gui.sys, "platform", original_platform)
 
     literal_message_box = _closure_value(
-        type(window).connect_selected,
+        type(window).show_message,
         "_literal_message_box",
     )
 
@@ -439,8 +769,7 @@ def test_terminal_backend_fallback_and_literal_message_box_edges(
         "QMessageBox",
         _MessageBox,
     )
-    result = literal_message_box(
-        window,
+    result = window.show_message(
         QMessageBox.Icon.Question,
         "Literal title",
         "<b>literal body</b>",
@@ -862,13 +1191,14 @@ def test_main_window_close_confirms_detached_running_panes(gui_window, monkeypat
 
     process = _ProcessHandle()
     pane = SimpleNamespace(
-        is_running=lambda: True,
+        is_running=lambda: not process.killed,
         prepare_for_close=lambda: None,
         process=process,
     )
     detached = object()
     window._closing_tab_widgets = [detached]
-    monkeypatch.setattr(window, "running_terminal_panes", lambda: [])
+    attached = []
+    monkeypatch.setattr(window, "all_terminal_panes", lambda: list(attached))
     monkeypatch.setattr(window, "terminal_panes_in", lambda widget: [pane] if widget is detached else [])
 
     denied = SimpleNamespace(
@@ -890,12 +1220,37 @@ def test_main_window_close_confirms_detached_running_panes(gui_window, monkeypat
     )
     original_dock = window.moba_connected_dock
     window.moba_connected_dock = None
-    monkeypatch.setattr(window, "confirm_stop_processes", lambda *_args: True)
+    late_process = _ProcessHandle()
+
+    def accept_while_a_new_pane_starts(_title, count):
+        assert count == 1
+        attached.append(SimpleNamespace(
+            is_running=lambda: not late_process.killed,
+            prepare_for_close=lambda: None,
+            process=late_process,
+        ))
+        return True
+
+    monkeypatch.setattr(window, "confirm_stop_processes", accept_while_a_new_pane_starts)
     window.closeEvent(accepted)
     window.moba_connected_dock = original_dock
     assert accepted.accepted is True
     assert process.killed is True
     assert process.closed is True
+    assert late_process.killed and late_process.closed
+
+
+def test_close_window_cancels_terminal_queued_to_start(gui_window, monkeypatch):
+    app, window = gui_window
+    window.open_terminal_tab(TerminalPanePlan("deferred", ["unused"], "test"))
+    pane = window.active_terminal_pane()
+    assert pane.property("terminalStartDeferredUntilTabReady") and not pane.is_running()
+    starts = []
+    monkeypatch.setattr(pane, "start", lambda: starts.append(True))
+
+    assert window.close()
+    app.processEvents()
+    assert pane.property("terminalClosing") and not starts
 
 
 def test_terminal_fallback_io_clipboard_and_empty_pipeline_edges(
@@ -1599,21 +1954,15 @@ def test_process_finish_confirmation_and_expired_status_edges(
         ("Controlled close", "Stop 2 running process pane(s)?"),
     ]
 
-    messages: list[str] = []
-    status_bar = SimpleNamespace(showMessage=lambda message, *_args: messages.append(message))
-    update_owner = SimpleNamespace(
-        _status_message_override="expired",
-        _status_message_override_deadline=time.monotonic() - 1,
-        statusBar=lambda: status_bar,
-        running_terminal_panes=lambda: [object()],
-    )
-    update_status = type(window).update_session_status
-    update_status(update_owner)
-    assert update_owner._status_message_override is None
-    assert messages[-1] == "Running process panes: 1"
-    update_owner.running_terminal_panes = lambda: []
-    update_status(update_owner)
-    assert messages[-1] == "No running process panes"
+    window._status_message_override = "expired"
+    window._status_message_override_deadline = time.monotonic() - 1
+    monkeypatch.setattr(window, "running_terminal_panes", lambda: [object()])
+    window.update_session_status()
+    assert window._status_message_override is None
+    assert window.statusBar().currentMessage() == "Running process panes: 1"
+    monkeypatch.setattr(window, "running_terminal_panes", lambda: [])
+    window.update_session_status()
+    assert window.statusBar().currentMessage() == "No running process panes"
 
 
 def test_terminal_output_backpressure_empty_payload_and_initial_transcript_edges(
@@ -1666,6 +2015,8 @@ def test_remaining_terminal_window_lifecycle_and_deferred_transition_edges(
 ) -> None:
     from PyQt6.QtWidgets import QWidget
 
+    from remote_ops_workspace import gui_terminal_lifecycle, gui_workspace_tabs
+
     _app, window = gui_window
 
     class _Signal:
@@ -1690,6 +2041,7 @@ def test_remaining_terminal_window_lifecycle_and_deferred_transition_edges(
             self.profile = profile
             self.autostart = autostart
             self.process = _ErrorProcess()
+            self.macroRecordingChanged = _Signal()
             self.properties: dict[str, object] = {}
 
         def setProperty(self, key: str, value) -> None:  # noqa: N802
@@ -1711,17 +2063,13 @@ def test_remaining_terminal_window_lifecycle_and_deferred_transition_edges(
         lambda: status_updates.append("updated"),
     )
     with monkeypatch.context() as scoped:
-        _set_closure_value(
-            scoped,
-            type(window).new_terminal_pane,
-            "TerminalPane",
-            _FakePane,
-        )
+        scoped.setattr(gui_terminal_lifecycle, "TerminalPane", _FakePane)
         fake_pane = window.new_terminal_pane(
             TerminalPanePlan(title="startup-error", command=[], source="test"),
             autostart=False,
         )
     assert fake_pane.process.errorString()
+    assert fake_pane.macroRecordingChanged.callbacks == [window.refresh_moba_recording_ribbon]
     assert status_updates == ["updated"]
 
     class _DisposedPane:
@@ -1783,12 +2131,7 @@ def test_remaining_terminal_window_lifecycle_and_deferred_transition_edges(
         singleShot=lambda _delay, callback: scheduled.append(callback),
     )
     with monkeypatch.context() as scoped:
-        _set_closure_value(
-            scoped,
-            type(window).handle_tab_changed,
-            "QTimer",
-            fake_timer,
-        )
+        scoped.setattr(gui_workspace_tabs, "QTimer", fake_timer)
         type(window).handle_tab_changed(transition_owner, 2)
     assert len(scheduled) == 3
 
@@ -2007,11 +2350,12 @@ def test_stop_and_window_close_process_optional_close_edges(
             kill=lambda: killed.append("kill"),
             close="not-callable",
         ),
+        is_running=lambda: True,
         prepare_for_close=lambda: prepared.append("prepare"),
     )
-    original_running = window.running_terminal_panes
+    original_panes = window.all_terminal_panes
     original_confirm = window.confirm_stop_processes
-    monkeypatch.setattr(window, "running_terminal_panes", lambda: [pane])
+    monkeypatch.setattr(window, "all_terminal_panes", lambda: [pane])
     monkeypatch.setattr(window, "confirm_stop_processes", lambda *_args: True)
 
     class _Event:
@@ -2029,7 +2373,7 @@ def test_stop_and_window_close_process_optional_close_edges(
     assert event.accepted is True
     assert prepared == ["prepare"]
     assert killed == ["kill"]
-    monkeypatch.setattr(window, "running_terminal_panes", original_running)
+    monkeypatch.setattr(window, "all_terminal_panes", original_panes)
     monkeypatch.setattr(window, "confirm_stop_processes", original_confirm)
 
 

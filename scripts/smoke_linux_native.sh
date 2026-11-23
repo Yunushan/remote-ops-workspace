@@ -532,7 +532,9 @@ case "$ARCH" in
 esac
 BINDING_REPORT="$SMOKE_ROOT/candidate-runtime-byte-binding.json"
 if [[ -n "$BINDING_TARGET" ]]; then
-  python3 scripts/candidate_posix_byte_binding.py init --target "$BINDING_TARGET" --report "$BINDING_REPORT" --root "$ROOT" --appimage "$APPIMAGE"
+  installer_options=(--installer "$DEB" --installer "$RPM" --installer "$APPIMAGE")
+  python3 scripts/candidate_posix_byte_binding.py init --target "$BINDING_TARGET" --report "$BINDING_REPORT" \
+    --root "$ROOT" --appimage "$APPIMAGE" "${installer_options[@]}"
 fi
 
 prepare_appimage_probe() {
@@ -548,12 +550,44 @@ prepare_appimage_probe() {
   APPIMAGE_LAUNCHER="$extraction/squashfs-root/AppRun"
 }
 
+install_debian_package() {
+  if [[ -n "$(dpkg-deb -f "$DEB" Depends)" ]]; then
+    sudo -n apt-get --no-install-recommends --reinstall -y install "$DEB"
+  else
+    sudo -n dpkg -i "$DEB"
+  fi
+}
+
 echo "native installer smoke: DEB install"
-sudo -n dpkg -i "$DEB"
+install_debian_package
 echo "native installer smoke: DEB verify"
 verify_row /usr/bin/row direct "DEB verify" deb/usr/bin/row install
+if [[ -n "$BINDING_TARGET" ]]; then
+  python3 scripts/qualify_deb_loader.py --target "$BINDING_TARGET" --deb "$DEB" \
+    --staged-elf-report "$ROOT/build/native/linux/staged-elf.json" \
+    --executable /usr/bin/row --source-sha "$SMOKE_GIT_HEAD_SHA" --report "$SMOKE_ROOT/deb-loader-selection.json"
+fi
+debian_server_manifest=/usr/lib/remote-ops-workspace/servers/servers-runtime.json
+if [[ -f "$debian_server_manifest" ]]; then
+  server_status="$SMOKE_ROOT/debian-server-status.json"
+  env -u ROW_SERVER_RUNTIME_DIR /usr/bin/row servers runtime-status --json > "$server_status"
+  python3 - "$debian_server_manifest" "$server_status" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+manifest, status_path = map(Path, sys.argv[1:])
+status = json.loads(status_path.read_bytes())
+services = json.loads(manifest.read_bytes())["services"]
+discovered = {(runtime["service"], runtime["executable"]) for runtime in status["runtimes"]}
+expected = {(row["service"], str(manifest.parent / row["runtime"]["executable"])) for row in services}
+if len(expected) != 8 or not expected <= discovered:
+    raise SystemExit("Installed Debian launcher did not discover all eight shipped server runtimes")
+PY
+  echo "native installer smoke: DEB server runtime discovery"
+fi
 echo "native installer smoke: DEB upgrade"
-sudo -n dpkg -i "$DEB"
+install_debian_package
 verify_row /usr/bin/row direct "DEB upgrade" deb/usr/bin/row reinstall
 echo "native installer smoke: DEB uninstall"
 sudo -n dpkg -r remote-ops-workspace
@@ -594,6 +628,6 @@ if [[ -e "$STAGED_APPIMAGE" ]]; then
 fi
 
 if [[ -n "$BINDING_TARGET" ]]; then
-  python3 scripts/candidate_posix_byte_binding.py complete --target "$BINDING_TARGET" --report "$BINDING_REPORT"
+  python3 scripts/candidate_posix_byte_binding.py complete --target "$BINDING_TARGET" --report "$BINDING_REPORT" "${installer_options[@]}"
 fi
 echo "native installer smoke passed for Linux $ARCH"

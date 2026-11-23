@@ -42,6 +42,7 @@ class QuickConnectCandidate:
     detail: str
     profile_name: str | None = None
     profile: Profile | None = None
+    protocol: str = ""
 
 
 def quick_connect_candidates(
@@ -106,6 +107,7 @@ def profile_quick_connect_matches(
             label=f"{profile.protocol.upper()}  {profile.name}",
             detail=profile.display_target,
             profile_name=profile.name,
+            protocol=profile.protocol,
         )
         for _score, _name, profile in sorted(scored, key=itemgetter(0, 1))[:limit]
     ]

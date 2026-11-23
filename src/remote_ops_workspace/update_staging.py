@@ -87,20 +87,20 @@ class _StageFiles:
 
         return self.private_guard.private_file(descriptor_handle(descriptor), path)
 
-    def _named_file(self, path, *, expected_identity=None):
+    def _named_file(self, path, *, expected_identity=None, read_only=False):
         if self.private_guard is None:
             return nullcontext(None)
-        return self.private_guard.named_file(path, expected_identity=expected_identity)
+        return self.private_guard.named_file(path, expected_identity=expected_identity, read_only=read_only)
 
     @contextmanager
     def _verified_files(self):
-        # Keep all final names non-delete-shared through the full validator.
+        # Keep all final names non-write/delete-shared through verification.
         # The journal is finalized before entering this read-only scope.
         self._root()
         with ExitStack() as scope:
             if self.private_guard is not None:
                 for name in (JOURNAL, MANIFEST, *(row.artifact_name for row in self.binding.artifacts)):
-                    scope.enter_context(self._named_file(self.root / name))
+                    scope.enter_context(self._named_file(self.root / name, read_only=True))
             yield
             self._root()
 

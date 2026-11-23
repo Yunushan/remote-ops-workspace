@@ -1,0 +1,103 @@
+name: MobApt offline release evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_inventory:
+        description: Optional sealed candidate coordinates as RUN_ID ARTIFACT_ID sha256:DIGEST
+        required: false
+        type: string
+
+permissions:
+  actions: read
+  attestations: read
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  MOBAPT_IMAGE: row-mobapt-evidence:local
+
+jobs:
+  qualify-debian-x64:
+    name: Qualify published Debian package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Require an exact release tag
+        shell: bash
+        run: |
+          test "$GITHUB_REF_TYPE" = tag
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$GITHUB_REF" = "refs/tags/$GITHUB_REF_NAME"
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          printf 'MOBAPT_WORK=%s/mobapt-evidence\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify the exact Debian package from the release or sealed inventory
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROW_QUALIFICATION_CANDIDATE_INVENTORY: ${{ inputs.candidate_inventory }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          mkdir -p "$MOBAPT_WORK/release" "$MOBAPT_WORK/input" "$MOBAPT_WORK/review"
+          python3 -I scripts/fetch_qualification_release_asset.py --kind debian-amd64 --directory "$MOBAPT_WORK/release" \
+            --repository "$GITHUB_REPOSITORY" --tag "$GITHUB_REF_NAME" --sha "$GITHUB_SHA"
+      - name: Prepare dependencies of the verified Debian asset
+        shell: bash
+        run: |
+          asset="remote-ops-workspace-$GITHUB_REF_NAME-linux-amd64.deb"
+          digest="$(sha256sum -- "$MOBAPT_WORK/release/$asset")"
+          docker build --platform linux/amd64 --pull --target mobapt \
+            --build-arg "ROW_DEB=$asset" --build-arg "ROW_DEB_SHA256=${digest%% *}" \
+            --file docker/Dockerfile.debian-parity-evidence --tag "$MOBAPT_IMAGE" "$MOBAPT_WORK/release"
+      - name: Prepare the offline cache from signed Debian package metadata
+        shell: bash
+        run: |
+          docker run --rm --pull never --platform linux/amd64 \
+            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/src,readonly" \
+            --mount "type=bind,source=$MOBAPT_WORK/input,target=/input" \
+            --env PYTHONPATH=/src/src --env PYTHONDONTWRITEBYTECODE=1 \
+            --workdir /tmp "$MOBAPT_IMAGE" bash -euo pipefail -c '
+              apt-get update
+              apt-get download tree
+              archives=(tree_*_amd64.deb)
+              [[ "${#archives[@]}" = 1 && -f "${archives[0]}" ]]
+              version="$(dpkg-deb --field "${archives[0]}" Version)"
+              python -m remote_ops_workspace mobapt bundle-runtime \
+                --out /input/assembly --release-target linux-x86_64 \
+                --tool bash --tool-source bash=/usr/bin/bash \
+                --package "tree=$version" --package-source "tree=$version=/tmp/${archives[0]}"
+            '
+      - name: Capture and validate exact release evidence offline
+        shell: bash
+        run: |
+          asset="remote-ops-workspace-${GITHUB_REF_NAME}-linux-amd64.deb"
+          docker run --rm --pull never --platform linux/amd64 --network none \
+            --cap-drop NET_ADMIN --cap-drop NET_RAW --cap-drop SYS_ADMIN \
+            --security-opt no-new-privileges \
+            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/src,readonly" \
+            --mount "type=bind,source=$MOBAPT_WORK/input/assembly,target=/bundle,readonly" \
+            --mount "type=bind,source=$MOBAPT_WORK/release,target=/release,readonly" \
+            --mount "type=bind,source=$MOBAPT_WORK/review,target=/proof" \
+            --env GITHUB_ACTIONS --env GITHUB_REF --env GITHUB_SHA --env GITHUB_REPOSITORY \
+            --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT --env PYTHONDONTWRITEBYTECODE=1 \
+            "$MOBAPT_IMAGE" python /src/scripts/capture_mobapt_offline_evidence.py \
+            --bundle /bundle --out /proof/mobapt-unix-runtime --release-deb "/release/$asset" \
+            --probe-package tree --probe-executable /usr/bin/tree --probe-arg=--version
+          evidence="$MOBAPT_WORK/review/mobapt-unix-runtime"
+          python3 scripts/make_mobaxterm_parity_evidence_record.py \
+            --article-id mobapt-unix-runtime --release-tag "$GITHUB_REF_NAME" --release-target linux-x86_64 \
+            --evidence "$evidence/evidence.json" --assets-dir "$evidence" \
+            --release-asset-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$asset" \
+            --artifact "$asset=$MOBAPT_WORK/release/$asset" \
+            --out "$MOBAPT_WORK/review/candidate.json"
+      - name: Retain the review candidate and its exact evidence files
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: mobapt-offline-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/mobapt-evidence/review/
+          if-no-files-found: error
+          retention-days: 30

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import re
 import subprocess
 import sys
@@ -48,6 +49,13 @@ def main() -> int:
     if importlib.util.find_spec("mypy") is None:
         print("non-GUI type gate: mypy is not installed", file=sys.stderr)
         return 2
+    package_python = os.environ.get("ROW_MYPY_PYTHON")
+    package_args: list[str] = []
+    if package_python:
+        # Python finds pyvenv.cfg relative to the virtualenv entry point.
+        executable = str(Path(package_python).expanduser().absolute())
+        package_args = ["--python-executable", executable]
+        print(f"non-GUI production type gate dependency interpreter: {executable}", flush=True)
     results: list[str] = []
     failed = False
     for platform in MYPY_PLATFORMS:
@@ -62,6 +70,7 @@ def main() -> int:
                 "--no-incremental",
                 "--no-pretty",
                 "--show-error-codes",
+                *package_args,
             ],
             cwd=ROOT,
             check=False,

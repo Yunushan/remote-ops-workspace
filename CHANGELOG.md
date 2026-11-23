@@ -19,6 +19,27 @@ For the change classes used below, see [Keep a Changelog](https://keepachangelog
 - `docs/PRODUCTION_READINESS_SCORECARD.md` and
   `docs/PRODUCTION_READINESS_BACKLOG.md` tracking the weighted readiness score and
   the itemized backlog to close each gap.
+- A pre-tag audit for the exact release source, signing prerequisites and
+  release namespace.
+- Update trust policy v2 adds an operator-set minimum release version and
+  requires signed manifests to include every configured target.
+
+### Changed
+
+- Consolidated desktop icon painters and preset property routing into dedicated
+  modules.
+- Windows native and XP build scripts accept a certificate-store thumbprint for
+  signing.
+
+### Fixed
+
+- The Moba-style SFTP browser preserves Windows upload and download paths
+  and reuses the connected terminal's SSH socket when available.
+- Double-clicking a connection tab in the mRemoteNG-style view closes that
+  connection after the usual confirmation for running sessions. The gesture
+  can be disabled in **Tools → Options**.
+- The Debian and RPM managed updaters preserve authenticated packages when a
+  staging directory is accidentally supplied as the transaction directory.
 
 ## [1.0.27]
 

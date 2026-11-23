@@ -14,22 +14,53 @@ from typing import Any
 import pytest
 
 
-@pytest.mark.parametrize("with_runtime_report", [False, True])
-def test_extended_linux_evidence_bundle_packages_valid_i386_evidence(
+@pytest.mark.parametrize(("target", "with_runtime_report", "source_wheel_inventory"), [
+    ("linux-i386", False, None),
+    ("linux-i386", True, None),
+    ("linux-i386", True, "valid"),
+    ("linux-i386", True, "missing"),
+    ("linux-i386", True, "wrong-source"),
+    ("linux-armhf", True, "valid"),
+    ("linux-armhf", True, "missing"),
+    ("linux-armhf", True, "wrong-source"),
+])
+def test_extended_linux_evidence_bundle_packages_native_evidence(
     tmp_path: Path,
     monkeypatch,
+    target: str,
     with_runtime_report: bool,
+    source_wheel_inventory: str | None,
 ) -> None:
     bundler = _load_script("make_extended_linux_evidence_bundle")
     finalizer = _load_script("finalize_platform_verified_evidence_record")
     generator = _load_script("make_platform_verified_evidence_record")
     artifact_checker = _load_script("check_platform_promotion_artifacts")
-    target = "linux-i386"
+    wheel_builder = importlib.import_module("build_protected_linux_wheels")
+    evidence_checker = importlib.import_module("check_platform_verified_evidence")
+    arch = target.removeprefix("linux-")
     tag = f"v{artifact_checker.read_project_version()}"
     names = _required_artifact_names(artifact_checker, target, tag)
     monkeypatch.chdir(tmp_path)
     assets, builder, smoke = _stage_valid_linux_evidence_inputs(target, tag, names)
-    candidate = Path(target) / tag / "platform-verified-evidence-linux-i386.json"
+    inventory_line = ""
+    if source_wheel_inventory in {"valid", "wrong-source"}:
+        lock = wheel_builder.read_runtime_lock(bundler.ROOT, target)
+        wheel_platform = "i686" if target == "linux-i386" else "armv7l"
+        components = {}
+        for name in wheel_builder.SOURCE_WHEEL_COMPONENTS[target]:
+            filename, digest = wheel_builder.locked_source(lock, name)
+            components[name] = {
+                "source": filename,
+                "source_sha256": digest,
+                "wheel": f"{name}-{lock[name][0]}-cp314-cp314-linux_{wheel_platform}.whl",
+                "wheel_sha256": "d" * 64,
+            }
+        if source_wheel_inventory == "wrong-source":
+            components["cffi"]["source_sha256"] = "0" * 64
+        inventory = json.dumps({"schema": wheel_builder.inventory_schema(target), "components": components})
+        inventory_line = evidence_checker.SOURCE_WHEEL_INVENTORY_LINE.format(arch=arch) + inventory + "\n"
+        smoke.write_text(inventory_line + smoke.read_text(encoding="utf-8"), encoding="utf-8")
+    candidate = Path(target) / tag / f"platform-verified-evidence-{target}.json"
     errors, record = generator.build_evidence_record(
         SimpleNamespace(
             target=target,
@@ -41,7 +72,7 @@ def test_extended_linux_evidence_bundle_packages_valid_i386_evidence(
             workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
             release_source_head_sha="a" * 40,
             release_source_run_attempt=1,
-            runner_label=["self-hosted", "linux", "i386"],
+            runner_label=["self-hosted", "linux", arch],
             builder_evidence=builder,
             linux_smoke_evidence=smoke,
             xp_evidence=None,
@@ -65,8 +96,14 @@ def test_extended_linux_evidence_bundle_packages_valid_i386_evidence(
         candidate_record=candidate,
         out_dir=out_dir,
         runtime_report=runtime_report,
+        require_source_wheel_inventory=source_wheel_inventory is not None,
     )
 
+    if source_wheel_inventory in {"missing", "wrong-source"}:
+        expected = "must appear exactly once" if source_wheel_inventory == "missing" else f"must match the exact {arch} lock"
+        assert any(expected in error for error in errors)
+        assert not list(out_dir.glob("extended-linux-evidence-bundle-*"))
+        return
     assert errors == []
     manifest = out_dir / f"extended-linux-evidence-bundle-{target}-{tag}.json"
     archive = out_dir / f"extended-linux-evidence-bundle-{target}-{tag}.zip"
@@ -113,6 +150,8 @@ def test_extended_linux_evidence_bundle_packages_valid_i386_evidence(
         assert manifest.name in names_in_archive
         assert builder.name in names_in_archive
         assert smoke.name in names_in_archive
+        if inventory_line:
+            assert zipped.read(smoke.name).decode("utf-8").splitlines()[0] == inventory_line.rstrip("\n")
         assert candidate.name in names_in_archive
         assert set(names).issubset(names_in_archive)
         if runtime_report is not None:
@@ -386,6 +425,7 @@ def test_extended_linux_evidence_bundle_does_not_coerce_malformed_source_fields_
         source_head_sha: str,
         artifact_sha256: Any | None = None,
         builder_identity: Any | None = None,
+        require_source_wheel_inventory: bool = False,
     ) -> list[str]:
         captured.update(
             {
@@ -394,6 +434,7 @@ def test_extended_linux_evidence_bundle_does_not_coerce_malformed_source_fields_
                 "source_head_sha": source_head_sha,
                 "artifact_sha256": artifact_sha256,
                 "builder_identity": builder_identity,
+                "require_source_wheel_inventory": require_source_wheel_inventory,
             }
         )
         return ["sentinel smoke check"]
@@ -413,6 +454,7 @@ def test_extended_linux_evidence_bundle_does_not_coerce_malformed_source_fields_
     assert captured["workflow_run_url"] == ""
     assert captured["workflow_run_attempt"] == 0
     assert captured["source_head_sha"] == ""
+    assert captured["require_source_wheel_inventory"] is False
     assert "sentinel smoke check" in errors
 
 

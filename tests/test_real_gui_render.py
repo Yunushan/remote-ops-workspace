@@ -3930,7 +3930,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "property_value_property": "mRemoteNgConnectionRoutePropertyValue",
         "signal": "clicked",
         "handler": "handle_mremoteng_document_reconnect",
-        "reconnect_state": "reconnected",
+        "reconnect_state": "reconnect requested",
         "signal_property": "mRemoteNgConnectionRouteSignal",
         "handler_property": "mRemoteNgConnectionRouteHandler",
         "captured_property": "mRemoteNgConnectionRouteCaptured",
@@ -4211,28 +4211,35 @@ def test_real_gui_render_prepares_mobaxterm_connected_reference() -> None:
 
 def test_gui_profile_tab_label_helper_is_product_specific() -> None:
     source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
-    connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
+    chrome_source = Path("src/remote_ops_workspace/gui_window_chrome.py").read_text(encoding="utf-8")
+    sessions_source = Path("src/remote_ops_workspace/gui_moba_sessions.py").read_text(encoding="utf-8")
+    sidebar_source = Path("src/remote_ops_workspace/gui_sidebar.py").read_text(encoding="utf-8")
+    product_workspace_source = Path("src/remote_ops_workspace/gui_product_workspace.py").read_text(encoding="utf-8")
+    terminal_panel_source = Path("src/remote_ops_workspace/gui_connected_terminal.py").read_text(encoding="utf-8")
+    session_tabs_source = Path("src/remote_ops_workspace/gui_session_tabs.py").read_text(encoding="utf-8")
+    lifecycle_source = Path("src/remote_ops_workspace/gui_terminal_lifecycle.py").read_text(encoding="utf-8")
+    workspace_tabs_source = Path("src/remote_ops_workspace/gui_workspace_tabs.py").read_text(encoding="utf-8")
 
     assert "def profile_tab_label" in source
     assert '"SSH2" if protocol == "SSH" else protocol' in source
     assert 'return f"{protocol} - {profile.name}"' in source
     assert 'return f"{profile.name} [{protocol}]"' in source
-    assert "moba_connected_tab_chrome_items" in source
-    assert "mobaTabChromeKey" in source
-    assert "mobaRightUtilityKey" in connected_source
-    assert "mobaSessionEdgeKey" in connected_source
-    assert "mobaBottomEdgeKey" in source
-    assert "activate_adjacent_tab" in source
-    assert "mobaSshBannerTitle" in connected_source
-    assert "mobaSshBannerTargetLine" in connected_source
-    assert "mobaSshBannerCapabilityKey" in connected_source
-    assert "mobaSshBannerFooter" in connected_source
-    assert "mobaBannerWidth" in connected_source
-    assert "def profile_tab_status" in source
-    assert "build_product_workspace_surface_evidence" in source
-    assert "mobaRailRole" in source
-    assert "MobaRailLabel" in source
-    assert "show_moba_sftp_rail" in source
+    assert "moba_connected_tab_chrome_items" in sessions_source
+    assert "mobaTabChromeKey" in workspace_tabs_source
+    assert "mobaRightUtilityKey" in terminal_panel_source
+    assert "mobaSessionEdgeKey" in terminal_panel_source
+    assert "mobaBottomEdgeKey" in chrome_source
+    assert "def activate_adjacent_tab" in session_tabs_source
+    assert "mobaSshBannerTitle" in terminal_panel_source
+    assert "mobaSshBannerTargetLine" in terminal_panel_source
+    assert "mobaSshBannerCapabilityKey" in terminal_panel_source
+    assert "mobaSshBannerFooter" in terminal_panel_source
+    assert "mobaBannerWidth" in terminal_panel_source
+    assert "def profile_tab_status" in lifecycle_source
+    assert "build_product_workspace_surface_evidence" in product_workspace_source
+    assert "mobaRailRole" in sidebar_source
+    assert "MobaRailLabel" in sidebar_source
+    assert "show_moba_sftp_rail" in sidebar_source
 
 
 def _complete_contract_evidence(checker, preset_id: str) -> dict[str, list[dict[str, object]]]:

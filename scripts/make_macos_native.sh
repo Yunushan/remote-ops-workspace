@@ -138,6 +138,7 @@ cp "$ROOT/redistribution-evidence/THIRD_PARTY_NOTICES.md" "$LICENSE_DIR/THIRD_PA
 cp "$ROOT/redistribution-evidence/PyQt6-GPL-3.0.txt" "$LICENSE_DIR/PyQt6-GPL-3.0.txt"
 cp "$ROOT/redistribution-evidence/Qt-LGPL-3.0.txt" "$LICENSE_DIR/Qt-LGPL-3.0.txt"
 cp "$ROOT/redistribution-evidence/Qt-Relinking.md" "$LICENSE_DIR/Qt-Relinking.md"
+"$PYTHON_BIN" scripts/stage_runtime_licenses.py "$LICENSE_DIR/runtime" --profile desktop --gui-source-dir "$LICENSE_DIR"
 
 sign_macos_artifact "$APP_PATH"
 
@@ -206,22 +207,13 @@ if [[ "${ROW_REQUIRE_RELEASE_SIGNING:-0}" == "1" ]]; then
   mv "$SIGNED_PKG" "$PKG"
   codesign --timestamp --sign "$ROW_MACOS_SIGN_IDENTITY" ${macos_keychain_args[@]+"${macos_keychain_args[@]}"} \
     --identifier io.github.remoteopsworkspace.app.diskimage "$DMG"
-  xcrun notarytool submit "$PKG" --keychain-profile "$ROW_MACOS_NOTARY_PROFILE" ${macos_keychain_args[@]+"${macos_keychain_args[@]}"} --wait
-  xcrun stapler staple "$PKG"
-  xcrun stapler validate "$PKG"
-  pkgutil --check-signature "$PKG"
-  spctl --assess --type install --verbose=2 "$PKG"
-  xcrun notarytool submit "$DMG" --keychain-profile "$ROW_MACOS_NOTARY_PROFILE" ${macos_keychain_args[@]+"${macos_keychain_args[@]}"} --wait
-  xcrun stapler staple "$DMG"
-  xcrun stapler validate "$DMG"
-  codesign --verify --strict --verbose=2 "$DMG"
-  spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
+  "$PYTHON_BIN" scripts/macos_notarization.py "$PKG" "$BUILD_DIR/notary-pkg.json"
+  "$PYTHON_BIN" scripts/macos_notarization.py "$DMG" "$BUILD_DIR/notary-dmg.json"
 fi
 
-"$PYTHON_BIN" - "$ROOT" "$VERSION" "$DMG" "$PKG" "$ARTIFACT_ARCH" "$OUT_DIR" "${ROW_REQUIRE_RELEASE_SIGNING:-0}" <<'PY'
+"$PYTHON_BIN" - "$ROOT" "$VERSION" "$DMG" "$PKG" "$ARTIFACT_ARCH" "$OUT_DIR" "${ROW_REQUIRE_RELEASE_SIGNING:-0}" "$BUILD_DIR" <<'PY'
 from __future__ import annotations
 
-import hashlib
 import json
 import sys
 from pathlib import Path
@@ -233,6 +225,10 @@ pkg = Path(sys.argv[4])
 arch = sys.argv[5]
 out_dir = Path(sys.argv[6])
 production_signing = sys.argv[7] == "1"
+build_dir = Path(sys.argv[8])
+sys.path.insert(0, str(root / "scripts"))
+from macos_notarization import check_release_receipt, sha256_file
+
 signing = {
     "release_channel": "production-signed" if production_signing else "unsigned-preview",
     "production_trusted": production_signing,
@@ -243,13 +239,6 @@ signing = {
 
 def repo_path(path: Path) -> str:
     return path.resolve().relative_to(root.resolve()).as_posix()
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 def add_integrity(item: dict[str, object]) -> dict[str, object]:
     path = root / str(item["file"])
@@ -293,6 +282,12 @@ manifest = [
 ]
 
 manifest = [add_integrity(item) for item in manifest]
+if production_signing:
+    for item in manifest:
+        receipt_path = build_dir / f"notary-{item['format']}.json"
+        receipt = json.loads(receipt_path.read_bytes())
+        check_release_receipt(receipt, archive=Path(item["file"]).name, stapled_sha256=item["sha256"])
+        item["notarization"] = receipt
 
 manifest_path = out_dir / f"remote-ops-workspace-v{version}-macos-{arch}-native-manifest.json"
 manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")

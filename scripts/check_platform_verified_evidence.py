@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_PATH = ROOT / "configs" / "platform_verified_evidence.json"
 PROMOTION_PATH = ROOT / "configs" / "platform_parity_promotion.json"
 XP_CONTRACT_PATH = ROOT / "configs" / "xp_native_evidence_contract.json"
+SOURCE_WHEEL_INVENTORY_LINE = "native installer smoke {arch} source-wheel inventory: "
 
 LINUX_TARGETS = {
     "linux-i386": {
@@ -3116,6 +3117,7 @@ def check_linux_smoke_log_text(
     source_head_sha: str,
     label: str = "linux_smoke_evidence",
     artifact_sha256: Any | None = None,
+    require_source_wheel_inventory: bool = False,
 ) -> list[str]:
     arch = REQUIRED_LINUX_SMOKE_ARCHES.get(target, "")
     source_head_sha = source_head_sha.strip()
@@ -3202,9 +3204,36 @@ def check_linux_smoke_log_text(
     errors.extend(check_linux_smoke_runtime_identity_lines(target, label, text))
     errors.extend(check_linux_smoke_security_value_lines(target, label, text))
     errors.extend(check_forbidden_linux_smoke_security_lines(target, label, text))
+    errors.extend(check_linux_smoke_source_wheel_inventory(
+        target, label, text, required=require_source_wheel_inventory,
+    ))
     if artifact_sha256 is not None:
         errors.extend(check_linux_smoke_artifact_sha256_lines(target, release_tag, text, artifact_sha256, label=label))
     return errors
+
+
+def check_linux_smoke_source_wheel_inventory(
+    target: str, label: str, text: str, *, required: bool,
+) -> list[str]:
+    prefixes = tuple(SOURCE_WHEEL_INVENTORY_LINE.format(arch=name.removeprefix("linux-")) for name in LINUX_TARGETS)
+    lines = [line for line in text.splitlines() if line.startswith(prefixes)]
+    description = f"{target} {label} source-wheel inventory"
+    if not lines and not required:
+        return []
+    if len(lines) != 1:
+        return [f"{description} must appear exactly once (got {len(lines)})"]
+    prefix = SOURCE_WHEEL_INVENTORY_LINE.format(arch=target.removeprefix("linux-"))
+    if not lines[0].startswith(prefix):
+        return [f"{description} must describe the matching target"]
+
+    # The wheel builder also imports release audit code that uses this checker.
+    from build_protected_linux_wheels import validate_source_wheel_inventory
+
+    try:
+        validate_source_wheel_inventory(lines[0].removeprefix(prefix), target, lock_root=ROOT if required else None)
+    except (KeyError, OSError, RecursionError, ValueError) as exc:
+        return [f"{description}: {exc}"]
+    return []
 
 
 def check_required_linux_smoke_exact_lines(

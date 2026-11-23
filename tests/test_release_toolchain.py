@@ -20,43 +20,60 @@ def test_release_signing_refuses_missing_timestamp_or_package_verification() -> 
     signer = Path("scripts/sign_windows_artifact.ps1").read_text(encoding="utf-8")
     smoke = Path("scripts/smoke_windows_native.ps1").read_text(encoding="utf-8")
     macos = Path("scripts/make_macos_native.sh").read_text(encoding="utf-8")
-    assert checker.check_native_signing_verification(windows, signer, smoke, macos) == []
-    errors = checker.check_native_signing_verification(windows, signer.replace(" /tw ", " ", 1), smoke, macos)
+    notary = Path("scripts/macos_notarization.py").read_text(encoding="utf-8")
+    assert checker.check_native_signing_verification(windows, signer, smoke, macos, notary) == []
+    missing_timestamp = signer.replace('"/tw", ', "", 1)
+    assert missing_timestamp != signer
+    errors = checker.check_native_signing_verification(windows, missing_timestamp, smoke, macos, notary)
     assert any("timestamp verification" in error for error in errors)
     for artifact in ("RowExe", "RowGuiExe"):
         changed = windows.replace(f"Sign-NativeArtifact ${artifact}\n", f"Sign-NativeArtifact ${artifact}Copy\n", 1)
-        errors = checker.check_native_signing_verification(changed, signer, smoke, macos)
+        errors = checker.check_native_signing_verification(changed, signer, smoke, macos, notary)
         assert f"Windows production signing must sign ${artifact} before copying it into the packages" in errors
     for original, replacement in (("SignedUninstaller=yes", "SignedUninstaller=no"), ("@CompilerArgs $Iss", "$Iss")):
-        errors = checker.check_native_signing_verification(windows.replace(original, replacement, 1), signer, smoke, macos)
+        errors = checker.check_native_signing_verification(windows.replace(original, replacement, 1), signer, smoke, macos, notary)
         assert any("signed uninstaller" in error for error in errors)
     changed_smoke = smoke.replace("Assert-TimestampedAuthenticode $Uninstaller.FullName", "Write-Host $Uninstaller.FullName")
-    errors = checker.check_native_signing_verification(windows, signer, changed_smoke, macos)
+    errors = checker.check_native_signing_verification(windows, signer, changed_smoke, macos, notary)
     assert any("uninstaller before running it" in error for error in errors)
     for package in ("DMG", "PKG"):
-        command = f'xcrun stapler validate "${package}"'
+        command = f'  "$PYTHON_BIN" scripts/macos_notarization.py "${package}"'
         assert command in macos
-        errors = checker.check_native_signing_verification(windows, signer, smoke, macos.replace(command, f"# {command}", 1))
+        errors = checker.check_native_signing_verification(windows, signer, smoke, macos.replace(command, f"# {command}", 1), notary)
         assert any("verify both final packages" in error for error in errors)
+    without_ticket_validation = notary.replace('"stapler", "validate"', '"stapler", "staple"', 1)
+    errors = checker.check_native_signing_verification(windows, signer, smoke, macos, without_ticket_validation)
+    assert any("verify both final packages" in error for error in errors)
 
 
-@pytest.mark.parametrize("legacy", [False, True])
-def test_windows_authenticode_requires_timestamp_digest_after_url(legacy: bool) -> None:
+@pytest.mark.parametrize(("before", "after"), [
+    ('"/tr", $Timestamp.AbsoluteUri, "/td", "SHA256"', '"/td", "SHA256", "/tr", $Timestamp.AbsoluteUri'),
+    ('"/td", "SHA256"', '"/td", "SHA1"'),
+    ('Invoke-SignTool $SignTool $SignArgs', 'Invoke-SignTool $SignTool $OtherArgs'),
+])
+def test_windows_authenticode_requires_timestamp_digest_after_url(before: str, after: str) -> None:
     checker = _load_release_toolchain_checker()
     windows = Path("scripts/sign_windows_artifact.ps1").read_text(encoding="utf-8")
     xp = Path("scripts/make_windows_xp_legacy.ps1").read_text(encoding="utf-8")
     assert checker.check_windows_timestamp_digest(windows, xp) == []
 
-    if legacy:
-        xp = xp.replace("/tr $Timestamp.AbsoluteUri /td SHA256", "/td SHA256 /tr $Timestamp.AbsoluteUri")
-    else:
-        windows = windows.replace(
-            "/tr $env:ROW_WINDOWS_TIMESTAMP_URL /td SHA256",
-            "/td SHA256 /tr $env:ROW_WINDOWS_TIMESTAMP_URL",
-        )
-    target = "Windows XP" if legacy else "Windows native"
-    assert checker.check_windows_timestamp_digest(windows, xp) == [
-        f"{target} signing must select SHA256 after the RFC 3161 timestamp URL",
+    changed = windows.replace(before, after, 1)
+    assert changed != windows
+    assert checker.check_windows_timestamp_digest(changed, xp) == [
+        "Windows native signing must select SHA256 after the RFC 3161 timestamp URL",
+    ]
+
+
+@pytest.mark.parametrize("certificate_argument", ["", " -CertificatePath $Certificate"])
+def test_xp_signing_requires_the_shared_signer_for_both_certificate_sources(certificate_argument: str) -> None:
+    checker = _load_release_toolchain_checker()
+    signer = Path("scripts/sign_windows_artifact.ps1").read_text(encoding="utf-8")
+    xp = Path("scripts/make_windows_xp_legacy.ps1").read_text(encoding="utf-8")
+    command = f"& $ArtifactSigner -ArtifactPath $Path{certificate_argument}\n"
+    assert command in xp
+    xp = xp.replace(command, 'Write-Host "signing bypassed"\n')
+    assert checker.check_windows_timestamp_digest(signer, xp) == [
+        "Windows XP signing must use the shared Authenticode and timestamp verifier",
     ]
 
 
@@ -66,11 +83,11 @@ def test_release_toolchain_pins_exact_native_python_patch_in_every_release_job()
     promotion = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
     certification = Path(".github/workflows/release-certification.yml").read_text(encoding="utf-8")
 
-    assert manifest["python"]["version"] == "3.14.7"
+    assert manifest["python"]["version"] == "3.14.10"
     assert 'python-version: "3.12"' not in workflow
-    assert workflow.count('python-version: "3.14.7"') == 6
-    assert promotion.count('python-version: "3.14.7"') == 1
-    assert certification.count('python-version: "3.14.7"') == 1
+    assert workflow.count('python-version: "3.14.10"') == 6
+    assert promotion.count('python-version: "3.14.10"') == 1
+    assert certification.count('python-version: "3.14.10"') == 1
 
 
 @pytest.mark.parametrize("mutation", ["presence-only", "file-metadata", "no-final-probe"])

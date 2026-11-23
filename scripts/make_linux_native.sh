@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Release files have the same public modes even when capture keeps evidence private.
+umask 022
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -30,6 +32,9 @@ if [[ -n "${GITHUB_REF_NAME:-}" && "${GITHUB_REF_NAME}" == v* && "${GITHUB_REF_N
   echo "GITHUB_REF_NAME='${GITHUB_REF_NAME}' does not match project version ${EXPECTED_TAG}" >&2
   exit 1
 fi
+
+SOURCE_DATE_EPOCH="$("$PYTHON_BIN" -c 'from scripts.make_release import source_date_epoch; print(source_date_epoch())')"
+export SOURCE_DATE_EPOCH
 
 HOST_ARCH="$(uname -m)"
 UNAME_ARCH="${TARGET_ARCH:-$HOST_ARCH}"
@@ -72,6 +77,11 @@ PY_DIST="$BUILD_DIR/pyinstaller-dist"
 PY_WORK="$BUILD_DIR/pyinstaller-work"
 LAUNCHER="$BUILD_DIR/row_launcher.py"
 
+if ! command -v file >/dev/null; then
+  echo "Linux native packaging requires the file utility for appimagetool" >&2
+  exit 1
+fi
+
 rm -rf "$BUILD_DIR"
 mkdir -p "$OUT_DIR" "$PY_DIST" "$PY_WORK"
 
@@ -81,14 +91,10 @@ from remote_ops_workspace.cli import main
 raise SystemExit(main())
 PY
 
-"$PYTHON_BIN" -m PyInstaller \
-  --clean \
-  --noconfirm \
+"$PYTHON_BIN" -m PyInstaller.utils.cliutils.makespec \
   --onefile \
   --name row \
   --console \
-  --distpath "$PY_DIST" \
-  --workpath "$PY_WORK" \
   --specpath "$BUILD_DIR" \
   --collect-submodules remote_ops_workspace \
   --collect-data remote_ops_workspace \
@@ -100,6 +106,8 @@ PY
   --hidden-import asyncore \
   --hidden-import asynchat \
   "$LAUNCHER"
+"$PYTHON_BIN" scripts/linux_frozen_runpaths.py "$BUILD_DIR/row.spec"
+"$PYTHON_BIN" -m PyInstaller --clean --noconfirm --distpath "$PY_DIST" --workpath "$PY_WORK" "$BUILD_DIR/row.spec"
 
 ROW_BIN="$PY_DIST/row"
 if [[ ! -x "$ROW_BIN" ]]; then
@@ -107,6 +115,12 @@ if [[ ! -x "$ROW_BIN" ]]; then
   exit 1
 fi
 "$PYTHON_BIN" scripts/check_linux_native_elf.py --target "$APPIMAGE_ARCH" --executable "$ROW_BIN"
+launcher_depends="$("$PYTHON_BIN" scripts/debian_native_dependencies.py "$ROW_BIN")"
+minimum_glibc=""
+glibc_dependency='(^|, )libc6 \(>= ([0-9]+(\.[0-9]+)+)\)(, |$)'
+if [[ "$launcher_depends" =~ $glibc_dependency ]]; then
+  minimum_glibc="${BASH_REMATCH[2]}"
+fi
 
 PKGROOT="$BUILD_DIR/pkgroot"
 install -Dm755 "$ROW_BIN" "$PKGROOT/usr/bin/row"
@@ -114,6 +128,7 @@ install -Dm644 "$ROOT/LICENSE" "$PKGROOT/usr/share/doc/remote-ops-workspace/LICE
 install -Dm644 "$ROOT/NOTICE" "$PKGROOT/usr/share/doc/remote-ops-workspace/NOTICE"
 install -Dm644 "$ROOT/redistribution-evidence/THIRD_PARTY_NOTICES.md" "$PKGROOT/usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md"
 install -Dm644 "$ROOT/README.md" "$PKGROOT/usr/share/doc/remote-ops-workspace/README.md"
+"$PYTHON_BIN" scripts/stage_linux_runtime_licenses.py "$PKGROOT/usr/share/doc/remote-ops-workspace/licenses"
 cat > "$PKGROOT/usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md" <<EOF
 # Linux native release
 
@@ -122,7 +137,7 @@ Version: v$VERSION
 Target: Linux $UNAME_ARCH
 Build host architecture: $HOST_ARCH
 
-This native package installs the standalone `row` command built with
+This native package installs the standalone row command built with
 PyInstaller. Protocol sessions still depend on Linux system tools such as
 OpenSSH, FreeRDP, TigerVNC, virt-viewer, x2goclient, mosh, and Xorg/Wayland
 display tooling.
@@ -131,10 +146,25 @@ TARGET_ARCH may be used to select the artifact naming/mapping for a matching
 builder, but this script does not cross-compile PyInstaller binaries. Run it on
 the requested architecture or in an equivalent container/runner.
 EOF
+if [[ -n "$minimum_glibc" ]]; then
+  printf '\nThe frozen row launcher requires glibc %s or newer. Check your host with\n`getconf GNU_LIBC_VERSION`.\n' \
+    "$minimum_glibc" >> "$PKGROOT/usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md"
+fi
 
 DEB_ROOT="$BUILD_DIR/debroot"
 mkdir -p "$DEB_ROOT"
 cp -a "$PKGROOT/." "$DEB_ROOT/"
+if [[ -n "${ROW_RELEASE_SERVER_BUNDLE:-}" ]]; then
+  case "$DEB_ARCH" in
+    amd64) server_target="linux-x86_64" ;;
+    arm64|i386|armhf) server_target="linux-$DEB_ARCH" ;;
+    *) echo "Embedded server bundle is unsupported for Debian $DEB_ARCH" >&2; exit 1 ;;
+  esac
+  deb_depends="$("$PYTHON_BIN" scripts/moba_debian_server_payload.py \
+    --bundle "$ROW_RELEASE_SERVER_BUNDLE" --debian-root "$DEB_ROOT" --target "$server_target")"
+else
+  deb_depends="$launcher_depends"
+fi
 mkdir -p "$DEB_ROOT/DEBIAN"
 INSTALLED_SIZE="$(du -ks "$DEB_ROOT/usr" | awk '{print $1}')"
 cat > "$DEB_ROOT/DEBIAN/control" <<EOF
@@ -145,6 +175,9 @@ Priority: optional
 Architecture: $DEB_ARCH
 Installed-Size: $INSTALLED_SIZE
 Maintainer: Remote Ops Workspace Contributors <maintainers@example.invalid>
+Depends: $deb_depends
+EOF
+cat >> "$DEB_ROOT/DEBIAN/control" <<'EOF'
 Description: Operator-first remote terminal and connection workspace
  Remote Ops Workspace provides a CLI and adapter-first workflows for SSH, RDP,
  VNC, SFTP, Mosh, Telnet, X11, SPICE, X2Go, ICA, HTTP/HTTPS, serial consoles,
@@ -153,10 +186,15 @@ EOF
 
 DEB="$OUT_DIR/remote-ops-workspace-v${VERSION}-linux-${DEB_ARCH}.deb"
 dpkg-deb --root-owner-group --build "$DEB_ROOT" "$DEB"
+if [[ -n "${ROW_RELEASE_SERVER_BUNDLE:-}" ]]; then
+  "$PYTHON_BIN" scripts/moba_debian_server_payload.py \
+    --bundle "$DEB_ROOT/usr/lib/remote-ops-workspace/servers" --deb "$DEB" --target "$server_target"
+fi
 
 RPMBUILD="$BUILD_DIR/rpmbuild"
 mkdir -p "$RPMBUILD/BUILD" "$RPMBUILD/BUILDROOT" "$RPMBUILD/RPMS" "$RPMBUILD/SOURCES" "$RPMBUILD/SPECS" "$RPMBUILD/SRPMS"
 SPEC="$RPMBUILD/SPECS/remote-ops-workspace.spec"
+rpm_requires="$("$PYTHON_BIN" -m scripts.rpm_native_dependencies "$ROW_BIN")"
 cat > "$SPEC" <<EOF
 Name: remote-ops-workspace
 Version: $VERSION
@@ -164,6 +202,7 @@ Release: 1%{?dist}
 Summary: Operator-first remote terminal and connection workspace
 License: 0BSD
 BuildArch: $RPM_ARCH
+$rpm_requires
 
 # The onefile executable has already been finalized and inspected by PyInstaller.
 # Preserve its complete bytes, including ELF metadata and the embedded CArchive.
@@ -184,6 +223,8 @@ cp "$PKGROOT/usr/share/doc/remote-ops-workspace/NOTICE" %{buildroot}/usr/share/d
 cp "$PKGROOT/usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md" %{buildroot}/usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md
 cp "$PKGROOT/usr/share/doc/remote-ops-workspace/README.md" %{buildroot}/usr/share/doc/remote-ops-workspace/README.md
 cp "$PKGROOT/usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md" %{buildroot}/usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md
+cp -a "$PKGROOT/usr/share/doc/remote-ops-workspace/licenses" %{buildroot}/usr/share/doc/remote-ops-workspace/
+find "%{buildroot}" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 
 %check
 cmp "$PKGROOT/usr/bin/row" %{buildroot}/usr/bin/row
@@ -196,9 +237,16 @@ cmp "$PKGROOT/usr/bin/row" %{buildroot}/usr/bin/row
 /usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md
 /usr/share/doc/remote-ops-workspace/README.md
 /usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md
+%license /usr/share/doc/remote-ops-workspace/licenses
 EOF
 
-rpmbuild --define "_topdir $RPMBUILD" --define "_build_id_links none" -bb "$SPEC"
+# Use the release timestamp and a stable BuildHost across runners.
+rpmbuild --define "_topdir $RPMBUILD" \
+  --define "_build_id_links none" \
+  --define "_buildhost reproducible" \
+  --define "source_date_epoch_from_changelog 0" \
+  --define "use_source_date_epoch_as_buildtime 1" \
+  -bb "$SPEC"
 RPM_SOURCE="$(find "$RPMBUILD/RPMS" -name '*.rpm' -type f | head -n 1)"
 RPM="$OUT_DIR/remote-ops-workspace-v${VERSION}-linux-${RPM_ARCH}.rpm"
 cp "$RPM_SOURCE" "$RPM"
@@ -208,11 +256,36 @@ install -Dm755 "$ROW_BIN" "$APPDIR/usr/bin/row"
 install -Dm644 "$ROOT/LICENSE" "$APPDIR/usr/share/doc/remote-ops-workspace/LICENSE"
 install -Dm644 "$ROOT/NOTICE" "$APPDIR/usr/share/doc/remote-ops-workspace/NOTICE"
 install -Dm644 "$ROOT/redistribution-evidence/THIRD_PARTY_NOTICES.md" "$APPDIR/usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md"
-cat > "$APPDIR/AppRun" <<'EOF'
-#!/usr/bin/env sh
+cp -a "$PKGROOT/usr/share/doc/remote-ops-workspace/licenses" "$APPDIR/usr/share/doc/remote-ops-workspace/"
+{
+  printf '#!/usr/bin/env sh\nminimum_glibc="%s"\n' "$minimum_glibc"
+  cat <<'EOF'
+if [ -n "$minimum_glibc" ]; then
+  host_glibc="$(LC_ALL=C getconf GNU_LIBC_VERSION 2>/dev/null)" || host_glibc=""
+  case "$host_glibc" in
+    'glibc '*)
+      host_glibc="${host_glibc#glibc }"
+      older="$(LC_ALL=C awk -v host="$host_glibc" -v minimum="$minimum_glibc" 'BEGIN {
+        if (host !~ /^[0-9]+(\.[0-9]+)+$/) exit
+        host_count = split(host, actual, /\./)
+        minimum_count = split(minimum, required, /\./)
+        for (i = 1; i <= host_count || i <= minimum_count; i++) {
+          if (actual[i] + 0 < required[i] + 0) { print "yes"; exit }
+          if (actual[i] + 0 > required[i] + 0) exit
+        }
+      }' 2>/dev/null)" || older=""
+      if [ "$older" = yes ]; then
+        printf 'Remote Ops Workspace requires glibc %s or newer (found %s).\n' \
+          "$minimum_glibc" "$host_glibc" >&2
+        exit 1
+      fi
+      ;;
+  esac
+fi
 HERE="$(dirname "$(readlink -f "$0")")"
 exec "$HERE/usr/bin/row" "$@"
 EOF
+} > "$APPDIR/AppRun"
 chmod +x "$APPDIR/AppRun"
 cat > "$APPDIR/remote-ops-workspace.desktop" <<'EOF'
 [Desktop Entry]
@@ -296,9 +369,10 @@ ARCH="$APPIMAGE_ARCH" "$APPIMAGETOOL" --appimage-extract-and-run \
   --runtime-file "$APPIMAGE_RUNTIME" "$APPDIR" "$APPIMAGE"
 
 TARBALL="$OUT_DIR/remote-ops-workspace-v${VERSION}-linux-${APPIMAGE_ARCH}-native.tar.gz"
-tar -C "$PKGROOT" -czf "$TARBALL" .
+LC_ALL=C tar -C "$PKGROOT" --sort=name --mtime="@$SOURCE_DATE_EPOCH" \
+  --numeric-owner --owner=0 --group=0 -cf - usr | gzip -n > "$TARBALL"
 
-"$PYTHON_BIN" - "$ROOT" "$VERSION" "$OUT_DIR" "$DEB" "$RPM" "$APPIMAGE" "$TARBALL" "$DEB_ARCH" "$RPM_ARCH" "$APPIMAGE_ARCH" "$UNAME_ARCH" "$HOST_ARCH" <<'PY'
+"$PYTHON_BIN" - "$ROOT" "$VERSION" "$OUT_DIR" "$DEB" "$RPM" "$APPIMAGE" "$TARBALL" "$DEB_ARCH" "$RPM_ARCH" "$APPIMAGE_ARCH" "$UNAME_ARCH" "$HOST_ARCH" "$minimum_glibc" <<'PY'
 from __future__ import annotations
 
 import hashlib
@@ -318,6 +392,7 @@ rpm_arch = sys.argv[9]
 appimage_arch = sys.argv[10]
 requested_arch = sys.argv[11]
 host_arch = sys.argv[12]
+minimum_glibc = sys.argv[13]
 
 def repo_path(path: Path) -> str:
     return path.resolve().relative_to(root.resolve()).as_posix()
@@ -330,7 +405,7 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 def add_integrity(item: dict[str, object]) -> dict[str, object]:
-    path = root / str(item["file"])
+    path = out_dir / str(item["file"])
     item["size_bytes"] = path.stat().st_size
     item["sha256"] = sha256_file(path)
     return item
@@ -345,7 +420,7 @@ manifest = [
         "target": f"linux-{deb_arch}-deb",
         "label": f"Linux {deb_arch} DEB",
         "architecture": deb_arch,
-        "file": repo_path(deb),
+        "file": deb.name,
         "format": "deb",
         "install_command": f"sudo apt install ./{deb.name}",
         "notes": [
@@ -358,7 +433,7 @@ manifest = [
         "target": f"linux-{rpm_arch}-rpm",
         "label": f"Linux {rpm_arch} RPM",
         "architecture": rpm_arch,
-        "file": repo_path(rpm),
+        "file": rpm.name,
         "format": "rpm",
         "install_command": f"sudo rpm -Uvh {rpm.name}",
         "notes": [
@@ -371,7 +446,7 @@ manifest = [
         "target": f"linux-{appimage_arch}-appimage",
         "label": f"Linux {appimage_arch} AppImage",
         "architecture": appimage_arch,
-        "file": repo_path(appimage),
+        "file": appimage.name,
         "format": "AppImage",
         "install_command": f"chmod +x {appimage.name} && ./{appimage.name} --version",
         "notes": [
@@ -384,7 +459,7 @@ manifest = [
         "target": f"linux-{appimage_arch}-native-tarball",
         "label": f"Linux {appimage_arch} native tarball",
         "architecture": appimage_arch,
-        "file": repo_path(tarball),
+        "file": tarball.name,
         "format": "tar.gz",
         "install_command": "Extract into a staging root or copy usr/bin/row into PATH.",
         "notes": [
@@ -393,6 +468,11 @@ manifest = [
         ],
     },
 ]
+
+if minimum_glibc:
+    for item in manifest:
+        if item["format"] in {"AppImage", "tar.gz"}:
+            item["minimum_glibc"] = minimum_glibc
 
 manifest = [add_integrity(item) for item in manifest]
 

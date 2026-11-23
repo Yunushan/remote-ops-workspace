@@ -8,6 +8,7 @@ import sys
 import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -92,7 +93,83 @@ def _component(root: Path, name: str, version: str, origin: str) -> dict:
     }
 
 
-def _positive_fixture(tmp_path: Path, checker, *, different_runtime_report: bool = False) -> list[str]:
+def test_debian_server_notice_scope_comes_from_exact_package_evidence(tmp_path: Path) -> None:
+    checker = _load_checker()
+    debian = "row-amd64.deb"
+    rpm = "row-x86_64.rpm"
+    source_lock = "locks/linux.txt"
+    lock = _write_record(
+        tmp_path, source_lock, f"pyinstaller==6.22.2 --hash=sha256:{'a' * 64}\n".encode(),
+        format="pip-requirements", fully_hashed=True, source_file=source_lock,
+    )
+    realized = _write_record(
+        tmp_path, "pip-inspect.json",
+        b'{"version":"1","installed":[{"metadata":{"name":"PyInstaller","version":"6.22.2"}}]}',
+        format="pip-inspect-v1", reference="exact pip inspect fixture",
+    )
+    component = _component(tmp_path, "PyInstaller", "6.22.2", "python-distribution")
+    native = _component(tmp_path, "openssh-server", "1:10.0p1-7+deb13u4", "native-component")
+    notice = _write_record(
+        tmp_path, "licenses/openssh-server.copyright", b"Debian OpenSSH copyright fixture\n",
+        path=checker.notice_path("openssh-server").as_posix(),
+    )
+    native["license_files"] = [notice]
+    common = component["license_files"]
+    inventory = {
+        "schema_version": 1, "profile": "secure-cli", "closed_world_complete": True,
+        "artifact_contents_scanned": True, "all_installed_distributions_recorded": True,
+        "classification_complete": True, "resolver_lock": lock, "realized_environment": realized,
+        "components": [component, native],
+        "artifact_license_files": {debian: [*common, notice], rpm: common},
+    }
+    verified = {debian: {"openssh-server": {
+        "version": native["version"], "services": ["ssh", "sftp"],
+        "sha256": notice["sha256"], "size_bytes": notice["size_bytes"],
+    }}}
+
+    def verify():
+        return checker.check_inventory(
+            inventory, manifest_name="linux-manifest.json", profile="secure-cli",
+            required_names=["PyInstaller"], versions={"pyinstaller": "6.22.2"},
+            artifact_names={debian, rpm}, evidence_root=tmp_path,
+            expected_lock_file=source_lock, expected_lock_sha256=lock["sha256"],
+            debian_notices=verified,
+        )
+
+    assert verify() == []
+    inventory["artifact_license_files"][debian] = common
+    assert any(f"{debian} scan is missing bundled component license files" in error for error in verify())
+    inventory["artifact_license_files"][debian] = [*common, notice]
+
+    rpm_path = "usr/share/licenses/remote-ops-workspace/pyinstaller.txt"
+    common[0]["artifact_paths"] = {rpm: rpm_path}
+    assert any(f"{rpm} scan is missing bundled component license files" in error for error in verify())
+    inventory["artifact_license_files"][rpm] = [{**common[0], "path": rpm_path}]
+    assert verify() == []
+    inventory["artifact_license_files"][rpm][0]["sha256"] = "0" * 64
+    assert any(f"{rpm} scan is missing bundled component license files" in error for error in verify())
+    inventory["artifact_license_files"][rpm][0]["sha256"] = common[0]["sha256"]
+
+    for malformed in ({rpm: "../outside.txt"}, {rpm: "."}, {"unknown.zip": rpm_path}, []):
+        common[0]["artifact_paths"] = malformed
+        assert any("license artifact_paths must map known package names to relative paths" in error for error in verify())
+    common[0]["artifact_paths"] = {rpm: rpm_path}
+
+    notice["artifact_paths"] = {debian: "another/location"}
+    assert any("artifact_paths must preserve the verified Debian notice path" in error for error in verify())
+    notice["artifact_paths"] = {rpm: notice["path"]}
+    assert any("license artifact_paths must map known package names to relative paths" in error for error in verify())
+    notice["artifact_paths"] = {debian: notice["path"]}
+    assert verify() == []
+
+    native["version"] = "1:10.0p1-7+deb13u5"
+    assert any("requires the exact bundled Debian component and notice for openssh-server" in error for error in verify())
+
+
+def _positive_fixture(
+    tmp_path: Path, checker, *, different_runtime_report: bool = False, notice_fault: str = "",
+    candidate_fault: str = "",
+) -> list[str]:
     assets = tmp_path / "assets"
     evidence_root = tmp_path / "evidence"
     assets.mkdir()
@@ -103,16 +180,7 @@ def _positive_fixture(tmp_path: Path, checker, *, different_runtime_report: bool
     manifest_name = f"remote-ops-workspace-{tag}-windows-x86-native-manifest.json"
     artifact_name = f"remote-ops-workspace-{tag}-windows-x86-native.zip"
     artifact = assets / artifact_name
-    artifact.write_bytes(b"native bytes")
-    manifest = [
-        {
-            "file": f"native-dist/windows/{artifact_name}",
-            "size_bytes": artifact.stat().st_size,
-            "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
-        }
-    ]
     manifest_path = assets / manifest_name
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     toolchain = {
         "python": {"version": "3.14.7"},
@@ -127,7 +195,8 @@ def _positive_fixture(tmp_path: Path, checker, *, different_runtime_report: bool
                     "platform_target_ids": ["windows-x86"],
                     "arches": ["x86"],
                     "asset_patterns": [
-                        "remote-ops-workspace-v1.2.3-windows-<x86>-native-manifest.json"
+                        "remote-ops-workspace-v1.2.3-windows-<x86>-native-manifest.json",
+                        artifact_name,
                     ],
                 },
             ]
@@ -247,11 +316,61 @@ def _positive_fixture(tmp_path: Path, checker, *, different_runtime_report: bool
             "python-distribution",
         ),
     ]
+    components[1]["license_files"] = [_write_record(
+        evidence_root, "licenses/LICENSE", (checker.ROOT / "LICENSE").read_bytes(), path="docs/LICENSE",
+    )]
     all_licenses = [
         license_file
         for component in components
         for license_file in component["license_files"]
     ]
+    components[0]["license_files"][0]["path"] = "docs/licenses/runtime/cpython/LICENSE.txt"
+    components[2]["license_files"][0]["path"] = "docs/licenses/runtime/pyinstaller/COPYING.txt"
+    common = _write_record(
+        evidence_root, "licenses/THIRD_PARTY_NOTICES.md",
+        (checker.ROOT / "redistribution-evidence/THIRD_PARTY_NOTICES.md").read_bytes(),
+        path="docs/THIRD_PARTY_NOTICES.md",
+    )
+    with zipfile.ZipFile(artifact, "w") as archive:
+        for license_file in [*all_licenses, common]:
+            payload = (evidence_root / license_file["file"]).read_bytes()
+            if notice_fault == "different-runtime-bytes" and license_file is all_licenses[0]:
+                payload = payload.replace(b"license", b"licence")
+            archive.writestr(license_file["path"], payload)
+    manifest_entries = [
+        {
+            "file": f"native-dist/windows/{artifact_name}",
+            "size_bytes": artifact.stat().st_size,
+            "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
+        }
+    ]
+    unexpected_asset = assets / "license-review-cover.txt"
+    if notice_fault == "unexpected-manifest-member":
+        contents = b"Review cover sheet"
+        unexpected_asset.write_bytes(contents)
+        manifest_entries.append({
+            "file": unexpected_asset.name, "size_bytes": len(contents), "sha256": hashlib.sha256(contents).hexdigest(),
+        })
+    manifest_path.write_text(json.dumps(manifest_entries), encoding="utf-8")
+    signed_scans = [*all_licenses]
+    if notice_fault != "missing-general-notice":
+        signed_scans.append(common)
+    if notice_fault == "duplicate-general-notice":
+        signed_scans.append(common)
+    python_license = components[0]["license_files"][0]
+    components[0]["license_files"] = [{
+        **python_license,
+        "path": "licenses/cpython/LICENSE.txt",
+        "artifact_paths": {artifact_name: python_license["path"]},
+    }]
+    if notice_fault == "wrong-runtime-component":
+        components[0]["license_files"], components[2]["license_files"] = (
+            components[2]["license_files"], components[0]["license_files"],
+        )
+    if notice_fault == "wrong-application-component":
+        components[0]["license_files"], components[1]["license_files"] = (
+            components[1]["license_files"], components[0]["license_files"],
+        )
     inventory = {
         "schema_version": 1,
         "profile": "minimal-cli",
@@ -262,25 +381,54 @@ def _positive_fixture(tmp_path: Path, checker, *, different_runtime_report: bool
         "resolver_lock": lock,
         "realized_environment": realized,
         "components": components,
-        "artifact_license_files": {artifact_name: all_licenses},
+        "artifact_license_files": {artifact_name: signed_scans},
     }
+    if notice_fault == "unexpected-manifest-member":
+        inventory["artifact_license_files"][unexpected_asset.name] = signed_scans
+        components[0]["license_files"][0]["artifact_paths"][unexpected_asset.name] = python_license["path"]
     protected_registry = _write_record(
         evidence_root,
         "platform/platform_verified_evidence.json",
         b'{"accepted_evidence":[]}',
         reference="signed protected platform registry",
     )
+    from scripts.release_candidate_inventory import BUILD_WORKFLOW, EXPECTED_ARTIFACT_NAMES
+
+    native_records = [
+        {"path": path.name, "size": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+        for path in (manifest_path, artifact)
+    ]
+    if candidate_fault == "different-manifest":
+        native_records[0]["sha256"] = "e" * 64
+    if candidate_fault == "different-package":
+        native_records[1]["sha256"] = "e" * 64
+    native_owner = "release-windows-native-arm64" if candidate_fault == "other-native-archive" else "release-windows-native-x86"
+    build_archives = [
+        {
+            "name": name, "id": index, "archive_digest": f"sha256:{'f' * 64}", "size_in_bytes": 100,
+            "files": native_records if name == native_owner else [
+                {"path": f"{name}.txt", "size": len(name), "sha256": hashlib.sha256(name.encode()).hexdigest()},
+            ],
+        }
+        for index, name in enumerate(EXPECTED_ARTIFACT_NAMES, start=1)
+    ]
+    runtime_reports = {
+        target: {"artifact_id": index, "archive_digest": f"sha256:{'f' * 64}", "sha256": "b" * 64, "size_bytes": 10}
+        for index, target in enumerate(checker.RUNTIME_REPORT_ARTIFACT_NAMES, start=100)
+    }
+    runtime_reports["windows-x86"].update({
+        "sha256": "f" * 64 if different_runtime_report else realized["sha256"],
+        "size_bytes": realized["size_bytes"],
+    })
     candidate_inventory = _write_record(
         evidence_root,
         "release-candidate-inventory.json",
         json.dumps({
             "schema_version": 2,
-            "runtime_reports": {
-                "windows-x86": {
-                    "sha256": "f" * 64 if different_runtime_report else realized["sha256"],
-                    "size_bytes": realized["size_bytes"],
-                },
-            },
+            "repository": repository, "release_tag": tag, "release_sha": sha,
+            "source_ref": f"refs/tags/{tag}", "workflow": BUILD_WORKFLOW,
+            "build_run_id": 17, "build_run_attempt": 1,
+            "artifacts": build_archives, "runtime_reports": runtime_reports,
         }).encode(),
         reference="attested exact-tag candidate inventory",
     )
@@ -411,6 +559,8 @@ def test_compliance_policy_with_tracked_workflows(approved: bool) -> None:
 
 def test_compliance_maps_all_native_manifests_for_a_future_release_tag() -> None:
     checker = _load_checker()
+    from scripts.release_candidate_inventory import EXPECTED_ARTIFACT_NAMES
+
     matrix = json.loads(Path("configs/release_matrix.json").read_bytes())
     policy = json.loads(Path("configs/release_compliance_policy.json").read_bytes())
     tag = "v2.3.4"
@@ -426,8 +576,12 @@ def test_compliance_maps_all_native_manifests_for_a_future_release_tag() -> None
         for target in job["platform_target_ids"]
     }
     assert standard_targets == checker.RUNTIME_REPORT_ARTIFACT_NAMES.keys()
+    archives = set()
     for target in targets:
-        checker.producer_for_target(target, release_workflow="", extended_workflow="")
+        _, job, arch = checker.producer_for_target(target, release_workflow="", extended_workflow="")
+        if arch is not None:
+            archives.add(f"release-{job}-{arch}")
+    assert archives == set(EXPECTED_ARTIFACT_NAMES) - {"release-source-python"}
     assert checker.RUNTIME_REPORT_ARTIFACT_NAMES["linux-arm64"] == "release-runtime-linux-aarch64"
 
 
@@ -435,6 +589,86 @@ def test_complete_signed_release_compliance_fixture_passes(tmp_path: Path) -> No
     checker = _load_checker()
 
     assert checker.main(_positive_fixture(tmp_path, checker)) == 0
+
+
+def test_signed_approval_requires_exact_manifest_package_membership(tmp_path: Path, capsys) -> None:
+    checker = _load_checker()
+    args = _positive_fixture(tmp_path, checker, notice_fault="unexpected-manifest-member")
+
+    assert checker.main(args) == 1
+    assert "package inventory differs from its release matrix target" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(("fault", "asset_suffix"), [
+    ("different-manifest", "native-manifest.json"),
+    ("different-package", "native.zip"),
+    ("other-native-archive", "native.zip"),
+])
+def test_signed_approval_binds_manifest_and_package_to_the_sealed_build(
+    tmp_path: Path, capsys, fault: str, asset_suffix: str,
+) -> None:
+    checker = _load_checker()
+    args = _positive_fixture(tmp_path, checker, candidate_fault=fault)
+
+    assert checker.main(args) == 1
+    assert (
+        f"windows-x86-{asset_suffix} does not match the sealed release-windows-native-x86 candidate archive"
+        in capsys.readouterr().err
+    )
+
+
+@pytest.mark.parametrize("fault", ["different-runtime-bytes", "missing-general-notice", "duplicate-general-notice"])
+def test_signed_approval_must_match_notices_read_from_the_package(tmp_path: Path, capsys, fault: str) -> None:
+    checker = _load_checker()
+    args = _positive_fixture(tmp_path, checker, notice_fault=fault)
+
+    assert checker.main(args) == 1
+    assert "signed license scan differs from the required packaged notices" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(("fault", "component"), [
+    ("wrong-runtime-component", "pyinstaller"),
+    ("wrong-application-component", "remote-ops-workspace"),
+])
+def test_signed_approval_binds_licenses_to_their_bundled_components(tmp_path: Path, capsys, fault, component) -> None:
+    checker = _load_checker()
+    args = _positive_fixture(tmp_path, checker, notice_fault=fault)
+
+    assert checker.main(args) == 1
+    errors = capsys.readouterr().err
+    assert "signed bundled component cpython does not bind its packaged licenses" in errors
+    assert f"signed bundled component {component} does not bind its packaged licenses" in errors
+
+
+def test_published_compliance_passes_the_authenticated_bundle_to_provenance(tmp_path, monkeypatch) -> None:
+    checker = _load_checker()
+    archive_root = tmp_path / "candidate review archives"
+    archive_root.mkdir()
+    args = [*_positive_fixture(tmp_path, checker), "--candidate-qualification-archives", str(archive_root)]
+
+    def option(name):
+        return args[args.index(name) + 1]
+
+    def verify(argv, *, audited_policy, audited_inputs):
+        assert dict(zip(argv[::2], argv[1::2], strict=True)) == {
+            flag: option(source) for flag, source in (
+                ("--assets-dir", "--assets-dir"), ("--repository", "--repository"),
+                ("--tag", "--tag"), ("--sha", "--sha"),
+                ("--governance-attestation", "--tag-governance-attestation"),
+                ("--governance-signature", "--tag-governance-signature"),
+                ("--redistribution-evidence", "--evidence"), ("--redistribution-signature", "--signature"),
+                ("--candidate-inventory", "--candidate-inventory"),
+                ("--candidate-qualification-archives", "--candidate-qualification-archives"),
+                ("--protected-platform-registry", "--protected-platform-registry"),
+            )
+        }
+        assert audited_policy == checker.read_json_object(Path(option("--policy")), "fixture policy")
+        paths = [Path(option(flag)) for flag in ("--evidence", "--signature")]
+        assert audited_inputs == {path: checker.sha256_file(path) for path in paths}
+        return 0
+
+    monkeypatch.setitem(sys.modules, "check_release_provenance", SimpleNamespace(main=verify))
+    assert checker.main([*args, "--verify-published-release"]) == 0
 
 
 def test_signed_approval_rejects_runtime_report_from_another_build(tmp_path: Path, capsys) -> None:
@@ -542,6 +776,29 @@ def test_signed_evidence_still_rejects_local_artifact_drift(tmp_path: Path) -> N
     artifact.write_bytes(b"tampered after review")
 
     assert checker.main(args) == 1
+
+
+@pytest.mark.parametrize("published", [False, True])
+def test_debian_compliance_requires_managed_qualification_in_the_signed_inventory(
+    tmp_path: Path, published: bool,
+) -> None:
+    checker = _load_checker()
+    args = checker.parse_args(_positive_fixture(tmp_path, checker))
+    raw_policy, policy = checker.read_json_object(args.policy, "policy fixture")
+    policy["production_targets"].append("linux-x86_64")
+    _, evidence = checker.read_json_object(args.evidence, "approved evidence fixture")
+    installer = args.assets_dir / f"remote-ops-workspace-{args.tag}-linux-amd64.deb"
+    installer.write_bytes(b"Debian installer fixture")
+
+    errors = checker.check_evidence(
+        evidence, policy=policy, policy_sha256=hashlib.sha256(raw_policy).hexdigest(), policy_root=tmp_path,
+        toolchain=json.loads(checker.TOOLCHAIN_PATH.read_bytes()), matrix=json.loads(checker.MATRIX_PATH.read_bytes()),
+        assets_dir=args.assets_dir, evidence_root=args.evidence_root,
+        protected_platform_registry=args.protected_platform_registry, candidate_inventory=args.candidate_inventory,
+        repository=args.repository, tag=args.tag, sha=args.sha, verify_review_window=False, published_audit=published,
+    )
+
+    assert any("requires the current sealed candidate inventory" in error for error in errors)
 
 
 def test_component_version_matching_is_case_and_separator_normalized() -> None:
@@ -680,6 +937,30 @@ def test_wrong_lock_argument_fails_the_native_python_check() -> None:
 
     assert any("does not consume" in error for error in errors)
     assert any("dependency-resolving pip install outside" in error for error in errors)
+
+
+def test_i386_projected_lock_requires_the_ordered_source_wheel_build() -> None:
+    checker = _load_checker()
+    bootstrap = "requirements-locks/protected-linux/linux-i386-bootstrap.txt"
+    source_build = checker.source_wheel_build_command("linux-i386")
+    install = f"python -m pip install --require-hashes --requirement {checker.PROTECTED_PROJECTED_LOCK}"
+    project = 'python -m pip install --no-deps --no-build-isolation ".[security,package,servers]"'
+    bootstrap_install = f"python -m pip install --require-hashes --requirement {bootstrap}"
+
+    for commands in (
+        [bootstrap_install, install, project],
+        [bootstrap_install, install, source_build, project],
+        [source_build, bootstrap_install, install, project],
+    ):
+        errors = checker.check_native_job_lock_usage(
+            "\n".join(commands),
+            "linux-i386-native-evidence",
+            "linux-i386",
+            "requirements-locks/protected-linux/linux-i386.txt",
+            bootstrap_lock_path=bootstrap,
+            direct_script=True,
+        )
+        assert any("does not consume" in error or "must install" in error for error in errors)
 
 
 def test_wrong_verifier_bootstrap_lock_fails_the_compliance_gate(tmp_path: Path) -> None:

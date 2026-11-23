@@ -59,13 +59,24 @@ explicit target context, including CArchives inside ZIP/TAR companions. This
 matches the [pinned PyInstaller writer](https://github.com/pyinstaller/pyinstaller/blob/v6.22.3/PyInstaller/archive/writers.py).
 Strict traversal, device, casefold duplicate, link and alias checks remain.
 ZIP/TAR member, source and output names retain their strict separator rules.
-Dependency/link/runtime-option descriptors remain uncertainty gaps, not observed files.
+Dependency and link descriptors remain unresolved. For a valid, payload-free
+CArchive option named `pyi-contents-directory _internal`, the collector records
+the descriptor in `runtime_options_observed` on the packaged executable and in
+the staged executable's CArchive hints. PyInstaller uses this setting for the
+contents subdirectory of a one-directory build. A one-file build can also
+carry the descriptor. Other option names and values retain the uncertainty
+marker without exposing their text. [PyInstaller bootloader](https://github.com/pyinstaller/pyinstaller/blob/v6.22.3/bootloader/src/pyi_main.c#L869-L874)
 
 ## Supported observations and remaining work
 
 - ZIP32, ordinary bounded TAR, DEB ar/data.tar, gzip/xz/bzip2 RPM/CPIO and
   executable CArchive cookie/TOC bytes are parsed without native execution,
   archive commands or filesystem extraction.
+- For Debian packages containing `data.tar.zst`, Python 3.14 and later can
+  decode one Zstandard frame with the standard library. The collector caps
+  the decoder window at 128 MiB and applies the existing expanded-byte and
+  tar-member limits. Runtimes without that decoder record
+  `deb-zstd-backend-unavailable`.
 - MSI, Inno EXE, DMG, PKG and AppImage are explicitly opaque. RPM zstd, archive
   links, PAX metadata and unsupported codecs remain explicit gaps. Observing a
   companion ZIP/TAR cannot establish the opaque package's contents.

@@ -1,4 +1,4 @@
-# Linux armhf wheel-only build backend lock; CPython 3.14.7.
+# Linux armhf wheel-only build backend lock; CPython 3.14.10.
 # Candidate dependency inputs. Hashes are from the pinned PyPI releases.
 # Native execution and independent redistribution approval are still required.
 hatchling==1.33.0 \

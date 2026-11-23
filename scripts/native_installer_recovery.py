@@ -234,8 +234,8 @@ def runner_gate(sha: str) -> None:
     assert_hosted_workspace()
     if os.name != "nt" or platform.machine().lower() not in {"amd64", "x86_64"}:
         raise RuntimeError("native Windows x64 required")
-    if sys.implementation.name != "cpython" or sys.version_info[:3] != (3, 14, 7):
-        raise RuntimeError("drill harness must use the candidate's pinned CPython 3.14.7")
+    if sys.implementation.name != "cpython" or sys.version_info[:3] != (3, 14, 10):
+        raise RuntimeError("drill harness must use the candidate's pinned CPython 3.14.10")
     if not re.fullmatch(r"[0-9a-f]{40}", sha) or git_output("rev-parse", "HEAD") != sha:
         raise RuntimeError("candidate checkout SHA mismatch")
     if git_output("status", "--porcelain", "--untracked-files=no"):

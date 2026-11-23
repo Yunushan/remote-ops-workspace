@@ -231,6 +231,31 @@ def test_python_sdist_normalization_is_deterministic(tmp_path: Path) -> None:
         assert all(member.uid == 0 and member.gid == 0 for member in archive)
 
 
+def test_python_sdist_normalization_retries_transient_windows_rename(monkeypatch, tmp_path: Path) -> None:
+    make_release = load_make_release()
+    monkeypatch.delenv("SOURCE_DATE_EPOCH", raising=False)
+    sdist = tmp_path / "candidate.tar.gz"
+    _write_sdist(sdist, ["package/PKG-INFO"], mtime=1_700_000_000)
+    original = sdist.read_bytes()
+    replace = make_release.os.replace
+    attempts = []
+
+    def transient_replace(staged, destination):
+        attempts.append(Path(destination))
+        if len(attempts) == 1:
+            assert sdist.read_bytes() == original
+            error = PermissionError("transient Windows rename denial")
+            error.winerror = 5
+            raise error
+        replace(staged, destination)
+
+    monkeypatch.setattr(make_release.os, "replace", transient_replace)
+    make_release.normalize_python_sdist(sdist)
+    assert attempts == [sdist, sdist]
+    with tarfile.open(sdist, "r:gz") as archive:
+        assert archive.getmember("package/PKG-INFO").mtime == make_release.DEFAULT_SOURCE_DATE_EPOCH
+
+
 def _write_sdist(path: Path, names: list[str], *, mtime: int) -> None:
     with tarfile.open(path, "w:gz") as archive:
         for name in names:

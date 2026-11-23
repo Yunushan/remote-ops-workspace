@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 
@@ -87,6 +88,122 @@ def test_mobapt_runtime_bundle_writer_creates_verifiable_release_tree(tmp_path: 
     assert evidence.passed is True
     assert "mobapt-runtime.json" in result.files
     assert "mobapt-cache-evidence.json" in result.files
+
+
+def test_mobapt_inventory_prefers_selected_bundle_and_keeps_host_fallback(tmp_path: Path) -> None:
+    invalid, _ = _write_mobapt_runtime_tree(tmp_path / "invalid")
+    selected, _ = _write_mobapt_runtime_tree(tmp_path / "selected")
+    later, _ = _write_mobapt_runtime_tree(tmp_path / "later")
+    (invalid / "bin" / "bash").write_bytes(b"replaced")
+    environment = build_mobapt_environment_status(
+        which=lambda name: f"/host/{name}" if name in {"bash", "grep"} else None,
+        tools=("grep", "bash", "tar"),
+        runtime_roots=(invalid, selected, later),
+    )
+    assert [(tool.name, tool.executable, tool.available) for tool in environment.base_tools] == [
+        ("grep", "/host/grep", True),
+        ("bash", str(selected / "bin" / "bash"), True),
+        ("tar", "tar", False),
+    ]
+
+
+def test_mobapt_install_offline_uses_only_verified_debian_archive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root, _ = _write_mobapt_runtime_tree(tmp_path)
+    manifest = root / "mobapt-runtime.json"
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    original = root / data["packages"][0]["archive"]
+    archive = original.with_suffix(".deb")
+    archive.write_bytes(original.read_bytes())
+    data["packages"][0]["archive"] = archive.relative_to(root).as_posix()
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    monkeypatch.setenv(mobapt.MOBAPT_RUNTIME_DIR_ENV, str(root))
+    plan = build_mobapt_package_plan("install", "htop", system="Linux", manager="apt", which=lambda name: f"/bin/{name}", offline=True)
+    assert plan.command == ["/bin/apt", "-o", "Dir::Etc::sourcelist=", "-o", "Dir::Etc::sourceparts=", "install", "--", str(archive)]
+    assert plan.to_dict()["cached_archive_sha256"] == _sha256(archive)
+    assert plan.to_dict()["cached_package_version"] == "3.3"
+    calls: list[list[str]] = []
+
+    def runner(command: list[str], **kwargs: object) -> _FakeCompletedProcess:
+        calls.append(command)
+        snapshot = Path(command[-1])
+        assert snapshot != archive and snapshot.name == archive.name
+        assert _sha256(snapshot) == plan.cached_archive_sha256
+        if command[0] == "dpkg-deb":
+            assert command[1:-1] == [r"--showformat=${Package}\n${Version}\n", "--show"]
+            replacement = archive.with_suffix(".incoming")
+            replacement.write_bytes(b"concurrent cache refresh")
+            replacement.replace(archive)
+            return _FakeCompletedProcess(0, "htop\n3.3\n", "")
+        assert command[:-1] == plan.command[:-1]
+        return _FakeCompletedProcess(0, "", "")
+
+    assert run_mobapt_package_plan(plan, runner=runner).executed is False
+    assert calls == []
+    assert run_mobapt_package_plan(plan, execute=True, runner=runner).ok
+    assert len(calls) == 2 and calls[0][-1] == calls[1][-1]
+    assert not Path(calls[0][-1]).parent.exists()
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        run_mobapt_package_plan(plan, execute=True, runner=runner)
+    assert len(calls) == 2
+    with pytest.raises(ValueError, match="verified MobApt runtime/cache"):
+        build_mobapt_package_plan("install", "htop", system="Linux", manager="apt", offline=True)
+    archive.write_bytes(original.read_bytes())
+
+    def failing_runner(command: list[str], **kwargs: object) -> _FakeCompletedProcess:
+        calls.append(command)
+        if command[0] == "dpkg-deb":
+            return _FakeCompletedProcess(0, "htop\n3.3\n", "")
+        raise TimeoutError
+
+    with pytest.raises(TimeoutError):
+        run_mobapt_package_plan(plan, execute=True, runner=failing_runner)
+    assert not Path(calls[-1][-1]).parent.exists()
+    data["packages"].append(dict(data["packages"][0], version="other"))
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ValueError, match="exactly one"):
+        build_mobapt_package_plan("install", "htop", system="Linux", manager="apt", offline=True)
+
+
+@pytest.mark.parametrize(("outcome", "error"), [
+    (FileNotFoundError(), "requires dpkg-deb"),
+    (subprocess.TimeoutExpired("dpkg-deb", 1), "timed out"),
+    ((2, ""), "could not read"),
+    ((0, "tree\n3.3\n"), "must declare htop version 3.3"),
+    ((0, "htop\n3.4\n"), "must declare htop version 3.3"),
+])
+def test_mobapt_rejects_unverified_package_identity_before_apt(tmp_path: Path, outcome, error: str) -> None:
+    archive = tmp_path / "cached.deb"
+    archive.write_bytes(b"fixture archive")
+    base = build_mobapt_package_plan("install", "htop", system="Linux", manager="apt", which=lambda _name: "/bin/apt")
+    plan = replace(base, command=["/bin/apt", "install", "--", str(archive)],
+                   cached_archive_sha256=_sha256(archive), cached_package_version="3.3")
+    snapshots: list[Path] = []
+
+    def inspect_only(command: list[str], **_kwargs: object) -> _FakeCompletedProcess:
+        assert command[0] == "dpkg-deb"
+        snapshots.append(Path(command[-1]))
+        if isinstance(outcome, Exception):
+            raise outcome
+        return _FakeCompletedProcess(*outcome, "")
+
+    with pytest.raises(ValueError, match=error):
+        run_mobapt_package_plan(plan, execute=True, runner=inspect_only)
+    assert len(snapshots) == 1 and not snapshots[0].parent.exists()
+
+
+def test_mobapt_offline_has_no_repository_or_other_manager_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root, _ = _write_mobapt_runtime_tree(tmp_path)
+    monkeypatch.setenv(mobapt.MOBAPT_RUNTIME_DIR_ENV, str(root))
+    for name in ("missing", "htop"):  # htop's only archive is a non-Debian rehearsal file.
+        with pytest.raises(ValueError, match="exactly one"):
+            build_mobapt_package_plan("install", name, system="Linux", manager="apt", offline=True)
+    with pytest.raises(ValueError, match="require the APT"):
+        build_mobapt_package_plan("install", "htop", system="Darwin", manager="brew", offline=True)
+    with pytest.raises(ValueError, match="require the APT"):
+        build_mobapt_package_plan("search", "htop", system="Linux", manager="apt", offline=True)
+    assert build_mobapt_package_plan("install", "htop", system="Linux", manager="apt", which=lambda name: f"/bin/{name}").command == [
+        "/bin/apt", "install", "htop"
+    ]
 
 
 def test_mobapt_install_plan_uses_safe_argv_for_apt() -> None:
@@ -194,7 +311,7 @@ def test_mobapt_cli_commands_are_registered() -> None:
     )
     verify = parser.parse_args(["mobapt", "cache-verify", "--evidence", "mobapt-cache.json", "--json"])
     search = parser.parse_args(["mobapt", "search", "htop", "--manager", "apt", "--json"])
-    install = parser.parse_args(["mobapt", "install", "htop", "--manager", "apt", "--execute"])
+    install = parser.parse_args(["mobapt", "install", "htop", "--manager", "apt", "--offline", "--execute"])
     update = parser.parse_args(["mobapt", "update", "--manager", "apt", "--json"])
 
     assert status.func.__name__ == "cmd_mobapt_status"
@@ -204,6 +321,7 @@ def test_mobapt_cli_commands_are_registered() -> None:
     assert search.func.__name__ == "cmd_mobapt_package"
     assert search.action == "search"
     assert install.action == "install"
+    assert install.offline is True
     assert update.action == "update"
 
 

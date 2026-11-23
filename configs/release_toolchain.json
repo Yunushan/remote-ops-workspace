@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "python": {
-    "version": "3.14.7",
+    "version": "3.14.10",
     "constraints_file": "requirements-release.txt",
     "source_date_epoch": 1704067200,
     "compatibility_profiles": [

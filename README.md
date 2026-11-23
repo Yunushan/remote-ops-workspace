@@ -5,8 +5,8 @@
 ### Operator-first remote terminal and connection workspace for SSH, RDP, VNC, SFTP, Mosh, Telnet, X11, SPICE, X2Go, ICA, HTTP/HTTPS, serial consoles, raw sockets, split panes, vaults, snippets, sync, CLI, GUI and Web/PWA.
 
 ![build](https://img.shields.io/badge/build-source--available-brightgreen)
-![published preview](https://img.shields.io/badge/published%20preview-v1.0.24-orange)
-![candidate](https://img.shields.io/badge/candidate-v1.0.27-yellow)
+![published preview](https://img.shields.io/badge/published%20preview-v1.0.27-orange)
+![candidate](https://img.shields.io/badge/candidate-v1.0.28-yellow)
 ![license](https://img.shields.io/badge/license-0BSD-blue)
 ![runtime](https://img.shields.io/badge/runtime-Python%203.10--3.15-orange)
 ![interfaces](https://img.shields.io/badge/interfaces-CLI%20%7C%20GUI%20%7C%20Web-purple)
@@ -154,6 +154,8 @@ row servers bundle-runtime ssh --out dist/servers --runtime sshd --source vendor
 row servers config-plan ftp --root . --json
 row servers evidence-verify --evidence artifacts/servers-release-evidence.json --assets-dir artifacts --json
 row servers start http --root . --dry-run --json
+row servers start cron --crontab ./my-crontab --dry-run --json
+row servers start iperf --dry-run --json
 row features --coverage
 row files ls lab-ssh /var/log --dry-run
 row files get lab-ssh /etc/hosts --local ./hosts.copy --dry-run
@@ -403,7 +405,7 @@ The JSON report includes `workflow_parity_contract` and `workflow_parity_evidenc
 | Tabs and split panes | ✅ | ✅ | ✅ | ✅ | multi-session | GUI shell + executable saved layouts and editor |
 | Terminal syntax highlighting | ✅ | — | — | — | — | GUI terminal highlighter for prompts, notes, errors, warnings, IP addresses, paths and custom keyword rules |
 | MobApt / Unix tools | ✅ | — | — | local shell | — | `row mobapt status` inventories Unix tools/package managers, `row mobapt runtime-status` scans ROW-owned Unix runtime/cache roots, `row mobapt bundle-runtime` assembles SHA-bound runtime/cache bundles, `row mobapt search/install/update` builds explicit host package-manager plans and `row mobapt cache-verify` validates offline package and terminal-use evidence |
-| Embedded servers | ✅ | — | — | — | — | `row servers status/start/stop` covers loopback-safe HTTP serving plus SSH/SFTP, FTP, TFTP, Telnet, VNC and NFS daemon adapter lifecycle state; `row servers runtime-status/bundle-runtime/config-plan/evidence-verify` adds packaged daemon assembly/discovery, auth/hardening configuration plans, PyQt Servers dialog routing and client-proof release evidence validation |
+| Embedded servers | ✅ | — | — | — | — | `row servers status/start/stop` covers loopback-safe HTTP serving plus SSH/SFTP, FTP, TFTP, Telnet, VNC and NFS daemon adapter lifecycle state. The Servers window also controls a per-user Cron scheduler and loopback Iperf 2 with optional stop timers. `row servers runtime-status/bundle-runtime/config-plan/evidence-verify` adds packaged daemon assembly/discovery, auth/hardening configuration plans, PyQt Servers dialog routing and client-proof release evidence validation |
 | Broadcast input / command fanout | MultiExec | — | — | ✅ | snippets | Broadcast/fanout CLI with Moba-style MultiExec preview and per-target result reporting |
 | Macros / snippets | ✅ | — | — | shortcuts | ✅ | Snippet model plus `row macro record/list/show/remove/replay/capture-plan/live-plan/evidence-bundle/evidence-verify` typed-event recording, SSH replay plans, PyQt terminal Record/Stop/Cancel/Replay controls, operator input capture, connected-pane timing plans, cancel prompts and SHA-bound live replay release evidence |
 | Encrypted vault | passwords | password store | credential store | — | ✅ | Optional cryptography-based local vault |
@@ -574,10 +576,11 @@ Create local release bundles for the advertised targets:
 python scripts/make_release.py
 ```
 
-The v1.0.27 changes are a release candidate; see
-[`docs/RELEASE_NOTES_v1.0.27.md`](docs/RELEASE_NOTES_v1.0.27.md) for the security
-scope and publication status. A trusted default-branch commit tagged `v1.0.27`
-starts `.github/workflows/release.yml`, which builds and seals candidate assets.
+Version `1.0.28` is the next release candidate. The published download is the
+[v1.0.27 unsigned preview](https://github.com/Yunushan/remote-ops-workspace/releases/tag/v1.0.27).
+Its scope is documented in [the v1.0.27 release notes](docs/RELEASE_NOTES_v1.0.27.md).
+A trusted default-branch commit tagged `v1.0.28` starts
+`.github/workflows/release.yml`, which builds and seals candidate assets.
 The separately dispatched `.github/workflows/release-promotion.yml` verifies
 independently signed evidence and publishes only after all promotion gates pass.
 
@@ -605,33 +608,35 @@ preview lane. It runs only from `preview` or `preview/*`, creates a uniquely nam
 does not change the protected production release or merge policy. Preview assets
 are for smoke testing only and must never be treated as trusted production media.
 
+Expected asset names for the v1.0.28 candidate are listed below.
+
 | Target | Asset |
 |---|---|
-| Python wheel | `remote_ops_workspace-1.0.27-py3-none-any.whl` |
-| Python sdist | `remote_ops_workspace-1.0.27.tar.gz` |
-| Source/Python SBOM | `remote-ops-workspace-v1.0.27-sbom.cdx.json` |
-| Source | `remote-ops-workspace-v1.0.27-source.zip` |
-| Windows | `remote-ops-workspace-v1.0.27-windows.zip` |
-| Linux | `remote-ops-workspace-v1.0.27-linux.tar.gz` |
-| macOS | `remote-ops-workspace-v1.0.27-macos.tar.gz` |
-| BSD | `remote-ops-workspace-v1.0.27-bsd.tar.gz` |
-| Solaris/illumos | `remote-ops-workspace-v1.0.27-solaris.tar.gz` |
-| Android/Termux | `remote-ops-workspace-v1.0.27-android-termux.tar.gz` |
-| iOS/iPadOS Web/PWA | `remote-ops-workspace-v1.0.27-web-pwa.zip` |
-| Web/PWA | `remote-ops-workspace-v1.0.27-web-pwa.zip` |
-| Windows native | `remote-ops-workspace-v1.0.27-windows-<x86\|x64\|arm64>-setup.exe` |
-| Windows native | `remote-ops-workspace-v1.0.27-windows-<x86\|x64\|arm64>.msi` |
-| Windows native | `remote-ops-workspace-v1.0.27-windows-<x86\|x64\|arm64>-native.zip` |
-| macOS native | `remote-ops-workspace-v1.0.27-macos-<x64\|arm64>.dmg` |
-| macOS native | `remote-ops-workspace-v1.0.27-macos-<x64\|arm64>.pkg` |
-| macOS native | `remote-ops-workspace-v1.0.27-macos-<x64\|arm64>-native-manifest.json` |
-| Linux native | `remote-ops-workspace-v1.0.27-linux-<amd64\|arm64>.deb` |
-| Linux native | `remote-ops-workspace-v1.0.27-linux-<x86_64\|aarch64>.rpm` |
-| Linux native | `remote-ops-workspace-v1.0.27-linux-<x86_64\|aarch64>.AppImage` |
-| Linux native | `remote-ops-workspace-v1.0.27-linux-<x86_64\|aarch64>-native.tar.gz` |
-| Linux native | `remote-ops-workspace-v1.0.27-linux-<x86_64\|aarch64>-native-manifest.json` |
-| Manifests | `remote-ops-workspace-v1.0.27-*-manifest.json` |
-| Checksums | `remote-ops-workspace-v1.0.27-SHA256SUMS.txt` |
+| Python wheel | `remote_ops_workspace-1.0.28-py3-none-any.whl` |
+| Python sdist | `remote_ops_workspace-1.0.28.tar.gz` |
+| Source/Python SBOM | `remote-ops-workspace-v1.0.28-sbom.cdx.json` |
+| Source | `remote-ops-workspace-v1.0.28-source.zip` |
+| Windows | `remote-ops-workspace-v1.0.28-windows.zip` |
+| Linux | `remote-ops-workspace-v1.0.28-linux.tar.gz` |
+| macOS | `remote-ops-workspace-v1.0.28-macos.tar.gz` |
+| BSD | `remote-ops-workspace-v1.0.28-bsd.tar.gz` |
+| Solaris/illumos | `remote-ops-workspace-v1.0.28-solaris.tar.gz` |
+| Android/Termux | `remote-ops-workspace-v1.0.28-android-termux.tar.gz` |
+| iOS/iPadOS Web/PWA | `remote-ops-workspace-v1.0.28-web-pwa.zip` |
+| Web/PWA | `remote-ops-workspace-v1.0.28-web-pwa.zip` |
+| Windows native | `remote-ops-workspace-v1.0.28-windows-<x86\|x64\|arm64>-setup.exe` |
+| Windows native | `remote-ops-workspace-v1.0.28-windows-<x86\|x64\|arm64>.msi` |
+| Windows native | `remote-ops-workspace-v1.0.28-windows-<x86\|x64\|arm64>-native.zip` |
+| macOS native | `remote-ops-workspace-v1.0.28-macos-<x64\|arm64>.dmg` |
+| macOS native | `remote-ops-workspace-v1.0.28-macos-<x64\|arm64>.pkg` |
+| macOS native | `remote-ops-workspace-v1.0.28-macos-<x64\|arm64>-native-manifest.json` |
+| Linux native | `remote-ops-workspace-v1.0.28-linux-<amd64\|arm64>.deb` |
+| Linux native | `remote-ops-workspace-v1.0.28-linux-<x86_64\|aarch64>.rpm` |
+| Linux native | `remote-ops-workspace-v1.0.28-linux-<x86_64\|aarch64>.AppImage` |
+| Linux native | `remote-ops-workspace-v1.0.28-linux-<x86_64\|aarch64>-native.tar.gz` |
+| Linux native | `remote-ops-workspace-v1.0.28-linux-<x86_64\|aarch64>-native-manifest.json` |
+| Manifests | `remote-ops-workspace-v1.0.28-*-manifest.json` |
+| Checksums | `remote-ops-workspace-v1.0.28-SHA256SUMS.txt` |
 
 Native protocol rendering still depends on the external clients installed on the target system.
 Windows x64 and ARM64 native portable zips include a top-level

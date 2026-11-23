@@ -21,6 +21,7 @@ from .file_safety import PRIVATE_DIR_MODE
 from .file_transfer import build_sftp_interactive_plan
 from .launcher import build_launch_plan
 from .models import Profile
+from .smartcard_keys import PINNED_SMARTCARD_KEY
 
 
 def _is_native_windows() -> bool:
@@ -647,6 +648,10 @@ def ssh_connection_key(profile: Profile) -> str:
         [tunnel.to_dict() for tunnel in profile.tunnels],
     )
     payload = json.dumps(identity, sort_keys=True, separators=(",", ":"))
+    if PINNED_SMARTCARD_KEY in options:
+        # A master created before config isolation could have authenticated
+        # with an inherited identity. Give isolated sessions their own socket.
+        payload = "ssh-config-none\n" + payload
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 

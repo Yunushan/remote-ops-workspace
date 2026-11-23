@@ -231,6 +231,29 @@ def test_duplicate_tab_and_splitter_clone_edges(gui_window, monkeypatch) -> None
     assert isinstance(window.tabs.currentWidget(), QSplitter)
 
 
+def test_connected_split_keeps_the_first_windows_panel_after_another_window_opens(
+    gui_window, monkeypatch,
+) -> None:
+    from remote_ops_workspace.gui import create_main_window
+
+    app, window = gui_window
+    monkeypatch.setattr(window, "start_terminal_pane_when_active", lambda *_args: None)
+    window.design_select.setCurrentIndex(window.design_select.findData("mobaxterm"))
+    profile = Profile(name="connected", protocol="ssh", host="connected.example.invalid")
+    panel = window.open_moba_connected_session_tab(
+        profile, TerminalPanePlan(title="Connected", command=[], source="test"),
+    )
+    _, second = create_main_window(["second-workspace"], show=False, preview_samples=False)
+    try:
+        window.add_split("horizontal")
+
+        assert window.tabs.currentWidget() is panel
+        assert panel.terminal_splitter.count() == 2
+    finally:
+        second.close()
+        app.processEvents()
+
+
 def test_layout_widget_resize_restore_retarget_and_dialog_construction(
     gui_window,
 ) -> None:

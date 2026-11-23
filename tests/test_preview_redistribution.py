@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+import hashlib
 import importlib.util
 import io
 import json
@@ -26,6 +27,16 @@ def checker():
     return module
 
 
+def runtime_license_fixture(profile: str) -> dict[str, bytes]:
+    from scripts.stage_runtime_licenses import LICENSE_PROFILES
+
+    paths = {"cpython/LICENSE.txt", "pyinstaller/COPYING.txt"}
+    paths.update(f"{component}/LICENSE" for component in LICENSE_PROFILES[profile] if component != "pyinstaller")
+    if "cryptography" in LICENSE_PROFILES[profile]:
+        paths |= {"cryptography/LICENSE.APACHE", "cryptography/LICENSE.BSD"}
+    return {path: path.encode() for path in sorted(paths)}
+
+
 def test_native_package_inventory_matches_real_release_matrix() -> None:
     module = checker()
     names = module.expected_native_assets("v1.0.27")
@@ -47,22 +58,413 @@ def test_production_notices_cover_protected_linux_and_require_exact_bytes(
 ) -> None:
     monkeypatch.syspath_prepend(str(ROOT / "scripts"))
     import check_packaged_release_notices as notices
+    from check_release_license_compliance import ApprovedPackageNotices, check_packaged_notice_scans
 
     tag = "v2.3.4"
     names = notices.expected_production_packages(tag)
     assert len(names) == 29
     assert f"remote-ops-workspace-{tag}-linux-i386.deb" in names
     assert f"remote-ops-workspace-{tag}-linux-armv7hl.rpm" in names
-    package = tmp_path / f"remote-ops-workspace-{tag}-windows-x86-native.zip"
-    material = ROOT / "redistribution-evidence" / "THIRD_PARTY_NOTICES.md"
-    monkeypatch.setattr(notices, "expected_production_packages", lambda _tag: {package.name})
+    groups = notices.expected_production_manifest_packages(tag, json.loads(notices.MATRIX_PATH.read_bytes()))
+    assert len(groups) == 9
+    assert {member for group in groups.values() for member in group} == names
+    assert f"remote-ops-workspace-{tag}-linux-arm64.deb" in groups[
+        f"remote-ops-workspace-{tag}-linux-aarch64-native-manifest.json"
+    ]
+    assert f"remote-ops-workspace-{tag}-linux-armv7hl.rpm" in groups[
+        f"remote-ops-workspace-{tag}-linux-armhf-native-manifest.json"
+    ]
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    package = assets / f"remote-ops-workspace-{tag}-windows-x86-native.zip"
+    gui_package = assets / f"remote-ops-workspace-{tag}-windows-x64-native.zip"
+    material_dir = ROOT / "redistribution-evidence"
+    material = material_dir / "THIRD_PARTY_NOTICES.md"
+    monkeypatch.setattr(notices, "expected_production_packages", lambda _tag: {package.name, gui_package.name})
     with zipfile.ZipFile(package, "w") as archive:
         archive.write(material, "docs/THIRD_PARTY_NOTICES.md")
-    assert notices.verify_notices(tmp_path, tag) == 1
+        project_license = (ROOT / "LICENSE").read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+        archive.writestr("docs/LICENSE", project_license)
+        for path, data in runtime_license_fixture("windows-x86").items():
+            archive.writestr(f"docs/licenses/runtime/{path}", data)
+    with zipfile.ZipFile(gui_package, "w") as archive:
+        archive.write(material, "docs/THIRD_PARTY_NOTICES.md")
+        archive.write(ROOT / "LICENSE", "docs/LICENSE")
+        for name in (
+            "PyQt6-GPL-3.0.txt", "Qt-LGPL-3.0.txt", "Qt-Relinking.md",
+            *notices.pinned_gui_source_records().values(),
+        ):
+            archive.write(material_dir / name, f"docs/licenses/{name}")
+        for path, data in runtime_license_fixture("desktop").items():
+            archive.writestr(f"docs/licenses/runtime/{path}", data)
+
+    assert notices.verify_notices(assets, tag) == 2
+    assert not list(bundle.iterdir())
+    assert notices.verify_notices(assets, tag, evidence_root=bundle) == 2
+    output = bundle / "packaged-notices"
+    capture = json.loads((output / "notice-extraction.json").read_bytes())
+    assert capture["release_tag"] == tag
+    assert set(capture["packages"]) == {package.name, gui_package.name}
+    expected_gui_licenses = {
+        "docs/licenses/PyQt6-GPL-3.0.txt": "pyqt6", "docs/licenses/Qt-LGPL-3.0.txt": "pyqt6-qt6",
+    }
+    approved = {}
+    for artifact in (package, gui_package):
+        found = capture["packages"][artifact.name]
+        assert found["sha256"] == hashlib.sha256(artifact.read_bytes()).hexdigest()
+        assert found["size_bytes"] == artifact.stat().st_size
+        assert len(found["notice_files"]) == (4 if artifact == package else 21)
+        components = {}
+        with zipfile.ZipFile(artifact) as archive:
+            for record in found["notice_files"]:
+                packaged = archive.read(record["path"])
+                assert packaged == (bundle / record["file"]).read_bytes()
+                assert record["sha256"] == hashlib.sha256(packaged).hexdigest()
+                assert record["size_bytes"] == len(packaged)
+                if record["path"].startswith("docs/licenses/runtime/"):
+                    assert record["component"] == record["path"].split("/")[3]
+                elif record["path"] == "docs/LICENSE":
+                    assert record["component"] == "remote-ops-workspace"
+                elif record["path"] in expected_gui_licenses:
+                    assert record["component"] == expected_gui_licenses[record["path"]]
+                else:
+                    assert "component" not in record
+                if component := record.get("component"):
+                    components.setdefault(component, []).append(record)
+        approved[artifact.name] = ApprovedPackageNotices(
+            found, found["notice_files"],
+            [
+                {"name": name, "scope": "bundled", "license_files": license_files}
+                for name, license_files in components.items()
+            ],
+        )
+    assert check_packaged_notice_scans(assets, set(approved), approved) == []
+    gui_evidence = approved[gui_package.name]
+    for component in gui_evidence.components:
+        if component["name"] == "pyqt6-qt6":
+            component["license_files"] = components["pyqt6"]
+    assert check_packaged_notice_scans(assets, set(approved), approved) == [
+        f"{gui_package.name} signed bundled component pyqt6-qt6 does not bind its packaged licenses",
+    ]
+    with pytest.raises(ValueError, match="no packaged-notices output"):
+        notices.verify_notices(assets, tag, evidence_root=bundle)
+    assert json.loads((output / "notice-extraction.json").read_bytes()) == capture
+
+    failed = tmp_path / "failed"
+    failed.mkdir()
     with zipfile.ZipFile(package, "w") as archive:
         archive.writestr("docs/THIRD_PARTY_NOTICES.md", b"Different bytes")
     with pytest.raises(ValueError, match="contains different bytes"):
-        notices.verify_notices(tmp_path, tag)
+        notices.verify_notices(assets, tag, evidence_root=failed)
+    assert not list(failed.iterdir())
+
+
+@pytest.mark.parametrize(("problem", "message"), [
+    ("missing", "does not contain"),
+    ("stale", "does not contain"),
+    ("modified", "contains different bytes"),
+    ("misplaced", "beside Qt-Relinking"),
+    ("wrong-directory", "under docs/licenses"),
+])
+def test_packaged_qt_source_records_must_match_relink_guide(tmp_path, problem, message):
+    module = checker()
+    package = tmp_path / "remote-ops-workspace-v1.0.28-windows-x64-native.zip"
+    material_dir = ROOT / "redistribution-evidence"
+    sources = module.pinned_gui_source_records()
+    names = ["Qt-Relinking.md", *sources.values()]
+    with zipfile.ZipFile(package, "w") as archive:
+        for name in names:
+            member = f"elsewhere/{name}" if problem == "wrong-directory" else f"docs/licenses/{name}"
+            data = (material_dir / name).read_bytes()
+            if name == sources["qt_source"]:
+                if problem == "missing":
+                    continue
+                if problem == "stale":
+                    member = "docs/licenses/qt-everywhere-src-6.11.2-source.json"
+                elif problem == "modified":
+                    data += b" "
+                elif problem == "misplaced":
+                    member = f"docs/{name}"
+            archive.writestr(member, data)
+    with pytest.raises(ValueError, match=message):
+        module.check_packaged_legal_material(package, {name: module.file_hash(material_dir / name) for name in names})
+
+
+def test_notice_capture_refuses_package_changed_after_extraction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    import check_packaged_release_notices as notices
+
+    tag = "v2.3.4"
+    assets, bundle = tmp_path / "assets", tmp_path / "bundle"
+    assets.mkdir()
+    bundle.mkdir()
+    package = assets / f"remote-ops-workspace-{tag}-windows-x86-native.zip"
+    material = ROOT / "redistribution-evidence" / "THIRD_PARTY_NOTICES.md"
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.write(material, "docs/THIRD_PARTY_NOTICES.md")
+        archive.write(ROOT / "LICENSE", "docs/LICENSE")
+        for path, data in runtime_license_fixture("windows-x86").items():
+            archive.writestr(f"docs/licenses/runtime/{path}", data)
+    monkeypatch.setattr(notices, "expected_production_packages", lambda _tag: {package.name})
+    inspect = notices.read_desktop_component_licenses
+
+    def replace_after_inspection(artifact, target):
+        verified = inspect(artifact, target)
+        artifact.write_bytes(b"replacement bytes")
+        return verified
+
+    monkeypatch.setattr(notices, "read_desktop_component_licenses", replace_after_inspection)
+    with pytest.raises(ValueError, match="changed during notice extraction"):
+        notices.verify_notices(assets, tag, evidence_root=bundle)
+    assert not list(bundle.iterdir())
+
+
+@pytest.mark.parametrize(("fault", "failure"), [
+    ("", ""),
+    ("changed-manifest-identity", "sha256 does not match release asset"),
+    ("different-license-bytes", "inconsistent packaged license files for cpython"),
+])
+def test_manifest_review_inputs_preserve_paths_and_debian_component_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str, failure: str,
+) -> None:
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    import check_packaged_release_notices as capture
+    from check_preview_redistribution import ComponentLicense, EmbeddedFile
+    from check_release_license_compliance import (
+        check_debian_notice_inventory,
+        required_artifact_license_records,
+    )
+    from debian_server_notices import notice_path
+
+    tag = "v2.3.4"
+    assets, bundle = tmp_path / "assets", tmp_path / "review"
+    assets.mkdir()
+    bundle.mkdir()
+    deb, rpm = [f"remote-ops-workspace-{tag}-linux-{suffix}" for suffix in ("amd64.deb", "x86_64.rpm")]
+    manifest = assets / f"remote-ops-workspace-{tag}-linux-x86_64-native-manifest.json"
+    matrix = tmp_path / "matrix.json"
+    matrix.write_text(json.dumps({"default_github_release": {"native_jobs": [
+        {"asset_patterns": [deb, rpm, manifest.name]},
+    ]}}), encoding="utf-8")
+    monkeypatch.setattr(capture, "MATRIX_PATH", matrix)
+    notice = b"Debian openssh-server copyright"
+    version = "1:10.0p1-7+deb13u4"
+    debian_path = notice_path("openssh-server").as_posix()
+    receipts = [
+        capture.PackageNotices(deb, "", 0, [
+            ComponentLicense("usr/share/docs/cpython/LICENSE.txt", b"Python license", "CPython"),
+            ComponentLicense(debian_path, notice, "openssh-server", version),
+        ]),
+        capture.PackageNotices(rpm, "", 0, [
+            ComponentLicense(
+                "usr/share/licenses/cpython/LICENSE.txt",
+                b"Different bytes" if fault == "different-license-bytes" else b"Python license",
+                "cpython",
+            ),
+            EmbeddedFile("docs/THIRD_PARTY_NOTICES.md", b"Common notices"),
+        ]),
+    ]
+    entries = []
+    for index, package in enumerate(receipts):
+        raw = package.name.encode()
+        (assets / package.name).write_bytes(raw)
+        digest = hashlib.sha256(raw).hexdigest()
+        receipts[index] = package._replace(sha256=digest, size_bytes=len(raw))
+        entries.append({"file": f"native-dist/linux/{package.name}", "sha256": digest, "size_bytes": len(raw)})
+    if fault == "changed-manifest-identity":
+        entries[0]["sha256"] = "0" * 64
+    manifest.write_text(json.dumps(entries), encoding="utf-8")
+
+    def inspect(directory, expected):
+        assert directory == assets and expected == {deb, rpm}
+        return iter(receipts)
+
+    monkeypatch.setattr(capture, "observe_notices", inspect)
+    if failure:
+        with pytest.raises(ValueError, match=failure):
+            capture.verify_notices(assets, tag, evidence_root=bundle, write_review_inputs=True)
+        assert not list(bundle.iterdir())
+        return
+
+    assert capture.verify_notices(assets, tag, evidence_root=bundle, write_review_inputs=True) == 2
+    report = json.loads((bundle / "packaged-notices/review-inputs.json").read_bytes())
+    assert report["release_tag"] == tag
+    assert set(report["native_manifests"]) == {manifest.name}
+    result = report["native_manifests"][manifest.name]
+    assert result["sha256"] == hashlib.sha256(manifest.read_bytes()).hexdigest()
+    classifications = {
+        name: {"scope": "bundled", **component}
+        for name, component in result["component_license_files"].items()
+    }
+    cpython, = classifications["cpython"]["license_files"]
+    assert cpython["path"] == receipts[0].files[0].path
+    assert cpython["artifact_paths"] == {rpm: receipts[1].files[0].path}
+    openssh, = classifications["openssh-server"]["license_files"]
+    assert openssh["path"] == debian_path
+    errors = []
+    scoped = check_debian_notice_inventory(
+        {deb: {"openssh-server": {**openssh, "version": version}}}, classifications, manifest.name, errors,
+    )
+    required = required_artifact_license_records(classifications, {deb, rpm}, scoped, manifest.name, errors)
+    assert not errors
+    scans = result["artifact_license_files"]
+    for asset, rows in scans.items():
+        for row in rows:
+            assert set(row) == {"path", "file", "sha256", "size_bytes"}
+            assert hashlib.sha256((bundle / row["file"]).read_bytes()).hexdigest() == row["sha256"]
+        assert required[asset] <= {(row["path"], row["sha256"], row["size_bytes"]) for row in rows}
+    assert all(row["path"] != debian_path for row in scans[rpm])
+
+
+def test_manifest_review_refuses_swapped_architectures_with_valid_hashes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    from check_packaged_release_notices import expected_production_manifest_packages
+    from package_license_review_inputs import manifest_review_inputs
+
+    tag = "v2.3.4"
+    stem = f"remote-ops-workspace-{tag}-windows"
+    matrix = {"default_github_release": {"native_jobs": [{"asset_patterns": [
+        f"{stem}-<x64|arm64>-native.zip", f"{stem}-<x64|arm64>-native-manifest.json",
+    ]}]}}
+    groups = expected_production_manifest_packages(tag, matrix)
+    x64, arm64 = (f"{stem}-{architecture}-native.zip" for architecture in ("x64", "arm64"))
+    packages = {}
+    for asset in (x64, arm64):
+        raw = asset.encode()
+        (tmp_path / asset).write_bytes(raw)
+        packages[asset] = {"sha256": hashlib.sha256(raw).hexdigest(), "size_bytes": len(raw), "notice_files": []}
+    for architecture, misplaced in (("x64", arm64), ("arm64", x64)):
+        (tmp_path / f"{stem}-{architecture}-native-manifest.json").write_text(
+            json.dumps([{"file": misplaced, **packages[misplaced]}]), encoding="utf-8",
+        )
+
+    with pytest.raises(ValueError, match="package inventory differs from its release matrix target"):
+        manifest_review_inputs(tmp_path, tag, groups, packages)
+
+
+@pytest.mark.parametrize("fault", ["", "missing-license", "duplicate-license", "linked-license",
+                                  "missing-application-license", "changed-application-license"])
+def test_production_captures_runtime_licenses_by_installed_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str,
+) -> None:
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    import check_packaged_release_notices as notices
+    from packaged_linux_licenses import APPLICATION_LICENSE_PATH, REQUIRED_LICENSE_PATHS
+    from stage_linux_runtime_licenses import LICENSE_COMPONENTS, LICENSE_ROOT
+
+    tag = "v2.3.4"
+    assets, bundle = tmp_path / "assets", tmp_path / "bundle"
+    assets.mkdir()
+    bundle.mkdir()
+    package = assets / f"remote-ops-workspace-{tag}-linux-armhf-native.tar.gz"
+    monkeypatch.setattr(notices, "expected_production_packages", lambda _tag: {package.name})
+    paths = REQUIRED_LICENSE_PATHS | {
+        LICENSE_ROOT / component / "LICENSE"
+        for component in LICENSE_COMPONENTS - {"cpython", "cryptography"}
+    }
+    contents = {path.as_posix(): path.as_posix().encode() for path in paths}
+    affected = (LICENSE_ROOT / "cryptography/LICENSE.APACHE").as_posix()
+    with tarfile.open(package, "w:gz") as archive:
+        archive.add(ROOT / "redistribution-evidence/THIRD_PARTY_NOTICES.md", arcname="docs/THIRD_PARTY_NOTICES.md")
+        if fault != "missing-application-license":
+            application_license = (ROOT / "LICENSE").read_bytes()
+            if fault == "changed-application-license":
+                application_license += b"changed license"
+            member = tarfile.TarInfo(APPLICATION_LICENSE_PATH.as_posix())
+            member.size = len(application_license)
+            archive.addfile(member, io.BytesIO(application_license))
+        for path, data in contents.items():
+            if path == affected and fault == "missing-license":
+                continue
+            member = tarfile.TarInfo(path)
+            if path == affected and fault == "linked-license":
+                member.type = tarfile.SYMTYPE
+                member.linkname = "LICENSE"
+                archive.addfile(member)
+                continue
+            member.size = len(data)
+            archive.addfile(member, io.BytesIO(data))
+            if path == affected and fault == "duplicate-license":
+                archive.addfile(member, io.BytesIO(data))
+
+    if fault:
+        with pytest.raises(ValueError, match="application license" if fault.endswith("application-license") else "runtime license"):
+            notices.verify_notices(assets, tag, evidence_root=bundle)
+        assert not list(bundle.iterdir())
+        return
+
+    assert notices.verify_notices(assets, tag, evidence_root=bundle) == 1
+    report = json.loads((bundle / "packaged-notices/notice-extraction.json").read_bytes())
+    application_record = next(
+        record for record in report["packages"][package.name]["notice_files"]
+        if record["path"] == APPLICATION_LICENSE_PATH.as_posix()
+    )
+    assert application_record["component"] == "remote-ops-workspace"
+    assert (bundle / application_record["file"]).read_bytes() == application_license
+    records = {
+        record["path"]: (record["component"], (bundle / record["file"]).read_bytes())
+        for record in report["packages"][package.name]["notice_files"]
+        if record["path"].startswith(LICENSE_ROOT.as_posix() + "/")
+    }
+    assert records == {
+        path: (path.removeprefix(LICENSE_ROOT.as_posix() + "/").split("/")[0], data)
+        for path, data in contents.items()
+    }
+
+
+@pytest.mark.parametrize("suffix", [".dmg", ".pkg"])
+@pytest.mark.parametrize("fault", ["", "wrong-root", "linked-member", "missing-application-license"])
+def test_macos_runtime_licenses_require_regular_members_at_the_installed_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: str, fault: str,
+) -> None:
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    import packaged_desktop_licenses as desktop
+
+    package = tmp_path / f"remote-ops-workspace-v2.3.4-macos-x64{suffix}"
+    package.write_bytes(b"fixture")
+    runtime_root = desktop.PKG_LICENSE_ROOT if suffix == ".pkg" else desktop.DMG_LICENSE_ROOT
+    member_root = Path("unrelated") / runtime_root if fault == "wrong-root" else runtime_root
+    member_prefix = "./" if suffix == ".pkg" else ""
+    contents = {
+        f"{member_prefix}{member_root.as_posix()}/{path}": data
+        for path, data in runtime_license_fixture("desktop").items()
+    }
+    if fault != "missing-application-license":
+        contents[f"{member_prefix}{member_root.parent.as_posix()}/LICENSE"] = b"application license"
+    if suffix == ".dmg":
+        contents["LICENSE"] = b"volume license"
+    members = [
+        {"Path": name, "Mode": "-rw-r--r--", "Size": str(len(data)), "Links": "1"}
+        for name, data in contents.items()
+    ]
+    if fault == "linked-member":
+        members[0]["Links"] = "2"
+
+    def list_members(archive, *, archive_format):
+        if suffix == ".pkg":
+            assert archive.read_bytes() == b"CPIO fixture" and archive_format == "Cpio"
+        else:
+            assert archive == package and archive_format is None
+        return members
+
+    monkeypatch.setattr(desktop, "pkg_cpio_payload", lambda _package: b"CPIO fixture")
+    monkeypatch.setattr(desktop, "seven_zip_members", list_members)
+    monkeypatch.setattr(desktop, "seven_zip_read", lambda _archive, name, **_kwargs: contents[name])
+    if fault:
+        with pytest.raises(ValueError, match="application license" if fault == "missing-application-license" else "runtime license"):
+            desktop.read_desktop_component_licenses(package, "macos-x64")
+        return
+
+    result = desktop.read_desktop_component_licenses(package, "macos-x64")
+    assert {member.path: member.data for member in result} == {
+        name.removeprefix("./"): data for name, data in contents.items() if name != "LICENSE"
+    }
 
 
 def test_missing_evidence_fails_before_native_publication(tmp_path: Path) -> None:
@@ -251,7 +653,9 @@ def test_deb_license_bytes_are_read_from_filesystem_tar_without_extraction(tmp_p
         "run",
         return_value=SimpleNamespace(returncode=0, stdout=filesystem_tar.getvalue(), stderr=b""),
     ) as run:
-        assert module.embedded_file_bytes(deb_path, "THIRD_PARTY_NOTICES.md") == notices
+        assert module.embedded_file(deb_path, "THIRD_PARTY_NOTICES.md") == (
+            "usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md", notices,
+        )
 
     run.assert_called_once_with(
         ["dpkg-deb", "--fsys-tarfile", str(deb_path)],
@@ -287,7 +691,9 @@ def test_appimage_license_bytes_come_from_the_runtime_squashfs_offset(tmp_path: 
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     with patch.object(module.subprocess, "run", side_effect=inspect) as run:
-        assert module.embedded_file_bytes(appimage, "THIRD_PARTY_NOTICES.md") == payload
+        assert module.embedded_file(appimage, "THIRD_PARTY_NOTICES.md") == (
+            "usr/share/doc/THIRD_PARTY_NOTICES.md", payload,
+        )
 
     assert run.call_count == 1
     assert run.call_args.args[0][0:2] == ["unsquashfs", "-d"]
@@ -323,7 +729,9 @@ def test_rpm_license_bytes_are_read_from_cpio_without_extracting_paths(tmp_path:
         return SimpleNamespace(returncode=0, stdout=notices, stderr=b"")
 
     with patch.object(module.subprocess, "run", side_effect=inspect) as run:
-        assert module.embedded_file_bytes(rpm_path, "THIRD_PARTY_NOTICES.md") == notices
+        assert module.embedded_file(rpm_path, "THIRD_PARTY_NOTICES.md") == (
+            "usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md", notices,
+        )
 
     assert [call.args[0][0] for call in run.call_args_list] == ["rpm2cpio", "cpio", "cpio"]
 
@@ -354,7 +762,7 @@ def test_pkg_license_bytes_are_read_from_gzip_cpio_payload(
         return SimpleNamespace(returncode=0, stdout=notices, stderr=b"")
 
     with patch.object(module.subprocess, "run", side_effect=inspect):
-        assert module.embedded_file_bytes(pkg_path, "THIRD_PARTY_NOTICES.md") == notices
+        assert module.embedded_file(pkg_path, "THIRD_PARTY_NOTICES.md") == (member.removeprefix("./"), notices)
 
 
 def test_pkg_rejects_invalid_compressed_payload(tmp_path: Path) -> None:
@@ -411,7 +819,7 @@ def test_dmg_reads_only_the_regular_license_member_to_stdout(tmp_path: Path) -> 
         return SimpleNamespace(returncode=0, stdout=notices, stderr=b"")
 
     with patch.object(module.subprocess, "run", side_effect=inspect):
-        assert module.embedded_file_bytes(dmg_path, "THIRD_PARTY_NOTICES.md") == notices
+        assert module.embedded_file(dmg_path, "THIRD_PARTY_NOTICES.md") == (member, notices)
 
 
 @pytest.mark.parametrize("prefix,mode", [("../docs/", "-rw-r--r--"), ("/docs/", "-rw-r--r--")])
@@ -463,7 +871,9 @@ def test_windows_installer_reads_restored_installed_filenames(
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     with patch.object(module.subprocess, "run", side_effect=inspect):
-        assert module.embedded_file_bytes(archive, "THIRD_PARTY_NOTICES.md") == notices
+        assert module.embedded_file(archive, "THIRD_PARTY_NOTICES.md") == (
+            "Remote Ops Workspace/docs/THIRD_PARTY_NOTICES.md", notices,
+        )
 
 
 @pytest.mark.parametrize("suffix", [".exe", ".msi"])

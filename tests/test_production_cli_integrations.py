@@ -1,22 +1,25 @@
 from __future__ import annotations
 
+import http.server
+import socket
 from pathlib import Path
 from types import SimpleNamespace
 
-from remote_ops_workspace import cli, gui, gui_smoke
+from remote_ops_workspace import cli, cli_managed_runtime, gui, gui_smoke
 
 
 def test_managed_server_and_x11_start_forward_security_options(monkeypatch, tmp_path) -> None:
     calls = []
     record = SimpleNamespace(to_dict=lambda: {"state": "planned"})
     plan = SimpleNamespace(to_dict=lambda: {"command": ["safe-helper"]})
-    monkeypatch.setattr(cli, "build_moba_server_plan", lambda service, **kwargs: calls.append((service, kwargs)) or plan)
-    monkeypatch.setattr(cli, "start_moba_server", lambda _plan, **_kwargs: record)
-    monkeypatch.setattr(cli, "build_moba_x_server_plan", lambda **kwargs: calls.append(("x11", kwargs)) or plan)
-    monkeypatch.setattr(cli, "start_moba_x_server", lambda _plan, **_kwargs: record)
+    monkeypatch.setattr(cli_managed_runtime, "build_moba_server_plan", lambda service, **kwargs: calls.append((service, kwargs)) or plan)
+    monkeypatch.setattr(cli_managed_runtime, "start_moba_server", lambda _plan, **_kwargs: record)
+    monkeypatch.setattr(cli_managed_runtime, "build_moba_x_server_plan", lambda **kwargs: calls.append(("x11", kwargs)) or plan)
+    monkeypatch.setattr(cli_managed_runtime, "start_moba_x_server", lambda _plan, **_kwargs: record)
     authority = tmp_path / "private authority"
     assert cli.main(["servers", "start", "ftp", "--require-tls", "--hardening-profile", "tls-authenticated", "--dry-run", "--json"]) == 0
-    assert calls[0] == ("ftp", {"host": "127.0.0.1", "port": None, "root": None, "allow_public_bind": False, "require_tls": True, "hardening_profile": "tls-authenticated"})
+    assert calls[0] == ("ftp", {"host": "127.0.0.1", "port": None, "root": None, "allow_public_bind": False,
+                                "require_tls": True, "hardening_profile": "tls-authenticated", "crontab": None, "iperf_version": None})
     assert cli.main(["x11", "start", "--display", ":8", "--allow-tcp", "--authority-file", str(authority), "--dry-run", "--json"]) == 0
     assert calls[1] == ("x11", {"display": ":8", "allow_tcp": True, "authority_path": authority})
 
@@ -28,6 +31,30 @@ def test_packaged_ftp_runtime_preserves_exact_nonsecret_arguments(monkeypatch, t
     monkeypatch.setattr(embedded_ftp, "main", lambda argv: received.append(argv) or 7)
     assert cli.main(["servers", "_ftp-runtime", "--host", "127.0.0.1", "--port", "2121", "--root", str(tmp_path)]) == 7
     assert received == [["--host", "127.0.0.1", "--port", "2121", "--root", str(tmp_path)]]
+
+
+def test_packaged_http_runtime_selects_address_family_and_root(monkeypatch, tmp_path, capsys) -> None:
+    calls = []
+
+    class Server:
+        def __init__(self, address, handler):
+            calls.append((self.address_family, address, handler.func, handler.keywords))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            pass
+
+        def serve_forever(self):
+            calls.append("served")
+
+    monkeypatch.setattr(http.server, "ThreadingHTTPServer", Server)
+    arguments = ["servers", "_http-runtime", "--port", "18080", "--root", str(tmp_path), "--host"]
+    assert cli.main([*arguments, "::1"]) == 0
+    assert calls == [(socket.AF_INET6, ("::1", 18080, 0, 0), http.server.SimpleHTTPRequestHandler, {"directory": tmp_path}), "served"]
+    assert cli.main([*arguments, "0.0.0.0"]) == 1
+    assert "refuse non-loopback bind" in capsys.readouterr().err
 
 
 def test_source_gui_smoke_routes_to_real_smoke_module(monkeypatch, tmp_path) -> None:

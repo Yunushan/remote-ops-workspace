@@ -46,9 +46,9 @@ class DoctorResult:
         return json.dumps(self.to_dict(), indent=2, sort_keys=True)
 
 
-def run_doctor() -> DoctorResult:
+def run_doctor(*, include_plugins: bool = True) -> DoctorResult:
     executables: dict[str, dict[str, bool]] = {}
-    for protocol, candidates in protocol_clients().items():
+    for protocol, candidates in protocol_clients(include_plugins=include_plugins).items():
         executables[protocol] = {candidate: shutil.which(candidate) is not None for candidate in candidates}
     protocol_status = {
         protocol: _protocol_status(protocol, candidates)

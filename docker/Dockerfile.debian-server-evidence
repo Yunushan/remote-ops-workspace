@@ -1,0 +1,24 @@
+FROM docker.io/library/python:3.14.10-slim-trixie@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f
+
+ARG ROW_DEB
+ARG ROW_DEB_SHA256
+RUN --mount=type=bind,from=release,target=/release \
+    set -eu; \
+    printf '%s  %s\n' "$ROW_DEB_SHA256" "/release/$ROW_DEB" | sha256sum --check --strict; \
+    export DEBIAN_FRONTEND=noninteractive; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      busybox-static cpio curl e2fsprogs gssproxy imagemagick inetutils-telnet inetutils-telnetd \
+      iproute2 kmod krb5-admin-server krb5-kdc krb5-user nfs-common nfs-kernel-server \
+      openssh-client openssh-server openssl procps qemu-system-x86 rpcbind tftp-hpa \
+      util-linux vncsnapshot x11-xserver-utils xinetd xvfb; \
+    depends="$(dpkg-deb --field "/release/$ROW_DEB" Depends)"; \
+    if [ -n "$depends" ]; then apt-get satisfy -y --no-install-recommends -- "$depends"; fi; \
+    kernel="$(apt-cache depends linux-image-amd64 | awk '/Depends: linux-image-[0-9]/{print $2; exit}')"; \
+    test -n "$kernel"; \
+    mkdir /opt/row-guest-kernel; \
+    cd /opt/row-guest-kernel; \
+    apt-get download "$kernel"; \
+    dpkg-deb --extract linux-image-*.deb .; \
+    rm linux-image-*.deb; \
+    rm -rf /var/lib/apt/lists/*

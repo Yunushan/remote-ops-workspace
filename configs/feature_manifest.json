@@ -554,7 +554,7 @@
     },
     {
       "category": "security",
-      "extension_point": "moba_smartcards.build_smartcard_inventory_plan / moba_smartcards.build_smartcard_management_gui_surface / gui.show_moba_smartcards_status / moba_smartcards.review_smartcard_certificate_selection / moba_smartcards.build_mobagent_smartcard_plan / moba_smartcards.build_smartcard_ssh_browser_plan / moba_smartcards.build_smartcard_release_evidence_bundle_plan / moba_smartcards.write_smartcard_release_evidence_bundle / moba_smartcards.validate_smartcard_release_evidence / row smartcard inventory-plan|select-review|mobagent-plan|ssh-browser-plan|evidence-bundle|evidence-verify",
+      "extension_point": "moba_smartcards.build_smartcard_inventory_plan / moba_smartcards.build_smartcard_management_gui_surface / gui_operator_workflows.OperatorWorkflows.show_moba_smartcards_status / moba_smartcards.review_smartcard_certificate_selection / moba_smartcards.build_mobagent_smartcard_plan / moba_smartcards.build_smartcard_ssh_browser_plan / moba_smartcards.build_smartcard_release_evidence_bundle_plan / moba_smartcards.write_smartcard_release_evidence_bundle / moba_smartcards.validate_smartcard_release_evidence / row smartcard inventory-plan|select-review|mobagent-plan|ssh-browser-plan|evidence-bundle|evidence-verify",
       "id": "moba.smartcard-management-26-4",
       "inspired_by": [
         "MobaXterm"
@@ -564,7 +564,7 @@
     },
     {
       "category": "automation",
-      "extension_point": "moba_multiexec.build_moba_multiexec_plan / broadcast.run_broadcast / gui show_moba_multiexec_status",
+      "extension_point": "moba_multiexec.build_moba_multiexec_plan / broadcast.run_broadcast / gui_operator_workflows.OperatorWorkflows.show_moba_multiexec_status",
       "id": "moba.multi-execution",
       "inspired_by": [
         "MobaXterm"
@@ -614,7 +614,7 @@
     },
     {
       "category": "network",
-      "extension_point": "moba_servers.build_moba_server_suite_status / moba_servers.build_moba_server_plan / moba_servers.build_moba_server_gui_config_surface / gui.show_moba_servers_status / row servers",
+      "extension_point": "moba_servers.build_moba_server_suite_status / moba_servers.build_moba_server_plan / moba_servers.build_moba_server_gui_config_surface / gui_operator_workflows.OperatorWorkflows.show_moba_servers_status / row servers",
       "id": "moba.embedded-server-suite",
       "inspired_by": [
         "MobaXterm"
@@ -624,7 +624,7 @@
     },
     {
       "category": "network",
-      "extension_point": "moba_servers.build_moba_server_runtime_status / moba_servers.build_moba_server_runtime_bundle_plan / moba_servers.write_moba_server_runtime_bundle / moba_servers.build_moba_server_config_plan / moba_servers.build_moba_server_gui_config_surface / gui.show_moba_servers_status / moba_servers.validate_moba_server_release_evidence / row servers runtime-status|bundle-runtime|config-plan|evidence-verify",
+      "extension_point": "moba_servers.build_moba_server_runtime_status / moba_servers.build_moba_server_runtime_bundle_plan / moba_servers.write_moba_server_runtime_bundle / moba_servers.build_moba_server_config_plan / moba_servers.build_moba_server_gui_config_surface / gui_operator_workflows.OperatorWorkflows.show_moba_servers_status / moba_servers.validate_moba_server_release_evidence / row servers runtime-status|bundle-runtime|config-plan|evidence-verify",
       "id": "moba.embedded-server-packaged-daemon-evidence",
       "inspired_by": [
         "MobaXterm"

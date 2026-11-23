@@ -2,11 +2,14 @@ param(
   [string]$Python = "python",
   [string]$Dist = "native-dist\windows",
   [ValidateSet("x86", "x64", "arm64")]
-  [string]$Arch = "x64"
+  [string]$Arch = "x64",
+  [string]$EnterpriseBundle,
+  [guid]$EnterpriseDeploymentId = [guid]::Empty
 )
 
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "find_windows_signtool.ps1")
+. (Join-Path $PSScriptRoot "windows_enterprise_branding.ps1")
 $ArtifactSigner = Join-Path $PSScriptRoot "sign_windows_artifact.ps1"
 
 function Get-ProjectVersion {
@@ -41,6 +44,50 @@ function Write-NativeChecksums([string]$Version, [string]$OutDir, [string]$Arch,
   }
   $Lines | Set-Content -Encoding ASCII $ChecksumPath
   return $ChecksumPath
+}
+
+function Write-WindowsPortableZip([string]$Source, [string]$Destination) {
+  Add-Type -AssemblyName System.IO.Compression
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $SourceRoot = (Get-Item -LiteralPath $Source).FullName.TrimEnd('\', '/')
+  $PendingZip = "$Destination.$([guid]::NewGuid()).tmp"
+  try {
+    $Archive = [IO.Compression.ZipFile]::Open($PendingZip, [IO.Compression.ZipArchiveMode]::Create)
+    try {
+      foreach ($File in Get-ChildItem -LiteralPath $SourceRoot -Recurse -File) {
+        # ZIP paths use forward slashes on every host, including Windows PowerShell.
+        $EntryName = $File.FullName.Substring($SourceRoot.Length + 1).Replace('\', '/')
+        [IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+          $Archive, $File.FullName, $EntryName, [IO.Compression.CompressionLevel]::Optimal
+        ) | Out-Null
+      }
+    } finally {
+      $Archive.Dispose()
+    }
+    Move-Item -LiteralPath $PendingZip -Destination $Destination -Force
+  } finally {
+    if (Test-Path -LiteralPath $PendingZip) {
+      Remove-Item -LiteralPath $PendingZip
+    }
+  }
+}
+
+function Invoke-WindowsPyInstaller([string]$Python, [scriptblock]$Build) {
+  $Executable = (Get-Command -Name $Python -CommandType Application -TotalCount 1 -ErrorAction Stop).Path
+  $OriginalPath = $env:PATH
+  try {
+    # PyInstaller uses PATH to resolve DLLs during analysis. Keep unrelated
+    # host applications from supplying binaries such as the system ICU DLL.
+    $env:PATH = @(
+      [Environment]::SystemDirectory
+      $env:SystemRoot
+      (Split-Path -Parent $Executable)
+    ) -join [IO.Path]::PathSeparator
+    & $Build $Executable
+    if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
+  } finally {
+    $env:PATH = $OriginalPath
+  }
 }
 
 function Sign-NativeArtifact([string]$ArtifactPath) {
@@ -108,17 +155,22 @@ function Get-WixArchitecture([string]$Arch) {
   }
 }
 
-function Build-InnoSetupInstaller([string]$Version, [string]$Stage, [string]$OutDir, [string]$Arch, [string]$IconPath) {
+function Build-InnoSetupInstaller([string]$Version, [string]$Stage, [string]$OutDir, [string]$Arch, [string]$IconPath, [hashtable]$Branding) {
   $Iscc = Find-InnoSetup
   $Iss = Join-Path $BuildDir "remote-ops-workspace.iss"
-  $OutputBase = "remote-ops-workspace-v$Version-windows-$Arch-setup"
+  $OutputBase = "$($Branding.artifact_base)-setup"
+  $ProductName = $Branding.name
+  $WelcomeDirective = ""
+  if ($Branding.enterprise) {
+    $WelcomeDirective = "InfoBeforeFile=$(Join-Path $Stage 'docs\welcome.txt')"
+  }
   $ArchitectureDirectives = Get-InnoArchitectureDirectives $Arch
   $GuiExe = Join-Path $Stage "bin\row-gui.exe"
   $GuiIconEntries = ""
   if (Test-Path $GuiExe) {
     $GuiIconEntries = @"
-Name: "{group}\Remote Ops Workspace GUI"; Filename: "{app}\bin\row-gui.exe"
-Name: "{autodesktop}\Remote Ops Workspace GUI"; Filename: "{app}\bin\row-gui.exe"; Tasks: desktopicon
+Name: "{group}\$ProductName GUI"; Filename: "{app}\bin\row-gui.exe"
+Name: "{autodesktop}\$ProductName GUI"; Filename: "{app}\bin\row-gui.exe"; Tasks: desktopicon
 "@
   }
   $StageEscaped = $Stage.Replace("\", "\\")
@@ -136,16 +188,17 @@ Name: "{autodesktop}\Remote Ops Workspace GUI"; Filename: "{app}\bin\row-gui.exe
 
 @"
 [Setup]
-AppId={{5C887096-F4E5-4AB8-8D6F-65052D08D284}
-AppName=Remote Ops Workspace
+AppId={{$($Branding.inno_id)}
+AppName=$ProductName
 AppVersion=$Version
-AppPublisher=Remote Ops Workspace Contributors
-DefaultDirName={autopf}\Remote Ops Workspace
-DefaultGroupName=Remote Ops Workspace
+AppPublisher=$($Branding.publisher)
+DefaultDirName={autopf}\$($Branding.directory)
+DefaultGroupName=$($Branding.directory)
 DisableProgramGroupPage=yes
 OutputDir=$OutEscaped
 OutputBaseFilename=$OutputBase
 SetupIconFile=$IconEscaped
+$WelcomeDirective
 Compression=lzma2
 SolidCompression=yes
 $ArchitectureDirectives
@@ -156,8 +209,8 @@ Source: "$StageEscaped\\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdir
 
 [Icons]
 $GuiIconEntries
-Name: "{group}\Remote Ops Workspace CLI"; Filename: "{app}\bin\row.exe"
-Name: "{autodesktop}\Remote Ops Workspace CLI"; Filename: "{app}\bin\row.exe"; Tasks: desktopicon
+Name: "{group}\$ProductName CLI"; Filename: "{app}\bin\row.exe"
+Name: "{autodesktop}\$ProductName CLI"; Filename: "{app}\bin\row.exe"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
@@ -186,7 +239,7 @@ Filename: "{app}\bin\row.exe"; Parameters: "--version"; Description: "Show insta
   return $Setup
 }
 
-function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir, [string]$Arch, [string]$IconPath) {
+function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir, [string]$Arch, [string]$IconPath, [hashtable]$Branding) {
   $env:PATH = "$env:PATH;$env:USERPROFILE\.dotnet\tools"
   $Wix = Get-Command "wix.exe" -ErrorAction SilentlyContinue
   if (!$Wix) {
@@ -194,14 +247,25 @@ function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir, [string
   }
 
   $Wxs = Join-Path $BuildDir "remote-ops-workspace.wxs"
-  $Msi = Join-Path $OutDir "remote-ops-workspace-v$Version-windows-$Arch.msi"
+  $Msi = Join-Path $OutDir "$($Branding.artifact_base).msi"
   $WixArch = Get-WixArchitecture $Arch
   $RowSource = XmlEscape (Join-Path $Stage "bin\row.exe")
   $RowGuiFile = ""
+  $RowGuiComponent = ""
+  $RowGuiReference = ""
   $RowGuiPath = Join-Path $Stage "bin\row-gui.exe"
   if (Test-Path $RowGuiPath) {
     $RowGuiSource = XmlEscape $RowGuiPath
-    $RowGuiFile = "            <File Id=`"RowGuiExe`" Source=`"$RowGuiSource`" />"
+    if ($Branding.enterprise) {
+      $RowGuiComponent = @"
+          <Component Id="RowGuiComponent" Guid="*">
+            <File Id="RowGuiExe" Source="$RowGuiSource" KeyPath="yes" />
+          </Component>
+"@
+      $RowGuiReference = '      <ComponentRef Id="RowGuiComponent" />'
+    } else {
+      $RowGuiFile = "            <File Id=`"RowGuiExe`" Source=`"$RowGuiSource`" />"
+    }
   }
   $LicenseSource = XmlEscape (Join-Path $Stage "docs\LICENSE")
   $NoticeSource = XmlEscape (Join-Path $Stage "docs\NOTICE")
@@ -211,22 +275,42 @@ function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir, [string
   $PyQtLicenseSource = XmlEscape (Join-Path $Stage "docs\licenses\PyQt6-GPL-3.0.txt")
   $QtLicenseSource = XmlEscape (Join-Path $Stage "docs\licenses\Qt-LGPL-3.0.txt")
   $QtRelinkSource = XmlEscape (Join-Path $Stage "docs\licenses\Qt-Relinking.md")
+  $GuiSourceDescriptors = XmlEscape (Join-Path $Stage "docs\licenses\*-source.json")
+  $RuntimeLicenseSource = XmlEscape (Join-Path $Stage "docs\licenses\runtime")
   $IconSource = XmlEscape $IconPath
+  $ProductName = XmlEscape $Branding.name
+  $Publisher = XmlEscape $Branding.publisher
+  $InstallDirectory = XmlEscape $Branding.directory
+  $WelcomeComponent = ""
+  $WelcomeReference = ""
+  if ($Branding.enterprise) {
+    $WelcomeSource = XmlEscape (Join-Path $Stage "docs\welcome.txt")
+    $WelcomeComponent = @"
+          <Component Id="WelcomeComponent" Guid="*">
+            <File Id="WelcomeFile" Source="$WelcomeSource" KeyPath="yes" />
+          </Component>
+"@
+    $WelcomeReference = '      <ComponentRef Id="WelcomeComponent" />'
+  }
 
-@"
+  $WixSource = @"
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="Remote Ops Workspace" Manufacturer="Remote Ops Workspace Contributors" Version="$Version" UpgradeCode="8F8A21B4-6E48-4B1A-9F5D-B9373E1807D0" Scope="perMachine">
-    <MajorUpgrade DowngradeErrorMessage="A newer version of Remote Ops Workspace is already installed." />
+  <Package Name="$ProductName" Manufacturer="$Publisher" Version="$Version" UpgradeCode="$($Branding.msi_id)" Scope="perMachine">
+    <MajorUpgrade Schedule="afterInstallInitialize" DowngradeErrorMessage="A newer version of $ProductName is already installed." />
+    <Launch Condition="NOT WIX_UPGRADE_DETECTED OR (NOT RollbackDisabled AND NOT DISABLEROLLBACK)" Message="Enable Windows Installer rollback before upgrading this product." />
+    <Property Id="ROW_EXPECTED_PREDECESSOR" Secure="yes" />
+    <Launch Condition="NOT ROW_EXPECTED_PREDECESSOR OR WIX_UPGRADE_DETECTED ~= ROW_EXPECTED_PREDECESSOR" Message="The installed product differs from the managed upgrade predecessor." />
     <MediaTemplate EmbedCab="yes" />
     <Icon Id="RemoteOpsWorkspaceIcon" SourceFile="$IconSource" />
     <Property Id="ARPPRODUCTICON" Value="RemoteOpsWorkspaceIcon" />
     <StandardDirectory Id="ProgramFiles6432Folder">
-      <Directory Id="INSTALLFOLDER" Name="Remote Ops Workspace">
+      <Directory Id="INSTALLFOLDER" Name="$InstallDirectory">
         <Directory Id="BINDIR" Name="bin">
           <Component Id="RowExeComponent" Guid="7689D62F-2557-4DD3-8C58-38C5E245E44C">
             <File Id="RowExe" Source="$RowSource" KeyPath="yes" />
 $RowGuiFile
           </Component>
+$RowGuiComponent
         </Directory>
         <Directory Id="DOCDIR" Name="docs">
           <Component Id="LicenseComponent" Guid="D257B18C-6692-4C99-BF08-2DBFD3D053C9">
@@ -244,6 +328,7 @@ $RowGuiFile
           <Component Id="TargetReadmeComponent" Guid="2A3A7D0E-1FF2-437E-88C4-8A432DB29D1B">
             <File Id="TargetReadmeFile" Source="$TargetSource" KeyPath="yes" />
           </Component>
+$WelcomeComponent
           <Directory Id="LICENSESDIR" Name="licenses">
             <Component Id="PyQtLicenseComponent" Guid="BFA62B82-EA32-4B88-9FC2-88B20C0A4F7F">
               <File Id="PyQtLicenseFile" Source="$PyQtLicenseSource" KeyPath="yes" />
@@ -254,12 +339,14 @@ $RowGuiFile
             <Component Id="QtRelinkComponent" Guid="D7D26461-21E9-4B15-94B1-EF8AA8EF0C37">
               <File Id="QtRelinkFile" Source="$QtRelinkSource" KeyPath="yes" />
             </Component>
+            <Directory Id="RUNTIMELICENSESDIR" Name="runtime" />
           </Directory>
         </Directory>
       </Directory>
     </StandardDirectory>
-    <Feature Id="MainFeature" Title="Remote Ops Workspace" Level="1">
+    <Feature Id="MainFeature" Title="$ProductName" Level="1">
       <ComponentRef Id="RowExeComponent" />
+$RowGuiReference
       <ComponentRef Id="LicenseComponent" />
       <ComponentRef Id="NoticeComponent" />
       <ComponentRef Id="ThirdPartyNoticesComponent" />
@@ -268,17 +355,31 @@ $RowGuiFile
       <ComponentRef Id="PyQtLicenseComponent" />
       <ComponentRef Id="QtLicenseComponent" />
       <ComponentRef Id="QtRelinkComponent" />
+      <Files Directory="LICENSESDIR" Include="$GuiSourceDescriptors" />
+      <Files Directory="RUNTIMELICENSESDIR" Include="$RuntimeLicenseSource\**" />
+$WelcomeReference
     </Feature>
   </Package>
 </Wix>
-"@ | Set-Content -Encoding UTF8 $Wxs
+"@
+  if ($Branding.enterprise) {
+    # Let WiX derive each component identity from its distinct install path.
+    $WixSource = $WixSource -replace '(<Component Id="[^"]+" Guid=")[0-9A-F-]{36}(">)', '${1}*${2}'
+  }
+  Set-Content -LiteralPath $Wxs -Encoding UTF8 -Value $WixSource
 
-  & $Wix.Source build $Wxs -arch $WixArch -o $Msi
+  & $Wix.Source build $Wxs -arch $WixArch -o $Msi | Out-Host
   if ($LASTEXITCODE -ne 0) {
     throw "WiX MSI build failed with exit code $LASTEXITCODE"
   }
   if (!(Test-Path $Msi)) {
     throw "WiX did not create $Msi"
+  }
+  # Inspect the compiled upgrade rules and execute sequence before signing
+  # or publishing either the stock or branded package.
+  & $Python -I (Join-Path $PSScriptRoot "inspect_windows_msi.py") --package $Msi --sequence-only | Out-Host
+  if ($LASTEXITCODE -ne 0) {
+    throw "MSI build does not enforce the expected transactional major upgrade"
   }
   $WixPdb = [System.IO.Path]::ChangeExtension($Msi, ".wixpdb")
   if (Test-Path $WixPdb) {
@@ -306,6 +407,20 @@ function Test-PythonModule([string]$Python, [string]$Module) {
 
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Version = Get-ProjectVersion
+$Branding = @{
+  enterprise = $false
+  name = "Remote Ops Workspace"
+  publisher = "Remote Ops Workspace Contributors"
+  directory = "Remote Ops Workspace"
+  inno_id = "5C887096-F4E5-4AB8-8D6F-65052D08D284"
+  msi_id = "8F8A21B4-6E48-4B1A-9F5D-B9373E1807D0"
+  artifact_base = "remote-ops-workspace-v$Version-windows-$Arch"
+}
+if ($EnterpriseBundle) {
+  $Branding = Read-WindowsEnterpriseBranding $EnterpriseBundle $EnterpriseDeploymentId $Version
+} elseif ($EnterpriseDeploymentId -ne [guid]::Empty) {
+  throw "EnterpriseDeploymentId requires an EnterpriseBundle"
+}
 $ExpectedTag = "v$Version"
 $ReleaseTag = $env:RELEASE_TAG
 if ($ReleaseTag -and $ReleaseTag -ne $ExpectedTag) {
@@ -325,8 +440,18 @@ if ($BuildGuiLauncher -and !(Test-PythonModule -Python $Python -Module "PyQt6"))
   throw "PyQt6 is required to build the Windows $Arch GUI launcher. Install the desktop extra before running this script."
 }
 
-$OutDir = Resolve-PathOrCreate (Join-Path $Root $Dist)
+$Destination = Join-Path $Root $Dist
 $BuildDir = Join-Path $Root "build\native\windows"
+if ($Branding.enterprise) {
+  $EnterpriseOutput = Resolve-PathOrCreate (Join-Path $Destination "enterprise\$($Branding.inno_id)\$Arch")
+  $OutDir = Join-Path $EnterpriseOutput "v$Version"
+  if (Test-Path -LiteralPath $OutDir) {
+    throw "Enterprise installers already exist at $OutDir. Use a separate -Dist for a new candidate."
+  }
+  $BuildDir = Join-Path $Root "build\native\windows-enterprise\$([guid]::NewGuid())"
+} else {
+  $OutDir = Resolve-PathOrCreate $Destination
+}
 $Stage = Join-Path $BuildDir "stage"
 $PortableStage = Join-Path $BuildDir "portable-stage"
 $PyDist = Join-Path $BuildDir "pyinstaller-dist"
@@ -344,8 +469,21 @@ if (
   throw "Windows GUI assets (SVG, ICO, or manifest) are missing under src\\remote_ops_workspace\\assets"
 }
 
-Remove-Item -Recurse -Force $BuildDir -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Force $OutDir, $Stage, $PyDist, $PyWork | Out-Null
+if (Test-Path -LiteralPath $BuildDir) {
+  $ResolvedBuildDir = (Resolve-Path -LiteralPath $BuildDir).Path
+  if (!$ResolvedBuildDir.StartsWith("$Root\", [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Windows native build directory must stay in the repository"
+  }
+  $BuildParent = Get-Item -LiteralPath $ResolvedBuildDir
+  while ($BuildParent.FullName -ne $Root) {
+    if ($BuildParent.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+      throw "Windows native build directory must not traverse a reparse point"
+    }
+    $BuildParent = $BuildParent.Parent
+  }
+  Remove-Item -LiteralPath $ResolvedBuildDir -Recurse -Force
+}
+New-Item -ItemType Directory -Force $Stage, $PyDist, $PyWork | Out-Null
 
 @"
 from remote_ops_workspace.cli import main
@@ -365,38 +503,15 @@ $ServerImports = if ($Arch -ne "x86") {
   @("--collect-submodules", "pyftpdlib", "--collect-submodules", "OpenSSL", "--hidden-import", "asyncore", "--hidden-import", "asynchat")
 } else { @() }
 
-& $Python -m PyInstaller `
-  --clean `
-  --noconfirm `
-  --onefile `
-  --name row `
-  --console `
-  --icon $IconIco `
-  --distpath $PyDist `
-  --workpath $PyWork `
-  --specpath $BuildDir `
-  --collect-submodules remote_ops_workspace `
-  --collect-data remote_ops_workspace `
-  --add-data "$Root\configs;remote_ops_workspace/configs" `
-  --add-data "$Root\apps\web;remote_ops_workspace/web" `
-  --copy-metadata remote-ops-workspace `
-  @ServerImports `
-  --exclude-module PyQt6 `
-  --exclude-module remote_ops_workspace.gui `
-  --exclude-module remote_ops_workspace.gui_designs `
-  --exclude-module remote_ops_workspace.gui_editors `
-  $Launcher
-
-if ($BuildGuiLauncher) {
-  & $Python -m PyInstaller `
+Invoke-WindowsPyInstaller -Python $Python -Build {
+  param([string]$Executable)
+  & $Executable -m PyInstaller `
     --clean `
     --noconfirm `
     --onefile `
-    --name row-gui `
-    --windowed `
+    --name row `
+    --console `
     --icon $IconIco `
-    --manifest $GuiManifest `
-    --add-data "$IconSvg;remote_ops_workspace/assets" `
     --distpath $PyDist `
     --workpath $PyWork `
     --specpath $BuildDir `
@@ -406,10 +521,44 @@ if ($BuildGuiLauncher) {
     --add-data "$Root\apps\web;remote_ops_workspace/web" `
     --copy-metadata remote-ops-workspace `
     @ServerImports `
-    --hidden-import PyQt6.QtCore `
-    --hidden-import PyQt6.QtGui `
-    --hidden-import PyQt6.QtWidgets `
-    $GuiLauncher
+    --exclude-module PyQt6 `
+    --exclude-module remote_ops_workspace.gui `
+    --exclude-module remote_ops_workspace.gui_designs `
+    --exclude-module remote_ops_workspace.gui_preset_mobaxterm `
+    --exclude-module remote_ops_workspace.gui_preset_mremoteng `
+    --exclude-module remote_ops_workspace.gui_preset_remmina `
+    --exclude-module remote_ops_workspace.gui_preset_securecrt `
+    --exclude-module remote_ops_workspace.gui_preset_termius `
+    --exclude-module remote_ops_workspace.gui_editors `
+    $Launcher
+}
+
+if ($BuildGuiLauncher) {
+  Invoke-WindowsPyInstaller -Python $Python -Build {
+    param([string]$Executable)
+    & $Executable -m PyInstaller `
+      --clean `
+      --noconfirm `
+      --onefile `
+      --name row-gui `
+      --windowed `
+      --icon $IconIco `
+      --manifest $GuiManifest `
+      --add-data "$IconSvg;remote_ops_workspace/assets" `
+      --distpath $PyDist `
+      --workpath $PyWork `
+      --specpath $BuildDir `
+      --collect-submodules remote_ops_workspace `
+      --collect-data remote_ops_workspace `
+      --add-data "$Root\configs;remote_ops_workspace/configs" `
+      --add-data "$Root\apps\web;remote_ops_workspace/web" `
+      --copy-metadata remote-ops-workspace `
+      @ServerImports `
+      --hidden-import PyQt6.QtCore `
+      --hidden-import PyQt6.QtGui `
+      --hidden-import PyQt6.QtWidgets `
+      $GuiLauncher
+  }
 }
 
 $RowExe = Join-Path $PyDist "row.exe"
@@ -438,6 +587,11 @@ Copy-Item (Join-Path $Root "redistribution-evidence\THIRD_PARTY_NOTICES.md") (Jo
 Copy-Item (Join-Path $Root "redistribution-evidence\PyQt6-GPL-3.0.txt") (Join-Path $Stage "docs\licenses\PyQt6-GPL-3.0.txt")
 Copy-Item (Join-Path $Root "redistribution-evidence\Qt-LGPL-3.0.txt") (Join-Path $Stage "docs\licenses\Qt-LGPL-3.0.txt")
 Copy-Item (Join-Path $Root "redistribution-evidence\Qt-Relinking.md") (Join-Path $Stage "docs\licenses\Qt-Relinking.md")
+$RuntimeLicenseProfile = if ($BuildGuiLauncher) { "desktop" } else { "windows-x86" }
+& $Python (Join-Path $PSScriptRoot "stage_runtime_licenses.py") (Join-Path $Stage "docs\licenses\runtime") --profile $RuntimeLicenseProfile --gui-source-dir (Join-Path $Stage "docs\licenses")
+if ($LASTEXITCODE -ne 0) {
+  throw "Could not stage the frozen runtime licenses"
+}
 Copy-Item (Join-Path $Root "README.md") (Join-Path $Stage "docs\README.md")
 Copy-Item (Join-Path $Root "README.tr.md") (Join-Path $Stage "docs\README.tr.md")
 
@@ -464,6 +618,43 @@ PyInstaller. $GuiTargetNote $GuiLicenseNote Protocol sessions still depend on Wi
 OpenSSH, MSTSC, PuTTY, VcXsrv, and VNC clients.
 "@ | Set-Content -Encoding UTF8 (Join-Path $Stage "RELEASE_TARGET.md")
 
+if ($Branding.enterprise) {
+  $StagedIcon = Join-Path $BuildDir "enterprise-logo.ico"
+  $StagedWelcome = Join-Path $Stage "docs\welcome.txt"
+  Copy-Item -LiteralPath $Branding.icon -Destination $StagedIcon
+  Copy-Item -LiteralPath $Branding.welcome -Destination $StagedWelcome
+  $BuiltSetup = Build-InnoSetupInstaller -Version $Version -Stage $Stage -OutDir $BuildDir -Arch $Arch -IconPath $StagedIcon -Branding $Branding
+  $BuiltMsi = Build-WixMsi -Version $Version -Stage $Stage -OutDir $BuildDir -Arch $Arch -IconPath $StagedIcon -Branding $Branding
+  Sign-NativeArtifact $BuiltMsi
+  $Pending = Resolve-PathOrCreate (Join-Path $EnterpriseOutput ".pending-$([guid]::NewGuid())")
+  $Artifacts = foreach ($Built in @($BuiltSetup, $BuiltMsi)) {
+    $Name = Split-Path -Leaf $Built
+    $Path = Join-Path $Pending $Name
+    Copy-Item -LiteralPath $Built -Destination $Path
+    @{
+      name = $Name
+      size_bytes = (Get-Item -LiteralPath $Path).Length
+      sha256 = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
+  }
+  $DeploymentManifest = @{
+    deployment_id = $Branding.inno_id
+    product_name = $Branding.name
+    publisher = $Branding.publisher
+    version = $Version
+    architecture = $Arch
+    icon_sha256 = (Get-FileHash -LiteralPath $StagedIcon -Algorithm SHA256).Hash.ToLowerInvariant()
+    welcome_sha256 = (Get-FileHash -LiteralPath $StagedWelcome -Algorithm SHA256).Hash.ToLowerInvariant()
+    authenticode_verified = ($env:ROW_REQUIRE_RELEASE_SIGNING -eq "1")
+    artifacts = @($Artifacts)
+  }
+  $ManifestPath = Join-Path $Pending "enterprise-installers.json"
+  $DeploymentManifest | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 -LiteralPath $ManifestPath
+  [IO.Directory]::Move($Pending, $OutDir)
+  Write-Host "created $(Join-Path $OutDir 'enterprise-installers.json')"
+  return
+}
+
 New-Item -ItemType Directory -Force $PortableStage | Out-Null
 Copy-Item -Path (Join-Path $Stage "*") -Destination $PortableStage -Recurse -Force
 if ($BuildGuiLauncher) {
@@ -471,10 +662,10 @@ if ($BuildGuiLauncher) {
 }
 
 $NativeZip = Join-Path $OutDir "remote-ops-workspace-v$Version-windows-$Arch-native.zip"
-Compress-Archive -Path (Join-Path $PortableStage "*") -DestinationPath $NativeZip -Force
+Write-WindowsPortableZip -Source $PortableStage -Destination $NativeZip
 
-$SetupExe = Build-InnoSetupInstaller -Version $Version -Stage $Stage -OutDir $OutDir -Arch $Arch -IconPath $IconIco
-$Msi = Build-WixMsi -Version $Version -Stage $Stage -OutDir $OutDir -Arch $Arch -IconPath $IconIco
+$SetupExe = Build-InnoSetupInstaller -Version $Version -Stage $Stage -OutDir $OutDir -Arch $Arch -IconPath $IconIco -Branding $Branding
+$Msi = Build-WixMsi -Version $Version -Stage $Stage -OutDir $OutDir -Arch $Arch -IconPath $IconIco -Branding $Branding
 Sign-NativeArtifact $Msi
 
 $PortableInstallCommand = if ($BuildGuiLauncher) {

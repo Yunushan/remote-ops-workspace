@@ -1,5 +1,11 @@
 import importlib.util
+import os
+import shutil
+import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 
 def test_native_release_hardening_checker_passes_current_tree() -> None:
@@ -107,11 +113,60 @@ def test_production_tag_push_must_fail_when_signing_is_incomplete() -> None:
     assert message in checker.check_signing_readiness_gate(workflow.replace(refusal, "              :\n            fi", 1))
 
 
+@pytest.mark.parametrize("target", ["windows", "macos"])
+def test_production_preflight_requires_offline_signing_input_validation(target) -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    bypassed = workflow.replace(f"python -I scripts/check_release_signing_inputs.py {target}", "true", 1)
+    assert (f"release-preflight must validate {target} signing inputs before marking them ready"
+            in checker.check_signing_readiness_gate(bypassed))
+
+
 def test_windows_production_smoke_requires_signed_installers() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     errors = checker.check_signing_readiness_gate(workflow.replace(" -RequireReleaseSigning", "", 1))
     assert "windows-native must reverify the signed installers before running smoke tests" in errors
+
+
+
+@pytest.mark.parametrize(("platform", "label"), [("windows", "Windows"), ("macos", "macOS")])
+def test_signed_build_requires_gui_archive_check_before_evidence_upload(platform, label) -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    assert checker.check_release_gui_archive_steps(workflow) == []
+    job = checker.workflow_job_block(workflow, f"{platform}-native")
+    verify = checker.workflow_step_block(job, f"name: Verify {label} frozen GUI module inventory")
+    ignored = verify.replace("        run:", "        continue-on-error: true\n        run:")
+    errors = checker.check_release_gui_archive_steps(workflow.replace(verify, ignored, 1))
+    assert f"{platform}-native must require the frozen GUI archive check after installer smoke" in errors
+
+@pytest.mark.parametrize("change", ["remove", "skip", "ignore-failure", "missing-secret", "after-python"])
+@pytest.mark.parametrize(("target", "step_label", "command"), [
+    ("windows", "Windows", r".\scripts\sign_windows_artifact.ps1 -Rehearse"),
+    ("macos", "macOS", "bash scripts/with_macos_release_signing.sh --rehearse"),
+])
+def test_signing_rehearsal_is_mandatory_before_build_setup(change: str, target: str, step_label: str, command: str) -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    job = checker.workflow_job_block(workflow, f"{target}-native")
+    rehearsal = checker.workflow_step_block(job, f"name: Rehearse {step_label} signing on the release runner")
+    run_line = f"        run: {command}\n"
+    if change == "remove":
+        replacement = job.replace(rehearsal, "", 1)
+    elif change == "after-python":
+        setup_python = checker.workflow_step_block(job, "uses: actions/setup-python@")
+        replacement = job.replace(rehearsal + setup_python, setup_python + rehearsal, 1)
+    else:
+        changed_step = {
+            "skip": rehearsal.replace(run_line, "        if: false\n" + run_line),
+            "ignore-failure": rehearsal.replace(run_line, "        continue-on-error: true\n" + run_line),
+            "missing-secret": rehearsal.replace(f"secrets.ROW_{target.upper()}_CERTIFICATE_PASSWORD", "secrets.FIXTURE"),
+        }[change]
+        replacement = job.replace(rehearsal, changed_step, 1)
+    assert replacement != job
+    errors = checker.check_signing_readiness_gate(workflow.replace(job, replacement, 1))
+    assert f"{target}-native must require the native signing rehearsal before build setup" in errors
 
 
 def test_macos_production_smoke_requires_signed_and_notarized_installers() -> None:
@@ -132,15 +187,18 @@ def test_release_smoke_must_not_receive_windows_signing_password() -> None:
         1,
     )
 
-    assert "windows-native signing credentials must be scoped to its build step" in checker.check_signing_readiness_gate(workflow)
+    assert ("windows-native signing credentials must be scoped to its rehearsal and build steps"
+            in checker.check_signing_readiness_gate(workflow))
 
 
 def test_release_rejects_macos_notarization_outside_temporary_keychain() -> None:
     checker = _load_checker()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
-    workflow = workflow.replace('store-credentials "remote-ops-notary" --keychain "$keychain"', 'store-credentials "remote-ops-notary"', 1)
-
-    assert "macos-native must bind notarization to a temporary keychain and delete it when the build exits" in checker.check_signing_readiness_gate(workflow)
+    script = Path("scripts/with_macos_release_signing.sh").read_text(encoding="utf-8")
+    changed = script.replace('store-credentials "$profile" --keychain "$keychain"', 'store-credentials "$profile"', 1)
+    assert changed != script
+    assert checker.check_macos_signing_wrapper(changed) == [
+        'macOS signing wrapper missing temporary keychain boundary: store-credentials "$profile" --keychain "$keychain"',
+    ]
 
 
 def test_native_workflow_rejects_candidate_job_without_readiness_gate() -> None:
@@ -277,6 +335,120 @@ def test_windows_native_package_builds_double_click_gui_launcher() -> None:
     assert "row-gui.exe" in smoke
     assert "timeout-minutes: 20" in workflow
     assert "Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -NoNewWindow -Wait -PassThru" in smoke
+
+
+@pytest.mark.parametrize("shell_name", ["powershell.exe", "pwsh.exe"])
+def test_windows_portable_zip_is_readable_by_redistribution_scanner(tmp_path, shell_name) -> None:
+    from scripts.collect_unsigned_runtime import DEFAULT_LIMITS, Observations, zip_members
+
+    shell = shutil.which(shell_name) if os.name == "nt" else None
+    if shell is None:
+        pytest.skip(f"requires {shell_name} on Windows")
+    stage = tmp_path / "portable stage"
+    files = {"bin/row.exe": b"cli", "Remote Ops Workspace GUI.exe": b"gui", "docs/café.txt": b"notice"}
+    for member, data in files.items():
+        path = stage / member
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    output = tmp_path / "portable.zip"
+    output.write_bytes(b"previous archive")
+
+    builder = Path("scripts/make_windows_native.ps1").resolve()
+    assert "Write-WindowsPortableZip -Source $PortableStage -Destination $NativeZip" in builder.read_text(
+        encoding="utf-8"
+    )
+    probe = tmp_path / "write-portable.ps1"
+    probe.write_text(
+        '''
+param($Builder, $Stage, $Output)
+$ErrorActionPreference = "Stop"
+$Ast = [System.Management.Automation.Language.Parser]::ParseFile($Builder, [ref]$null, [ref]$null)
+$Function = $Ast.Find({
+  param($Node)
+  $Node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+  $Node.Name -eq "Write-WindowsPortableZip"
+}, $true)
+. ([scriptblock]::Create($Function.Extent.Text))
+Write-WindowsPortableZip -Source $Stage -Destination $Output
+''',
+        encoding="ascii",
+    )
+    result = subprocess.run(
+        [shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(probe), str(builder), str(stage), str(output)],
+        capture_output=True, text=True, check=False, timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    assert dict(zip_members(output.read_bytes(), Observations(DEFAULT_LIMITS))) == files
+    assert not list(tmp_path.glob("portable.zip.*.tmp"))
+
+
+@pytest.mark.parametrize("use_command_name", [False, True])
+def test_windows_pyinstaller_uses_a_private_build_path_and_restores_it(tmp_path, use_command_name) -> None:
+    if os.name != "nt":
+        pytest.skip("requires Windows DLL search paths")
+    shell = shutil.which("powershell") or shutil.which("pwsh")
+    assert shell is not None
+    python = Path(sys.executable)
+    shutil.copyfile(python, tmp_path / python.name)
+    probe = tmp_path / "probe.ps1"
+    probe.write_text(
+        '''
+$ErrorActionPreference = "Stop"
+$Builder = $env:ROW_BUILD_TEST_SCRIPT
+$Ast = [System.Management.Automation.Language.Parser]::ParseFile($Builder, [ref]$null, [ref]$null)
+$Function = $Ast.Find({
+  param($Node)
+  $Node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+  $Node.Name -eq "Invoke-WindowsPyInstaller"
+}, $true)
+. ([scriptblock]::Create($Function.Extent.Text))
+$OriginalPath = $env:PATH
+$Python = $env:ROW_BUILD_TEST_COMMAND
+$ExpectedExecutable = $env:ROW_BUILD_TEST_PYTHON
+$ExpectedPath = @(
+  [Environment]::SystemDirectory
+  $env:SystemRoot
+  (Split-Path -Parent $ExpectedExecutable)
+) -join [IO.Path]::PathSeparator
+
+Invoke-WindowsPyInstaller -Python $Python -Build {
+  param([string]$Executable)
+  if ($Executable -ne $ExpectedExecutable -or $env:PATH -ne $ExpectedPath) {
+    throw "PyInstaller received an unexpected executable or PATH"
+  }
+  & $Executable -c 'raise SystemExit(0)'
+}
+if ($env:PATH -ne $OriginalPath) { throw "PATH was changed after successful packaging" }
+
+$Failed = $false
+try {
+  Invoke-WindowsPyInstaller -Python $Python -Build {
+    param([string]$Executable)
+    & $Executable -c 'raise SystemExit(17)'
+  }
+} catch {
+  if ($_.Exception.Message -ne "PyInstaller failed with exit code 17") { throw }
+  $Failed = $true
+}
+if (!$Failed -or $env:PATH -ne $OriginalPath) {
+  throw "Packaging failure was not reported or PATH was not restored"
+}
+exit 0
+''',
+        encoding="ascii",
+    )
+    env = {
+        **os.environ,
+        "PATH": os.pathsep.join((str(python.parent), str(tmp_path), os.environ["PATH"])),
+        "ROW_BUILD_TEST_COMMAND": python.stem if use_command_name else str(python),
+        "ROW_BUILD_TEST_PYTHON": str(python),
+        "ROW_BUILD_TEST_SCRIPT": str(Path("scripts/make_windows_native.ps1").resolve()),
+    }
+    result = subprocess.run(
+        [shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(probe)],
+        env=env, capture_output=True, text=True, check=False, timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_windows_native_package_embeds_product_icon_everywhere() -> None:

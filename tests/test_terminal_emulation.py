@@ -4,6 +4,7 @@ from remote_ops_workspace.terminal_emulation import (
     ANSI_16_COLOR_PALETTE,
     ANSI_DEFAULT_BACKGROUND,
     ANSI_DEFAULT_FOREGROUND,
+    SOFT_LINE_BREAK,
     TERMINAL_EMULATOR_BACKEND,
     AnsiTerminalTranscript,
     ansi_256_color,
@@ -30,6 +31,174 @@ def test_primary_transcript_preserves_long_literals_and_ignores_non_ascii_csi() 
     terminal = AnsiTerminalTranscript()
     content = "x" * 100
     assert terminal.feed(content + "\x1b[²G\x1b[²m!") == content + "!"
+
+
+def test_primary_grid_reflows_wide_cells_styles_and_cursor_reports_on_resize() -> None:
+    terminal = AnsiTerminalTranscript(primary_reflow=True)
+    terminal.set_screen_size(20, 5)
+    prefix = "x" * 19
+    logical = prefix + "界\u0301z"
+    terminal.feed(prefix + "\x1b[31m界\u0301z\x1b[0m\x1b[6n")
+    assert terminal.text() == prefix + SOFT_LINE_BREAK + "界\u0301z"
+    assert terminal.cursor_display_position() == (1, 3)
+    assert terminal.take_pending_responses() == (b"\x1b[2;4R",)
+    assert terminal.styled_fragments()[-1].text == "界\u0301z"
+    assert terminal.styled_fragments()[-1].style.foreground == ANSI_16_COLOR_PALETTE[1]
+
+    terminal.set_screen_size(25, 5)
+    assert terminal.screen_text() == logical
+    assert terminal.cursor_display_position() == (0, 22)
+    terminal.feed("\x1b[?1049h")
+    terminal.set_screen_size(20, 7)
+    terminal.feed("\x1b[?1049l")
+    assert terminal.text().replace(SOFT_LINE_BREAK, "") == logical
+    assert terminal.cursor_display_position() == (1, 3)
+
+
+def test_primary_grid_addresses_wrapped_rows_and_bounds_scrollback() -> None:
+    terminal = AnsiTerminalTranscript(primary_reflow=True, max_scrollback_lines=4)
+    terminal.set_screen_size(20, 5)
+    terminal.feed("a" * 20 + "b" * 20 + "c" * 10)
+    terminal.feed("\x1b[2;4H\x1b[K!")
+    assert terminal.text() == "a" * 20 + SOFT_LINE_BREAK + "bbb!" + " " * 16 + SOFT_LINE_BREAK + "c" * 10
+    terminal.feed("\x1b[1A\x1b[2D\x1b[1C\x1b[8GZ")
+    assert terminal.text().startswith("a" * 7 + "Z")
+    terminal.feed("\x1b[1E\x1b[1F\x1b[2d\x1b[1;2f")
+    assert terminal.cursor_display_position() == (0, 1)
+    terminal.feed("\x1b[2;2H\x1b[1K\x1b[2;1H\x1b[2K\x1b[9K")
+    assert terminal.text().split(SOFT_LINE_BREAK)[1] == " " * 20
+    terminal.feed("\x1b[5;4H!\x1b[6n")
+    assert terminal.take_pending_responses() == (b"\x1b[5;5R",)
+    assert terminal.text().endswith("\n\n   !")
+    terminal.feed("\nlast\x1b[1;1H\x1b[6n")
+    assert terminal.take_pending_responses() == (b"\x1b[1;1R",)
+    assert len(terminal.text().splitlines()) == 5
+
+
+def test_primary_grid_line_controls_stay_on_the_addressed_visual_row() -> None:
+    terminal = AnsiTerminalTranscript(primary_reflow=True)
+    terminal.set_screen_size(20, 5)
+    terminal.feed("short\x1b[2K\r" + "a" * 20 + "b" * 20 + "end")
+    assert terminal.text().split(SOFT_LINE_BREAK) == ["a" * 20, "b" * 20, "end"]
+    terminal.feed("\x1b[1;7H\n\x1b[2K\tX\bY")
+    assert terminal.text().split(SOFT_LINE_BREAK) == ["a" * 20, " " * 8 + "Y" + " " * 11, "end"]
+    terminal.feed("\x1b[3;1H\x1b[2K")
+    assert terminal.cursor_display_position() == (2, 0)
+    assert terminal.text().split(SOFT_LINE_BREAK)[2] == " " * 3
+    terminal.feed("\r\nfresh")
+    assert terminal.text().endswith(" " * 3 + "\nfresh")
+
+
+def test_primary_grid_keeps_viewport_top_when_resize_hides_blank_rows() -> None:
+    terminal = AnsiTerminalTranscript(primary_reflow=True)
+    terminal.set_screen_size(25, 9)
+    terminal.feed("header\r\n" + "x" * 22 + "\x1b[9;1H\x1b[2;5H")
+    terminal.set_screen_size(20, 5)
+    terminal.feed("\x1b[Hnew")
+    display = terminal.screen_text().replace(SOFT_LINE_BREAK, "\n")
+    assert display.split("\n") == ["newder", "x" * 20, "xx", "", ""]
+    assert terminal.cursor_display_position() == (0, 3)
+    terminal.feed("\x1b[5;1H\nnext\x1b[H\x1b[6n")
+    assert terminal.take_pending_responses() == (b"\x1b[1;1R",)
+    assert terminal.text().splitlines()[0] == "newder"
+
+
+def test_primary_grid_clear_display_preserves_scrollback_and_cursor() -> None:
+    terminal = AnsiTerminalTranscript(primary_reflow=True)
+    terminal.set_screen_size(20, 5)
+    terminal.feed("\n".join(f"line-{index}" for index in range(8)))
+    terminal.feed("\x1b[2;4H\x1b[s\x1b[4;8H\x1b[2J\x1b[6n")
+
+    assert terminal.text().split("\n") == ["line-0", "line-1", "line-2", "", "", "", "", ""]
+    assert terminal.take_pending_responses() == (b"\x1b[4;8R",)
+    terminal.feed("\x1b[uX\x1b[Hnew prompt")
+    assert terminal.text().split("\n")[:5] == ["line-0", "line-1", "line-2", "new prompt", "   X"]
+
+
+@pytest.mark.parametrize("clear", ["\x1b[2J", "\x1b[3J"])
+def test_primary_grid_erase_keeps_the_correct_half_of_a_line_that_spans_the_viewport(clear: str) -> None:
+    terminal = AnsiTerminalTranscript(primary_reflow=True)
+    terminal.set_screen_size(20, 5)
+    saved_history = "a" * 18 + "界\u0301"
+    visible = "b" * 20 + "c" * 20 + "d" * 20 + "e" * 20 + "end"
+    terminal.feed(saved_history + "\x1b[31m" + visible + "\x1b[0m")
+    terminal.feed("\x1b[1;2H\x1b[s\x1b[2;3H" + clear + "\x1b[6n")
+
+    if clear == "\x1b[2J":
+        assert terminal.text() == saved_history + "\n" * 5
+    else:
+        assert terminal.text().replace(SOFT_LINE_BREAK, "") == visible
+        assert terminal.styled_fragments()[0].style.foreground == ANSI_16_COLOR_PALETTE[1]
+    assert terminal.take_pending_responses() == (b"\x1b[2;3R",)
+    terminal.feed("\x1b[u\x1b[6n")
+    assert terminal.take_pending_responses() == (b"\x1b[1;2R",)
+
+
+def test_primary_grid_clear_history_preserves_visible_hard_lines() -> None:
+    terminal = AnsiTerminalTranscript(primary_reflow=True)
+    terminal.set_screen_size(20, 5)
+    terminal.feed("\n".join(f"line-{index}" for index in range(8)))
+    terminal.feed("\x1b[3J\x1b[6n")
+
+    assert terminal.text().split("\n") == [f"line-{index}" for index in range(3, 8)]
+    assert terminal.take_pending_responses() == (b"\x1b[5;7R",)
+    terminal.feed("\x1b[2J\x1b[Hnew prompt")
+    assert terminal.text() == "new prompt" + "\n" * 4
+
+
+@pytest.mark.parametrize(("save", "restore"), [("\x1b7", "\x1b8"), ("\x1b[s", "\x1b[u")])
+def test_primary_grid_saved_cursor_tracks_bounded_history(save: str, restore: str) -> None:
+    terminal = AnsiTerminalTranscript(max_scrollback_lines=6, primary_reflow=True)
+    terminal.set_screen_size(20, 5)
+    terminal.feed("\n".join(f"line-{index}" for index in range(7)))
+    terminal.feed(f"\x1b[2;2H{save}\x1b[5;1H\nline-7{restore}X")
+
+    assert terminal.text().split("\n")[2] == "lXne-3"
+    terminal.feed("\x1b[5;1H" + "\nmore" * 8 + restore + "Y")
+    assert terminal.text().startswith("Yore\n")
+
+
+def test_dec_and_csi_share_the_saved_position_only_on_the_same_screen() -> None:
+    terminal = AnsiTerminalTranscript(primary_reflow=True)
+    terminal.feed("\x1b[3;4H\x1b7\x1b[8;12H")
+    terminal.feed("\x1b[?1049h\x1b[2;5H\x1b[s\x1b[8;12H\x1b8\x1b[6n")
+    terminal.feed("\x1b[?1049l\x1b[u\x1b[6n")
+    assert terminal.take_pending_responses() == (b"\x1b[2;5R", b"\x1b[3;4R")
+
+
+@pytest.mark.parametrize(("save", "restore"), [("\x1b7", "\x1b8"), ("\x1b[s", "\x1b[u")])
+def test_pipe_addresses_and_restores_real_cells_after_linear_output(save: str, restore: str) -> None:
+    terminal = AnsiTerminalTranscript(reflow_on_cursor_address=True)
+    terminal.set_screen_size(20, 9)
+    long_line = "x" * 24
+    assert terminal.feed(long_line + "\r\n") == long_line + "\n"
+    terminal.feed("\x1b[?1049h\x1b[4;5H\x1b[?1049l")
+    assert terminal.text() == long_line + "\n"
+    assert not terminal.primary_reflow
+
+    terminal.feed("\x1b[3;")
+    terminal.feed("4H\x1b[6n" + save + "\x1b[8;12f\x1b[6nB")
+    terminal.feed(restore + "\x1b[6nA\x1b[1D!")
+    assert terminal.take_pending_responses() == (b"\x1b[3;4R", b"\x1b[8;12R", b"\x1b[3;4R")
+    assert terminal.text().splitlines() == ["x" * 20, "xxxx", "   !", "", "", "", "", " " * 11 + "B"]
+    terminal.feed("\x1b[;6fZ\x1b[8;H\x1b[6n\x1b[H\x1b[6n")
+    assert terminal.take_pending_responses() == (b"\x1b[8;1R", b"\x1b[1;1R")
+    transcript = terminal.text()
+    assert transcript.startswith("xxxxxZ") and SOFT_LINE_BREAK in transcript
+    assert terminal.end_of_stream() == transcript
+    terminal.set_screen_size(25, 9)
+    assert terminal.text().splitlines()[1] == "   !"
+    terminal.reset()
+    assert terminal.feed(long_line * 3) == long_line * 3
+    assert not terminal.primary_reflow
+
+
+def test_pipe_saved_cursor_survives_line_eviction_before_first_vertical_address() -> None:
+    terminal = AnsiTerminalTranscript(reflow_on_cursor_address=True, max_scrollback_lines=4)
+    terminal.set_screen_size(20, 5)
+    terminal.feed("old\nline\nmark\x1b7\nthird\nfourth\nfifth")
+    terminal.feed("\x1b[5d\x1b8!")
+    assert terminal.text().splitlines() == ["line", "mark!", "third", "fourth", "fifth"]
 
 
 def test_ansi_transcript_replaces_normal_readline_history_rows() -> None:

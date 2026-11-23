@@ -239,6 +239,14 @@ def test_ci_workflow_requires_independent_coverage_report_validation() -> None:
     assert any("aggregate and branch report validator" in error for error in errors)
 
 
+def test_ci_workflow_requires_the_complete_product_module_inventory() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "          --source-root src/remote_ops_workspace\n", "",
+    )
+    assert any("complete product module coverage inventory" in error for error in checker.check_ci_workflow(workflow))
+
+
 def test_ci_workflow_requires_stable_windows_coverage_runner() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(

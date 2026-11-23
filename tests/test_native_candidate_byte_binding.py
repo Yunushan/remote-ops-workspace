@@ -69,6 +69,8 @@ def test_actual_wrong_bytes_are_refused_before_execution_with_public_path_receip
         archives = [{"path": item["path"], "artifact_sha256": hashlib.sha256((tmp_path / item["path"]).read_bytes()).hexdigest(), "toc": ["fixture"]}
                     for item in receipt["expected_executables"]]
         VALIDATOR.validate_windows_byte_binding(receipt, archives, "windows-x64")
+        with pytest.raises(ValueError, match="MSI lifecycle observations are incomplete"):
+            VALIDATOR.validate_windows_byte_binding(receipt, archives, "windows-x64", [])
         # A valid smoke receipt cannot borrow completeness from different
         # inspected executable bytes, target or claimed observation digests.
         for mutation in ("archive-bytes", "observed-bytes", "missing-path", "target", "incomplete", "boolean-schema"):
@@ -126,6 +128,68 @@ def test_every_recursive_native_smoke_removal_uses_the_verified_helper():
     assert source.index("\nAssert-DisposableCandidateHost\n") < source.index("\nif (!$Version) {")
 
 
+
+@pytest.mark.skipif(os.name != "nt", reason="installed Windows license checks use PowerShell")
+@pytest.mark.parametrize("changed", [False, True])
+def test_windows_smoke_checks_installed_runtime_license_bytes(tmp_path, changed):
+    source = (ROOT / "scripts/smoke_windows_native.ps1").read_text(encoding="utf-8")
+    function = source.split("function Test-InstalledRuntimeLicenses(", 1)[1].split("\n}", 1)[0]
+    relative = Path("docs/licenses/runtime/bcrypt/LICENSE")
+    for location, payload in (("build/native/windows/stage", b"expected"), ("installed", b"changed!" if changed else b"expected")):
+        target = tmp_path / location / relative
+        target.parent.mkdir(parents=True)
+        target.write_bytes(payload)
+    commands = (
+        "$ErrorActionPreference = 'Stop'\n"
+        + "$Root = " + _ps_quote(tmp_path) + "\n"
+        + "function Test-InstalledRuntimeLicenses(" + function + "\n}\n"
+        + "Test-InstalledRuntimeLicenses " + _ps_quote(tmp_path / "installed") + " 'EXE verify'"
+    )
+    result = subprocess.run(
+        [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-Command", commands],
+        env={**os.environ, "PSMODULEPATH": str(POWERSHELL.parent / "Modules")},
+        capture_output=True, text=True, timeout=30, check=False,
+    )
+    if changed:
+        assert result.returncode != 0
+        assert "installed runtime license differs from staging" in result.stderr
+    else:
+        assert result.returncode == 0, result.stderr
+        assert "native installer smoke runtime licenses: EXE verify" in result.stdout
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows smoke hashing uses PowerShell")
+@pytest.mark.parametrize("changed", [False, True])
+def test_signed_windows_smoke_binds_zip_exe_and_msi_bytes(tmp_path, changed):
+    source = (ROOT / "scripts/smoke_windows_native.ps1").read_text(encoding="utf-8")
+    initial = source.split("\nInitialize-CandidateByteBinding\n", 1)[1].split("\n# extract /", 1)[0]
+    final = source.rsplit('\nif ($RequireReleaseSigning -and $Arch -ne "x86") {', 1)[1]
+    final = '\nif ($RequireReleaseSigning -and $Arch -ne "x86") {' + final.split("\nComplete-CandidateByteBinding", 1)[0]
+    packages = {"NativeZip": "portable.zip", "SetupExe": "setup.exe", "Msi": "setup.msi"}
+    setup = ["$ErrorActionPreference = 'Stop'", "$RequireReleaseSigning = $true", '$Arch = "x64"',
+             "$script:CandidateByteBinding = [ordered]@{}", "function Save-CandidateByteBinding {}"]
+    for variable, filename in packages.items():
+        package = tmp_path / filename
+        package.write_bytes(filename.encode())
+        setup.append(f"${variable} = {_ps_quote(package)}")
+    if changed:
+        initial += '\n[IO.File]::WriteAllBytes($SetupExe, [byte[]](1, 2, 3))\n'
+    result = subprocess.run(
+        [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-Command",
+         "\n".join([*setup, initial, final, "$script:CandidateByteBinding.installer_sha256 | ConvertTo-Json"])],
+        env={**os.environ, "PSMODULEPATH": str(POWERSHELL.parent / "Modules")},
+        timeout=30, capture_output=True, text=True, check=False,
+    )
+    if changed:
+        assert result.returncode != 0
+        assert "Installer bytes changed during native smoke: setup.exe" in result.stderr
+    else:
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout) == {
+            filename: hashlib.sha256(filename.encode()).hexdigest() for filename in packages.values()
+        }
+
+
 def _semantic_receipt():
     hashes = {"cli": "a" * 64, "gui": "b" * 64}
     paths = ["portable/bin/row.exe", "exe-install/bin/row.exe", "msi-install/bin/row.exe", "portable/bin/row-gui.exe", "portable/Remote Ops Workspace GUI.exe", "exe-install/bin/row-gui.exe", "msi-install/bin/row-gui.exe"]
@@ -135,6 +199,58 @@ def _semantic_receipt():
         role = "cli" if path.endswith("/row.exe") else "gui"
         observed.append({"path": path, "role": role, "matched": True, "expected_sha256": hashes[role], "observed_sha256": hashes[role]})
     return {"schema_version": 1, "target": "windows-x64", "status": "bound", "smoke_complete": True, "required_paths": paths, "expected_executables": expected, "observations": observed}, [{"path": item["path"], "artifact_sha256": item["sha256"], "toc": ["semantic fixture"]} for item in expected]
+
+
+
+def test_release_gui_archive_requires_binding_to_native_smoke(tmp_path, monkeypatch):
+    import sys
+
+    from scripts import inspect_windows_msi
+
+    binding, archive_rows = _semantic_receipt()
+    target = binding["target"]
+    gui_archive = archive_rows[1]
+    gui_archive["toc"] = [{"name": "PYZ.pyz"}]
+    gui_archive["pyz_toc"] = {
+        name: [0, position, 50]
+        for position, name in enumerate(VALIDATOR.GUI_PYZ_REQUIRED_MODULES, start=1)
+    }
+    archives = {}
+    for row in archive_rows:
+        executable = tmp_path / row["path"]
+        executable.parent.mkdir(parents=True, exist_ok=True)
+        executable.write_bytes(b"inert fixture")
+        archives[executable] = row
+    assets = tmp_path / "native-dist/windows"
+    assets.mkdir(parents=True)
+    msi = assets / "remote-ops-workspace-v1.0.28-windows-x64.msi"
+    msi.write_bytes(b"inert package")
+    smoke = tmp_path / "build/native-smoke" / target / "candidate-runtime-byte-binding.json"
+    report = smoke.with_name("gui-archive-proof.json")
+
+    def check_lifecycle(_probes, native_target, native_assets):
+        assert native_target == target
+        assert native_assets == [{"path": msi.name, "sha256": hashlib.sha256(msi.read_bytes()).hexdigest()}]
+
+    monkeypatch.setattr(inspect_windows_msi, "validate_lifecycle", check_lifecycle)
+    monkeypatch.setattr(VALIDATOR, "ROOT", tmp_path)
+    monkeypatch.setattr(VALIDATOR, "archive_inventory", archives.__getitem__)
+    monkeypatch.setattr(sys, "argv", ["proof.py", "verify-gui", "--target", target, "--asset-dir", "native-dist/windows"])
+
+    observation = next(row for row in binding["observations"] if row["role"] == "gui")
+    observation["observed_sha256"] = "c" * 64
+    VALIDATOR.save(smoke, binding)
+    with pytest.raises(ValueError, match="observed executable bytes do not match"):
+        VALIDATOR.main()
+    assert not report.exists()
+
+    observation["observed_sha256"] = gui_archive["artifact_sha256"]
+    VALIDATOR.save(smoke, binding)
+    assert VALIDATOR.main() == 0
+    result = json.loads(report.read_bytes())
+    assert result["status"] == "passed"
+    assert result["artifact_sha256"] == gui_archive["artifact_sha256"]
+    assert result["smoke_binding_sha256"] == hashlib.sha256(smoke.read_bytes()).hexdigest()
 
 
 @pytest.mark.parametrize("change", [None, "archive-bytes", "observed-bytes", "missing-path", "target", "incomplete", "boolean-schema", "wrong-role"])

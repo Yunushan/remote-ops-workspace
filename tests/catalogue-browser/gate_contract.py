@@ -105,7 +105,7 @@ def validate(raw, expected, *, policy_cleanup_pending=False):
     need(record['runtime'] == expected['runtime'])
     need(type(record['runtime']['chrome_version']) is str and re.fullmatch(r'[0-9]+(?:\.[0-9]+){3}', record['runtime']['chrome_version']))
     need(record['runtime']['driver_version'] == record['runtime']['chrome_version'])
-    need(record['runtime']['python_version'] == '3.14.7')
+    need(record['runtime']['python_version'] == '3.14.10')
     digest(record['runtime']['tool_inventory_sha256'])
     digest(record['runtime']['loaded_runtime_sha256'])
     integer(record['runtime']['loaded_runtime_files'], 4096, 1)

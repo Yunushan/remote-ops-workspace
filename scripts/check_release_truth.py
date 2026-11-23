@@ -150,7 +150,7 @@ REQUIRED_DOC_SNIPPETS = (
 )
 
 REQUIRED_TURKISH_DOC_SNIPPETS = (
-    "![published preview](https://img.shields.io/badge/published%20preview-v1.0.24-orange)",
+    "![published preview](https://img.shields.io/badge/published%20preview-v1.0.27-orange)",
     "![candidate](https://img.shields.io/badge/candidate-v<project.version>-yellow)",
     "configs/platform_verified_evidence.json",
     "`release-promotion.yml` ayni degismez tag uzerinden baslatilir",
@@ -350,7 +350,7 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
         "candidate_build_ready: ${{ steps.signing-readiness.outputs.candidate_build_ready }}": (
             "candidate readiness output"
         ),
-        'python-version: "3.14.7"': "exact release Python",
+        'python-version: "3.14.10"': "exact release Python",
         '[[ "$GITHUB_EVENT_NAME" == "push" || "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]': (
             "candidate event guard"
         ),
@@ -621,13 +621,18 @@ def check_promotion_truth(workflow: str) -> list[str]:
                 "--governance-signature release-governance-publish/tag-governance-attestation.sig.json",
                 '--redistribution-evidence "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.json"',
                 '--redistribution-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"',
+                '--candidate-inventory "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/release-candidate-inventory.json"',
+                '--protected-platform-registry "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/platform_verified_evidence.json"',
+                '--candidate-qualification-archives "$RUNNER_TEMP/candidate-qualification"',
             ),
             ("--help",),
             frozenset({
                 "--assets-dir", "--repository", "--tag", "--sha", "--published-release-id",
                 "--current-transaction-run-id", "--current-transaction-run-attempt",
                 "--governance-attestation", "--governance-signature",
-                "--redistribution-evidence", "--redistribution-signature",
+                "--redistribution-evidence", "--redistribution-signature", "--candidate-inventory",
+                "--protected-platform-registry",
+                "--candidate-qualification-archives",
             }),
         ),
         "Verify attestation and download exact candidate artifact IDs": (
@@ -640,6 +645,7 @@ def check_promotion_truth(workflow: str) -> list[str]:
                 '--inventory-artifact-id "$INPUT_INVENTORY_ARTIFACT_ID"',
                 '--inventory-archive-digest "$INPUT_INVENTORY_ARCHIVE_DIGEST"',
                 '--approved-inventory "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/release-candidate-inventory.json"',
+                '--qualification-archives "$RUNNER_TEMP/candidate-qualification"',
                 "--assets-root release-assets",
             ),
             ("--help", "--dry-run"),
@@ -653,6 +659,7 @@ def check_promotion_truth(workflow: str) -> list[str]:
                     "--inventory-artifact-id",
                     "--inventory-archive-digest",
                     "--approved-inventory",
+                    "--qualification-archives",
                     "--assets-root",
                 }
             ),
@@ -906,6 +913,28 @@ def check_promotion_truth(workflow: str) -> list[str]:
                 allowed_flags=allowed_flags,
             )
         )
+    bundle_path = "release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}/bundle"
+    retained_name = "Retain original candidate qualification ZIPs"
+    retained = workflow_step_block(block, f"name: {retained_name}")
+    if (
+        step_is_suppressed(retained)
+        or not all(line in retained for line in (
+            "uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "name: production-candidate-qualification-${{ github.run_id }}-${{ github.run_attempt }}",
+            "path: ${{ runner.temp }}/candidate-qualification/*.zip",
+            "if-no-files-found: error",
+        ))
+        or not 0 <= block.find("name: Verify attestation and download exact candidate artifact IDs")
+            < block.find(f"name: {retained_name}") < block.find("name: Create new draft by numeric API identity")
+    ):
+        errors.append("promotion must retain the verified qualification ZIPs before creating a draft")
+    for step_name in ("Attest the audited redistribution approval", "Retain the audited redistribution approval"):
+        step = workflow_step_block(block, f"name: {step_name}")
+        paths = {line.strip() for line in step.splitlines()}
+        if f"{bundle_path}/release-candidate-inventory.json" not in paths:
+            errors.append(f"{step_name} must include the audited candidate inventory")
+        if f"{bundle_path}/platform_verified_evidence.json" not in paths:
+            errors.append(f"{step_name} must include the audited protected-platform registry")
     if "environment: release-compliance-review" not in block:
         errors.append("promotion must use the protected release-compliance-review environment")
     return errors
@@ -970,6 +999,7 @@ def check_certification_truth(workflow: str) -> list[str]:
     for proof, artifact, directory in (
         ("governance proof", "production-tag-governance", "publication-governance"),
         ("redistribution approval", "production-redistribution-approval", "redistribution-approval"),
+        ("candidate qualification ZIPs", "production-candidate-qualification", "candidate-qualification"),
     ):
         step = workflow_step_block(block, f"name: Download {proof} from the triggering promotion attempt")
         if "run-id: ${{ env.PROMOTION_RUN_ID }}" not in step:
@@ -999,7 +1029,10 @@ def check_certification_truth(workflow: str) -> list[str]:
         '--governance-attestation "$RUNNER_TEMP/publication-governance/tag-governance-attestation.json" '
         '--governance-signature "$RUNNER_TEMP/publication-governance/tag-governance-attestation.sig.json" '
         '--redistribution-evidence "$RUNNER_TEMP/redistribution-approval/release-evidence.json" '
-        '--redistribution-signature "$RUNNER_TEMP/redistribution-approval/release-evidence.sig.json"',
+        '--redistribution-signature "$RUNNER_TEMP/redistribution-approval/release-evidence.sig.json" '
+        '--candidate-inventory "$RUNNER_TEMP/redistribution-approval/bundle/release-candidate-inventory.json" '
+        '--candidate-qualification-archives "$RUNNER_TEMP/candidate-qualification" '
+        '--protected-platform-registry "$RUNNER_TEMP/redistribution-approval/bundle/platform_verified_evidence.json"',
     ]
     if (
         executable_step_commands(audit) != expected_audit

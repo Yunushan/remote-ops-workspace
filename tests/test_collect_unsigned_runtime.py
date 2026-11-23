@@ -69,7 +69,7 @@ def ar_bytes(items):
     return raw
 
 
-def carchive(files):
+def carchive(files, *, options=()):
     payload, toc = b"", b""
     for name, data in files:
         encoded = name.encode() + b"\0"
@@ -78,6 +78,9 @@ def carchive(files):
             + encoded
         )
         payload += data
+    for option in options:
+        field = option.encode() + b"\0"
+        toc += struct.pack("!iIIIBc", 18 + len(field), len(payload), 0, 0, 0, b"o") + field
     cookie = struct.pack(
         "!8sIIII64s",
         c.COOKIE,
@@ -230,7 +233,8 @@ class RuntimeObservationCollectorTests(unittest.TestCase):
             [
                 ("LICENSE", b"Actual packaged synthetic terms\n"),
                 ("libnative.dll", b"MZharmless-native-data"),
-            ]
+            ],
+            options=("pyi-contents-directory _internal",),
         )
         (self.root / "stage/row.exe").write_bytes(executable)
         archive_receipt = [
@@ -312,7 +316,12 @@ class RuntimeObservationCollectorTests(unittest.TestCase):
         bootloader = next(
             row for row in record["components"] if row["origin"] == "pyinstaller-bootloader"
         )
-        self.assertEqual(bootloader["carchive_runtime_hints"][0]["reference"], "stage/row.exe")
+        hint = bootloader["carchive_runtime_hints"][0]
+        self.assertEqual(hint["reference"], "stage/row.exe")
+        packaged = next(row for row in record["observed_files"] if row["reference"] == "native.zip::bin/row.exe")
+        for row in (hint, packaged):
+            self.assertEqual(row["runtime_options_observed"], ["pyi-contents-directory _internal"])
+        self.assertNotIn("carchive-runtime-option-unclassified", [row["code"] for row in record["unresolved"]])
         self.assertEqual(record["inputs"]["carchive_report_sha256"], c.digest(archive_raw))
 
     def test_receipt_separator_adaptation_is_typed_and_never_accepts_path_aliases(self):
@@ -410,6 +419,35 @@ class RuntimeObservationCollectorTests(unittest.TestCase):
             "fixture",
             self.obs(),
         )
+
+    def test_unrecognized_carchive_option_is_private_and_remains_unresolved(self):
+        label = "example.deb::usr/bin/row"
+        default = "pyi-contents-directory _internal"
+        unknown = "pyi-contents-directory private-directory"
+        observations = self.obs()
+        hints = c.scan_carchive(carchive([], options=(default, unknown, default)), label, observations)
+        self.assertEqual(hints["runtime_options_observed"], [default, default])
+        self.assertIn({"code": "carchive-runtime-option-unclassified", "reference": label}, observations.gaps)
+        self.assertNotIn(unknown, str((hints, observations.gaps)))
+        self.assertEqual(observations.files, [])
+
+    def test_malformed_carchive_option_cannot_be_classified_as_metadata(self):
+        option = "pyi-contents-directory _internal"
+        raw = carchive([], options=(option,))
+        toc = raw.index(option.encode()) - 18
+        for field_offset, replacement in (
+            (4, struct.pack("!I", 1)),   # payload position beyond TOC start
+            (8, struct.pack("!I", 1)),   # stored size
+            (12, struct.pack("!I", 1)),  # decoded size
+            (16, b"\x01"),               # compressed flag
+            (18 + len(option), b"x"),    # missing NUL terminator
+        ):
+            with self.subTest(field_offset=field_offset):
+                corrupt = bytearray(raw)
+                start = toc + field_offset
+                corrupt[start:start + len(replacement)] = replacement
+                self.refuses("carchive-runtime-option-invalid", c.scan_carchive,
+                             bytes(corrupt), "example.deb::usr/bin/row", self.obs())
 
     def test_full_fixture_records_own_bytes_and_remains_unapproved(self):
         self.fixture()
@@ -605,6 +643,30 @@ class RuntimeObservationCollectorTests(unittest.TestCase):
         result = c.scan_package(raw, "row.deb", obs)
         self.assertEqual(result["license_records"][0]["sha256"], c.digest(b"terms"))
         self.assertTrue(result["all_regular_payload_files_observed"])
+
+    def test_deb_zstd_requires_available_decoder(self):
+        package = ar_bytes([("debian-binary", b"2.0\n"), ("data.tar.zst", b"\x28\xb5\x2f\xfd")])
+        with mock.patch.object(c, "zstd", None):
+            self.refuses("deb-zstd-backend-unavailable", c.scan_package, package, "row.deb", self.obs())
+
+    @unittest.skipIf(c.zstd is None, "requires the standard library zstd decoder")
+    def test_deb_zstd_scans_a_bounded_tar_and_rejects_incomplete_or_extra_frames(self):
+        payload = tar_bytes([("./usr/share/doc/row/LICENSE", b"terms")])
+        frame = c.zstd.compress(payload)
+        def package(data):
+            return ar_bytes([("debian-binary", b"2.0\n"), ("data.tar.zst", data)])
+
+        result = c.scan_package(package(frame), "row.deb", self.obs())
+        self.assertEqual(result["license_records"][0]["sha256"], c.digest(b"terms"))
+        self.assertTrue(result["all_regular_payload_files_observed"])
+        for data in (frame[:-1], frame + frame, frame + b"trailing"):
+            with self.subTest(data=data):
+                self.refuses("compressed-bound-or-trailing-data", c.scan_package, package(data), "row.deb", self.obs())
+        for data in (payload, b"\x28\xb5\x2f\xfd\xff" * 4):
+            with self.subTest(data=data):
+                self.refuses("deb-zstd-frame-invalid", c.scan_package, package(data), "row.deb", self.obs())
+        limited = c.Observations(c.Limits(expanded_bytes=len(payload) - 1))
+        self.refuses("expanded-byte-bound", c.scan_package, package(frame), "row.deb", limited)
 
     def test_rpm_and_cpio_observe_license_without_execution(self):
         obs = self.obs()

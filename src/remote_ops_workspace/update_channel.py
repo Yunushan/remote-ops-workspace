@@ -16,9 +16,10 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 from sysconfig import get_platform
 
@@ -45,6 +46,7 @@ from .update_staging import (
 )
 
 POLICY_SCHEMA = "row.update-trust-policy.v1"
+POLICY_SCHEMA_V2 = "row.update-trust-policy.v2"
 POLICY_BYTES = 16384
 CHUNK_BYTES = 65536
 VERSION = re.compile(r"(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})")
@@ -123,9 +125,15 @@ def _approved_url(url, settings):
 
 def _policy_data(raw):
     data = _decode(raw, POLICY_BYTES)
-    _exact(data, {"schema", "enabled", "manifest_url", "public_key", "organization", "channel",
-                  "selected_target", "approved_targets", "allowed_origins", "limits"}, "invalid-trust-policy")
-    _need(data["schema"] == POLICY_SCHEMA and data["enabled"] is True, "update-policy-not-enabled")
+    fields = {"schema", "enabled", "manifest_url", "public_key", "organization", "channel",
+              "selected_target", "approved_targets", "allowed_origins", "limits"}
+    if type(data) is dict and data.get("schema") == POLICY_SCHEMA_V2:
+        fields.add("minimum_version")
+    _exact(data, fields, "invalid-trust-policy")
+    _need(data["schema"] in (POLICY_SCHEMA, POLICY_SCHEMA_V2) and data["enabled"] is True,
+          "update-policy-not-enabled")
+    if data["schema"] == POLICY_SCHEMA_V2:
+        _release_version(data["minimum_version"], "invalid-trust-policy")
     for key in ("organization", "channel"):
         _text(data[key], 128, "invalid-trust-policy")
     try:
@@ -251,8 +259,8 @@ def _private_stage(root, current_home):
     return root
 
 
-def _release_version(value):
-    _need(type(value) is str and VERSION.fullmatch(value) is not None, "invalid-release-version")
+def _release_version(value, refusal="invalid-release-version"):
+    _need(type(value) is str and VERSION.fullmatch(value) is not None, refusal)
     return tuple(int(piece) for piece in value.split("."))
 
 
@@ -277,7 +285,7 @@ class AuthenticatedManifest:
         return AssetSetBinding(digest, tuple(StageBinding(digest, row.name, row.sha256, row.size) for row in self.artifacts))
 
 
-def authenticate_manifest(raw, policy, *, now=None):
+def authenticate_manifest(raw, policy, *, now=None, expected_version=None):
     _need(type(policy) is UpdatePolicy, "invalid-trust-policy")
     settings = policy.settings
     data = _decode(raw, settings["limits"]["manifest_bytes"])
@@ -303,7 +311,13 @@ def authenticate_manifest(raw, policy, *, now=None):
     _need(_verify_update_manifest_signature("ed25519", public_key=settings["public_key"],
                                           signature_value=signature["value"], payload=payload, errors=errors)
           and not errors, "manifest-authentication-refused")
-    _need(_release_version(data["version"]) > _release_version(__version__), "update-version-not-newer")
+    version = _release_version(data["version"])
+    if expected_version is None:
+        _need(version > _release_version(__version__), "update-version-not-newer")
+    else:
+        _need(version == _release_version(expected_version), "update-version-does-not-match")
+    if settings["schema"] == POLICY_SCHEMA_V2:
+        _need(version >= _release_version(settings["minimum_version"]), "update-version-below-policy-minimum")
     stamp = data["generated_at"]
     _need(type(stamp) is str and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", stamp) is not None, "invalid-release-time")
     try:
@@ -338,6 +352,8 @@ def authenticate_manifest(raw, policy, *, now=None):
         _need(total <= settings["limits"]["total_asset_bytes"], "asset-set-byte-bound")
         artifacts.append(ManifestArtifact(row["target"], row["name"], row["url"], row["sha256"], row["size_bytes"]))
     _need(any(row.target == settings["selected_target"] for row in artifacts), "selected-target-absent")
+    if settings["schema"] == POLICY_SCHEMA_V2:
+        _need({row.target for row in artifacts} == set(settings["approved_targets"]), "update-target-set-incomplete")
     return AuthenticatedManifest(raw, data["version"], tuple(artifacts))
 
 
@@ -465,12 +481,12 @@ def _transaction(root, manifest, deadline, private_guard=None):
                                checkpoint=lambda: _deadline(deadline), private_guard=private_guard)
 
 
-def _verify_complete(transaction, manifest, policy, deadline):
+def _verify_complete(transaction, manifest, policy, deadline, *, authenticate=None):
     with transaction._verified_files():
-        return _verify_complete_held(transaction, manifest, policy, deadline)
+        return _verify_complete_held(transaction, manifest, policy, deadline, authenticate=authenticate)
 
 
-def _verify_complete_held(transaction, manifest, policy, deadline):
+def _verify_complete_held(transaction, manifest, policy, deadline, *, authenticate=None):
     _deadline(deadline)
     transaction._root()
     transaction._inventory()
@@ -482,7 +498,7 @@ def _verify_complete_held(transaction, manifest, policy, deadline):
     _need(result.passed is True, "staged-manifest-verification-refused")
     observed = transaction._read(MANIFEST, settings["limits"]["manifest_bytes"])
     _need(observed == manifest.original, "staged-manifest-changed")
-    authenticate_manifest(observed, policy)
+    (authenticate or authenticate_manifest)(observed, policy)
     transaction._check_inputs()
     _deadline(deadline)
     return {"phase": "authenticated-staged", "manifest_sha256": manifest.binding.manifest_sha256,
@@ -498,21 +514,23 @@ def _verify_complete_held(transaction, manifest, policy, deadline):
             "power_loss_or_hostile_host_safe": False, "readiness_credit": 0}
 
 
-def stage_update(policy, stage_root, *, current_home):
+def stage_update(policy, stage_root, *, current_home, expected_version=None):
     _need(type(policy) is UpdatePolicy, "invalid-trust-policy")
     settings = policy.settings
+    authenticate = (authenticate_manifest if expected_version is None
+                    else partial(authenticate_manifest, expected_version=expected_version))
     deadline = time.monotonic() + settings["limits"]["operation_timeout_seconds"]
     try:
         with _stage_boundary(stage_root, current_home, recover=False) as (root, guard):
             with _stage_lease(root / JOURNAL, min(30, settings["limits"]["operation_timeout_seconds"]), guard):
                 raw = b"".join(_chunks(settings["manifest_url"], settings, deadline, settings["limits"]["manifest_bytes"]))
-                manifest = authenticate_manifest(raw, policy)
+                manifest = authenticate(raw, policy)
                 transaction = (_transaction(root, manifest, deadline) if guard is None
                                    else _transaction(root, manifest, deadline, private_guard=guard))
                 streams = {row.name: _chunks(row.url, settings, deadline, row.size, row.size) for row in manifest.artifacts}
                 try:
                     transaction.prepare(manifest.original, streams)
-                    return _verify_complete(transaction, manifest, policy, deadline)
+                    return _verify_complete(transaction, manifest, policy, deadline, authenticate=authenticate)
                 finally:
                     # A failed atomic write can stop iteration before HTTP EOF.
                     # Close every owned generator; partial files remain evidence.
@@ -524,22 +542,39 @@ def stage_update(policy, stage_root, *, current_home):
         raise UpdateError("update-stage-io-refused") from exc
 
 
-def recover_update(policy, stage_root, *, current_home):
+@contextmanager
+def verified_recovered_stage(
+    policy, stage_root, *, current_home, expected_version=None, check_consumer_deadline=True,
+):
+    """Yield the authenticated stage while its lease and verified files are held."""
     _need(type(policy) is UpdatePolicy, "invalid-trust-policy")
     settings = policy.settings
+    authenticate = (authenticate_manifest if expected_version is None
+                    else partial(authenticate_manifest, expected_version=expected_version))
     deadline = time.monotonic() + settings["limits"]["operation_timeout_seconds"]
     try:
         with _stage_boundary(stage_root, current_home, recover=True) as (root, guard):
-            with _stage_lease(root / JOURNAL, min(30, settings["limits"]["operation_timeout_seconds"]), guard):
+            with (_stage_lease(root / JOURNAL, min(30, settings["limits"]["operation_timeout_seconds"]), guard),
+                  ExitStack() as verified_files):
                 # Journal authenticity fields never authorize recovery. Reapply the
                 # current operator policy and exact original signature from scratch.
                 raw = _read_stage_manifest(root, settings["limits"]["manifest_bytes"], guard)
-                manifest = authenticate_manifest(raw, policy)
+                manifest = authenticate(raw, policy)
                 transaction = (_transaction(root, manifest, deadline) if guard is None
                                    else _transaction(root, manifest, deadline, private_guard=guard))
                 transaction.recover()
-                return _verify_complete(transaction, manifest, policy, deadline)
+                verified_files.enter_context(transaction._verified_files())
+                result = _verify_complete_held(transaction, manifest, policy, deadline, authenticate=authenticate)
+                yield root, manifest, result
+                if check_consumer_deadline:
+                    _deadline(deadline)
     except StagingError as exc:
         raise UpdateError("update-stage-refused") from exc
     except OSError as exc:
         raise UpdateError("update-stage-io-refused") from exc
+
+
+def recover_update(policy, stage_root, *, current_home, expected_version=None):
+    with verified_recovered_stage(policy, stage_root, current_home=current_home,
+                                  expected_version=expected_version) as (_, _, result):
+        return result

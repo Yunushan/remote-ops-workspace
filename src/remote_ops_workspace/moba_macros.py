@@ -397,6 +397,10 @@ class MobaMacroTerminalReplayInjection:
         }
 
 
+class MacroNameExistsError(ValueError):
+    """A recording already owns this name in the workspace."""
+
+
 class MobaMacroStore:
     def __init__(
         self,
@@ -412,7 +416,10 @@ class MobaMacroStore:
             return []
         data = json.loads(self.path.read_text(encoding="utf-8"))
         rows = _macro_rows(data, self.path)
-        return [MobaMacroRecording.from_dict(item) for item in rows]
+        try:
+            return [MobaMacroRecording.from_dict(item) for item in rows]
+        except (KeyError, TypeError, AttributeError, OverflowError) as exc:
+            raise ValueError("invalid workspace macro record") from exc
 
     def save(self, recordings: Iterable[MobaMacroRecording]) -> None:
         with self._transaction():
@@ -423,7 +430,7 @@ class MobaMacroStore:
             recordings = self.load()
             names = {item.name for item in recordings}
             if recording.name in names and not replace:
-                raise ValueError(f"macro already exists: {recording.name}")
+                raise MacroNameExistsError(f"macro already exists: {recording.name}")
             recordings = [item for item in recordings if item.name != recording.name]
             recordings.append(recording)
             self._save_unlocked(sorted(recordings, key=lambda item: item.name))
@@ -1222,4 +1229,6 @@ def _macro_body(value: str) -> str:
 
 
 def _typed_text(value: str) -> str:
+    if value == "\t":
+        return value
     return safe.clean_text(value, "macro typed text", allow_empty=True)

@@ -3,6 +3,8 @@ from __future__ import annotations
 import builtins
 import hashlib
 import json
+import shutil
+import subprocess
 from base64 import b64encode
 from dataclasses import replace
 from pathlib import Path
@@ -98,6 +100,47 @@ def test_moba_professional_customizer_bundle_contains_enterprise_assets(tmp_path
     assert 'policy_target="/etc/remote-ops-workspace"' in posix_apply
     assert 'if [ "$(id -u)" -ne 0 ]' in posix_apply
     assert "administrator-owned machine policy" in bundle_readme
+
+
+@pytest.mark.parametrize(("kernel", "xdg", "override", "target", "policy_target"), [
+    ("Darwin", "/xdg", "", "/user home/Library/Application Support/RemoteOpsWorkspace", "/Library/Application Support/RemoteOpsWorkspace"),
+    ("Darwin", "", "/portable", "/portable", "/Library/Application Support/RemoteOpsWorkspace"),
+    ("Linux", "/xdg", "", "/xdg/remote-ops-workspace", "/etc/remote-ops-workspace"),
+    ("Linux", "", "", "/user home/.config/remote-ops-workspace", "/etc/remote-ops-workspace"),
+    ("Linux", "/xdg", "/portable", "/portable", "/etc/remote-ops-workspace"),
+])
+def test_generated_posix_apply_uses_runtime_paths(tmp_path, kernel, xdg, override, target, policy_target):
+    shell = shutil.which("sh")
+    if shell is None:
+        pytest.skip("POSIX shell required to exercise the generated apply script")
+    bundle = write_moba_professional_customizer_bundle(build_moba_professional_customizer_plan(tmp_path, brand_name="Lab"))
+    script = bundle.root / "install" / "apply-enterprise-bundle.sh"
+    # Record every write command using shell functions. With PATH empty, an
+    # unexpected external command cannot install anything on the test machine.
+    harness = r'''
+PATH=
+HOME="/user home"
+XDG_CONFIG_HOME="$2"
+ROW_HOME="$3"
+uname() { printf '%s\n' "$kernel"; }
+id() { printf '0\n'; }
+dirname() { printf '%s\n' "${2%/*}"; }
+mkdir() { printf 'mkdir <%s>\n' "$2"; }
+install() { printf 'install '; printf '<%s>' "$@"; printf '\n'; }
+cp() { printf 'cp <%s>\n' "$2"; }
+kernel="$1"
+. "$0"
+'''
+    result = subprocess.run(
+        [shell, "-c", harness, script.as_posix(), kernel, xdg, override],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    lines = result.stdout.splitlines()
+    assert f"mkdir <{target}>" in lines
+    assert f"cp <{target}/profiles.json>" in lines
+    assert f"install <-d><-m><0755><{policy_target}>" in lines
+    assert any(line.startswith("install <-m><0644>") and line.endswith(f"<{policy_target}/policy.json>") for line in lines)
 
 
 def test_moba_professional_customizer_rejects_existing_output_without_force(tmp_path: Path) -> None:

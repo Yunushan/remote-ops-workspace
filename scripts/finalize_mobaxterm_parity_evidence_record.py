@@ -13,9 +13,12 @@ if str(ROOT) not in sys.path:
 
 from scripts.check_mobaxterm_parity_evidence import (  # noqa: E402
     REGISTRY_PATH,
+    SOURCE_BOUND_ARTICLES,
     check_candidate_record,
     check_mobaxterm_parity_evidence,
     check_record,
+    check_release_source,
+    check_validation_source_identity,
     review_acceptance_line,
 )
 from scripts.make_mobaxterm_parity_evidence_record import registry_policy  # noqa: E402
@@ -28,15 +31,15 @@ def main(argv: list[str] | None = None) -> int:
         if args.append_registry or args.out is not None:
             print("--print-review-line cannot write or append a record", file=sys.stderr)
             return 1
-        errors = read_errors or check_candidate_record(candidate)
-        if errors:
-            for error in errors:
-                print(f"mobaxterm parity evidence finalizer: {error}", file=sys.stderr)
-            return 1
         source = release_source(
             candidate, args.repository, args.source_head_sha, args.tag_source_head_sha,
             args.workflow_run_url, args.run_attempt,
         )
+        errors = read_errors or check_candidate_for_review(candidate, source)
+        if errors:
+            for error in errors:
+                print(f"mobaxterm parity evidence finalizer: {error}", file=sys.stderr)
+            return 1
         print(review_acceptance_line({**candidate, "release_source": source}))
         return 0
     if args.append_registry and args.out is None:
@@ -141,6 +144,19 @@ def release_source(
     }
 
 
+def check_candidate_for_review(candidate: dict[str, Any], source: dict[str, Any]) -> list[str]:
+    errors = check_candidate_record(candidate)
+    if errors:
+        return errors
+    article = candidate["article_id"]
+    errors, _ = check_release_source(article, candidate["release_tag"], source, candidate["release_asset_urls"])
+    if article in SOURCE_BOUND_ARTICLES:
+        errors.extend(check_validation_source_identity(
+            {**candidate, "release_source": source}, require_acceptance_provenance=True,
+        ))
+    return errors
+
+
 def finalize_candidate(
     candidate: dict[str, Any],
     *,
@@ -154,30 +170,8 @@ def finalize_candidate(
     reviewed_at: str,
     published_assets: dict[str, Path],
 ) -> tuple[list[str], dict[str, Any]]:
-    errors = check_candidate_record(candidate)
-    if candidate.get("article_id") == "shared-authenticated-transport-terminal-grid":
-        validation = candidate.get("validation_summary")
-        summary = validation.get("summary") if isinstance(validation, dict) else None
-        if not isinstance(summary, dict):
-            errors.append(
-                "shared-authenticated-transport-terminal-grid validation_summary.summary "
-                "must contain source provenance"
-            )
-        else:
-            expected = {
-                "repository": repository,
-                "release_tag": candidate.get("release_tag"),
-                "release_target": candidate.get("release_target"),
-                "source_head_sha": source_head_sha,
-                "workflow_run_url": workflow_run_url,
-                "run_attempt": run_attempt,
-            }
-            for key, value in expected.items():
-                if summary.get(key) != value:
-                    errors.append(
-                        "shared-authenticated-transport-terminal-grid validation_summary.summary."
-                        f"{key} must match accepted release provenance {value!r}"
-                    )
+    source = release_source(candidate, repository, source_head_sha, tag_source_head_sha, workflow_run_url, run_attempt)
+    errors = check_candidate_for_review(candidate, source)
     expected_hashes = candidate.get("artifact_sha256")
     if not isinstance(expected_hashes, dict):
         expected_hashes = {}
@@ -203,26 +197,31 @@ def finalize_candidate(
     if errors:
         return errors, {}
 
-    record = {
+    record = accepted_record({
         **candidate,
-        "status": "accepted",
-        "release_source": release_source(
-            candidate, repository, source_head_sha, tag_source_head_sha, workflow_run_url, run_attempt,
-        ),
+        "release_source": source,
         "acceptance_review": {
             "reviewer": reviewer,
             "review_url": review_url,
             "reviewed_at": reviewed_at,
         },
+    }, published_hashes)
+    final_errors = check_record(record)
+    return final_errors, record if not final_errors else {}
+
+
+def accepted_record(reviewed: dict[str, Any], published_hashes: dict[str, str]) -> dict[str, Any]:
+    review = reviewed["acceptance_review"]
+    return {
+        **reviewed,
+        "status": "accepted",
         "release_asset_bytes": {
             "verified": True,
-            "verified_by": reviewer,
-            "verified_at": reviewed_at,
+            "verified_by": review["reviewer"],
+            "verified_at": review["reviewed_at"],
             "sha256": published_hashes,
         },
     }
-    final_errors = check_record(record)
-    return final_errors, record if not final_errors else {}
 
 
 def published_asset_paths(items: list[str]) -> tuple[dict[str, Path], list[str]]:

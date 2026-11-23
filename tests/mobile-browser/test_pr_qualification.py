@@ -58,7 +58,7 @@ def hosted_fixture(kind="pull_request", payload=None):
     with fixture() as root:
         event = root / "event.json"
         event.write_text(json.dumps(payload if payload is not None else event_data()))
-        with mock.patch.object(H, "SOURCE", SOURCE), mock.patch.object(Q.platform, "system", return_value="Linux"), mock.patch.object(Q.platform, "machine", return_value="x86_64"), mock.patch.object(Q.platform, "python_version", return_value="3.14.7"), mock.patch.dict(os.environ, env_data(root, event, kind), clear=True):
+        with mock.patch.object(H, "SOURCE", SOURCE), mock.patch.object(Q.platform, "system", return_value="Linux"), mock.patch.object(Q.platform, "machine", return_value="x86_64"), mock.patch.object(Q.platform, "python_version", return_value="3.14.10"), mock.patch.dict(os.environ, env_data(root, event, kind), clear=True):
             yield root, event
 
 

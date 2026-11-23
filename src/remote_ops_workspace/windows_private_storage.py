@@ -338,10 +338,12 @@ class _Native:
             raise PrivateStorageError("native-directory-open-refused")
         return handle
 
-    def open_file(self, path):
+    def open_file(self, path, *, read_only=False):
         # A metadata-only handle can allow DELETE even without FILE_SHARE_DELETE.
+        # A read-only lease also refuses an existing writer or writable mapping.
+        share = 0x01 if read_only else 0x03
         handle = self.kernel.CreateFileW(
-            path, READ_CONTROL_AND_ATTRIBUTES_AND_DATA, 0x03, None, 3, 0x00200000, None,
+            path, READ_CONTROL_AND_ATTRIBUTES_AND_DATA, share, None, 3, 0x00200000, None,
         )
         _require(handle not in (None, self.c.c_void_p(-1).value), "native-file-open-refused")
         return handle
@@ -539,7 +541,7 @@ class PrivateDirectoryGuard:
             self.native.close(named)
 
     @contextmanager
-    def named_file(self, expected_path, *, expected_identity=None):
+    def named_file(self, expected_path, *, expected_identity=None, read_only=False):
         """Retain a final/read-only direct child's exact private native object.
 
         The caller must leave this context before replacing that named target.
@@ -549,7 +551,7 @@ class PrivateDirectoryGuard:
         paths = _ancestors(expected_path)
         _require(len(paths) == len(self.opened) + 1 and paths[-2] == self.path,
                  "private-child-containment-refused")
-        named = self.native.open_file(paths[-1])
+        named = self.native.open_file(paths[-1], read_only=read_only)
         try:
             snapshot = self.native.snapshot(named)
             require_private(snapshot, self.user, directory=False)

@@ -347,6 +347,13 @@ class PureZIPPlanTests(CFTPureFixtureCase):
 
 
 class MockHTTPTests(CFTPureFixtureCase):
+    def setUp(self):
+        super().setUp()
+        # Each mocked request starts without inherited CA or TLS key log settings.
+        environment = mock.patch.dict(bundle.os.environ, clear=True)
+        self.addCleanup(environment.stop)
+        environment.start()
+
     def fetch(self, response, *, expected=None, tls=None):
         output = Output()
         context = tls or SimpleNamespace(check_hostname=True, verify_mode=ssl.CERT_REQUIRED)

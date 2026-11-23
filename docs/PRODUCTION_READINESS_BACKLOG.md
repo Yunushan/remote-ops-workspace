@@ -101,8 +101,8 @@ Rules:
   sets `propagate = False`, and replaces prior handlers. `cli.main` configures
   logging at startup and returns exit code 2 for an invalid `ROW_LOG_LEVEL`.
   `web_server.validate_web_bind` emits a redacted warning on an accepted public
-  bind. There is no support-bundle command in the repository, so that part of the
-  item is not applicable.
+  bind. `scripts/support_bundle.py` exports built-in doctor diagnostics with
+  profile counts and a summary of known configuration labels.
 
 ## Phase 4 - Operability (about +4)
 
@@ -111,16 +111,20 @@ Rules:
   steps. Validate: `python scripts/check_docs.py`.
   Added `UPGRADE_AND_ROLLBACK.md`, `WORKSPACE_BACKUP_AND_RESTORE.md`,
   `SECRET_ROTATION_AND_INCIDENT.md` and `RELEASE_PROMOTION.md`.
-- [ ] **O2** Generate a container-image SBOM and attestation for
+- [x] **O2** Generate a container-image SBOM and attestation for
   `docker/Dockerfile.web` in CI. Accept: image is covered by SBOM + attestation
   as source/Python assets already are. Validate: `python -m pytest tests/test_container_base_images.py -q` and CI.
+  The exact-main job verified provenance and the CycloneDX SBOM attestation
+  against the smoke-tested image digest.
+  [Attestation job](https://github.com/Yunushan/remote-ops-workspace/actions/runs/44132009249/job/134280129818)
 - [x] **O3** Document installer trust. `installers/install.sh` and
   `installers/install.ps1` are source installers with no integrity checks. For
   binary downloads, document and automate SHA-256 plus
   `gh attestation verify`. Validate: `python scripts/check_docs.py`.
-  Documented in `docs/runbooks/RELEASE_PROMOTION.md` (installer trust boundary +
-  checksum/attestation verification steps). Automating verification inside the
-  installers remains a follow-up.
+  The release promotion runbook includes an operator command that verifies a
+  downloaded installer against the immutable release digest and attested
+  provenance. A live end-to-end check depends on the first certified release.
+  [Release promotion runbook](runbooks/RELEASE_PROMOTION.md)
 
 ## Phase 5 - Maintainability (about +3)
 
@@ -129,6 +133,78 @@ Rules:
   assets. Behaviour-preserving; coverage stays 100%. Validate:
   `python -m pytest --cov --cov-branch --cov-fail-under=100` and
   `python scripts/check_gui_interactions.py --require-pyqt6`.
+  Workflow and transfer dialogs, the common QSS, Quick Connect parsing, and
+  shared Qt top menus have moved into dedicated modules or packaged assets.
+  [PR #159](https://github.com/Yunushan/remote-ops-workspace/pull/159) ·
+  [PR #183](https://github.com/Yunushan/remote-ops-workspace/pull/183) ·
+  [PR #187](https://github.com/Yunushan/remote-ops-workspace/pull/187)
+  `gui_icons.py` contains the live toolbar, profile tree, and control icon
+  painters. `gui_preset_properties.py` applies and clears Qt route properties
+  as the active preset changes. The native render and interaction checks
+  exercise these modules through the desktop entry point.
+  `gui_layouts.py` owns saved layout editing, launch, splitter construction,
+  and resize persistence. The window wires toolbar and menu actions to it.
+  `gui_session_tabs.py` owns terminal splits, tab duplication and navigation,
+  pane discovery, and recent-session recovery. The window supplies the
+  connected-session panel type created for its Qt workspace.
+  `gui_profile_actions.py` owns profile context actions, editing, import
+  previews, connection launch and file and queue dispatch. The window
+  supplies the dialogs and opens the requested terminal tabs.
+  `gui_sidebar.py` owns sidebar layout, per-preset widths, and the Sessions,
+  Favorites, and SFTP rail actions.
+  `gui_profile_tree.py` owns profile grouping, preset labels and row metadata,
+  filters, and selection restoration after refresh.
+  `gui_workspace_tabs.py` owns workspace page selection, paint guards,
+  deferred terminal startup, and tab context menus.
+  `gui_terminal_lifecycle.py` owns pane creation, process callbacks,
+  tab shutdown, and process status updates.
+  `gui_operator_workflows.py` owns the status and action wiring for the
+  operator workflow dialogs.
+  `gui_menus.py` owns top-menu actions, menu visibility across presets,
+  and registration of the preset keyboard shortcuts.
+  `gui_toolbars.py` builds the action and layout toolbars, connects their
+  buttons, and applies preset geometry and responsive sizing.
+  `gui_home.py` owns welcome-page construction, home actions, search routing,
+  and responsive sizing for the supported desktop presets.
+  `gui_design_activation.py` applies presets and coordinates the paint guard,
+  geometry updates, and terminal input policy during switches.
+  `gui_window_chrome.py` builds the status bar and bottom-edge tab controls
+  and applies the title-bar and top-stack geometry.
+  `gui_interaction_states.py` applies preset focus, toolbar state, tree
+  selection, and tab status to live widgets.
+  `gui_quick_connect.py` builds the desktop Quick Connect controls, displays
+  suggestions and connected idle state, and dispatches the selected target.
+  The mRemoteNG, Remmina, SecureCRT, and Termius workspace surfaces and
+  control handlers live in dedicated GUI modules. The main window still
+  routes each preset to its implementation.
+  `gui_connected_terminal.py` builds the connected SSH terminal panel,
+  banner, and telemetry. `gui_moba_sessions.py` coordinates connected tab
+  creation, the active SFTP dock, and its session metadata.
+  `gui_sftp_editor.py` manages the remote editor and its SFTP transfers.
+  The connected dock supplies the shared SSH state.
+  `gui_remote_monitoring.py` manages the connected telemetry process, refresh
+  timer, and stale requests. The dock keeps the controls and applies live data
+  to matching connected terminal panels.
+  `gui_reference_tabs.py` composes the live connected documents for the
+  SecureCRT, Termius, Remmina, and mRemoteNG presets and records their tab,
+  status, terminal, and session-action state for the render checks.
+  `gui_product_workspace.py` builds the shared workspace panels, workflow
+  cards, reference state, and terminal drawer controls for those presets.
+  `assets/workspace-styles.json` supplies the colors, corner radii and
+  padding for all six presets in the shared `workspace.qss` template.
+  The five product presets each have a `gui_preset_*.py` module for
+  layout geometry, control definitions, and workflow routes.
+  `gui_designs.py` assembles the presets and renders the shared stylesheet.
+  `cli_transfers.py` owns file transfer and SSH-browser command registration
+  and output. `cli_reports.py` formats diagnostic and readiness reports.
+  `cli_customizer.py` registers the enterprise bundle, deployment evidence,
+  and authenticated update staging commands.
+  `cli_managed_runtime.py` registers the embedded server and X11 commands,
+  including the hidden HTTP and FTP runtime entry points used by packaged builds.
+  `cli_workspace.py` registers encrypted workspace backup and restore, profile
+  import and export, and both directory sync commands.
+  `cli_text.py` registers local text preview, guarded writes, and diffs,
+  along with SFTP edit planning, save review, and evidence commands.
 
 ## Phase 6 - Internal certification gates (about +3)
 
@@ -156,9 +232,10 @@ Rules:
 
 ## Platform parity (about +7, or re-scope via D1)
 
-- [ ] **P1** Bring real hosts online: i386 Linux (`self-hosted,linux,i386`),
-  armhf Linux (`self-hosted,linux,armhf`), and Windows XP SP3 x86 plus XP x64
-  collectors (`self-hosted,xp-evidence`). Validate:
+- [ ] **P1** Bring real hosts online: native i386 and armhf Linux with a
+  separate Linux x64 collector labelled `i386` and `armhf`, and Windows XP SP3
+  x86 plus XP x64 with a modern
+  `self-hosted,xp-evidence` collector. Validate:
   `python scripts/check_platform_evidence_runner_readiness.py --repository <owner/repo> --require-goal-targets --require-idle`.
 - [ ] **P2** Produce accepted release-bound records for the four protected
   targets (4/4) and the eight strict MobaXterm articles (8/8) per

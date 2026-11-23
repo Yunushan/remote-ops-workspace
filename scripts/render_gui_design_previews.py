@@ -1030,7 +1030,7 @@ def preset_manifest(artifact: PreviewArtifact) -> dict[str, Any]:
             raise RuntimeError("mRemoteNG reconnect live route signal drifted")
         if connection_route.handler != "handle_mremoteng_document_reconnect":
             raise RuntimeError("mRemoteNG reconnect live route handler drifted")
-        if connection_route.reconnect_state != "reconnected":
+        if connection_route.reconnect_state != "reconnect requested":
             raise RuntimeError("mRemoteNG reconnect live route state drifted")
     if mremoteng_inheritance_route is not None:
         connection_route = gui_design_mremoteng_connection_document_route()
@@ -4946,7 +4946,7 @@ def draw_mremoteng_document_toolbar(draw: Any, preset: GuiDesignPreset, x: int, 
         raise RuntimeError("mRemoteNG reconnect live route signal drifted")
     if route.handler != "handle_mremoteng_document_reconnect":
         raise RuntimeError("mRemoteNG reconnect live route handler drifted")
-    if route.reconnect_state != "reconnected":
+    if route.reconnect_state != "reconnect requested":
         raise RuntimeError("mRemoteNG reconnect live route state drifted")
     if filter_route.selected_tree_label != route.selected_tree_label:
         raise RuntimeError("mRemoteNG document-filter route selected tree metadata drifted")

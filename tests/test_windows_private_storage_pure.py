@@ -52,7 +52,7 @@ class MockNative:
         self.created.append(path)
         return 31
 
-    def open_file(self, path):
+    def open_file(self, path, *, read_only=False):
         handle = len(self.opened) + 1
         self.opened.append((path, handle))
         self.snapshots[handle] = private(5, directory=False)

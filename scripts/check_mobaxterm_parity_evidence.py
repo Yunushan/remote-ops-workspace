@@ -12,6 +12,14 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "configs" / "mobaxterm_parity_evidence.json"
+TESTED_ASSET_ARTICLES = frozenset(
+    {
+        "embedded-server-suite", "embedded-x-server", "macro-recorder", "moba-text-editor-diff", "mobapt-unix-runtime",
+        "professional-deployment", "ssh-browser-26-4-smartcard", "shared-authenticated-transport-terminal-grid",
+    }
+)
+SOURCE_BOUND_ARTICLES = TESTED_ASSET_ARTICLES
+PROFESSIONAL_POLICY_SURFACES = ("cli", "gui", "launcher", "profile-editor", "quick-connect", "web")
 
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 GIT_SHA_RE = re.compile(r"[0-9a-f]{40}")
@@ -319,27 +327,28 @@ def check_article_record(
     errors.extend(check_required_checks(row, spec))
     errors.extend(
         check_validation_summary(
-            article_id, row.get("validation_summary"), release_target=row.get("release_target"),
+            article_id, row.get("validation_summary"), release_target=row.get("release_target"), release_tag=release_tag,
         )
     )
-    if article_id == "shared-authenticated-transport-terminal-grid":
+    if article_id in SOURCE_BOUND_ARTICLES:
         errors.extend(
-            check_transport_terminal_validation_identity(
+            check_validation_source_identity(
                 row,
                 require_acceptance_provenance=require_acceptance_provenance,
             )
         )
+    if article_id in TESTED_ASSET_ARTICLES:
+        errors.extend(check_tested_release_asset(row))
     errors.extend(check_release_assets(article_id, release_tag, row.get("release_asset_urls"), row.get("artifact_sha256")))
     if require_acceptance_provenance:
         errors.extend(check_acceptance_provenance(article_id, release_tag, row))
     return errors
 
 
-def check_acceptance_provenance(article_id: str, release_tag: str, row: dict[str, Any]) -> list[str]:
+def check_release_source(
+    article_id: str, release_tag: str, source: dict[str, Any], asset_urls: Any,
+) -> tuple[list[str], str]:
     errors: list[str] = []
-    source = row.get("release_source")
-    if not isinstance(source, dict):
-        return [f"{article_id} release_source must be an object"]
     repository = source.get("repository")
     if not isinstance(repository, str) or not GITHUB_REPOSITORY_RE.fullmatch(repository):
         errors.append(f"{article_id} release_source.repository must be an exact GitHub owner/name value")
@@ -373,14 +382,45 @@ def check_acceptance_provenance(article_id: str, release_tag: str, row: dict[str
     if not isinstance(run_attempt, int) or isinstance(run_attempt, bool) or run_attempt < 1:
         errors.append(f"{article_id} release_source.run_attempt must be a positive integer")
 
-    asset_repositories = release_asset_repositories(row.get("release_asset_urls"))
+    asset_repositories = release_asset_repositories(asset_urls)
     if repository and asset_repositories != {repository}:
         errors.append(
             f"{article_id} release asset repository must exactly match "
             f"release_source.repository {repository}, got {sorted(asset_repositories)}"
         )
 
-    review = row.get("acceptance_review")
+    return errors, repository
+
+
+def check_acceptance_provenance(article_id: str, release_tag: str, row: dict[str, Any]) -> list[str]:
+    source = row.get("release_source")
+    if not isinstance(source, dict):
+        return [f"{article_id} release_source must be an object"]
+    errors, repository = check_release_source(article_id, release_tag, source, row.get("release_asset_urls"))
+    review_errors, reviewer, reviewed_at = check_review_provenance(article_id, repository, row.get("acceptance_review"))
+    errors.extend(review_errors)
+    byte_proof = row.get("release_asset_bytes")
+    if not isinstance(byte_proof, dict):
+        errors.append(f"{article_id} release_asset_bytes must be an object")
+    else:
+        if byte_proof.get("verified") is not True:
+            errors.append(f"{article_id} release_asset_bytes.verified must be true")
+        if reviewer and byte_proof.get("verified_by") != reviewer:
+            errors.append(f"{article_id} release_asset_bytes.verified_by must match acceptance reviewer")
+        if reviewed_at and byte_proof.get("verified_at") != reviewed_at:
+            errors.append(f"{article_id} release_asset_bytes.verified_at must match acceptance review time")
+        byte_hashes = byte_proof.get("sha256")
+        errors.extend(check_sha_map(byte_hashes, f"{article_id} release_asset_bytes.sha256"))
+        artifact_hashes = row.get("artifact_sha256")
+        if isinstance(byte_hashes, dict) and isinstance(artifact_hashes, dict) and byte_hashes != artifact_hashes:
+            errors.append(
+                f"{article_id} release_asset_bytes.sha256 must exactly match artifact_sha256"
+            )
+    return errors
+
+
+def check_review_provenance(article_id: str, repository: str, review: Any) -> tuple[list[str], str, str]:
+    errors: list[str] = []
     reviewer = ""
     reviewed_at = ""
     if not isinstance(review, dict):
@@ -406,24 +446,7 @@ def check_acceptance_provenance(article_id: str, release_tag: str, row: dict[str
         else:
             reviewed_at = str(raw_reviewed_at)
 
-    byte_proof = row.get("release_asset_bytes")
-    if not isinstance(byte_proof, dict):
-        errors.append(f"{article_id} release_asset_bytes must be an object")
-    else:
-        if byte_proof.get("verified") is not True:
-            errors.append(f"{article_id} release_asset_bytes.verified must be true")
-        if reviewer and byte_proof.get("verified_by") != reviewer:
-            errors.append(f"{article_id} release_asset_bytes.verified_by must match acceptance reviewer")
-        if reviewed_at and byte_proof.get("verified_at") != reviewed_at:
-            errors.append(f"{article_id} release_asset_bytes.verified_at must match acceptance review time")
-        byte_hashes = byte_proof.get("sha256")
-        errors.extend(check_sha_map(byte_hashes, f"{article_id} release_asset_bytes.sha256"))
-        artifact_hashes = row.get("artifact_sha256")
-        if isinstance(byte_hashes, dict) and isinstance(artifact_hashes, dict) and byte_hashes != artifact_hashes:
-            errors.append(
-                f"{article_id} release_asset_bytes.sha256 must exactly match artifact_sha256"
-            )
-    return errors
+    return errors, reviewer, reviewed_at
 
 
 def check_required_checks(row: dict[str, Any], spec: ArticleSpec) -> list[str]:
@@ -437,7 +460,18 @@ def check_required_checks(row: dict[str, Any], spec: ArticleSpec) -> list[str]:
     return []
 
 
-def check_validation_summary(article_id: str, summary: Any, *, release_target: Any) -> list[str]:
+def requires_named_macro_evidence(release_tag: str) -> bool:
+    """Only older, valid release tags qualify for historical macro evidence."""
+    if not RELEASE_TAG_RE.fullmatch(release_tag):
+        return True
+    try:
+        version = tuple(map(int, release_tag[1:].split(".")))
+    except ValueError:
+        return True
+    return version >= (1, 0, 28)
+
+
+def check_validation_summary(article_id: str, summary: Any, *, release_target: Any, release_tag: str) -> list[str]:
     if not isinstance(summary, dict) or not summary:
         return [f"{article_id} validation_summary must be a non-empty object"]
     if summary.get("passed") is not True:
@@ -451,15 +485,104 @@ def check_validation_summary(article_id: str, summary: Any, *, release_target: A
     observed_target = details.get("release_target")
     if not isinstance(observed_target, str) or not observed_target or observed_target != release_target:
         errors.append(f"{article_id} validation summary release_target must match record release_target")
+    if article_id == "mobapt-unix-runtime" and details.get("offline_execution_receipts_verified") is not True:
+        errors.append("mobapt-unix-runtime validation summary must record verified offline execution receipts")
+    if article_id == "embedded-x-server" and details.get("live_forwarding_receipt_verified") is not True:
+        errors.append("embedded-x-server validation summary must record a verified live forwarding receipt")
+    if article_id == "embedded-server-suite":
+        proof_count = details.get("live_client_proof_count")
+        if type(proof_count) is not int or proof_count != 8:
+            errors.append("embedded-server-suite validation summary must record eight verified live client captures")
+    if article_id == "macro-recorder":
+        count = details.get("verified_macro_replays")
+        sessions = details.get("replay_sessions")
+        if type(count) is not int or type(sessions) is not int or count < 1 or count != sessions:
+            errors.append("macro-recorder validation summary must record verified SSH timing and review for every replay")
+        named = details.get("verified_named_macro_replays")
+        if requires_named_macro_evidence(release_tag) or "verified_named_macro_replays" in details:
+            if type(named) is not int or named != count:
+                errors.append("macro-recorder validation summary must verify named workspace playback for every replay")
+    if article_id == "moba-text-editor-diff" and details.get("verified_remote_edit") is not True:
+        errors.append("moba-text-editor-diff validation summary must record a verified SFTP edit")
+    if article_id == "shared-authenticated-transport-terminal-grid":
+        if (
+            type(details.get("verified_capture_count")) is not int or details["verified_capture_count"] != 12
+            or type(details.get("verified_ssh_channel_count")) is not int or details["verified_ssh_channel_count"] != 3
+            or type(details.get("verified_screen_proof_count")) is not int or details["verified_screen_proof_count"] != 3
+        ):
+            errors.append(f"{article_id} validation summary must bind twelve captures, three SSH channels and three screen proofs")
+    if article_id == "ssh-browser-26-4-smartcard":
+        fingerprint = details.get("openssh_key_fingerprint")
+        if (
+            details.get("verified_hardware_smartcard") is not True
+            or details.get("verified_multiplexed_sftp") is not True
+            or not isinstance(fingerprint, str) or not re.fullmatch(r"SHA256:[A-Za-z0-9+/]{43}", fingerprint)
+        ):
+            errors.append("ssh-browser-26-4-smartcard validation summary must bind the hardware key and shared SSH/SFTP connection")
+    if article_id == "professional-deployment":
+        installers = details.get("verified_windows_installers")
+        if (
+            not isinstance(installers, dict) or len(installers) != 2
+            or {Path(name).suffix for name in installers if isinstance(name, str)} != {".exe", ".msi"}
+            or any(not isinstance(digest, str) or not SHA256_RE.fullmatch(digest) for digest in installers.values())
+        ):
+            errors.append("professional-deployment validation summary must bind a verified EXE and MSI")
+        policy_digest = details.get("verified_machine_policy_sha256")
+        if (
+            details.get("verified_policy_surfaces") != list(PROFESSIONAL_POLICY_SURFACES)
+            or not isinstance(policy_digest, str) or not SHA256_RE.fullmatch(policy_digest)
+        ):
+            errors.append("professional-deployment validation summary must bind all six verified runtime policy surfaces")
     return errors
 
 
-def check_transport_terminal_validation_identity(
+def capture_release_identity(evidence: dict[str, Any], label: str) -> dict[str, Any]:
+    source, package = evidence.get("source"), evidence.get("release_asset")
+    if not isinstance(source, dict) or not isinstance(package, dict):
+        raise ValueError(f"{label} requires source and release_asset objects")
+    repository, tag, head = (source.get(key) for key in ("repository", "release_tag", "head_sha"))
+    run, attempt = source.get("workflow_run_url"), source.get("run_attempt")
+    match = GITHUB_WORKFLOW_RUN_RE.fullmatch(run) if isinstance(run, str) else None
+    if (
+        not isinstance(repository, str) or not GITHUB_REPOSITORY_RE.fullmatch(repository)
+        or not isinstance(tag, str) or not RELEASE_TAG_RE.fullmatch(tag)
+        or not isinstance(head, str) or not GIT_SHA_RE.fullmatch(head)
+        or match is None or match.group(1) != repository
+        or type(attempt) is not int or attempt < 1
+    ):
+        raise ValueError(f"{label} requires exact repository, tag, source SHA and workflow attempt")
+    name, digest = package.get("name"), package.get("sha256")
+    if (
+        not isinstance(name, str) or not name or name in {".", ".."} or "/" in name or "\\" in name
+        or not isinstance(digest, str) or not SHA256_RE.fullmatch(digest)
+    ):
+        raise ValueError(f"{label} requires the tested release asset filename and SHA-256")
+    return {
+        "repository": repository, "release_tag": tag, "source_head_sha": head,
+        "workflow_run_url": run, "run_attempt": attempt, "tested_release_asset": {"name": name, "sha256": digest},
+    }
+
+
+def check_tested_release_asset(row: dict[str, Any]) -> list[str]:
+    validation = row.get("validation_summary")
+    summary = validation.get("summary") if isinstance(validation, dict) else None
+    tested = summary.get("tested_release_asset") if isinstance(summary, dict) else None
+    artifacts = row.get("artifact_sha256")
+    if (
+        not isinstance(tested, dict) or not isinstance(tested.get("name"), str)
+        or not isinstance(tested.get("sha256"), str) or not SHA256_RE.fullmatch(tested["sha256"])
+        or not isinstance(artifacts, dict) or artifacts.get(tested["name"]) != tested["sha256"]
+    ):
+        return [f"{row['article_id']} tested release asset must match the record artifact name and SHA-256"]
+    return []
+
+
+def check_validation_source_identity(
     row: dict[str, Any],
     *,
     require_acceptance_provenance: bool,
 ) -> list[str]:
-    article_id = "shared-authenticated-transport-terminal-grid"
+    article_id = row["article_id"]
     validation = row.get("validation_summary")
     summary = validation.get("summary") if isinstance(validation, dict) else None
     if not isinstance(summary, dict):

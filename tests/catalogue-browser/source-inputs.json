@@ -22,7 +22,7 @@
     "test_contract.py",
     "upload_guard.py"
   ],
-  "product_baseline_head": "909332ae46b36a3ba791512d53e6a883fcc05a82",
+  "product_baseline_head": "d2ef1dee874fa5a56752675684b32470374c20ba",
   "product_inputs": [
     {
       "path": "apps/web/app.js",
@@ -51,7 +51,7 @@
     },
     {
       "path": "src/remote_ops_workspace/__init__.py",
-      "sha256": "d5c8c895843555f142e2628c430abb78e1805b21e4d70f18b9882e0aea5ef51c",
+      "sha256": "cbe2113519c2487900cb872e8d6dd24c590b96e068ab44a8dcfaa819edcf5115",
       "size": 78
     },
     {
@@ -66,8 +66,8 @@
     },
     {
       "path": "src/remote_ops_workspace/file_safety.py",
-      "sha256": "1fc6b102bf2b228d2f9dc00e83135a2a60b188ed3147fb43e82b83881e6df76b",
-      "size": 14933
+      "sha256": "0eb1e6744ce2b5b9acf777ae80e48bdce9a06305914ac8f4028eda42a01e6663",
+      "size": 16761
     },
     {
       "path": "src/remote_ops_workspace/models.py",
@@ -76,8 +76,8 @@
     },
     {
       "path": "src/remote_ops_workspace/paths.py",
-      "sha256": "7e742ac90be7184952b802f179243c006f15dcbebca53a3ecc4b3f59b6aacb15",
-      "size": 2261
+      "sha256": "6049e09b34e6fe0fb8480ce8790255af9c79a1765c1ca5bea9de69cc9c2f6597",
+      "size": 2380
     },
     {
       "path": "src/remote_ops_workspace/plugins.py",
@@ -91,8 +91,8 @@
     },
     {
       "path": "src/remote_ops_workspace/profile_validation.py",
-      "sha256": "0a7d7242d89193144ad90538c58bfaf1da6b0e045f8f146453050fbb15bfe182",
-      "size": 10357
+      "sha256": "360438fc217667232b3b0eec9b6e17a6fae6254b544c9bd5e7323f82fc927391",
+      "size": 10436
     },
     {
       "path": "src/remote_ops_workspace/redaction.py",
@@ -106,8 +106,8 @@
     },
     {
       "path": "src/remote_ops_workspace/storage.py",
-      "sha256": "37f14d178f03fe6423b93ad298457e72267a4a4e7f015305fefc2dd7630f32b9",
-      "size": 25116
+      "sha256": "8082180893e936e793b173d0b7c2440b10c7757532f7293312eec7f0a30fe640",
+      "size": 25424
     },
     {
       "path": "src/remote_ops_workspace/web_server.py",

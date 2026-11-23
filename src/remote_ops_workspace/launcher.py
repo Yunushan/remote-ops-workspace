@@ -15,6 +15,7 @@ from .enterprise_policy import assert_profile_launch_allowed
 from .models import Profile, Tunnel
 from .plugins import LoadedPlugin, load_plugin_registry
 from .profile_validation import CLEARTEXT_PROTOCOL_OPT_IN, CLEARTEXT_PROTOCOLS, prepare_profile
+from .smartcard_keys import PINNED_SMARTCARD_KEY, materialize_pinned_smartcard_key
 from .x11 import managed_x11_environment, managed_xauth_location
 
 
@@ -195,7 +196,7 @@ def launch(profile: Profile, dry_run: bool = False) -> LaunchPlan:
     return plan
 
 
-def protocol_clients() -> dict[str, list[str]]:
+def protocol_clients(*, include_plugins: bool = True) -> dict[str, list[str]]:
     clients = {
         "ssh": ["ssh"],
         "ssh1": ["ssh"],
@@ -220,8 +221,8 @@ def protocol_clients() -> dict[str, list[str]]:
         "serial": ["picocom", "screen", "cu", "putty"],
         "keygen": ["ssh-keygen"],
     }
-    for protocol, executables in load_plugin_registry().protocol_clients().items():
-        clients[protocol] = executables
+    if include_plugins:
+        clients.update(load_plugin_registry().protocol_clients())
     return clients
 
 
@@ -250,7 +251,7 @@ def _build_ssh_family(profile: Profile, protocol: str) -> LaunchPlan:
             notes.append("Use only for isolated legacy systems; protocol v1 cannot provide modern SSH security.")
             notes.append("Requires an SSH client build that still supports protocol version 1.")
         cmd.extend(["-p", str(port)])
-        cmd.extend(_ssh_identity_args(profile))
+        cmd.extend(_ssh_identity_args(profile, notes))
         cmd.extend(_ssh_connection_option_args(profile.options))
         notes.extend(_ssh_smartcard_notes(profile.options))
         cmd.extend(_ssh_proxy_args(profile, notes))
@@ -264,8 +265,8 @@ def _build_ssh_family(profile: Profile, protocol: str) -> LaunchPlan:
                 # OpenSSH parses each -o value as a config line even though the
                 # process receives argv. Quote a helper installed under a path
                 # such as Program Files for that second parsing boundary.
-                location = safe.path_arg(xauth_location, "XAuthLocation").replace("\\", "\\\\").replace('"', '\\"')
-                cmd.extend(["-o", f'XAuthLocation="{location}"'])
+                location = safe.path_arg(xauth_location, "XAuthLocation")
+                cmd.extend(["-o", _ssh_config_path_option("XAuthLocation", location)])
             notes.append("X11 forwarding requested. Ensure XQuartz, Xorg or VcXsrv is running locally.")
         if _option_bool(profile.options, "agent_forward", "forward_agent"):
             cmd.append("-A")
@@ -274,16 +275,16 @@ def _build_ssh_family(profile: Profile, protocol: str) -> LaunchPlan:
 
     if protocol == "sftp":
         cmd = ["sftp", "-P", str(port)]
-        cmd.extend(_ssh_identity_args(profile))
-        cmd.extend(_ssh_connection_option_args(profile.options))
+        cmd.extend(_ssh_identity_args(profile, notes))
+        cmd.extend(_ssh_connection_option_args(profile.options, file_transfer=True))
         notes.extend(_ssh_smartcard_notes(profile.options))
         cmd.extend(_ssh_proxy_args(profile, notes))
         cmd.append(target)
         return LaunchPlan(protocol, cmd, notes)
 
     cmd = ["scp", "-P", str(port)]
-    cmd.extend(_ssh_identity_args(profile))
-    cmd.extend(_ssh_connection_option_args(profile.options))
+    cmd.extend(_ssh_identity_args(profile, notes))
+    cmd.extend(_ssh_connection_option_args(profile.options, file_transfer=True))
     notes.extend(_ssh_smartcard_notes(profile.options))
     cmd.extend(_ssh_proxy_args(profile, notes))
     cmd.append(target)
@@ -291,13 +292,30 @@ def _build_ssh_family(profile: Profile, protocol: str) -> LaunchPlan:
     return LaunchPlan(protocol, cmd, notes)
 
 
-def _ssh_identity_args(profile: Profile) -> list[str]:
+def _ssh_identity_args(profile: Profile, notes: list[str]) -> list[str]:
+    if PINNED_SMARTCARD_KEY in profile.options:
+        try:
+            identity = materialize_pinned_smartcard_key(profile.options[PINNED_SMARTCARD_KEY])
+        except (OSError, ValueError) as exc:
+            raise LauncherError(f"Cannot use the saved smart-card key: {exc}") from exc
+        path = safe.path_arg(str(identity), "smart-card identity file").replace("%", "%%")
+        notes.append("Pinned smart-card profiles use the destination, proxy and host-key settings "
+                     "from the profile and skip user and system SSH configuration files.")
+        # IdentityFile and CertificateFile accumulate across OpenSSH config
+        # files even with IdentitiesOnly. Use only the profile's options.
+        return ["-F", "none", "-o", _ssh_config_path_option("IdentityFile", path), "-o", "IdentitiesOnly=yes",
+                "-o", "ControlMaster=no", "-o", "ControlPath=none"]
     if not profile.identity_file:
         return []
     return ["-i", safe.path_arg(profile.identity_file, "identity file")]
 
 
-def _ssh_connection_option_args(options: Mapping[str, str]) -> list[str]:
+def _ssh_config_path_option(keyword: str, path: str) -> str:
+    quoted = path.replace("\\", "\\\\").replace('"', '\\"')
+    return f'{keyword}="{quoted}"'
+
+
+def _ssh_connection_option_args(options: Mapping[str, str], *, file_transfer: bool = False) -> list[str]:
     args: list[str] = []
     if _option_bool(options, "compression"):
         args.append("-C")
@@ -318,14 +336,24 @@ def _ssh_connection_option_args(options: Mapping[str, str]) -> list[str]:
         "strict_host_key_checking",
         allowed={"accept-new", "ask", "no", "yes"},
     )
-    if strict_host_key_checking:
+    pinned = PINNED_SMARTCARD_KEY in options
+    if pinned or strict_host_key_checking:
+        # An isolated profile must not silently fall back to a first-use prompt
+        # when its previous ssh_config supplied a stricter trust policy.
+        strict_host_key_checking = strict_host_key_checking or "yes"
         args.extend(["-o", f"StrictHostKeyChecking={strict_host_key_checking}"])
 
     user_known_hosts_file = _option(options, "user_known_hosts_file", "known_hosts_file")
     if user_known_hosts_file:
-        args.extend(["-o", f"UserKnownHostsFile={safe.path_arg(user_known_hosts_file, 'user_known_hosts_file')}"])
+        known_hosts = safe.path_arg(user_known_hosts_file, "user_known_hosts_file")
+        trust_option = (_ssh_config_path_option("UserKnownHostsFile", known_hosts)
+                        if pinned else f"UserKnownHostsFile={known_hosts}")
+        args.extend(["-o", trust_option])
 
-    identity_agent = _option(options, "identity_agent", "ssh_identity_agent", "mobagent_socket")
+    agent_for_pinned_key = pinned and pinned_smartcard_uses_agent(options)
+    identity_agent = ssh_identity_agent(options)
+    if pinned:
+        identity_agent = (identity_agent or "SSH_AUTH_SOCK") if agent_for_pinned_key else "none"
     if identity_agent:
         args.extend(["-o", f"IdentityAgent={safe.path_arg(identity_agent, 'identity_agent')}"])
 
@@ -350,15 +378,24 @@ def _ssh_connection_option_args(options: Mapping[str, str]) -> list[str]:
             ]
         )
 
-    pkcs11_provider = _option(options, "pkcs11_provider", "smartcard_pkcs11_provider", "smart_card_pkcs11_provider")
-    smartcard_provider = _option(options, "smartcard_provider", "smart_card_provider")
-    provider_path = _smartcard_provider_path(pkcs11_provider, "pkcs11_provider")
-    smartcard_provider_path = _smartcard_provider_path(smartcard_provider, "smartcard_provider")
-    if provider_path and smartcard_provider_path and provider_path != smartcard_provider_path:
-        raise LauncherError("pkcs11_provider and smartcard_provider must reference the same provider when both are set")
-    provider_path = provider_path or smartcard_provider_path
-    if provider_path:
-        args.extend(["-I", provider_path])
+    if agent_for_pinned_key:
+        # OpenSSH can match an agent's keys against every identity supplied by
+        # a directly loaded provider, before applying its provider key filter.
+        args.extend(["-o", "PKCS11Provider=none"])
+    else:
+        pkcs11_provider = _option(options, "pkcs11_provider", "smartcard_pkcs11_provider", "smart_card_pkcs11_provider")
+        smartcard_provider = _option(options, "smartcard_provider", "smart_card_provider")
+        provider_path = _smartcard_provider_path(smartcard_provider, "smartcard_provider")
+        if not pinned or not provider_path:
+            legacy_provider = _smartcard_provider_path(pkcs11_provider, "pkcs11_provider")
+            if legacy_provider and provider_path and legacy_provider != provider_path:
+                raise LauncherError("pkcs11_provider and smartcard_provider must reference the same provider when both are set")
+            provider_path = legacy_provider or provider_path
+        if provider_path:
+            if file_transfer:
+                args.extend(["-o", _ssh_config_path_option("PKCS11Provider", provider_path)])
+            else:
+                args.extend(["-I", provider_path])
 
     log_level = _option_enum(
         options,
@@ -380,6 +417,17 @@ def _ssh_connection_option_args(options: Mapping[str, str]) -> list[str]:
             args.extend(["-o", f"{open_ssh_name}={_option_token(algorithm_value, option_name)}"])
 
     return args
+
+
+def ssh_identity_agent(options: Mapping[str, str]) -> str | None:
+    return _option(options, "identity_agent", "ssh_identity_agent", "mobagent_socket")
+
+
+def pinned_smartcard_uses_agent(options: Mapping[str, str]) -> bool:
+    agent = ssh_identity_agent(options)
+    if agent is not None:
+        return agent.strip().casefold() != "none"
+    return _option_bool(options, "mobagent_smartcard", "add_smartcard_to_mobagent")
 
 
 def _smartcard_provider_path(value: str | None, label: str) -> str | None:
@@ -484,7 +532,7 @@ def _build_mosh(profile: Profile) -> LaunchPlan:
     target = _target(profile, host)
     notes: list[str] = []
     ssh_cmd = ["ssh", "-p", str(port)]
-    ssh_cmd.extend(_ssh_identity_args(profile))
+    ssh_cmd.extend(_ssh_identity_args(profile, notes))
     ssh_cmd.extend(_ssh_connection_option_args(profile.options))
     ssh_cmd.extend(_ssh_proxy_args(profile, notes))
     if _option_bool(profile.options, "agent_forward", "forward_agent"):

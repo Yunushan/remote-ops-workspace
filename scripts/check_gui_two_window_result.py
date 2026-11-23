@@ -16,11 +16,24 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.release_evidence_file import replace_evidence_file  # noqa: E402
+
 TEST_NODE = "tests/test_gui_terminal_io_edges.py::test_shared_terminal_component_keeps_two_window_ownership_independent"
 SOURCE_FILES = (
     "src/remote_ops_workspace/gui.py",
     "src/remote_ops_workspace/gui_connected.py",
+    "src/remote_ops_workspace/gui_connected_terminal.py",
+    "src/remote_ops_workspace/gui_moba_sessions.py",
+    "src/remote_ops_workspace/gui_sftp_editor.py",
+    "src/remote_ops_workspace/gui_window_chrome.py",
     "src/remote_ops_workspace/gui_workspace.py",
+    "src/remote_ops_workspace/gui_designs.py",
+    "src/remote_ops_workspace/gui_interaction_states.py",
+    "src/remote_ops_workspace/gui_preset_mobaxterm.py",
+    "src/remote_ops_workspace/gui_quick_connect.py",
     "src/remote_ops_workspace/gui_terminal.py",
     "src/remote_ops_workspace/gui_processes.py",
     "src/remote_ops_workspace/gui_values.py",
@@ -167,7 +180,7 @@ def persist_receipt(output: Path, receipt: dict[str, object]) -> None:
             stream.write(raw)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, output)
+        replace_evidence_file(temporary, output)
         temporary = None
     finally:
         if temporary is not None:

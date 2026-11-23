@@ -14,6 +14,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path.cwd().resolve()
+SOURCE_ROOT = Path(__file__).resolve().parents[1]
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
 SCOPE = "unreleased PR candidate runtime evidence; no release, signing trust, notarization, or compliance approval"
 
 
@@ -69,7 +72,7 @@ def archive_inventory(path):
     return result
 
 
-def validate_windows_byte_binding(report, archives, target):
+def validate_windows_byte_binding(report, archives, target, assets=None):
     """Bind the smoke's observed executable bytes to the inspected CArchives.
 
     This validates candidate-produced records, not independent approval or an
@@ -111,17 +114,29 @@ def validate_windows_byte_binding(report, archives, target):
             or item.get("observed_sha256") != hashes.get(role)
         ):
             raise ValueError("candidate observed executable bytes do not match inspected PyInstaller archive")
+    probes = report.get("msi_lifecycle")
+    if assets is not None or probes:
+        from scripts.inspect_windows_msi import validate_lifecycle
+
+        validate_lifecycle(probes, target, assets)
 
 
-def validate_posix_byte_binding(report, archives, target, assets, launchers=()):
-    """Validate per-probe entrypoint hashes; external runtime files are excluded."""
+def validate_posix_byte_binding(report, archives, target, assets, launchers=(), *, root=None):
+    """Validate per-probe hashes and the build tree for candidate macOS app bundles."""
     import re
 
-    from candidate_posix_byte_binding import APPIMAGE_LAUNCHER, target_contract
+    from candidate_posix_byte_binding import (
+        APPIMAGE_LAUNCHER,
+        MAC_APP_SOURCE,
+        app_bundle_inventory,
+        binding_schema,
+        target_contract,
+        validate_app_bundle_observations,
+    )
 
     outputs, paths, probes = target_contract(target)
     if not isinstance(report, dict) or (
-        type(report.get("schema_version")) is not int or report["schema_version"] != 1
+        type(report.get("schema_version")) is not int or report["schema_version"] != binding_schema(target)
         or report.get("target") != target or report.get("status") != "bound"
         or report.get("smoke_complete") is not True
         or set(report.get("required_paths", [])) != set(paths)
@@ -177,17 +192,39 @@ def validate_posix_byte_binding(report, archives, target, assets, launchers=()):
             if row.get("role") != role or row.get("matched") is not True or row.get("expected_sha256") != hashes[role] or row.get("observed_sha256") != hashes[role]:
                 raise ValueError("candidate observed AppImage runtime or launcher bytes differ from recorded build output")
 
-    elif packages or package_observations:
-        raise ValueError("unexpected package runtime binding for macOS")
+    else:
+        if packages or package_observations:
+            raise ValueError("unexpected package runtime binding for macOS")
+        original = app_bundle_inventory((ROOT if root is None else root) / MAC_APP_SOURCE)
+        validate_app_bundle_observations(report, original)
 
 
 GUI_PYZ_REQUIRED_MODULES = (
     "remote_ops_workspace.gui_terminal",
     "remote_ops_workspace.gui_processes",
+    "remote_ops_workspace.gui_smartcards",
+    "remote_ops_workspace.gui_layouts",
+    "remote_ops_workspace.gui_home",
+    "remote_ops_workspace.gui_design_activation",
+    "remote_ops_workspace.gui_interaction_states",
+    "remote_ops_workspace.gui_quick_connect",
+    "remote_ops_workspace.gui_designs",
+    "remote_ops_workspace.gui_preset_mobaxterm",
+    "remote_ops_workspace.gui_preset_mremoteng",
+    "remote_ops_workspace.gui_preset_remmina",
+    "remote_ops_workspace.gui_preset_securecrt",
+    "remote_ops_workspace.gui_preset_termius",
+    "remote_ops_workspace.gui_product_workspace",
+    "remote_ops_workspace.gui_reference_tabs",
     "remote_ops_workspace.gui_values",
     "remote_ops_workspace.terminal_output",
+    "remote_ops_workspace.gui_window_chrome",
     "remote_ops_workspace.gui_workspace",
     "remote_ops_workspace.gui_connected",
+    "remote_ops_workspace.gui_connected_terminal",
+    "remote_ops_workspace.gui_moba_sessions",
+    "remote_ops_workspace.gui_remote_monitoring",
+    "remote_ops_workspace.gui_sftp_editor",
     "remote_ops_workspace.quick_connect",
 )
 GUI_PYZ_ARCHIVE_PATHS = {
@@ -311,15 +348,52 @@ def validate_gui_pyz_modules(archives, target):
     return report
 
 
+def verify_gui_archive(target: str, assets_root: Path) -> int:
+    gui = ROOT / GUI_PYZ_ARCHIVE_PATHS[target]
+    paths = [gui]
+    if target.startswith("windows-"):
+        paths.append(ROOT / GUI_PYZ_CLI_ARCHIVE_PATHS[target])
+    for path in paths:
+        if not path.is_file() or path.is_symlink():
+            raise RuntimeError(f"Expected a regular PyInstaller executable: {path.relative_to(ROOT)}")
+    archives = [archive_inventory(path) for path in paths]
+    report = validate_gui_pyz_modules(archives, target)
+    if report["status"] != "passed":
+        raise RuntimeError(f"Required GUI modules failed verification for {target}: {', '.join(report['errors'])}")
+
+    smoke = ROOT / "build/native-smoke" / target / "candidate-runtime-byte-binding.json"
+    raw = smoke.read_bytes()
+    binding = json.loads(raw)
+    if target.startswith("windows-"):
+        msi_assets = [
+            {"path": path.name, "sha256": digest(path)}
+            for path in assets_root.glob("*.msi")
+            if path.is_file() and not path.is_symlink()
+        ]
+        validate_windows_byte_binding(binding, archives, target, msi_assets)
+    else:
+        validate_posix_byte_binding(binding, archives, target, [])
+    report.update(target=target, smoke_binding_sha256=hashlib.sha256(raw).hexdigest())
+    save(smoke.with_name("gui-archive-proof.json"), report)
+    print(f"Verified {len(report['required_modules'])} frozen GUI modules against the {target} smoke observations.")
+    return 0
+
+
 def main():
-    parser = argparse.ArgumentParser(description=SCOPE)
-    parser.add_argument("phase", choices=["bind", "finish"])
+    parser = argparse.ArgumentParser(description="Inspect native build and installed executable evidence.")
+    parser.add_argument("phase", choices=["bind", "finish", "verify-gui"])
     parser.add_argument("--target", required=True)
-    parser.add_argument("--expected-sha", required=True)
+    parser.add_argument("--expected-sha")
     parser.add_argument("--asset-dir", required=True)
     parser.add_argument("--native-build-outcome", default="not-run")
     parser.add_argument("--native-smoke-outcome", default="not-run")
     args = parser.parse_args()
+    if args.phase == "verify-gui":
+        if args.target not in GUI_PYZ_ARCHIVE_PATHS:
+            parser.error("verify-gui requires a desktop GUI target")
+        return verify_gui_archive(args.target, ROOT / args.asset_dir)
+    if args.expected_sha is None:
+        parser.error(f"{args.phase} requires --expected-sha")
     output = ROOT / "build/candidate-proof" / args.target
     output.mkdir(parents=True, exist_ok=True)
     observed = fingerprint()
@@ -345,8 +419,8 @@ def main():
         save(output / f"{args.phase}.json", record)
         raise RuntimeError("actual checkout HEAD differs from bound candidate SHA")
     if args.phase == "bind":
-        if sys.version_info[:3] != (3, 14, 7) or sys.implementation.name != "cpython":
-            raise RuntimeError("candidate builder must use CPython 3.14.7 exactly")
+        if sys.version_info[:3] != (3, 14, 10) or sys.implementation.name != "cpython":
+            raise RuntimeError("candidate builder must use CPython 3.14.10 exactly")
         if subprocess.run(["git", "diff", "--quiet", "HEAD", "--"], check=False).returncode:
             raise RuntimeError("candidate starts with changed tracked source")
         expected_bits = 32 if args.target == "windows-x86" else 64
@@ -463,7 +537,7 @@ def main():
             try:
                 binding_report = json.loads(binding_path.read_text(encoding="utf-8"))
                 if args.target.startswith("windows-"):
-                    validate_windows_byte_binding(binding_report, archives, args.target)
+                    validate_windows_byte_binding(binding_report, archives, args.target, record["assets"])
                 else:
                     validate_posix_byte_binding(binding_report, archives, args.target, record["assets"], record["native_packaged_launchers"])
                 if args.native_smoke_outcome != "success":

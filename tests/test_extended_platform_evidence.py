@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 
 def test_runner_inventory_requires_protected_administration_read_token() -> None:
@@ -46,30 +51,117 @@ def test_extended_platform_evidence_workflow_passes_current_tree() -> None:
     assert checker.main() == 0
 
 
-def test_extended_platform_evidence_requires_locked_offline_cargo_builds() -> None:
+@pytest.mark.parametrize("arch", ["i386", "armhf"])
+def test_linux_collector_requires_native_input_before_validation(arch: str) -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = checker.WORKFLOW_PATH.read_text(encoding="utf-8")
-    for required in ('MATURIN_PEP517_ARGS: "--locked --offline"', "python3 scripts/prepare_protected_linux_cargo.py"):
-        changed = workflow.replace(required, f"# {required}", 1)
-        errors = checker.check_extended_platform_evidence(changed)
-        assert any(
-            "linux-i386-native-evidence must install the protected Linux locks" in error
-            for error in errors
+    for changed, error in (
+        (workflow.replace(f"self-hosted, linux, x64, {arch}", f"self-hosted, linux, {arch}", 1),
+         "matching self-hosted runner labels"),
+        (workflow.replace(f'while [[ ! -d "platform-evidence-staging/linux-{arch}/$RELEASE_TAG/artifacts" ]]; do',
+                          "while false; do", 1),
+         "wait for staged native evidence before collector validation"),
+    ):
+        assert any(error in item for item in checker.check_extended_platform_evidence(changed))
+
+
+@pytest.mark.skipif(sys.platform == "win32" or shutil.which("bash") is None, reason="requires native Bash")
+@pytest.mark.parametrize(("args", "expected"), [
+    (["rustc", "--locked", "--offline", "--lib"], ["rustc", "--locked", "--offline", "--lib"]),
+    (["build", "--locked"], ["build", "--offline", "--locked"]),
+    (["metadata", "--frozen"], ["metadata", "--frozen"]),
+    (["rustc", "--", "--locked"], ["rustc", "--locked", "--offline", "--", "--locked"]),
+    (["--version"], ["--version"]),
+])
+def test_protected_linux_cargo_enforces_flags_without_duplicating_them(
+    tmp_path: Path, args: list[str], expected: list[str],
+) -> None:
+    cargo = tmp_path / "cargo"
+    cargo.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n', encoding="utf-8")
+    cargo.chmod(0o700)
+    process = subprocess.run(
+        ["bash", "scripts/protected_linux_cargo.sh", *args],
+        env={**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"},
+        capture_output=True, text=True, check=True, timeout=5,
+    )
+    assert process.stdout.splitlines() == expected
+
+
+def test_extended_platform_evidence_requires_locked_offline_cargo_builds() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    capture = (checker.ROOT / checker.LINUX_CAPTURE_PATH).read_text(encoding="utf-8")
+    for required, message in (
+        ('git archive --format=tar "$SOURCE_HEAD_SHA"', "exact tagged source archive"),
+        ("export CARGO_NET_OFFLINE=true", "locked offline Cargo configuration"),
+        ("python3 scripts/prepare_protected_linux_cargo.py", "locked Cargo prefetch"),
+        ("python scripts/build_protected_linux_wheels.py --target linux-i386", "locked source-wheel build"),
+        ("printf 'native installer smoke %s source-wheel inventory:", "source-wheel inventory in the native smoke log"),
+    ):
+        changed = capture.replace(required, f"# {required}", 1)
+        assert f"native i386 capture missing {message}" in checker.check_extended_platform_evidence(
+            native_capture=changed,
         )
+
+
+@pytest.mark.parametrize("target", ["linux-i386", "linux-armhf"])
+def test_linux_collector_requires_source_wheel_inventory_in_package_step(target: str) -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = checker.WORKFLOW_PATH.read_text(encoding="utf-8")
+    input_path = f'--runtime-report "platform-evidence-staging/{target}/${{RELEASE_TAG}}/candidate-pip-inspect.json"'
+    required = f"{input_path} \\\n            --require-source-wheel-inventory"
+    assert required in workflow
+    changed = workflow.replace(required, required.replace("--require-source-wheel-inventory", "--unrelated-option"), 1)
+
+    errors = checker.check_extended_platform_evidence(changed)
+
+    assert (
+        f"{target}-native-evidence must require the source-wheel inventory when packaging the review bundle"
+        in errors
+    )
+
+
+def test_protected_linux_source_extraction_rejects_unlocked_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
+    preparer = _load_script("prepare_protected_linux_cargo")
+    archive = tmp_path / "cffi-2.1.1.tar.gz"
+    archive.write_bytes(b"modified source archive")
+    output = tmp_path / "unpacked"
+
+    with pytest.raises(ValueError, match="source archive size or SHA-256 is invalid"):
+        preparer.extract_locked_source(archive, "0" * 64, output)
+
+    assert not output.exists()
+
+
+def test_protected_linux_cargo_reads_crate_checksums_before_fetch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
+    preparer = _load_script("prepare_protected_linux_cargo")
+    manifest = tmp_path / "Cargo.toml"
+    manifest.write_text("[workspace]\n", encoding="utf-8")
+    (tmp_path / "Cargo.lock").write_text(
+        '[[package]]\nname = "example"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="example must have a crates.io SHA-256 checksum"):
+        preparer.fetch_locked_crates(manifest, {})
 
 
 def test_extended_platform_evidence_requires_exact_runtime_lock_before_packaging() -> None:
     checker = _load_script("check_extended_platform_evidence")
-    workflow = checker.WORKFLOW_PATH.read_text(encoding="utf-8")
-    for target in ("linux-i386", "linux-armhf"):
-        job = f"{target}-native-evidence"
-        block = checker.workflow_job_block(workflow, job)
-        assert block
-        lock_arg = f"--lock requirements-locks/protected-linux/{target}.txt"
-        assert lock_arg in block
-        changed = block.replace(lock_arg, "--lock requirements-locks/linux-x86_64.txt", 1)
-        errors = checker.check_extended_platform_evidence(workflow.replace(block, changed, 1))
-        assert f"{job} must validate the exact runtime lock before building native artifacts" in errors
+    capture = (checker.ROOT / checker.LINUX_CAPTURE_PATH).read_text(encoding="utf-8")
+    changed = capture.replace(
+        '--lock "requirements-locks/protected-linux/$TARGET.txt"',
+        "--lock requirements-locks/linux-x86_64.txt",
+        1,
+    )
+    errors = checker.check_extended_platform_evidence(native_capture=changed)
+    assert "native i386 capture missing exact runtime lock verification" in errors
+    assert "native armhf capture missing exact runtime lock verification" in errors
 
 
 def test_extended_platform_evidence_requires_runner_readiness_preflight() -> None:
@@ -251,21 +343,13 @@ def test_extended_platform_evidence_requires_strict_shell_safety() -> None:
     assert any("run step 1 missing strict shell safety: set -euo pipefail" in error for error in errors)
 
 
-def test_extended_platform_evidence_rejects_pipefail_only_smoke_step() -> None:
+def test_native_capture_rejects_pipefail_without_errexit() -> None:
     checker = _load_script("check_extended_platform_evidence")
-    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        "      - name: Smoke Linux i386 native artifacts\n"
-        "        run: |\n"
-        "          set -euo pipefail\n",
-        "      - name: Smoke Linux i386 native artifacts\n"
-        "        run: |\n"
-        "          set -o pipefail\n",
-        1,
-    )
-
-    errors = checker.check_extended_platform_evidence(workflow)
-
-    assert any("missing strict shell safety: set -euo pipefail" in error for error in errors)
+    capture = (checker.ROOT / checker.LINUX_CAPTURE_PATH).read_text(encoding="utf-8")
+    changed = capture.replace("set -euo pipefail", "set -o pipefail", 1)
+    errors = checker.check_extended_platform_evidence(native_capture=changed)
+    assert "native i386 capture missing strict shell safety" in errors
+    assert "native armhf capture missing strict shell safety" in errors
 
 
 def test_extended_platform_evidence_rejects_free_form_inputs_in_run_scripts() -> None:
@@ -482,22 +566,14 @@ def test_extended_platform_evidence_requires_scoped_review_bundle_output() -> No
 
 def test_extended_platform_evidence_requires_builder_release_context() -> None:
     checker = _load_script("check_extended_platform_evidence")
-    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
-    workflow = workflow.replace(
-        "          python3 scripts/check_extended_platform_builder.py \\\n"
-        "            --target linux-i386 \\\n"
-        '            --release-tag "$RELEASE_TAG" \\\n',
-        "          python3 scripts/check_extended_platform_builder.py \\\n"
-        "            --target linux-i386 \\\n",
+    capture = (checker.ROOT / checker.LINUX_CAPTURE_PATH).read_text(encoding="utf-8")
+    capture = capture.replace(
+        '  --release-tag "$RELEASE_TAG" --workflow-run-url "$WORKFLOW_RUN_URL"',
+        '  --workflow-run-url "$WORKFLOW_RUN_URL"',
         1,
     )
-
-    errors = checker.check_extended_platform_evidence(workflow)
-
-    assert any(
-        "builder identity preflight must bind release_tag, workflow_run_url, workflow_run_attempt and source_head_sha"
-        in error
-        for error in errors
+    assert "native i386 capture missing builder identity run context" in checker.check_extended_platform_evidence(
+        native_capture=capture,
     )
 
 
@@ -517,42 +593,36 @@ def test_extended_platform_evidence_requires_release_tag_env_for_native_build() 
 
 def test_extended_platform_evidence_requires_builder_workflow_run_attempt() -> None:
     checker = _load_script("check_extended_platform_evidence")
-    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        '            --workflow-run-attempt "$SOURCE_RUN_ATTEMPT" \\\n',
-        "",
-        1,
-    )
-
-    errors = checker.check_extended_platform_evidence(workflow)
-
-    assert any("builder workflow run-attempt evidence" in error for error in errors)
+    capture = (checker.ROOT / checker.LINUX_CAPTURE_PATH).read_text(encoding="utf-8")
+    changed = capture.replace('--workflow-run-attempt "$SOURCE_RUN_ATTEMPT" ', "", 1)
+    errors = checker.check_extended_platform_evidence(native_capture=changed)
+    assert "native i386 capture missing builder identity run context" in errors
+    assert "native armhf capture missing builder identity run context" in errors
 
 
 def test_extended_platform_evidence_requires_smoke_workflow_run_attempt() -> None:
     checker = _load_script("check_extended_platform_evidence")
-    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        ' --workflow-run-attempt "$SOURCE_RUN_ATTEMPT" --source-head-sha "$SOURCE_HEAD_SHA"',
-        ' --source-head-sha "$SOURCE_HEAD_SHA"',
+    capture = (checker.ROOT / checker.LINUX_CAPTURE_PATH).read_text(encoding="utf-8")
+    changed = capture.replace(
+        '--workflow-run-url "$WORKFLOW_RUN_URL" --workflow-run-attempt "$SOURCE_RUN_ATTEMPT"',
+        '--workflow-run-url "$WORKFLOW_RUN_URL"',
         1,
     )
-
-    errors = checker.check_extended_platform_evidence(workflow)
-
-    assert any("native installer smoke evidence capture" in error for error in errors)
-    assert any("native smoke workflow run-attempt evidence" in error for error in errors)
+    errors = checker.check_extended_platform_evidence(native_capture=changed)
+    assert "native i386 capture missing native smoke run identity" in errors
+    assert "native armhf capture missing native smoke run identity" in errors
 
 
 def test_extended_platform_evidence_requires_smoke_builder_identity_binding() -> None:
     checker = _load_script("check_extended_platform_evidence")
-    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        ' --builder-evidence "platform-evidence-staging/linux-i386/${RELEASE_TAG}/builder-identity-linux-i386.json"',
+    capture = (checker.ROOT / checker.LINUX_CAPTURE_PATH).read_text(encoding="utf-8").replace(
+        ' --builder-evidence "$EVIDENCE_DIR/builder-identity-$TARGET.json"',
         "",
         1,
     )
-
-    errors = checker.check_extended_platform_evidence(workflow)
-
-    assert any("native installer smoke evidence capture" in error for error in errors)
+    assert "native i386 capture missing native smoke run identity" in checker.check_extended_platform_evidence(
+        native_capture=capture,
+    )
 
 
 def test_extended_platform_evidence_requires_release_source_artifact_name() -> None:
@@ -635,14 +705,12 @@ def test_extended_platform_evidence_requires_scoped_upload_staging() -> None:
 
 def test_extended_platform_evidence_requires_target_scoped_artifact_copy() -> None:
     checker = _load_script("check_extended_platform_evidence")
-    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        'cp "native-dist/linux/remote-ops-workspace-${RELEASE_TAG}-linux-i386.deb" "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/"',
-        "",
+    capture = (checker.ROOT / checker.LINUX_CAPTURE_PATH).read_text(encoding="utf-8").replace(
+        "remote-ops-workspace-$RELEASE_TAG-linux-$ARCH.deb",
+        "remote-ops-workspace-$RELEASE_TAG-linux-amd64.deb",
         1,
     )
-
-    errors = checker.check_extended_platform_evidence(workflow)
-
+    errors = checker.check_extended_platform_evidence(native_capture=capture)
     assert any("target-scoped artifact staging" in error for error in errors)
 
 
@@ -757,17 +825,30 @@ def test_extended_platform_evidence_rejects_untracked_script_dependency(
     scripts_dir.mkdir()
     dependency = scripts_dir / "stage_extended_linux_evidence_upload.py"
     dependency.write_text("print('stage')\n", encoding="utf-8")
+    tracked_dependency = scripts_dir / "check_extended_platform_builder.py"
+    tracked_dependency.write_text("print('build')\n", encoding="utf-8")
     monkeypatch.setattr(checker, "ROOT", tmp_path)
-    monkeypatch.setattr(checker, "is_git_tracked", lambda relative: False)
+    commands = []
+
+    def fake_git(command, **kwargs):
+        commands.append(command)
+        assert kwargs["cwd"] == tmp_path
+        return SimpleNamespace(returncode=0, stdout="scripts/check_extended_platform_builder.py\0")
+
+    monkeypatch.setattr(checker.subprocess, "run", fake_git)
 
     errors = checker.check_workflow_script_dependencies(
-        (Path("scripts") / "stage_extended_linux_evidence_upload.py",)
+        (Path("scripts") / dependency.name, Path("scripts") / tracked_dependency.name)
     )
 
-    assert (
+    assert errors == [
         "extended platform evidence workflow script dependency must be tracked by git: "
         "scripts/stage_extended_linux_evidence_upload.py"
-    ) in errors
+    ]
+    assert commands == [[
+        "git", "--literal-pathspecs", "ls-files", "-z", "--",
+        "scripts/stage_extended_linux_evidence_upload.py", "scripts/check_extended_platform_builder.py",
+    ]]
 
 
 def test_extended_platform_evidence_rejects_missing_script_dependency(

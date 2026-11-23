@@ -364,10 +364,11 @@ def test_release_tag_requires_active_non_bypassable_update_and_deletion_rules() 
     assert governance.audit_tag_rulesets(_tag_rulesets(), "v1.2.3") == []
 
 
-def test_release_tag_ruleset_must_apply_to_exact_tag() -> None:
+@pytest.mark.parametrize("pattern", ["refs/tags/v2*", "refs/**", "refs/tags/**/v2*"])
+def test_release_tag_ruleset_must_apply_to_exact_tag(pattern: str) -> None:
     payload = _tag_rulesets()
     payload["rulesets"][0]["conditions"]["ref_name"] = {
-        "include": ["refs/tags/v2*"],
+        "include": [pattern],
         "exclude": [],
     }
 
@@ -410,15 +411,27 @@ def test_capture_uses_only_rulesets_that_enforce_the_required_operations() -> No
     assert governance.protected_tag_ruleset_ids(payload, "v1.2.3") == ([501, 503], [])
 
 
-def test_release_tag_ruleset_exclusion_wins_over_include() -> None:
+@pytest.mark.parametrize("pattern", [
+    "refs/tags/v1.2.3",
+    "refs/tags/**/v1.2.3",
+    "refs/**/[vV][0-3].[0-9].?",
+    "refs/**/tags/**/v1.2.3",
+])
+def test_release_tag_ruleset_exclusion_wins_over_include(pattern: str) -> None:
     payload = _tag_rulesets()
-    payload["rulesets"][0]["conditions"]["ref_name"]["exclude"] = [
-        "refs/tags/v1.2.3"
-    ]
+    payload["rulesets"][0]["conditions"]["ref_name"]["exclude"] = [pattern]
 
     assert governance.audit_tag_rulesets(payload, "v1.2.3") == [
         "no active tag ruleset applies to refs/tags/v1.2.3"
     ]
+
+
+@pytest.mark.parametrize("pattern", ["refs/tags/**", "refs/**/v*", "refs/tags/**/v*", "refs/**/[vV][0-3].[0-9].?"])
+def test_release_tag_ruleset_matches_recursive_and_component_wildcards(pattern: str) -> None:
+    payload = _tag_rulesets()
+    payload["rulesets"][0]["conditions"]["ref_name"]["include"] = [pattern]
+
+    assert governance.protected_tag_ruleset_ids(payload, "v1.2.3") == ([501], [])
 
 
 def test_fetch_protection_uses_gh_after_python_tls_failure(monkeypatch) -> None:
@@ -454,7 +467,7 @@ def test_fetch_check_runs_uses_exact_sha_endpoint(monkeypatch) -> None:
         assert args[:3] == [
             "gh.exe",
             "api",
-            f"repos/example/project/commits/{SHA}/check-runs?filter=latest&per_page=100",
+            f"repos/example/project/commits/{SHA}/check-runs?filter=latest&per_page=100&page=1",
         ]
         return SimpleNamespace(stdout=json.dumps(payload))
 
@@ -478,6 +491,86 @@ def test_fetch_check_suite_and_workflow_evidence_is_sha_and_branch_scoped(monkey
     assert "branch=main" in seen[1][0]
     assert "event=push" in seen[1][0]
     assert f"head_sha={SHA}" in seen[1][0]
+
+
+def test_release_governance_resolves_required_checks_and_provenance_on_later_pages(monkeypatch) -> None:
+    base = "https://api.github.com/repos/fixture/fixture"
+    endpoints = {
+        "check-runs": (f"{base}/commits/{SHA}/check-runs?filter=latest&per_page=100", _check_runs()),
+        "check-suites": (f"{base}/commits/{SHA}/check-suites?per_page=100", _check_suites()),
+        "workflow-runs": (
+            f"{base}/actions/runs?branch=main&event=push&head_sha={SHA}&per_page=100", _workflow_runs(),
+        ),
+    }
+    pages = {}
+    for label, (endpoint, evidence) in endpoints.items():
+        key = label.replace("-", "_")
+        first_page = [{"id": number} for number in range(3000, 3100)]
+        total = len(first_page) + len(evidence[key])
+        pages[label, f"{endpoint}&page=1"] = {"total_count": total, key: first_page}
+        pages[label, f"{endpoint}&page=2"] = {"total_count": total, key: evidence[key]}
+
+    monkeypatch.setattr(governance, "_fetch_github_object", lambda url, *, label: pages.pop((label, url)))
+    runs = governance.fetch_check_runs("fixture/fixture", SHA)
+    suites = governance.fetch_check_suites("fixture/fixture", SHA)
+    workflows = governance.fetch_workflow_runs("fixture/fixture", SHA, "main")
+
+    assert not pages
+    assert _audit_check_runs(runs, suites=suites, workflows=workflows) == []
+
+
+@pytest.mark.parametrize("total", [0, 100, 200])
+def test_fetch_check_runs_stops_at_reported_page_boundary(monkeypatch, total: int) -> None:
+    rows = [{"id": number} for number in range(1, total + 1)]
+    pages = [rows[start:start + 100] for start in range(0, total, 100)] or [[]]
+
+    def fetch(url: str, *, label: str) -> dict:
+        return {"total_count": total, "check_runs": pages.pop(0)}
+
+    monkeypatch.setattr(governance, "_fetch_github_object", fetch)
+    assert governance.fetch_check_runs("example/project", SHA) == {"total_count": total, "check_runs": rows}
+    assert not pages
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        {"total_count": True, "check_runs": [{"id": 1}]},
+        {"total_count": -1, "check_runs": []},
+        {"total_count": 1, "check_runs": {}},
+        {"total_count": 1, "check_runs": [1]},
+        {"total_count": 1, "check_runs": [{"id": False}]},
+        {"total_count": 2, "check_runs": [{"id": 1}, {"id": 1}]},
+        {"total_count": 101, "check_runs": [{"id": number} for number in range(1, 102)]},
+        {"total_count": 101, "check_runs": [{"id": 1}]},
+        {"total_count": 0, "check_runs": [{"id": 1}]},
+    ],
+    ids=["boolean-total", "negative-total", "non-list", "non-object", "invalid-id",
+         "duplicate-id", "oversized-page", "short-page", "exceeds-total"],
+)
+def test_fetch_check_runs_rejects_malformed_pages(monkeypatch, page: dict) -> None:
+    pages = [page]
+    monkeypatch.setattr(governance, "_fetch_github_object", lambda url, *, label: pages.pop())
+    with pytest.raises(RuntimeError):
+        governance.fetch_check_runs("example/project", SHA)
+
+
+@pytest.mark.parametrize(
+    "last_page",
+    [
+        {"total_count": 102, "check_runs": [{"id": 101}, {"id": 102}]},
+        {"total_count": 101, "check_runs": [{"id": 100}]},
+        {"total_count": 101, "check_runs": []},
+    ],
+    ids=["changed-total", "repeated-id-across-pages", "missing-final-record"],
+)
+def test_fetch_check_runs_rejects_inconsistent_followup_page(monkeypatch, last_page: dict) -> None:
+    first_page = {"total_count": 101, "check_runs": [{"id": number} for number in range(1, 101)]}
+    pages = [first_page, last_page]
+    monkeypatch.setattr(governance, "_fetch_github_object", lambda url, *, label: pages.pop(0))
+    with pytest.raises(RuntimeError):
+        governance.fetch_check_runs("example/project", SHA)
+    assert not pages
 
 
 def test_fetch_tag_rulesets_loads_inherited_detailed_records(monkeypatch) -> None:

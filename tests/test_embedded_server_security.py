@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from remote_ops_workspace import cli, moba_servers, x11
+from remote_ops_workspace import cli, cli_managed_runtime, moba_servers, x11
 
 
 @pytest.mark.parametrize("system", ["windows", "linux", "darwin"])
@@ -56,14 +56,14 @@ def test_windows_x_server_cli_requires_explicit_tcp_opt_in(runtime, tmp_path, mo
     state = tmp_path / "state.json"
     starts = []
     monkeypatch.setattr(
-        cli, "build_moba_x_server_plan",
+        cli_managed_runtime, "build_moba_x_server_plan",
         lambda **options: x11.build_moba_x_server_plan(
             system="windows", which=lambda name: runtime if name == runtime else None,
             display_probe=lambda _display: False, packaged_roots=[], **options,
         ),
     )
     monkeypatch.setattr(
-        cli, "start_moba_x_server",
+        cli_managed_runtime, "start_moba_x_server",
         lambda plan, **options: x11.start_moba_x_server(
             plan, state_path=state,
             popen_factory=lambda command, **_kwargs: starts.append(command) or SimpleNamespace(
@@ -170,14 +170,36 @@ def test_unverifiable_daemon_bind_cannot_be_started(service, executable, tmp_pat
     assert next(row for row in suite.services if row.key == service).startable is False
     if service in {"telnet", "nfs"}:
         assert plan.command == []
-        config = moba_servers.build_moba_server_config_plan(service, port=plan.port)
+        config = moba_servers.build_moba_server_config_plan(service, port=plan.port, require_auth=False)
+        assert config.auth_required is True
         assert config.settings["execution"]["mode"] == "host-managed"
         settings = config.settings["host_config"]
         if service == "telnet":
+            assert config.settings["auth"]["source"] == "system-pam-login"
             assert settings["service"]["bind"] == "127.0.0.1"
             assert settings["service"]["disable"] == "yes"
         else:
-            assert settings["nfs.conf"]["nfsd"]["host"] == "127.0.0.1"
+            assert config.settings["auth"]["source"] == "kerberos-rpcsec-gss"
+            assert settings["nfs.conf"]["nfsd"] == {
+                "host": "127.0.0.1", "port": plan.port, "vers3": "n", "vers4": "y", "udp": "n", "tcp": "y",
+            }
+            assert any("remove rdma and rdma-port" in requirement for requirement in settings["requirements"])
+
+
+@pytest.mark.parametrize(("service", "installed"), [("telnet", "in.telnetd"), ("nfs", "rpc.nfsd")])
+def test_linux_host_managed_runtime_status_discovers_native_daemon_names(service, installed):
+    executable = f"/usr/sbin/{installed}"
+    (runtime,) = moba_servers.discover_moba_server_runtimes(
+        service, system="linux", packaged_roots=[], which=lambda name: executable if name == installed else None,
+    )
+    assert runtime.available and runtime.executable == executable
+
+
+@pytest.mark.parametrize(("legacy_exists", "daemon"), [(False, "telnetd"), (True, "in.telnetd")])
+def test_host_managed_telnet_plan_chooses_a_system_daemon(monkeypatch, legacy_exists, daemon):
+    monkeypatch.setattr(Path, "is_file", lambda path: legacy_exists and path.name == "in.telnetd")
+    config = moba_servers.build_moba_server_config_plan("telnet")
+    assert config.settings["host_config"]["service"]["server"] == f"/usr/sbin/{daemon}"
 
 
 def test_strict_private_refuses_public_bind_even_with_opt_in(tmp_path):
@@ -204,8 +226,9 @@ def test_start_refuses_security_requirements_plain_adapters_cannot_enforce(tmp_p
 
 
 def test_ftp_start_requires_credentials_and_the_authenticated_runtime(tmp_path, monkeypatch):
-    monkeypatch.setattr(moba_servers.importlib.util, "find_spec", lambda _name: None)
+    monkeypatch.setattr(moba_servers.importlib.util, "find_spec", lambda _name: object())
     plan = moba_servers.build_moba_server_plan("ftp", root=tmp_path, which=lambda name: name if name == "pyftpdlib" else None)
+    monkeypatch.setattr(moba_servers.importlib.util, "find_spec", lambda _name: None)
     monkeypatch.delenv("ROW_FTP_USERNAME", raising=False)
     monkeypatch.delenv("ROW_FTP_PASSWORD", raising=False)
     with pytest.raises(ValueError, match="ROW_FTP_USERNAME"):

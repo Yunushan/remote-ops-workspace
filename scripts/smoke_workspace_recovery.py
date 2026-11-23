@@ -49,6 +49,9 @@ KNOWN_ADVISORY_LOCK_PATHS = frozenset({
     "servers/.tftp-server-state.json.lock", "servers/.ssh-server-state.json.lock",
     "servers/.sftp-server-state.json.lock", "servers/.telnet-server-state.json.lock",
     "servers/.vnc-server-state.json.lock", "servers/.nfs-server-state.json.lock",
+    ".server-preferences.json.lock", "servers/.crontab.lock",
+    "servers/.cron-server-state.json.lock", "servers/.iperf-server-state.json.lock",
+    "servers/.cron-server-state.control.lock", "servers/.cron-server-state.worker.lock",
 })
 
 # A fresh interpreter with -I prevents the caller's checkout/PYTHONPATH from

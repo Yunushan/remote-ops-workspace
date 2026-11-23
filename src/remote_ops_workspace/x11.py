@@ -412,6 +412,8 @@ def build_moba_x_server_status(
     else:
         notes.append("No local X server runtime was found; install VcXsrv, XQuartz, Xorg, Xvfb, Xephyr or Xnest.")
     lifecycle = load_moba_x_server_record(state_path=state_path, pid_probe=pid_probe)
+    if lifecycle is not None and _display_number(lifecycle.display) != _display_number(display):
+        lifecycle = None
     if lifecycle is not None:
         notes.append(f"Managed lifecycle state: {lifecycle.state} pid={lifecycle.pid or 'none'} running={'yes' if lifecycle.running else 'no'}.")
     return MobaXServerStatus(

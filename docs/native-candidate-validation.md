@@ -32,6 +32,19 @@ the executable in each DMG and PKG copy to the original signed app executable
 before its runtime and GUI probes. Modern Linux smoke compares installed DEB and
 RPM executables to the original PyInstaller executable before each probe.
 
+For Linux x86-64 and ARM64, the freezer stages private copies of ELF inputs
+whose `DT_RUNPATH` includes the hosted CPython build directory. The DEB
+dependency check inspects the finished launcher and each bundled ELF with
+`readelf`. After installation the smoke test traces glibc while the packaged
+CLI prints its version, reads the platform inventory and initializes a
+temporary encrypted vault. The retained `deb-loader-selection.json` binds
+these observations to the DEB and launcher hashes. It records the input and
+packaged SHA-256 for each edited ELF, and lists the observed host
+library files and the archive members loaded from PyInstaller's extraction
+directory. The bootloader uses host zlib before unpacking its bundled zlib.
+The three workloads exercise the CLI start-up and vault paths. Optional
+plugins and external protocol tools require their own runtime observations.
+
 The RPM build preserves the finalized onefile executable by disabling its ELF
 stripping hooks. Its `%check` compares the staged executable with the original
 package input and fails the build if their bytes differ. Other packaging hooks
@@ -89,8 +102,18 @@ sanitized `linux-x86_64/native-upgrade-rollback.json` receipt is uploaded. Porta
 regressions establish the controller's checks, while actual DEB compatibility
 requires a successful hosted transition receipt.
 
-MSI, ARM, macOS, RPM and AppImage previous-version transitions remain separate
-work.
+The x86_64 and aarch64 jobs also qualify the managed Debian updater in a
+disposable container on each native runner. The updater stages the published
+v1.0.24 and candidate DEBs over an authenticated test feed, applies the
+upgrade and exercises explicit and interrupted rollback. Each Linux
+artifact retains `build/native-smoke/<target>/managed-debian-update.json`.
+The ARM64 receipt links to the candidate finish and smoke reports by SHA-256.
+The x86_64 job also qualifies the previous RPM in Fedora. See the
+[upgrade and rollback runbook](runbooks/UPGRADE_AND_ROLLBACK.md) for the
+observed outcomes and the limits of these drills.
+
+Previous-version MSI, macOS, ARM RPM and AppImage transitions need separate
+installer evidence.
 macOS uses ad-hoc signing here, without publisher identity or notarization.
 These checks do not establish Windows Smart App Control acceptance, independent
 redistribution approval, complete supported-host workflows, or production

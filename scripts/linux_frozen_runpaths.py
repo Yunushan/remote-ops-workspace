@@ -9,6 +9,11 @@ import struct
 import sys
 from pathlib import Path
 
+if __package__:
+    from .stage_linux_runtime_licenses import stage_system_runtime_notices
+else:
+    from stage_linux_runtime_licenses import stage_system_runtime_notices
+
 # The setup-python release archives embed this absolute build-time directory.
 # Other absolute paths, RPATH, and loader tokens such as $ORIGIN are site policy.
 TOOLCACHE_LIB = re.compile(rb"/opt/hostedtoolcache/Python/[^/:]+/(?:x64|arm64|x86|arm)/lib/?")
@@ -82,9 +87,12 @@ def without_toolcache_runpath(data: bytes) -> bytes:
 def stage_binaries(binaries: list, directory: Path) -> list:
     staged = []
     changes = {}
+    libraries = []
     for name, source, kind in binaries:
         if kind in {"BINARY", "EXTENSION"}:
             original = Path(source).read_bytes()
+            if original.startswith(b"\x7fELF"):
+                libraries.append(Path(source))
             cleaned = without_toolcache_runpath(original)
             if cleaned is not original:
                 relative = Path(name)
@@ -105,6 +113,7 @@ def stage_binaries(binaries: list, directory: Path) -> list:
     directory.with_suffix(".json").write_text(
         json.dumps(changes, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
+    stage_system_runtime_notices(libraries, directory.parent / "system-runtime-notices")
     return staged
 
 

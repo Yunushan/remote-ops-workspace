@@ -129,6 +129,9 @@ install -Dm644 "$ROOT/NOTICE" "$PKGROOT/usr/share/doc/remote-ops-workspace/NOTIC
 install -Dm644 "$ROOT/redistribution-evidence/THIRD_PARTY_NOTICES.md" "$PKGROOT/usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md"
 install -Dm644 "$ROOT/README.md" "$PKGROOT/usr/share/doc/remote-ops-workspace/README.md"
 "$PYTHON_BIN" scripts/stage_linux_runtime_licenses.py "$PKGROOT/usr/share/doc/remote-ops-workspace/licenses"
+if [[ -d "$BUILD_DIR/system-runtime-notices" ]]; then
+  cp -a "$BUILD_DIR/system-runtime-notices/." "$PKGROOT/usr/share/doc/remote-ops-workspace/licenses/"
+fi
 cat > "$PKGROOT/usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md" <<EOF
 # Linux native release
 

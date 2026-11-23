@@ -275,6 +275,7 @@ function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir, [string
   $PyQtLicenseSource = XmlEscape (Join-Path $Stage "docs\licenses\PyQt6-GPL-3.0.txt")
   $QtLicenseSource = XmlEscape (Join-Path $Stage "docs\licenses\Qt-LGPL-3.0.txt")
   $QtRelinkSource = XmlEscape (Join-Path $Stage "docs\licenses\Qt-Relinking.md")
+  $GuiSourceDescriptors = XmlEscape (Join-Path $Stage "docs\licenses\*-source.json")
   $RuntimeLicenseSource = XmlEscape (Join-Path $Stage "docs\licenses\runtime")
   $IconSource = XmlEscape $IconPath
   $ProductName = XmlEscape $Branding.name
@@ -354,6 +355,7 @@ $RowGuiReference
       <ComponentRef Id="PyQtLicenseComponent" />
       <ComponentRef Id="QtLicenseComponent" />
       <ComponentRef Id="QtRelinkComponent" />
+      <Files Directory="LICENSESDIR" Include="$GuiSourceDescriptors" />
       <Files Directory="RUNTIMELICENSESDIR" Include="$RuntimeLicenseSource\**" />
 $WelcomeReference
     </Feature>
@@ -586,7 +588,7 @@ Copy-Item (Join-Path $Root "redistribution-evidence\PyQt6-GPL-3.0.txt") (Join-Pa
 Copy-Item (Join-Path $Root "redistribution-evidence\Qt-LGPL-3.0.txt") (Join-Path $Stage "docs\licenses\Qt-LGPL-3.0.txt")
 Copy-Item (Join-Path $Root "redistribution-evidence\Qt-Relinking.md") (Join-Path $Stage "docs\licenses\Qt-Relinking.md")
 $RuntimeLicenseProfile = if ($BuildGuiLauncher) { "desktop" } else { "windows-x86" }
-& $Python (Join-Path $PSScriptRoot "stage_runtime_licenses.py") (Join-Path $Stage "docs\licenses\runtime") --profile $RuntimeLicenseProfile
+& $Python (Join-Path $PSScriptRoot "stage_runtime_licenses.py") (Join-Path $Stage "docs\licenses\runtime") --profile $RuntimeLicenseProfile --gui-source-dir (Join-Path $Stage "docs\licenses")
 if ($LASTEXITCODE -ne 0) {
   throw "Could not stage the frozen runtime licenses"
 }

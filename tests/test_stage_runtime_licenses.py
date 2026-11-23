@@ -1,9 +1,12 @@
+import hashlib
+import json
 from importlib.metadata import PathDistribution
 from pathlib import Path
 
 import pytest
 
-from scripts.stage_runtime_licenses import copy_distribution_licenses
+from scripts.check_preview_redistribution import ROOT
+from scripts.stage_runtime_licenses import copy_distribution_licenses, stage_gui_sources
 
 
 def install_fixture(root: Path, recorded: list[str], declared: list[str], *, legacy: bool = False) -> PathDistribution:
@@ -51,3 +54,31 @@ def test_copies_legacy_wheel_license_named_in_metadata(tmp_path: Path) -> None:
 
     assert {path.name for path in destination.iterdir()} == {"LICENSE"}
     assert (destination / "LICENSE").read_bytes() == b"test_component-1.0.dist-info/LICENSE"
+
+
+def test_stages_only_current_gui_source_descriptors_with_exact_manifest_bytes(tmp_path: Path) -> None:
+    materials = json.loads((ROOT / "redistribution-evidence" / "preview.json").read_bytes())["materials"]
+    expected = {materials[key]["file"]: materials[key]["sha256"] for key in ("pyqt6_source", "qt_source")}
+
+    stage_gui_sources(tmp_path)
+
+    assert {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in tmp_path.iterdir()} == expected
+
+
+@pytest.mark.parametrize("mismatch", ["file", "sha256"])
+def test_rejects_gui_source_descriptor_drift(tmp_path: Path, mismatch: str) -> None:
+    source = ROOT / "redistribution-evidence"
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    manifest = json.loads((source / "preview.json").read_bytes())
+    record = manifest["materials"]["pyqt6_source"]
+    descriptor = evidence / record["file"]
+    descriptor.write_bytes((source / record["file"]).read_bytes())
+    if mismatch == "file":
+        record["file"] = "stale-source.json"
+    else:
+        descriptor.write_bytes(descriptor.read_bytes() + b" ")
+    (evidence / "preview.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="pyqt6_source descriptor differs"):
+        stage_gui_sources(tmp_path / "staged", evidence)

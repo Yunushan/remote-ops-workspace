@@ -92,7 +92,10 @@ def test_production_notices_cover_protected_linux_and_require_exact_bytes(
     with zipfile.ZipFile(gui_package, "w") as archive:
         archive.write(material, "docs/THIRD_PARTY_NOTICES.md")
         archive.write(ROOT / "LICENSE", "docs/LICENSE")
-        for name in ("PyQt6-GPL-3.0.txt", "Qt-LGPL-3.0.txt", "Qt-Relinking.md"):
+        for name in (
+            "PyQt6-GPL-3.0.txt", "Qt-LGPL-3.0.txt", "Qt-Relinking.md",
+            *notices.pinned_gui_source_records().values(),
+        ):
             archive.write(material_dir / name, f"docs/licenses/{name}")
         for path, data in runtime_license_fixture("desktop").items():
             archive.writestr(f"docs/licenses/runtime/{path}", data)
@@ -112,7 +115,7 @@ def test_production_notices_cover_protected_linux_and_require_exact_bytes(
         found = capture["packages"][artifact.name]
         assert found["sha256"] == hashlib.sha256(artifact.read_bytes()).hexdigest()
         assert found["size_bytes"] == artifact.stat().st_size
-        assert len(found["notice_files"]) == (4 if artifact == package else 19)
+        assert len(found["notice_files"]) == (4 if artifact == package else 21)
         components = {}
         with zipfile.ZipFile(artifact) as archive:
             for record in found["notice_files"]:
@@ -156,6 +159,36 @@ def test_production_notices_cover_protected_linux_and_require_exact_bytes(
     with pytest.raises(ValueError, match="contains different bytes"):
         notices.verify_notices(assets, tag, evidence_root=failed)
     assert not list(failed.iterdir())
+
+
+@pytest.mark.parametrize(("problem", "message"), [
+    ("missing", "does not contain"),
+    ("stale", "does not contain"),
+    ("modified", "contains different bytes"),
+    ("misplaced", "beside Qt-Relinking"),
+])
+def test_packaged_qt_source_records_must_match_relink_guide(tmp_path, problem, message):
+    module = checker()
+    package = tmp_path / "portable.zip"
+    material_dir = ROOT / "redistribution-evidence"
+    sources = module.pinned_gui_source_records()
+    names = ["Qt-Relinking.md", *sources.values()]
+    with zipfile.ZipFile(package, "w") as archive:
+        for name in names:
+            member = f"docs/licenses/{name}"
+            data = (material_dir / name).read_bytes()
+            if name == sources["qt_source"]:
+                if problem == "missing":
+                    continue
+                if problem == "stale":
+                    member = "docs/licenses/qt-everywhere-src-6.11.2-source.json"
+                elif problem == "modified":
+                    data += b" "
+                elif problem == "misplaced":
+                    member = f"docs/{name}"
+            archive.writestr(member, data)
+    with pytest.raises(ValueError, match=message):
+        module.check_packaged_legal_material(package, {name: module.file_hash(material_dir / name) for name in names})
 
 
 def test_notice_capture_refuses_package_changed_after_extraction(

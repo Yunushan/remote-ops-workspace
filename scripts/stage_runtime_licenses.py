@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
-"""Copy license files from the frozen Python runtime and installed bundle inputs."""
+"""Stage frozen runtime licenses and the source descriptors for native Qt bundles."""
 
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 import sysconfig
 from importlib.metadata import Distribution, PackageNotFoundError, distribution
 from pathlib import Path, PurePosixPath
+
+if __package__:
+    from . import check_preview_redistribution as preview
+else:
+    import check_preview_redistribution as preview
 
 FROZEN_DISTRIBUTIONS = (
     "bcrypt", "cffi", "cryptography", "pyasynchat", "pyasyncore", "pycparser",
@@ -28,6 +34,16 @@ def copy_license(source: Path, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(source.read_bytes())
     destination.chmod(0o644)
+
+
+def stage_gui_sources(destination: Path, evidence_dir: Path = preview.ROOT / "redistribution-evidence") -> None:
+    manifest = preview.regular_child(evidence_dir, "preview.json", "preview evidence manifest")
+    materials = json.loads(manifest.read_bytes())["materials"]
+    for key, name in preview.pinned_gui_source_records().items():
+        source = preview.regular_child(evidence_dir, name, key)
+        if materials.get(key) != {"file": name, "sha256": preview.file_hash(source)}:
+            raise ValueError(f"{key} descriptor differs from the redistribution manifest")
+        copy_license(source, destination / name)
 
 
 def copy_distribution_licenses(installed: Distribution, destination: Path) -> None:
@@ -72,5 +88,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("destination", type=Path)
     parser.add_argument("--profile", choices=LICENSE_PROFILES, default="linux")
+    parser.add_argument("--gui-source-dir", type=Path, help="stage the pinned source descriptors beside Qt-Relinking.md")
     args = parser.parse_args()
     stage(args.destination, args.profile)
+    if args.gui_source_dir:
+        stage_gui_sources(args.gui_source_dir)

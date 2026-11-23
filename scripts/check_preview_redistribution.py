@@ -7,8 +7,9 @@ The open-source channel requires exact PyQt6 GPLv3 and Qt LGPLv3 license texts,
 version-pinned upstream source archive URLs and digests, LGPL relink instructions,
 and third-party notices.
 The license texts and notices must be found in every actual native package;
-GUI packages must also contain the PyQt6 and Qt texts.  All downloaded release
-asset hashes are recorded in the output report.
+GUI packages must also contain the PyQt6 and Qt texts, source records and
+relink instructions. All downloaded release asset hashes are recorded in the
+output report.
 
 There is intentionally no self-asserted commercial bypass.  A commercial
 channel needs a separately verifiable vendor grant/trust anchor first.
@@ -58,7 +59,7 @@ REQUIRED_RECORDS = {
     "qt_lgplv3": "Qt-LGPL-3.0.txt",
     "pyqt6_source": None,
     "qt_source": None,
-    "qt_relink_instructions": None,
+    "qt_relink_instructions": "Qt-Relinking.md",
 }
 BUILD_TARGETS = {
     "windows-x86": ("windows-x86",),
@@ -93,6 +94,12 @@ def check_packaged_legal_material(package: Path, expected: dict[str, str]) -> li
         if len(embedded.data) > MAX_LICENSE_BYTES or hashlib.sha256(embedded.data).hexdigest() != digest:
             raise ValueError(f"{package.name} contains different bytes for {filename}")
         verified.append(embedded)
+    guide_dirs = {
+        PurePosixPath(member.path).parent for member in verified
+        if PurePosixPath(member.path).name == "Qt-Relinking.md" or member.path.endswith("-source.json")
+    }
+    if len(guide_dirs) > 1:
+        raise ValueError(f"{package.name} must install Qt source records beside Qt-Relinking.md")
     return verified
 
 
@@ -120,6 +127,14 @@ def pinned_gui_versions() -> dict[str, str]:
             raise ValueError(f"{name} is not exactly pinned in release requirements")
         versions[name] = match.group(1)
     return versions
+
+
+def pinned_gui_source_records() -> dict[str, str]:
+    versions = pinned_gui_versions()
+    return {
+        "pyqt6_source": f"PyQt6-{versions['PyQt6']}-source.json",
+        "qt_source": f"qt-everywhere-src-{versions['PyQt6-Qt6']}-source.json",
+    }
 
 
 def target_asset_names(tag: str, target: str) -> set[str]:
@@ -331,7 +346,7 @@ def evidence_materials(evidence_dir: Path, tag: str) -> dict[str, tuple[Path, st
     if not isinstance(records, dict) or set(records) != set(REQUIRED_RECORDS):
         raise ValueError(f"preview evidence materials must contain exactly {sorted(REQUIRED_RECORDS)}")
     verified: dict[str, tuple[Path, str]] = {}
-    for key, required_name in REQUIRED_RECORDS.items():
+    for key, required_name in (REQUIRED_RECORDS | pinned_gui_source_records()).items():
         record = records[key]
         if not isinstance(record, dict) or set(record) != {"file", "sha256"}:
             raise ValueError(f"{key} must provide file and sha256")
@@ -867,7 +882,7 @@ def audit(
             raise ValueError(f"native package belongs to another version: {package.name}")
         required = ["third_party_notices"]
         if GUI_TARGET.search(package.name):
-            required += ["pyqt6_gplv3", "qt_lgplv3", "qt_relink_instructions"]
+            required += ["pyqt6_gplv3", "qt_lgplv3", "qt_relink_instructions", "pyqt6_source", "qt_source"]
         check_packaged_legal_material(
             package, {materials[key][0].name: materials[key][1] for key in required},
         )

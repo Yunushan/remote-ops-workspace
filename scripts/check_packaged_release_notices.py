@@ -28,6 +28,7 @@ from check_preview_redistribution import (
     check_packaged_legal_material,
     expected_native_assets,
     file_hash,
+    pinned_gui_source_records,
     regular_child,
 )
 from check_release_license_compliance import path_is_reparse, safe_relative_path
@@ -152,7 +153,7 @@ def observe_notices(assets_dir: Path, expected: set[str]) -> Iterator[PackageNot
         **notices,
         **{
             filename: file_hash(regular_child(material_dir, filename, "GUI redistribution material"))
-            for filename in (*GUI_LICENSE_COMPONENTS, "Qt-Relinking.md")
+            for filename in (*GUI_LICENSE_COMPONENTS, "Qt-Relinking.md", *pinned_gui_source_records().values())
         },
     }
     for name in sorted(expected):

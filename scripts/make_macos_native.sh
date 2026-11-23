@@ -138,7 +138,7 @@ cp "$ROOT/redistribution-evidence/THIRD_PARTY_NOTICES.md" "$LICENSE_DIR/THIRD_PA
 cp "$ROOT/redistribution-evidence/PyQt6-GPL-3.0.txt" "$LICENSE_DIR/PyQt6-GPL-3.0.txt"
 cp "$ROOT/redistribution-evidence/Qt-LGPL-3.0.txt" "$LICENSE_DIR/Qt-LGPL-3.0.txt"
 cp "$ROOT/redistribution-evidence/Qt-Relinking.md" "$LICENSE_DIR/Qt-Relinking.md"
-"$PYTHON_BIN" scripts/stage_runtime_licenses.py "$LICENSE_DIR/runtime" --profile desktop
+"$PYTHON_BIN" scripts/stage_runtime_licenses.py "$LICENSE_DIR/runtime" --profile desktop --gui-source-dir "$LICENSE_DIR"
 
 sign_macos_artifact "$APP_PATH"
 

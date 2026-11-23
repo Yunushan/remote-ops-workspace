@@ -128,7 +128,7 @@ Rules:
 
 ## Phase 5 - Maintainability (about +3)
 
-- [ ] **M3** Split god modules incrementally, starting with `gui.py` (dialogs,
+- [x] **M3** Split god modules incrementally, starting with `gui.py` (dialogs,
   actions, menus) and moving `gui_designs.py` style data to packaged QSS/JSON
   assets. Behaviour-preserving; coverage stays 100%. Validate:
   `python -m pytest --cov --cov-branch --cov-fail-under=100` and
@@ -205,15 +205,26 @@ Rules:
   import and export, and both directory sync commands.
   `cli_text.py` registers local text preview, guarded writes, and diffs,
   along with SFTP edit planning, save review, and evidence commands.
+  PR #194 landed on `main` at `b4f7307`. The coverage job measured all
+  38,930 statements and 10,726 branches, and the native Windows job exercised
+  the desktop controls and responsive layouts.
+  [Merged refactor](https://github.com/Yunushan/remote-ops-workspace/pull/194) · [Coverage](https://github.com/Yunushan/remote-ops-workspace/actions/runs/45170610904/job/137702174949) · [Native interactions](https://github.com/Yunushan/remote-ops-workspace/actions/runs/45170610904/job/137702106015)
 
 ## Phase 6 - Internal certification gates (about +3)
 
 - [ ] **G1** Merge the release commit to `main`, cut the exact version tag, and
   confirm the exact-SHA `ci` push run is successful.
+  The v1.0.28 candidate is on `main` at `b4f7307`. The release CI verifier
+  accepted push attempt 2. The release tag remains outstanding.
+  [Main push evidence](https://github.com/Yunushan/remote-ops-workspace/actions/runs/45170610904/attempts/2)
   Validate: `python scripts/check_python315_ci_evidence.py --repository <owner/repo> --branch main --sha <release-sha>`.
 - [ ] **G2** Enable branch protection (required checks, conversation
   resolution, linear history, no force-push/deletion) and an active tag ruleset
   with no bypass actors; enroll the governance auditor key.
+  The governance checks passed for the protected branch at `b4f7307` and for
+  the rules that would apply to `v1.0.28`. Independent auditor enrollment
+  and a signed audit against the actual release tag remain open.
+  [Tag ruleset](https://github.com/Yunushan/remote-ops-workspace/rules/24350907)
   Validate: `python scripts/check_repository_governance.py --repository <owner/repo> --branch main --sha <release-sha> --release-tag <tag>`.
 - [ ] **G3** Run the strict aggregate gate; it must print
   `production readiness: 100/100 gates passed` before certification.

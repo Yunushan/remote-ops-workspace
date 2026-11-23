@@ -138,8 +138,15 @@ reviews, and the downloaded release assets. See the
   through `row ssh-browser`. The connected PyQt Moba SFTP dock consumes those
   persisted preferences for browser visibility, location metadata, overwrite
   confirmation mode and live table column widths.
-  The folder-follow control currently keeps the browser on its selected remote
-  path; it does not observe the interactive shell's working directory.
+  With **Follow terminal folder** enabled, a saved SSH tab updates its SFTP
+  listing when its shell reports a working directory using OSC 7. The report
+  must name the host configured in that profile and an absolute, literal
+  directory path. UTF-8 names and percent-encoded spaces are supported.
+  Reports with quotes, backslashes or SFTP glob characters are ignored.
+  Shells that do not report a directory, or report a different
+  hostname such as the resolved name of an SSH alias, retain manual browsing.
+  Turning follow off preserves the selected path. Turning it back on uses
+  the most recent valid report from that tab's current connection.
   Background SFTP and monitoring also start separate OpenSSH processes. Key or
   agent authentication works automatically; password-only profiles can use the
   explicit **Authenticate background tools** action with either a local encrypted

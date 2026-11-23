@@ -123,8 +123,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_connected.py",
-      "sha256": "af9681061f01fbace48a8f0aa51de5f03c9c50004afdba004b575394184b0ddd",
-      "size": 156755
+      "sha256": "a892a4d7250c466a6575228434a7edb544082da6592992405c63766d11f958f1",
+      "size": 158567
     },
     {
       "path": "src/remote_ops_workspace/gui_connected_terminal.py",
@@ -188,8 +188,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_moba_sessions.py",
-      "sha256": "ad64b014aacc562cdf0febf1579632bee7dc2b42ee742ea923db478c6b9085e7",
-      "size": 13877
+      "sha256": "67ca7dfeaf173d20fdece1e8ae01af52367cb9cc18f11826673b7136f308ddbf",
+      "size": 14287
     },
     {
       "path": "src/remote_ops_workspace/gui_mremoteng.py",
@@ -318,8 +318,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_terminal.py",
-      "sha256": "fa6423aa5279e14585986dd471a051ecb67e47d37b31aaf6d718c9b96bd56a0f",
-      "size": 139627
+      "sha256": "6b9b7bae365348a284cdbae6a65766cc808c9070733e18eb4f9b05066b99293e",
+      "size": 140436
     },
     {
       "path": "src/remote_ops_workspace/gui_terminal_lifecycle.py",
@@ -383,8 +383,8 @@
     },
     {
       "path": "src/remote_ops_workspace/moba_connected.py",
-      "sha256": "fbbc98d9d82e2e12d679d5e34d5800c62214fc423198dc728503ab18815d2910",
-      "size": 70171
+      "sha256": "d21c293e09d893c260ddce9fe9633af21894183d053fd56236dc0bf1ffce6d8d",
+      "size": 71220
     },
     {
       "path": "src/remote_ops_workspace/moba_customizer.py",
@@ -538,8 +538,8 @@
     },
     {
       "path": "src/remote_ops_workspace/terminal_emulation.py",
-      "sha256": "07942a3b2885e5bf5a67deee752a0ea97a5786178948f3d9b76cbd6aa012d991",
-      "size": 71097
+      "sha256": "874b03a43cd7ff61ae6fd25e96ecc25f9f7c74a55d7b1ea7cfa3f14acb6fba5b",
+      "size": 72137
     },
     {
       "path": "src/remote_ops_workspace/terminal_highlighting.py",

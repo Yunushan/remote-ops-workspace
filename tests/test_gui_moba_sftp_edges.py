@@ -324,6 +324,106 @@ def test_monitoring_stale_completion_and_absent_sftp_status_widgets(
     label.mouseReleaseEvent(event)
 
 
+def test_ssh_directory_reports_follow_only_their_own_tab(connected_workspace, monkeypatch):
+    from PyQt6.QtCore import QProcess
+
+    from remote_ops_workspace.terminal import terminal_plan_for_profile
+
+    app, window, generic_panel, original_dock, template = connected_workspace
+    assert generic_panel.terminal_pane.directory_report_host is None
+    # Build genuine saved-profile terminal plans; the test supplies receiver bytes
+    # and captures the read-only SFTP subprocess without opening a network socket.
+    monkeypatch.setattr(window, "start_terminal_pane_when_active", lambda *_: None)
+    dock_type = type(original_dock)
+    monkeypatch.setattr(dock_type, "initialize_background_state", lambda self: None)
+    monkeypatch.setattr(dock_type, "_waiting_for_shared_ssh", lambda self: False)
+    monkeypatch.setattr(dock_type, "ensure_background_authentication_for_request", lambda self: True)
+    first = replace(template, host="127.0.0.1", name="folder-one")
+    second = replace(template, host="localhost", name="folder-two")
+    window.store.add(first)
+    window.store.add(second)
+    one = window.open_moba_connected_session_tab(first, terminal_plan_for_profile(first))
+    pane = one.terminal_pane
+    dock = window.moba_connected_dock
+    process = _FakeProcess()
+    dock.sftp_refresh_process = process
+    with monkeypatch.context() as running:
+        running.setattr(pane.process, "state", lambda: QProcess.ProcessState.Running)
+        pane.append_decoded_process_output(b"\x1b]7;file://127.0.0.1/first\x1b")
+        assert process.start_calls == 0
+        pane.append_decoded_process_output(b"\\")
+        assert dock.path.text() == "/first"
+        assert dock.sftp_refresh_plan.batch_input() == "ls -la /first\n"
+        assert process.start_calls == 1
+        pane.append_decoded_process_output(b"\x1b]7;file://127.0.0.1/first\a\x1b]7;file://localhost/other\a")
+        assert process.start_calls == 1 and dock.sftp_refresh_pending is None
+        pane.append_decoded_process_output(b"\x1b]7;file://127.0.0.1/intermediate\a\x1b]7;file://127.0.0.1/latest\a")
+        assert dock.sftp_refresh_pending == ("/latest", "terminal-folder")
+        assert not dock.sftp_refresh_request_is_current()
+        toggle = dock.monitoring_control_widgets["follow-terminal-folder"]
+        toggle.setChecked(False)
+        assert not one.state.follow_terminal_folder
+        assert dock.sftp_refresh_pending is None
+        pane.append_decoded_process_output(b"\x1b]7;file://127.0.0.1/disabled\a")
+        assert dock.path.text() == "/latest"
+        toggle.setChecked(True)
+        assert dock.path.text() == "/disabled"
+        toggle.setChecked(False)
+        dock.path.setText("/manual")
+        dock.handle_moba_sftp_path_entered()
+        assert dock.path.text() == "/manual" and one.state.remote_path == "/manual"
+
+    two = window.open_moba_connected_session_tab(second, terminal_plan_for_profile(second), remote_path="/two")
+    other = window.moba_connected_dock
+    receiver = _FakeProcess()
+    other.sftp_refresh_process = receiver
+    with monkeypatch.context() as running:
+        running.setattr(pane.process, "state", lambda: QProcess.ProcessState.Running)
+        running.setattr(two.terminal_pane.process, "state", lambda: QProcess.ProcessState.Running)
+        pane.append_decoded_process_output(b"\x1b]7;file://127.0.0.1/inactive\a")
+        assert other.path.text() == "/two" and receiver.start_calls == 0
+        two.terminal_pane.append_decoded_process_output(b"\x1b]7;file://localhost/second\a")
+        assert other.path.text() == "/second"
+        assert receiver.start_calls == 1
+        window.tabs.setCurrentWidget(one)
+        app.processEvents()
+        restored = window.moba_connected_dock
+        assert restored.session_panel is one
+        restored.sftp_refresh_process = _FakeProcess()
+        assert not restored.monitoring_control_widgets["follow-terminal-folder"].isChecked()
+        assert restored.path.text() == "/manual"
+        restored.monitoring_control_widgets["follow-terminal-folder"].setChecked(True)
+        assert restored.path.text() == "/inactive"
+        assert restored.sftp_refresh_plan.batch_input() == "ls -la /inactive\n"
+    pane.remote_directory = "/offline"
+    assert not restored.follow_reported_terminal_directory()
+    pane.reset_process_output_pipeline()
+    assert pane.remote_directory is None
+    app.processEvents()
+
+
+def test_late_folder_list_is_dropped_on_disable_and_edited_identity_is_ignored(connected_workspace, monkeypatch):
+    from PyQt6.QtCore import QProcess
+
+    app, _window, panel, dock, profile = connected_workspace
+    requests = []
+    monkeypatch.setattr(dock, "request_sftp_refresh", lambda *, reason: requests.append(reason))
+    dock.sftp_refresh_pending = (dock.active_remote_path, "terminal-folder")
+    dock.schedule_pending_sftp_refresh()
+    dock.monitoring_control_widgets["follow-terminal-folder"].setChecked(False)
+    app.processEvents()
+    assert "terminal-folder" not in requests
+    dock.monitoring_control_widgets["follow-terminal-folder"].setChecked(True)
+    pane = panel.terminal_pane
+    pane.remote_directory = "/changed"
+    before = dock.path.text()
+    with monkeypatch.context() as running:
+        running.setattr(pane.process, "state", lambda: QProcess.ProcessState.Running)
+        running.setattr(dock, "profile_for_sftp_action", lambda: replace(profile, host="other.invalid"))
+        assert not dock.follow_reported_terminal_directory()
+    assert dock.path.text() == before
+
+
 def test_manual_sftp_browsing_preserves_each_tabs_listing_without_follow(connected_workspace, monkeypatch):
     from remote_ops_workspace.file_transfer import build_sftp_list_plan
     from remote_ops_workspace.moba_connected import RemoteFileEntry
@@ -358,6 +458,8 @@ def test_manual_sftp_browsing_preserves_each_tabs_listing_without_follow(connect
     assert restored.file_table.topLevelItem(1).text(0) == "system.log"
     standalone = type(restored)(second_panel.state)
     try:
+        standalone.handle_moba_follow_terminal_folder_toggled(False)
+        assert not standalone.state.follow_terminal_folder and second_panel.state.follow_terminal_folder
         standalone.apply_live_sftp_entries(entries, request_path="/other", plan=build_sftp_list_plan(profile, "/other"))
         assert standalone.file_table.topLevelItem(1).text(0) == "original.txt"
         assert second_panel.state.file_entries == ()

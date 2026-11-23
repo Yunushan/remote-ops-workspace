@@ -26,6 +26,7 @@ from remote_ops_workspace.moba_connected import (
     normalise_remote_path,
     parse_remote_monitoring_output,
     parse_sftp_ls_output,
+    terminal_directory_path,
 )
 from remote_ops_workspace.models import Profile
 
@@ -460,6 +461,23 @@ def test_remote_monitoring_script_samples_network_throughput_without_fabricating
     assert "net_down_mbps" in REMOTE_MONITORING_SCRIPT
     assert "sleep 0.2" in REMOTE_MONITORING_SCRIPT
     assert "net_up_mbps=; net_down_mbps=;" in REMOTE_MONITORING_SCRIPT
+
+
+def test_terminal_directory_file_uri_accepts_only_same_host_literal_paths() -> None:
+    assert terminal_directory_path("file://DEMO/", "demo") == "/"
+    assert terminal_directory_path("file://demo/caf%C3%A9%20logs/", "demo") == "/café logs"
+    assert terminal_directory_path("file://[::1]/var", "::1") == "/var"
+    assert terminal_directory_path("file://[::1]/var", "[::1]") == "/var"
+    for bad in [
+        "https://demo/var", "file:///var", "file://other/var", "file://demo:22/var",
+        "file://me@demo/var", "file://demo/var?query", "file://demo/var#fragment",
+        "file://demo//double", "file://demo/%2e%2e/up", "file://demo/./logs",
+        "file://demo/log%2Fwild", "file://demo/%", "file://demo/%zz", "file://demo/%ff",
+        "file://demo/%00x", "file://demo/%0Ax", "file://demo/%5cpath", "file://demo/*",
+        "file://demo/%5b12%5d", "file://demo/%27quote", "file://demo/%22quote",
+        "file://demo/invalid\ufffd", "file://demo/two words",
+    ]:
+        assert terminal_directory_path(bad, "demo") is None, bad
 
 
 def test_follow_terminal_folder_plan_normalises_remote_paths() -> None:

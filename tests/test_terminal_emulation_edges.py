@@ -197,6 +197,29 @@ def test_escape_parser_rejects_invalid_state_and_bounds_sequences() -> None:
     assert transcript._escape is None
 
 
+def test_directory_reports_are_bounded_stream_controls() -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    seen: list[str] = []
+    for chunk in ["before\x1b]", "7;file://demo/one", "\a\x1b]7;file://demo/two\x1b", "\\after"]:
+        transcript.feed(chunk, directory_report=seen.append)
+    assert seen == ["file://demo/one", "file://demo/two"]
+    assert transcript.text() == "beforeafter"
+
+    for terminator in ["\a", "\x1b\\"]:
+        transcript.feed("\x1b]7;file://demo/" + "x" * 4200, directory_report=seen.append)
+        transcript.feed("\x1b]7;file://demo/nested" + terminator, directory_report=seen.append)
+    transcript.feed("\x1b]7;file://demo/app-owned")
+    transcript.feed("\a", directory_report=seen.append)
+    transcript.feed("\x1b]7;file://demo/mixed", directory_report=seen.append)
+    transcript.feed("content")
+    transcript.feed("\a", directory_report=seen.append)
+    transcript.feed("\x1b]7;file://demo/unclosed", directory_report=seen.append)
+    transcript.end_of_stream()
+    transcript.feed("\a", directory_report=seen.append)
+    transcript.feed("\x1b]0;file://demo/title\a", directory_report=seen.append)
+    assert seen == ["file://demo/one", "file://demo/two"]
+
+
 def test_escape_cursor_save_restore_without_saved_state_and_repeated_screen_modes() -> None:
     transcript = terminal.AnsiTerminalTranscript()
     transcript.feed("\x1b[?1049h\x1b8\x1b[2;3H\x1b7\x1b[4;5H\x1b8")

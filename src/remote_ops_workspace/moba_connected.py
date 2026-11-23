@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from dataclasses import replace as replace_dataclass
 from pathlib import PurePosixPath
+from urllib.parse import unquote
 
 from . import command_safety as safe
 from .file_transfer import SftpBatchPlan, build_sftp_interactive_plan, build_sftp_list_plan
@@ -1801,6 +1802,28 @@ def default_remote_file_entries(remote_path: str) -> list[RemoteFileEntry]:
         RemoteFileEntry("app.log", "file", 64, "2026-06-06"),
         RemoteFileEntry("health.json", "file", 4, "2026-06-06"),
     ]
+
+
+def terminal_directory_path(uri: str, host: str) -> str | None:
+    """Accept only a same-host OSC 7 file URI that denotes one literal SFTP path."""
+    match = re.fullmatch(r"file://([a-zA-Z0-9._-]+|\[[a-fA-F0-9:]+\])(/[^\s?#]*)", uri, re.ASCII)
+    authority = f"[{host}]" if ":" in host and not host.startswith("[") else host
+    if not match or match[1].lower() != authority.lower():
+        return None
+    encoded = match[2]
+    if re.search(r"%(?![0-9a-fA-F]{2})|%2[fF]", encoded):
+        return None
+    try:
+        path = unquote(encoded, errors="strict")
+    except UnicodeDecodeError:
+        return None
+    # Glob, quoting and escape metacharacters have meaning in the OpenSSH SFTP
+    # batch interpreter. The shell report only enables literal directory listings.
+    if not path.isprintable() or any(char in path for char in "\\\"'*?[]\ufffd") or "//" in path:
+        return None
+    if any(part in {".", ".."} for part in path.split("/")):
+        return None
+    return path.rstrip("/") or "/"
 
 
 def normalise_remote_path(path: str | None) -> str:

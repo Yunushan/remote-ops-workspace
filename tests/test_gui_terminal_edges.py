@@ -104,6 +104,16 @@ def _new_pane(window, *, command: list[str] | None = None):
     )
 
 
+def wait_for(predicate):
+    from PyQt6.QtTest import QTest
+
+    for _ in range(200):
+        if predicate():
+            return
+        QTest.qWait(10)
+    assert predicate()
+
+
 def test_managed_ssh_pane_tracks_start_stop_exit_and_launch_failure(gui_window, monkeypatch) -> None:
     from PyQt6.QtCore import QProcess
 
@@ -302,7 +312,12 @@ def macro_workspace(gui_window, monkeypatch):
         menu.aboutToShow.emit()
         return {action.text(): action for action in menu.actions() if not action.isSeparator()}
 
-    return window, pane, active, popup, MobaMacroStore()
+    yield window, pane, active, popup, MobaMacroStore()
+    # A failed assertion can leave the running fake in a workspace tab.
+    # Remove it before gui_window closes, or the native quit dialog waits for input.
+    index = window.tabs.indexOf(pane)
+    if index >= 0:
+        window.tabs.removeTab(index)
 
 
 def test_moba_quick_macro_keyboard_filter_and_guarded_replay(macro_workspace, monkeypatch):
@@ -310,6 +325,7 @@ def test_moba_quick_macro_keyboard_filter_and_guarded_replay(macro_workspace, mo
     from PyQt6.QtTest import QTest
     from PyQt6.QtWidgets import QApplication, QLineEdit, QListWidget
 
+    from remote_ops_workspace.gui_macro_controls import TerminalMacroControls
     from remote_ops_workspace.moba_macros import record_typed_macro
 
     window, pane, active, _menu, store = macro_workspace
@@ -319,7 +335,16 @@ def test_moba_quick_macro_keyboard_filter_and_guarded_replay(macro_workspace, mo
     store.add(record_typed_macro("01 apple", "first"))
     store.add(record_typed_macro("02 PEAR", "second"))
     reviewed = []
+    requested = []
     accept = [False]
+
+    replay = TerminalMacroControls.replay
+
+    def track_request(controls, name):
+        requested.append(name)
+        replay(controls, name)
+
+    monkeypatch.setattr(TerminalMacroControls, "replay", track_request)
 
     def review(recording):
         reviewed.append(recording.name)
@@ -360,22 +385,21 @@ def test_moba_quick_macro_keyboard_filter_and_guarded_replay(macro_workspace, mo
     QTest.keyClicks(search, "ear")
     assert names.count() == 1 and names.currentItem().text() == "02 PEAR"
     QTest.keyClick(search, Qt.Key.Key_Return)
-    QTest.qWait(5)
+    wait_for(lambda: reviewed)
     assert reviewed == ["02 PEAR"] and pane.process.written == b""
 
     accept[0] = True
     search, names = show()
     active[0] = None
     QTest.keyClick(search, Qt.Key.Key_Return)
-    QTest.qWait(5)
+    wait_for(lambda: len(requested) == 2)
     assert reviewed == ["02 PEAR"] and pane.process.written == b""
     active[0] = pane
     _search, names = show()
     point = names.visualItemRect(names.item(0)).center()
     QTest.mouseClick(names.viewport(), Qt.MouseButton.LeftButton, pos=point)
-    QTest.qWait(20)
+    wait_for(lambda: pane.process.written == b"first\n")
     assert reviewed == ["02 PEAR", "01 apple"] and pane.process.written == b"first\n"
-    window.tabs.removeTab(window.tabs.indexOf(pane))
 
 
 def test_quick_macro_command_and_identically_named_recording_are_distinct(macro_workspace, monkeypatch):
@@ -402,7 +426,7 @@ def test_quick_macro_command_and_identically_named_recording_are_distinct(macro_
     label = "Record new macro..."
     assert names.count() == 1 and names.currentItem().text() == label
     QTest.keyClick(search, Qt.Key.Key_Return)
-    QTest.qWait(5)
+    wait_for(lambda: pane.macro_capture_state is not None)
     assert pane.macro_capture_state.active and pane.process.written == b""
     pane.cancel_macro_capture()
 
@@ -415,9 +439,8 @@ def test_quick_macro_command_and_identically_named_recording_are_distinct(macro_
     # These signals can both be emitted by a Qt style for one activation.
     names.itemClicked.emit(item)
     names.itemActivated.emit(item)
-    QTest.qWait(5)
+    wait_for(lambda: reviewed)
     assert reviewed == [label] and pane.macro_capture_state is None
-    window.tabs.removeTab(window.tabs.indexOf(pane))
 
 
 def test_quick_macro_key_is_local_only_to_moba_terminal_output(macro_workspace):
@@ -443,7 +466,6 @@ def test_quick_macro_key_is_local_only_to_moba_terminal_output(macro_workspace):
     assert pane.process.written == b"\x00\x00 "
     QTest.keyClick(window.quick_connect, Qt.Key.Key_Space, ctrl)
     assert QApplication.activePopupWidget() is None
-    window.tabs.removeTab(window.tabs.indexOf(pane))
 
 
 def test_moba_recording_ribbon_follows_the_active_terminal(macro_workspace, monkeypatch):
@@ -727,13 +749,6 @@ for line in sys.stdin.buffer:
     window.set_design_preset("mobaxterm")
     window.open_terminal_tab(plan)
     pane = window.active_terminal_pane()
-    def wait_for(predicate):
-        for _ in range(200):
-            if predicate():
-                return
-            QTest.qWait(10)
-        assert predicate()
-
     try:
         wait_for(lambda: pane.is_running() and pane.macro_record_button.isEnabled())
         window.activateWindow()

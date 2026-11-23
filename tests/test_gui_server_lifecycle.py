@@ -20,7 +20,7 @@ def manager(tmp_path, monkeypatch):
     obj = controls.ServerLifecycleManager(desktop)
     yield obj
     obj.shutdown()
-    obj._executor.shutdown(wait=True)
+    join_workers(obj)
 
 
 @pytest.fixture
@@ -51,8 +51,14 @@ def backend(monkeypatch):
 
 
 def drain(manager):
-    manager._executor.submit(lambda: None).result(timeout=5)
+    for executor in manager._executors.values():
+        executor.submit(lambda: None).result(timeout=5)
     manager._collect()
+
+
+def join_workers(manager):
+    for executor in manager._executors.values():
+        executor.shutdown(wait=True)
 
 
 def test_preferences_defaults_merge_and_validation(manager):
@@ -114,7 +120,7 @@ def test_owning_window_close_preserves_services_for_second_window(tmp_path, monk
         first.release_server_lifecycle()
         assert second.isVisible() and not manager._closed and not stopped
         second.close()
-        manager._executor.shutdown(wait=True)
+        join_workers(manager)
         assert manager._closed and stopped == started and len(stopped) == 1
     finally:
         first.close()
@@ -124,7 +130,8 @@ def test_owning_window_close_preserves_services_for_second_window(tmp_path, monk
 
 def test_unused_manager_close_does_not_start_a_worker(manager, monkeypatch):
     submit = Mock()
-    monkeypatch.setattr(manager._executor, "submit", submit)
+    for executor in manager._executors.values():
+        monkeypatch.setattr(executor, "submit", submit)
     manager.shutdown()
     submit.assert_not_called()
 
@@ -200,6 +207,40 @@ def test_application_owned_timers_follow_the_actual_run(manager, backend):
     assert stopped[-1] == replacement
 
 
+def test_iperf_expires_while_cron_is_still_starting(manager, backend, monkeypatch):
+    records, started, stopped = backend
+    start_service = controls.start_moba_server
+    cron_entered = threading.Event()
+    release_cron = threading.Event()
+
+    def start(service):
+        if service == "cron":
+            cron_entered.set()
+            assert release_cron.wait(10)
+        return start_service(service)
+
+    monkeypatch.setattr(controls, "start_moba_server", start)
+    manager.start("iperf")
+    drain(manager)
+    iperf = records["iperf"]
+
+    manager.start("cron")
+    try:
+        assert cron_entered.wait(5)
+        manager._expire("iperf")
+        manager._pending["iperf"][1].result(timeout=3)
+        manager._collect()
+
+        assert stopped == [iperf]
+        assert not manager.observed_records["iperf"].running
+        assert not manager._pending["cron"][1].done()
+    finally:
+        release_cron.set()
+
+    drain(manager)
+    assert manager.observed_records["cron"] == started[-1]
+
+
 def test_refresh_coalesces_conflicting_intent_and_close_drains_an_inflight_start(manager, backend, monkeypatch):
     records, started, stopped = backend
     entered, release = threading.Event(), threading.Event()
@@ -226,7 +267,7 @@ def test_refresh_coalesces_conflicting_intent_and_close_drains_an_inflight_start
     manager.startup()
     manager.refresh("iperf")
     release.set()
-    manager._executor.shutdown(wait=True)
+    join_workers(manager)
     assert started == stopped and len(stopped) == 2
     assert not manager._pending
     assert not manager._poll.isActive()
@@ -256,7 +297,7 @@ def test_errors_do_not_drop_ownership_or_terminate_replacements(manager, backend
     drain(manager)
     assert events[-1] == ("iperf", "running", "transient state error")
     manager.shutdown()
-    manager._executor.shutdown(wait=True)
+    join_workers(manager)
     assert "changed during stop" in caplog.text
     assert len(started) == 1 and not stopped
 

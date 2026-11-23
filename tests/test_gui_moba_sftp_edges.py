@@ -28,6 +28,7 @@ class _FakeProcess:
             else QProcess.ProcessState.NotRunning
         )
         self.output = output
+        self.error_output = b""
         self.write_result = write_result
         self.program = ""
         self.arguments: list[str] = []
@@ -74,6 +75,10 @@ class _FakeProcess:
 
     def readAllStandardOutput(self) -> bytes:  # noqa: N802
         payload, self.output = self.output, b""
+        return payload
+
+    def readAllStandardError(self) -> bytes:  # noqa: N802
+        payload, self.error_output = self.error_output, b""
         return payload
 
 
@@ -475,6 +480,41 @@ def test_manual_sftp_browsing_preserves_each_tabs_listing_without_follow(connect
     finally:
         standalone.shutdown_runtime()
         standalone.deleteLater()
+
+
+def test_live_sftp_listing_inserts_one_batch_and_reuses_row_icons(connected_workspace, monkeypatch):
+    from remote_ops_workspace.file_transfer import build_sftp_list_plan
+    from remote_ops_workspace.moba_connected import RemoteFileEntry
+
+    _app, _window, panel, dock, profile = connected_workspace
+    entries = (
+        RemoteFileEntry("logs", "dir", 0, ""),
+        RemoteFileEntry("first.txt", "file", 1, ""),
+        RemoteFileEntry("second.txt", "file", 2, ""),
+    )
+    insertions = []
+    dock.file_table.model().rowsInserted.connect(lambda _parent, first, last: insertions.append((first, last)))
+    renders = []
+    render = dock.sftp_file_row_icon
+
+    def record_icon(key, *, size):
+        renders.append(key)
+        return render(key, size=size)
+
+    monkeypatch.setattr(dock, "sftp_file_row_icon", record_icon)
+    monkeypatch.setattr(dock, "request_sftp_refresh", lambda **_kwargs: None)
+    assert dock.navigate_moba_sftp_path("/home")
+    dock.apply_live_sftp_entries(entries, request_path="/home", plan=build_sftp_list_plan(profile, "/home"))
+
+    table = dock.file_table
+    assert insertions == [(0, 3)]
+    assert renders == ["folder-up", "folder", "file"]
+    assert [table.topLevelItem(index).text(0) for index in range(table.topLevelItemCount())] == [
+        "..", "logs", "first.txt", "second.txt",
+    ]
+    assert table.currentItem() is table.topLevelItem(0)
+    assert panel.state.file_entries == entries
+    assert dock.sftp_remote_path_for_item(table.topLevelItem(2)) == "/home/first.txt"
 
 
 def test_live_monitoring_rebuilds_the_bottom_bar_for_extended_metrics(
@@ -1594,13 +1634,23 @@ def test_sftp_refresh_and_transfer_workflow_edges(
     dock.handle_sftp_refresh_finished(1, QProcess.ExitStatus.CrashExit)
     assert dock.property("mobaSftpRefreshLastError") == "permission denied"
     dock.shared_ssh_control_path = lambda: "control-path"
-    process.output = b"host key failed"
+    process.output = b"sftp> ls"
+    process.error_output = b"host key failed"
+    dock.read_sftp_refresh_error()
     dock.sftp_refresh_output_buffer.clear()
     dock.handle_sftp_refresh_finished(1, QProcess.ExitStatus.CrashExit)
     assert "Waiting for terminal SSH authentication" in window.statusBar().currentMessage()
+    assert dock.property("mobaSftpRefreshLastError") == "host key failed"
 
     applied: list[tuple[list[object], str]] = []
-    monkeypatch.setattr(gui_connected, "parse_sftp_ls_output", lambda _output, *, directory: [])
+    parsed: list[str] = []
+
+    def parse_listing(output, *, directory):
+        assert directory == dock.sftp_refresh_request_path
+        parsed.append(output)
+        return []
+
+    monkeypatch.setattr(gui_connected, "parse_sftp_ls_output", parse_listing)
     dock.filtered_sftp_entries = lambda entries: list(entries)
     dock.apply_live_sftp_entries = (
         lambda entries, *, request_path, plan: applied.append(
@@ -1608,8 +1658,10 @@ def test_sftp_refresh_and_transfer_workflow_edges(
         )
     )
     process.output = b"listing"
+    process.error_output = b"SSH diagnostic"
     dock.sftp_refresh_output_buffer.clear()
     dock.handle_sftp_refresh_finished(0, QProcess.ExitStatus.NormalExit)
+    assert parsed == ["listing"]
     assert applied == [([], dock.sftp_refresh_request_path)]
     assert dock.property("mobaSftpRefreshLastError") == ""
     assert pending_calls

@@ -491,20 +491,26 @@ def create_moba_connected_classes(
             )
             self.initialize_monitoring_runtime(_background_process)
             self.sftp_refresh_output_buffer = bytearray()
+            self.sftp_refresh_error_buffer = bytearray()
             self.sftp_refresh_plan: SftpBatchPlan | None = None
             self.sftp_refresh_generation = 0
             self.sftp_refresh_active_generation = 0
             self.sftp_refresh_request_path = ""
             self.sftp_refresh_pending: tuple[str, str] | None = None
             self.sftp_refresh_process = _background_process(self, interactive_auth=True)
+            # Pipe-backed Qt processes can lose rows from large OpenSSH
+            # listings with merged channels. A ConPTY still has one stream.
             self.sftp_refresh_process.setProcessChannelMode(
-                QProcess.ProcessChannelMode.MergedChannels
+                QProcess.ProcessChannelMode.SeparateChannels
             )
             self.sftp_refresh_process.started.connect(
                 self.write_sftp_refresh_batch
             )
             self.sftp_refresh_process.readyReadStandardOutput.connect(
                 self.read_sftp_refresh_output
+            )
+            self.sftp_refresh_process.readyReadStandardError.connect(
+                self.read_sftp_refresh_error
             )
             self.sftp_refresh_process.finished.connect(
                 self.handle_sftp_refresh_finished
@@ -685,33 +691,7 @@ def create_moba_connected_classes(
             file_header.setStretchLastSection(False)
             for column_index, width in enumerate(column_widths):
                 self.file_table.setColumnWidth(column_index, width)
-            parent_item = QTreeWidgetItem([chrome.parent_row_label, "", ""])
-            self.apply_sftp_file_row_icon(parent_item, chrome.parent_row_kind)
-            self.apply_sftp_routed_file_row_metadata(
-                parent_item,
-                routed_rows,
-                row_index=0,
-                name=chrome.parent_row_label,
-                selected=True,
-            )
-            parent_item.setSizeHint(0, QSize(0, density.file_row_height))
-            parent_item.setToolTip(0, "parent directory")
-            self.file_table.addTopLevelItem(parent_item)
-            for row_index, entry in enumerate(self.state.file_entries, start=1):
-                item = QTreeWidgetItem([entry.name, str(entry.size_kb), entry.modified])
-                self.apply_sftp_file_row_icon(item, entry.kind)
-                self.apply_sftp_routed_file_row_metadata(
-                    item,
-                    routed_rows,
-                    row_index=row_index,
-                    name=entry.name,
-                    selected=False,
-                )
-                item.setSizeHint(0, QSize(0, density.file_row_height))
-                item.setToolTip(0, _safe_tooltip_html(f"{entry.kind}: {entry.name}"))
-                self.file_table.addTopLevelItem(item)
-            parent_item.setSelected(True)
-            self.file_table.setCurrentItem(parent_item)
+            self.populate_sftp_file_table(self.state.file_entries, self.active_remote_path)
             self.file_table.currentItemChanged.connect(self.update_sftp_action_states)
             self.file_table.itemDoubleClicked.connect(self.handle_moba_text_editor_open_from_item)
             self.file_table.customContextMenuRequested.connect(self.show_sftp_context_menu)
@@ -1332,14 +1312,19 @@ def create_moba_connected_classes(
         ) -> QIcon:
             return QIcon(self.generated_icon_pixmap(size, draw, antialias=antialias))
 
-        def apply_sftp_file_row_icon(self, item: QTreeWidgetItem, kind: str) -> None:
+        def apply_sftp_file_row_icon(
+            self, item: QTreeWidgetItem, kind: str, icons: dict[tuple[str, int], QIcon],
+        ) -> None:
             row_icon = gui_design_moba_sftp_file_row_icon(kind)
             item.setData(0, Qt.ItemDataRole.UserRole, row_icon.row_kind)
             item.setData(0, SFTP_ROW_ICON_KEY_ROLE, row_icon.icon_key)
             item.setData(0, SFTP_ROW_KIND_ROLE, row_icon.row_kind)
             item.setData(0, SFTP_ROW_ICON_SIZE_ROLE, row_icon.static_size)
             item.setData(0, SFTP_ROW_ICON_RENDER_ROLE, row_icon.render_source)
-            item.setIcon(0, self.sftp_file_row_icon(row_icon.icon_key, size=row_icon.static_size))
+            key = row_icon.icon_key, row_icon.static_size
+            if key not in icons:
+                icons[key] = self.sftp_file_row_icon(row_icon.icon_key, size=row_icon.static_size)
+            item.setIcon(0, icons[key])
 
         def apply_sftp_routed_file_row_metadata(
             self,
@@ -2162,6 +2147,7 @@ def create_moba_connected_classes(
             self.sftp_refresh_active_generation = request_generation
             self.sftp_refresh_request_path = request_path
             self.sftp_refresh_output_buffer.clear()
+            self.sftp_refresh_error_buffer.clear()
             refresh_message = (
                 f"Refreshing SFTP listing for {profile.display_target} at {request_path}"
             )
@@ -2224,6 +2210,10 @@ def create_moba_connected_classes(
             payload = bytes(self.sftp_refresh_process.readAllStandardOutput())
             self._submit_background_password_if_prompt("sftp", payload)
             self.sftp_refresh_output_buffer.extend(payload)
+
+        def read_sftp_refresh_error(self) -> None:
+            payload = bytes(self.sftp_refresh_process.readAllStandardError())
+            self.sftp_refresh_error_buffer.extend(payload)
 
         def handle_sftp_refresh_error(self, error) -> None:
             self.sftp_refresh_timeout.stop()
@@ -2288,7 +2278,7 @@ def create_moba_connected_classes(
             self.sftp_auth_probe_timer.stop()
             request_is_current = self.sftp_refresh_request_is_current()
             self.read_sftp_refresh_output()
-            output = self.sftp_refresh_output_buffer.decode(errors="replace")
+            self.read_sftp_refresh_error()
             self.sftp_refresh_active_generation = 0
             if not request_is_current:
                 if not self.runtime_shutting_down:
@@ -2296,8 +2286,12 @@ def create_moba_connected_classes(
                 self.schedule_pending_sftp_refresh()
                 return
             if exit_code != 0:
+                diagnostics = (
+                    self.sftp_refresh_error_buffer.decode(errors="replace").strip()
+                    or self.sftp_refresh_output_buffer.decode(errors="replace")
+                )
                 detail = next(
-                    (line.strip() for line in reversed(output.splitlines()) if line.strip()),
+                    (line.strip() for line in reversed(diagnostics.splitlines()) if line.strip()),
                     f"exit {exit_code}",
                 )
                 self.setProperty("mobaSftpRefreshLastError", detail)
@@ -2318,6 +2312,7 @@ def create_moba_connected_classes(
                 self.schedule_background_auth_retry()
                 self.schedule_pending_sftp_refresh()
                 return
+            output = self.sftp_refresh_output_buffer.decode(errors="replace")
             entries = self.filtered_sftp_entries(
                 parse_sftp_ls_output(output, directory=self.sftp_refresh_request_path)
             )
@@ -2359,52 +2354,58 @@ def create_moba_connected_classes(
             plan,
         ) -> None:
             entries = self.filtered_sftp_entries(entries)
-            density = gui_design_moba_sftp_dock_layout()
-            chrome = gui_design_moba_sftp_browser_chrome()
-            follow_route = gui_design_moba_sftp_follow_folder_route()
-            routed_rows = gui_design_moba_sftp_routed_file_rows()
             selected_path = normalise_remote_path(request_path)
             self.remember_sftp_location(selected_path, entries, plan)
-            self.file_table.clear()
+            self.populate_sftp_file_table(entries, selected_path)
+            self.apply_sftp_follow_folder_route_properties(
+                self.file_table,
+                gui_design_moba_sftp_follow_folder_route(),
+            )
+            self.update_sftp_action_states()
+
+        def populate_sftp_file_table(self, entries, source_path: str) -> None:
+            density = gui_design_moba_sftp_dock_layout()
+            chrome = gui_design_moba_sftp_browser_chrome()
+            routed_rows = gui_design_moba_sftp_routed_file_rows()
+            row_size = QSize(0, density.file_row_height)
+            # Reuse the current display's icons only for this batch of rows.
+            icons: dict[tuple[str, int], QIcon] = {}
             parent_item = QTreeWidgetItem([chrome.parent_row_label, "", ""])
-            self.apply_sftp_file_row_icon(parent_item, chrome.parent_row_kind)
+            self.apply_sftp_file_row_icon(parent_item, chrome.parent_row_kind, icons)
             self.apply_sftp_routed_file_row_metadata(
                 parent_item,
                 routed_rows,
                 row_index=0,
                 name=chrome.parent_row_label,
                 selected=True,
-                source_path=selected_path,
+                source_path=source_path,
             )
-            parent_item.setSizeHint(0, QSize(0, density.file_row_height))
+            parent_item.setSizeHint(0, row_size)
             parent_item.setToolTip(0, "parent directory")
-            self.file_table.addTopLevelItem(parent_item)
+            items = [parent_item]
             for row_index, entry in enumerate(entries, start=1):
                 item = QTreeWidgetItem(
                     [entry.name, str(entry.size_kb), entry.modified]
                 )
-                self.apply_sftp_file_row_icon(item, entry.kind)
+                self.apply_sftp_file_row_icon(item, entry.kind, icons)
                 self.apply_sftp_routed_file_row_metadata(
                     item,
                     routed_rows,
                     row_index=row_index,
                     name=entry.name,
                     selected=False,
-                    source_path=selected_path,
+                    source_path=source_path,
                 )
-                item.setSizeHint(0, QSize(0, density.file_row_height))
+                item.setSizeHint(0, row_size)
                 item.setToolTip(
                     0,
                     _safe_tooltip_html(f"{entry.kind}: {entry.name}"),
                 )
-                self.file_table.addTopLevelItem(item)
+                items.append(item)
+            self.file_table.clear()
+            self.file_table.addTopLevelItems(items)
             parent_item.setSelected(True)
             self.file_table.setCurrentItem(parent_item)
-            self.apply_sftp_follow_folder_route_properties(
-                self.file_table,
-                follow_route,
-            )
-            self.update_sftp_action_states()
 
         def monitoring_control_tooltip(self, control) -> str:
             if control.key == "follow-terminal-folder":

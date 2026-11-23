@@ -64,7 +64,11 @@ explicit target context, including CArchives inside ZIP/TAR companions. This
 matches the [pinned PyInstaller writer](https://github.com/pyinstaller/pyinstaller/blob/v6.22.3/PyInstaller/archive/writers.py).
 Strict traversal, device, casefold duplicate, link and alias checks remain.
 ZIP/TAR member, source and output names retain their strict separator rules.
-Dependency and link descriptors remain unresolved. For a valid, payload-free
+The macOS staging scan records resolved targets for relative symbolic links
+that stay within one application bundle. It walks regular directories and
+records each linked file or directory as a separate relationship. Escaping,
+broken or cyclic links remain unresolved. Archive links and dependency closure
+have separate checks. For a valid, payload-free
 CArchive option named `pyi-contents-directory _internal`, the collector records
 the descriptor in `runtime_options_observed` on the packaged executable and in
 the staged executable's CArchive hints. PyInstaller uses this setting for the

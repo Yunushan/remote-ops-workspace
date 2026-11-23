@@ -27,6 +27,7 @@ import sysconfig
 import tarfile
 import zipfile
 import zlib
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlsplit
@@ -299,6 +300,7 @@ class Observations:
         self.target = target
         self.blobs: dict[str, bytes] = {}
         self.files: list[dict] = []
+        self.bundle_links: list[dict] = []
         self.licenses: dict[str, list[dict]] = {}
         self.gaps: list[dict] = []
         self.expanded = 0
@@ -1043,6 +1045,55 @@ def validate_direct_url(value: object, source_root: Path | None):
         raise Refusal("pip-direct-url-source-root-mismatch")
 
 
+def observe_bundle_link(root: Path, link: Path, observations: Observations) -> None:
+    """Resolve metadata within one app bundle without traversing linked directories."""
+    name = relative(link.relative_to(root).as_posix())
+    bundle_name, *parts = name.split("/")
+    if not bundle_name.endswith(".app") or not parts:
+        raise Refusal("stage-link-outside-app-bundle")
+    bundle = root / bundle_name
+    plain(bundle, directory=True)
+    pending = deque(parts)
+    within_bundle: list[str] = []
+    followed = 0
+    while pending:
+        observations.node()
+        part = pending.popleft()
+        if part == "..":
+            if not within_bundle:
+                raise Refusal("stage-link-outside-app-bundle")
+            within_bundle.pop()
+            continue
+        relative(part)
+        candidate = bundle.joinpath(*within_bundle, part)
+        info = candidate.lstat()
+        if stat.S_ISLNK(info.st_mode):
+            followed += 1
+            if followed > 32:
+                raise Refusal("stage-link-chain-bound")
+            target = os.readlink(candidate)
+            if not target or len(target) > 1024 or PurePosixPath(target).is_absolute():
+                raise Refusal("stage-link-target-invalid")
+            destination = target.split("/")
+            if len(destination) + len(pending) > 64:
+                raise Refusal("stage-link-chain-bound")
+            pending.extendleft(reversed(destination))
+        elif getattr(info, "st_file_attributes", 0) & 0x400:
+            raise Refusal("stage-link-reparse-target")
+        elif stat.S_ISDIR(info.st_mode) or (stat.S_ISREG(info.st_mode) and not pending):
+            within_bundle.append(part)
+        else:
+            raise Refusal("stage-link-target-invalid")
+    resolved = bundle.joinpath(*within_bundle)
+    kind = "directory" if stat.S_ISDIR(resolved.lstat().st_mode) else "file"
+    plain(resolved, directory=kind == "directory")
+    observations.bundle_links.append({
+        "path": name,
+        "resolved_target": relative(resolved.relative_to(root).as_posix()),
+        "target_kind": kind,
+    })
+
+
 def walk_files(root: Path, observations: Observations, reference: str, *, permit_gaps: bool):
     """Stream directory entries; no os.walk list allocation or silent onerror."""
     pending = [root]
@@ -1056,6 +1107,13 @@ def walk_files(root: Path, observations: Observations, reference: str, *, permit
                     info = entry.stat(follow_symlinks=False)
                     if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
                         if permit_gaps:
+                            if observations.target in {"macos-x64", "macos-arm64"} and stat.S_ISLNK(info.st_mode):
+                                try:
+                                    observe_bundle_link(root, Path(entry.path), observations)
+                                    continue
+                                except (OSError, Refusal) as exc:
+                                    if isinstance(exc, Refusal) and str(exc) in GLOBAL_BOUNDS:
+                                        raise
                             observations.gap("stage-reparse-unobserved", reference)
                             continue
                         raise Refusal("metadata-reparse-unobserved")
@@ -1516,6 +1574,7 @@ def collect(
         "components": components,
         "assets": assets,
         "observed_files": observations.files,
+        "observed_bundle_links": sorted(observations.bundle_links, key=lambda row: row["path"]),
         "artifact_license_files": {
             name: value["license_records"] for name, value in assets.items()
         },

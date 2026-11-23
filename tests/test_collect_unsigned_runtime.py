@@ -900,6 +900,37 @@ class RuntimeObservationCollectorTests(unittest.TestCase):
                 lambda: list(c.walk_files(self.root, self.obs(), "fixture", permit_gaps=True)),
             )
 
+    def test_macos_stage_observes_internal_bundle_links_without_walking_them(self):
+        stage = self.root / "stage"
+        bundle = stage / "Example.app"
+        framework = bundle / "Versions/A"
+        framework.mkdir(parents=True)
+        payload = framework / "library"
+        payload.write_bytes(b"framework")
+        sibling = stage / "sibling"
+        sibling.mkdir()
+        try:
+            (bundle / "Versions/Current").symlink_to("A", target_is_directory=True)
+            (bundle / "library").symlink_to("Versions/Current/library")
+            (bundle / "outside").symlink_to("../sibling", target_is_directory=True)
+            (bundle / "indirect").symlink_to("outside", target_is_directory=True)
+            (bundle / "cycle").symlink_to("cycle")
+            (bundle / "missing").symlink_to("absent")
+        except OSError:
+            self.skipTest("Host cannot create symlinks; POSIX run covers this invariant")
+        observations = c.Observations(self.limits, target="macos-arm64")
+        self.assertEqual(list(c.walk_files(stage, observations, "stage", permit_gaps=True)), [payload])
+        self.assertEqual(sorted(observations.bundle_links, key=lambda row: row["path"]), [
+            {"path": "Example.app/Versions/Current", "resolved_target": "Example.app/Versions/A",
+             "target_kind": "directory"},
+            {"path": "Example.app/library", "resolved_target": "Example.app/Versions/A/library", "target_kind": "file"},
+        ])
+        self.assertEqual([gap["code"] for gap in observations.gaps], ["stage-reparse-unobserved"] * 4)
+        windows = c.Observations(self.limits, target="windows-x64")
+        self.assertEqual(list(c.walk_files(stage, windows, "stage", permit_gaps=True)), [payload])
+        self.assertEqual(windows.bundle_links, [])
+        self.assertEqual(len(windows.gaps), 6)
+
     def test_credential_bearing_or_unknown_pip_transport_is_refused(self):
         item = {"metadata": {"name": "example", "version": "1.2"}}
         for url in (

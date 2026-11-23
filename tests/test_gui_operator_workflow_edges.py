@@ -37,6 +37,30 @@ def gui_window(monkeypatch, tmp_path):
     app.processEvents()
 
 
+@pytest.mark.parametrize("preset", ["mremoteng", "remmina"])
+def test_profile_refresh_inserts_the_saved_tree_as_one_batch(gui_window, preset):
+    app, window = gui_window
+    window.set_design_preset(preset)
+    window.store.save([
+        Profile(name="desktop", protocol="rdp", host="desktop.invalid", group="Lab/Desktops"),
+        Profile(name="server", protocol="ssh", host="server.invalid", group="Lab/Servers"),
+        Profile(name="backup", protocol="ssh", host="backup.invalid", group="Backups"),
+    ])
+    window.refresh_profiles()
+    window.select_profile("server")
+    inserted = []
+    window.profile_list.model().rowsInserted.connect(lambda *_args: inserted.append(True))
+
+    window.refresh_profiles()
+    app.processEvents()
+
+    assert inserted == [True]
+    assert window.selected_profile_name() == "server"
+    window.filter_profile_tree("desktop")
+    window.select_profile("desktop")
+    assert window.selected_profile_name() == "desktop"
+
+
 def test_tools_opens_live_inventory_for_default_and_configured_provider(gui_window, monkeypatch):
     _app, window = gui_window
     dialogs = []

@@ -206,7 +206,9 @@ class ProfileTree:
         self._apply_securecrt_tree_routes(securecrt_route, securecrt_filter_route, securecrt_sftp_route)
         self._apply_termius_tree_route(termius_host_route)
         platform_icons: dict[tuple[str, str], QIcon] = {}
-        root = cast(QTreeWidgetItem, self.profile_list.invisibleRootItem())
+        # Build saved trees off-model so Qt receives one insertion for the completed hierarchy.
+        tree_root = cast(QTreeWidgetItem, self.profile_list.invisibleRootItem()) if preview else QTreeWidgetItem()
+        root = tree_root
         if self.current_design_id() != "remmina" or preview:
             root_label, root_tooltip = gui_design_tree_root_copy(self.current_design_id())
             root = QTreeWidgetItem([root_label])
@@ -214,7 +216,7 @@ class ProfileTree:
             self.apply_profile_tree_icon(root, gui_design_tree_root_icon(self.current_design_id()), platform_icons)
             self.apply_moba_profile_tree_geometry(root, "root")
             root.setToolTip(0, _safe_tooltip_html(root_tooltip))
-            self.profile_list.addTopLevelItem(root)
+            tree_root.addChild(root)
         group_nodes: dict[tuple[str, ...], QTreeWidgetItem] = {}
         for profile in profiles:
             parent = root
@@ -342,6 +344,8 @@ class ProfileTree:
                     self.profile_list.setCurrentItem(item)
             item.setToolTip(0, _safe_tooltip_html(tooltip))
             parent.addChild(item)
+        if not preview:
+            self.profile_list.addTopLevelItems(tree_root.takeChildren())
         design_id = self.current_design_id()
         if design_id == "mobaxterm" and self.profile_list.property("mobaProfileTreeFilterMode") == "favorites":
             self.filter_profile_tree_names(set(moba_favorite_profile_names(profiles)))

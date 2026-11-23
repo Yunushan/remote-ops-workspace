@@ -272,6 +272,7 @@ function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir, [string
   $NoticeSource = XmlEscape (Join-Path $Stage "docs\NOTICE")
   $ThirdPartyNoticesSource = XmlEscape (Join-Path $Stage "docs\THIRD_PARTY_NOTICES.md")
   $ReadmeSource = XmlEscape (Join-Path $Stage "docs\README.md")
+  $TurkishReadmeSource = XmlEscape (Join-Path $Stage "docs\README.tr.md")
   $TargetSource = XmlEscape (Join-Path $Stage "RELEASE_TARGET.md")
   $PyQtLicenseSource = XmlEscape (Join-Path $Stage "docs\licenses\PyQt6-GPL-3.0.txt")
   $QtLicenseSource = XmlEscape (Join-Path $Stage "docs\licenses\Qt-LGPL-3.0.txt")
@@ -326,6 +327,9 @@ $RowGuiComponent
           <Component Id="ReadmeComponent" Guid="0184E6B4-1D6F-4F2A-855A-F13BF37B1C9E">
             <File Id="ReadmeFile" Source="$ReadmeSource" KeyPath="yes" />
           </Component>
+          <Component Id="TurkishReadmeComponent" Guid="*">
+            <File Id="TurkishReadmeFile" Source="$TurkishReadmeSource" KeyPath="yes" />
+          </Component>
           <Component Id="TargetReadmeComponent" Guid="2A3A7D0E-1FF2-437E-88C4-8A432DB29D1B">
             <File Id="TargetReadmeFile" Source="$TargetSource" KeyPath="yes" />
           </Component>
@@ -352,6 +356,7 @@ $RowGuiReference
       <ComponentRef Id="NoticeComponent" />
       <ComponentRef Id="ThirdPartyNoticesComponent" />
       <ComponentRef Id="ReadmeComponent" />
+      <ComponentRef Id="TurkishReadmeComponent" />
       <ComponentRef Id="TargetReadmeComponent" />
       <ComponentRef Id="PyQtLicenseComponent" />
       <ComponentRef Id="QtLicenseComponent" />

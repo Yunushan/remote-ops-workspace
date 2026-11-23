@@ -363,9 +363,18 @@ def test_ssh_directory_reports_follow_only_their_own_tab(connected_workspace, mo
         toggle = dock.monitoring_control_widgets["follow-terminal-folder"]
         toggle.setChecked(False)
         assert not one.state.follow_terminal_folder
-        assert dock.sftp_refresh_pending is None
+        assert dock.sftp_refresh_pending == ("/latest", "terminal-folder")
+        assert process.kill_calls == 0
         pane.append_decoded_process_output(b"\x1b]7;file://127.0.0.1/disabled\a")
         assert dock.path.text() == "/latest"
+        process.process_state = QProcess.ProcessState.NotRunning
+        dock.handle_sftp_refresh_finished(0, QProcess.ExitStatus.NormalExit)
+        app.processEvents()
+        assert dock.sftp_refresh_plan.batch_input() == "ls -la /latest\n"
+        process.output = b"-rw-r--r-- 1 row row 4 Nov 23 08:00 retained.txt\n"
+        process.process_state = QProcess.ProcessState.NotRunning
+        dock.handle_sftp_refresh_finished(0, QProcess.ExitStatus.NormalExit)
+        assert [entry.name for entry in one.state.file_entries] == ["retained.txt"]
         toggle.setChecked(True)
         assert dock.path.text() == "/disabled"
         toggle.setChecked(False)
@@ -402,7 +411,7 @@ def test_ssh_directory_reports_follow_only_their_own_tab(connected_workspace, mo
     app.processEvents()
 
 
-def test_late_folder_list_is_dropped_on_disable_and_edited_identity_is_ignored(connected_workspace, monkeypatch):
+def test_selected_folder_list_finishes_on_disable_and_edited_identity_is_ignored(connected_workspace, monkeypatch):
     from PyQt6.QtCore import QProcess
 
     app, _window, panel, dock, profile = connected_workspace
@@ -412,7 +421,7 @@ def test_late_folder_list_is_dropped_on_disable_and_edited_identity_is_ignored(c
     dock.schedule_pending_sftp_refresh()
     dock.monitoring_control_widgets["follow-terminal-folder"].setChecked(False)
     app.processEvents()
-    assert "terminal-folder" not in requests
+    assert requests == ["terminal-folder"]
     dock.monitoring_control_widgets["follow-terminal-folder"].setChecked(True)
     pane = panel.terminal_pane
     pane.remote_directory = "/changed"
@@ -2371,7 +2380,7 @@ def test_connected_context_menus_and_workspace_dispatch_edges(
     assert terminal_menu.deleted is True
 
 
-def test_follow_folder_cancel_rail_keyboard_and_populated_dock_edges(
+def test_follow_folder_toggle_rail_keyboard_and_populated_dock_edges(
     connected_workspace,
     monkeypatch,
 ) -> None:
@@ -2397,10 +2406,14 @@ def test_follow_folder_cancel_rail_keyboard_and_populated_dock_edges(
     )
     dock.handle_moba_follow_terminal_folder_toggled(True)
     assert refreshes == ["follow-enabled"]
+    dock.sftp_refresh_active_generation = 1
+    dock.sftp_refresh_pending = (dock.active_remote_path, "manual")
     dock.handle_moba_follow_terminal_folder_toggled(False)
-    assert process.kill_calls == 1
-    assert dock.sftp_refresh_active_generation == 0
-    assert dock.sftp_refresh_pending is None
+    assert process.kill_calls == 0
+    assert dock.sftp_refresh_active_generation == 1
+    assert dock.sftp_refresh_pending == (dock.active_remote_path, "manual")
+    dock.sftp_refresh_active_generation = 0
+    dock.sftp_refresh_pending = None
     dock.browser = original_browser
     dock.remote_monitoring_panel = original_monitoring_panel
     dock.sftp_refresh_process = original_process

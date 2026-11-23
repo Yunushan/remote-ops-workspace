@@ -2101,14 +2101,9 @@ def create_moba_connected_classes(
                         follow_plan if checked else "Follow terminal folder is disabled"
                     )
                 )
-            if checked:
-                if not self.follow_reported_terminal_directory():
-                    self.request_sftp_refresh(reason="follow-enabled")
-            elif self.sftp_refresh_process.state() != QProcess.ProcessState.NotRunning:
-                self.sftp_refresh_generation += 1
-                self.sftp_refresh_active_generation = 0
-                self.sftp_refresh_pending = None
-                self.sftp_refresh_process.kill()
+            # Listings for the selected path still need to finish when follow is off.
+            if checked and not self.follow_reported_terminal_directory():
+                self.request_sftp_refresh(reason="follow-enabled")
 
         def request_sftp_refresh(self, *, reason: str = "manual") -> None:
             if self.runtime_shutting_down:
@@ -2277,7 +2272,6 @@ def create_moba_connected_classes(
             def start_pending() -> None:
                 if (
                     not self.runtime_shutting_down
-                    and (pending_reason != "terminal-folder" or self.state.follow_terminal_folder)
                     and normalise_remote_path(self.active_remote_path)
                     == pending_path
                 ):

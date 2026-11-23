@@ -145,8 +145,9 @@ reviews, and the downloaded release assets. See the
   Reports with quotes, backslashes or SFTP glob characters are ignored.
   Shells that do not report a directory, or report a different
   hostname such as the resolved name of an SSH alias, retain manual browsing.
-  Turning follow off preserves the selected path. Turning it back on uses
-  the most recent valid report from that tab's current connection.
+  Turning follow off preserves the selected path and lets its listing finish.
+  Turning it back on uses the most recent valid report from that tab's current
+  connection.
   Background SFTP and monitoring also start separate OpenSSH processes. Key or
   agent authentication works automatically; password-only profiles can use the
   explicit **Authenticate background tools** action with either a local encrypted

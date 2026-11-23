@@ -24,7 +24,7 @@ from .gui_values import _safe_tooltip_html, _widget_style
 from .models import Profile
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Callable, Iterable, Iterator
 
     from PyQt6.QtGui import QIcon, QPainter
     from PyQt6.QtWidgets import QMainWindow, QSplitter, QStyle, QTabWidget, QTreeWidget, QWidget
@@ -107,6 +107,13 @@ class _RemminaSearchTree:
     def selection_key(item: QTreeWidgetItem) -> tuple[bool, str]:
         name = item.data(0, Qt.ItemDataRole.UserRole)
         return (True, name) if name is not None else (False, item.toolTip(0))
+
+
+def moba_favorite_profile_names(profiles: Iterable[Profile]) -> list[str]:
+    return [
+        profile.name for profile in profiles
+        if any(tag.lower() in {"favorite", "favorites", "starred"} for tag in profile.tags)
+    ]
 
 
 class ProfileTree:
@@ -246,6 +253,8 @@ class ProfileTree:
             self.apply_profile_tree_icon(item, profile_icon, platform_icons, protocol=profile.protocol)
             self.apply_moba_profile_tree_geometry(item, "profile")
             if mremoteng_route is not None:
+                if not preview:
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
                 item.setData(0, MREMOTENG_CONFIG_ROLE, [
                     profile.name, profile.protocol.upper(), profile.host or "", str(profile.port or ""),
                     profile.username or "", profile.group,
@@ -333,6 +342,9 @@ class ProfileTree:
                     self.profile_list.setCurrentItem(item)
             item.setToolTip(0, _safe_tooltip_html(tooltip))
             parent.addChild(item)
+        design_id = self.current_design_id()
+        if design_id == "mobaxterm" and self.profile_list.property("mobaProfileTreeFilterMode") == "favorites":
+            self.filter_profile_tree_names(set(moba_favorite_profile_names(profiles)))
         self.profile_list.expandAll()
         if collapsed:
             for folder in group_nodes.values():
@@ -340,7 +352,6 @@ class ProfileTree:
                     folder.setExpanded(False)
         if selected_name:
             self.select_profile(selected_name)
-        design_id = self.current_design_id()
         window = cast("QMainWindow", self)
         if design_id == "native" and self.profile_list.property("nativeHomeFilterText"):
             self.filter_profile_tree(str(self.profile_list.property("nativeHomeFilterText")))

@@ -1107,7 +1107,7 @@ GUI_DESIGN_MOBA_RAIL_ITEMS: tuple[GuiMobaRailItem, ...] = (
         icon_key="sessions",
         rail_icon_key="star",
         color="#f5d000",
-        tooltip="Show favorite sessions status",
+        tooltip="Show all saved user sessions",
     ),
     GuiMobaRailItem(
         role="tools",

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from PyQt6.QtCore import QSize, Qt, QTimer
-from PyQt6.QtGui import QAction, QIcon
+from PyQt6.QtGui import QAction, QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -108,6 +108,25 @@ class _ConfigValueDelegate(QStyledItemDelegate):
         value = (cell.currentText() if isinstance(cell, QComboBox) else cell.text()).strip()
         if value != original:
             self.save_value(name, field, original, value)
+
+
+class _ConnectionNameDelegate(QStyledItemDelegate):
+    def __init__(self, tree: QTreeWidget, save_value: Callable[[str, str, str, str], None]) -> None:
+        super().__init__(tree)
+        self.save_value = save_value
+
+    def setEditorData(self, editor: QWidget | None, index: QModelIndex) -> None:  # noqa: N802
+        field = cast("QLineEdit", editor)
+        field.setText(index.data(Qt.ItemDataRole.UserRole))
+        field.selectAll()
+
+    def setModelData(  # noqa: N802
+        self, editor: QWidget | None, model: QAbstractItemModel | None, index: QModelIndex,
+    ) -> None:
+        name = index.data(Qt.ItemDataRole.UserRole)
+        value = cast("QLineEdit", editor).text().strip()
+        if value != name:
+            self.save_value(name, "name", name, value)
 
 
 class MRemoteNgWorkspace:
@@ -245,6 +264,13 @@ class MRemoteNgWorkspace:
         grid.setItemDelegateForColumn(1, delegate)
         grid.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
 
+        tree = self.profile_list
+        tree.setItemDelegateForColumn(0, _ConnectionNameDelegate(tree, save_value))
+        tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        rename = QShortcut(QKeySequence(Qt.Key.Key_F2), tree)
+        rename.setContext(Qt.ShortcutContext.WidgetShortcut)
+        rename.activated.connect(lambda: tree.editItem(tree.currentItem(), 0))
+
         grid.itemClicked.connect(lambda row, column: grid.editItem(row, 1) if column == 1 else None)
         grid.setMaximumHeight(145)
         layout.addWidget(grid)
@@ -259,6 +285,7 @@ class MRemoteNgWorkspace:
             if refreshing:
                 return
             values = current.data(0, MREMOTENG_CONFIG_ROLE) if current is not None else None
+            rename.setEnabled(bool(values) and not preview)
             active = grid.indexWidget(grid.currentIndex())
             if active is not None:
                 name, field, original = active.property("configProperty")

@@ -204,8 +204,10 @@ reviews, and the downloaded release assets. See the
   directly on the transcript surface, expose Copy/Paste/Select/Clear/Restart/
   Stop through a terminal context menu and close through a non-blocking
   terminate-then-kill lifecycle. Moba rail icon and rotated-label hit areas now
-  dispatch the same action; Sessions/Favorites switch the visible profile tree
-  without destroying a connected SFTP dock, and SFTP returns to that dock. The
+  dispatch the same action. The gold star opens the full User sessions tree,
+  as observed in MobaXterm Home 26.4. ROW also offers a Favorites filter in
+  the sidebar context menu. Refreshing that view reapplies the saved tags.
+  Switching between the tree and SFTP preserves the connected SFTP dock. The
   connected SFTP toolbar now routes path/parent navigation, download/upload
   transfer queues, remote folder creation, reconnect, Tools and terminal focus
   to live GUI workflows. Uploads and downloads preserve selected filenames

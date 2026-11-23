@@ -22,6 +22,7 @@ from .gui_designs import (
     gui_design_moba_rail_items,
     gui_design_sidebar_copy,
 )
+from .gui_profile_tree import moba_favorite_profile_names
 from .gui_values import _required_gui_value
 from .gui_workspace import MobaRailLabel
 
@@ -168,7 +169,8 @@ class WindowSidebar:
         slots = {
             "collapse": self.toggle_moba_session_panel,
             "sessions": self.show_moba_sessions_rail,
-            "favorites": self.show_moba_favorites_rail,
+            # The gold star keeps its geometry key in saved render manifests.
+            "favorites": lambda: self.show_moba_sessions_rail(active_rail="favorites"),
             "tools": self.show_moba_tools_status,
             "macros": self.show_moba_macros_status,
             "sftp": self.show_moba_sftp_rail,
@@ -226,7 +228,12 @@ class WindowSidebar:
         menu = QMenu(cast(QWidget, self))
         menu.setObjectName("mobaRailContextMenu")
         menu.addAction("Sessions", self.show_moba_sessions_rail)
-        menu.addAction("Favorites", self.show_moba_favorites_rail)
+        favorites = _required_gui_value(menu.addAction("Favorites"), "Favorites filter action")
+        favorites.setCheckable(True)
+        favorites.setChecked(self.profile_list.property("mobaProfileTreeFilterMode") == "favorites")
+        favorites.triggered.connect(
+            lambda checked: self.show_moba_favorites_rail() if checked else self.show_moba_sessions_rail()
+        )
         menu.addSeparator()
         menu.addAction("Tools", self.show_moba_tools_status)
         menu.addAction("Macros", self.show_moba_macros_status)
@@ -313,7 +320,8 @@ class WindowSidebar:
             dock.deleteLater()
         self.moba_left_stack.setCurrentWidget(self.profile_list)
         self.clear_moba_quick_connect_connected_idle()
-        self.set_moba_rail_active("sessions")
+        mode = self.profile_list.property("mobaProfileTreeFilterMode")
+        self.set_moba_rail_active("favorites" if mode == "favorites" else "sessions")
         cast(QWidget, self).setWindowTitle("Remote Ops Workspace")
         self.apply_moba_titlebar_chrome("Remote Ops Workspace")
 
@@ -344,22 +352,18 @@ class WindowSidebar:
         self.set_root_sidebar_width(self.preferred_sidebar_width(width))
         self.statusBar().showMessage("Sessions panel restored")
 
-    def show_moba_sessions_rail(self, *_args) -> None:
-        self.show_moba_profile_tree(preserve_connected_dock=True)
+    def show_moba_sessions_rail(self, *_args, active_rail: str = "sessions") -> None:
         self.filter_profile_tree_names(None)
+        self.show_moba_profile_tree(preserve_connected_dock=True)
+        self.set_moba_rail_active(active_rail)
         self.profile_list.expandAll()
         self.profile_list.setFocus()
         self.statusBar().showMessage("Sessions tree ready")
 
     def show_moba_favorites_rail(self, *_args) -> None:
-        self.show_moba_profile_tree(preserve_connected_dock=True)
-        self.set_moba_rail_active("favorites")
-        favorites = [
-            profile.name
-            for profile in self.store.load()
-            if any(tag.lower() in {"favorite", "favorites", "starred"} for tag in profile.tags)
-        ]
+        favorites = moba_favorite_profile_names(self.store.load())
         self.filter_profile_tree_names(set(favorites))
+        self.show_moba_profile_tree(preserve_connected_dock=True)
         if favorites:
             self.select_profile(favorites[0])
             message = f"Favorites: {len(favorites)} tagged session(s)"

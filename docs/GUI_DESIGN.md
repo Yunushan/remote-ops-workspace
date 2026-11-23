@@ -505,6 +505,8 @@ same source.
 The mRemoteNG-style Config dock beneath the connection tree shows the selected
 profile's effective protocol, host, port, username and group. Edit opens the
 saved profile. Fields supplied by group defaults stay inherited after an edit.
+With a saved connection selected in the tree, press F2 to edit its name.
+Enter saves it and Escape cancels. Double-click opens the connection.
 Filtering out the selection clears the inspector. The Start Page's Dock View
 button controls the same dock across preset switches.
 

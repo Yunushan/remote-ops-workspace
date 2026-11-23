@@ -91,6 +91,65 @@ def test_tree_config_edit_preserves_inheritance_and_dock_choice(workspace):
     assert select("Alpha")["Hostname"] == "alpha.example.invalid"
 
 
+def test_connections_tree_f2_renames_raw_profile_and_updates_config(workspace, monkeypatch):
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+    from PyQt6.QtWidgets import QLineEdit, QTreeWidget
+
+    app, window = workspace
+    tree = window.profile_list
+    grid = window.mremoteng_left_property_grid_panel.findChild(QTreeWidget, "mRemoteNgConnectionProperties")
+    connections = []
+    monkeypatch.setattr(window, "connect_selected", lambda _dry_run: connections.append(window.selected_profile_name()))
+    window.select_profile("Beta")
+    tree.setFocus()
+    app.processEvents()
+    original = window.store.get("Beta", resolve=False)
+
+    def edit(value, key=Qt.Key.Key_Return):
+        QTest.keyClick(tree, Qt.Key.Key_F2)
+        cell = tree.indexWidget(tree.currentIndex())
+        assert isinstance(cell, QLineEdit) and cell.selectedText() == "Beta"
+        if value is not None:
+            QTest.keyClicks(cell, value)
+        QTest.keyClick(cell, key)
+        app.processEvents()
+        app.processEvents()
+
+    edit("Cancelled", Qt.Key.Key_Escape)
+    assert window.store.get("Beta", resolve=False) == original
+    assert tree.currentItem().text(0) == grid.topLevelItem(0).text(1) == "Beta"
+    edit(None)
+    assert tree.currentItem().text(0) == "Beta"
+    edit("Alpha")
+    assert "already exists" in window.statusBar().currentMessage()
+    assert tree.currentItem().text(0) == "Beta"
+    window.statusBar().clearMessage()
+    edit(" ")
+    assert "Cannot save name" in window.statusBar().currentMessage()
+    assert window.store.get("Beta", resolve=False) == original
+    edit("Desk Renamed")
+    assert tree.currentItem().text(0) == grid.topLevelItem(0).text(1) == "Desk Renamed"
+    assert window.selected_profile_name() == "Desk Renamed"
+    assert window.store.get("Desk Renamed", resolve=False) == replace(original, name="Desk Renamed")
+    assert window.store.get("Desk Renamed").username == "inherited"
+    assert [p.name for p in window.store.load()] == ["Alpha", "Desk Renamed"]
+    assert connections == []
+    position = tree.visualItemRect(tree.currentItem()).center()
+    QTest.mouseClick(tree.viewport(), Qt.MouseButton.LeftButton, pos=position)
+    QTest.mouseDClick(tree.viewport(), Qt.MouseButton.LeftButton, pos=position)
+    app.processEvents()
+    assert connections == ["Desk Renamed"] and tree.indexWidget(tree.currentIndex()) is None
+
+    tree.setCurrentItem(tree.currentItem().parent())
+    QTest.keyClick(tree, Qt.Key.Key_F2)
+    assert tree.indexWidget(tree.currentIndex()) is None
+    window.set_design_preset("native")
+    window.select_profile("Desk Renamed")
+    QTest.keyClick(tree, Qt.Key.Key_F2)
+    assert tree.indexWidget(tree.currentIndex()) is None
+
+
 @pytest.fixture
 def config_cells(workspace):
     from PyQt6.QtCore import Qt

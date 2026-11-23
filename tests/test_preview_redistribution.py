@@ -166,16 +166,17 @@ def test_production_notices_cover_protected_linux_and_require_exact_bytes(
     ("stale", "does not contain"),
     ("modified", "contains different bytes"),
     ("misplaced", "beside Qt-Relinking"),
+    ("wrong-directory", "under docs/licenses"),
 ])
 def test_packaged_qt_source_records_must_match_relink_guide(tmp_path, problem, message):
     module = checker()
-    package = tmp_path / "portable.zip"
+    package = tmp_path / "remote-ops-workspace-v1.0.28-windows-x64-native.zip"
     material_dir = ROOT / "redistribution-evidence"
     sources = module.pinned_gui_source_records()
     names = ["Qt-Relinking.md", *sources.values()]
     with zipfile.ZipFile(package, "w") as archive:
         for name in names:
-            member = f"docs/licenses/{name}"
+            member = f"elsewhere/{name}" if problem == "wrong-directory" else f"docs/licenses/{name}"
             data = (material_dir / name).read_bytes()
             if name == sources["qt_source"]:
                 if problem == "missing":

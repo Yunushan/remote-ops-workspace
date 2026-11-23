@@ -94,12 +94,16 @@ def check_packaged_legal_material(package: Path, expected: dict[str, str]) -> li
         if len(embedded.data) > MAX_LICENSE_BYTES or hashlib.sha256(embedded.data).hexdigest() != digest:
             raise ValueError(f"{package.name} contains different bytes for {filename}")
         verified.append(embedded)
-    guide_dirs = {
-        PurePosixPath(member.path).parent for member in verified
-        if PurePosixPath(member.path).name == "Qt-Relinking.md" or member.path.endswith("-source.json")
+    qt_dirs = {
+        path.parent for member in verified
+        if (path := PurePosixPath(member.path)).name != "THIRD_PARTY_NOTICES.md"
     }
-    if len(guide_dirs) > 1:
+    if len(qt_dirs) > 1:
         raise ValueError(f"{package.name} must install Qt source records beside Qt-Relinking.md")
+    if GUI_TARGET.search(package.name):
+        location = "docs/licenses" if "-windows-" in package.name else "*.app/Contents/Resources/licenses"
+        if any(not directory.match(location) for directory in qt_dirs):
+            raise ValueError(f"{package.name} must install Qt redistribution material under {location}")
     return verified
 
 

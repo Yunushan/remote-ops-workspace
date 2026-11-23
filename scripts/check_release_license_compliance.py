@@ -51,6 +51,7 @@ from release_candidate_inventory import (  # noqa: E402
     validate_managed_release_qualification,
     validate_runtime_report,
 )
+from stage_linux_runtime_licenses import SYSTEM_LICENSE_PREFIX  # noqa: E402
 
 POLICY_PATH = ROOT / "configs" / "release_compliance_policy.json"
 TOOLCHAIN_PATH = ROOT / "configs" / "release_toolchain.json"
@@ -992,17 +993,21 @@ def check_packaged_notice_scans(
                 continue
             observed = set()
             component_licenses: dict[str, set[tuple[str, str, int]]] = {}
+            component_versions: set[tuple[str, str]] = set()
             for item in package.files:
                 key = (item.path, hashlib.sha256(item.data).hexdigest(), len(item.data))
                 observed.add(key)
                 if isinstance(item, ComponentLicense):
-                    component_licenses.setdefault(normalize_component_name(item.component), set()).add(key)
+                    component = normalize_component_name(item.component)
+                    component_licenses.setdefault(component, set()).add(key)
+                    if item.version is not None:
+                        component_versions.add((component, item.version))
             required_paths = {path for path, _, _ in observed}
             declared = [license_record_key(item) for item in scans if item["path"] in required_paths]
             if len(declared) != len(observed) or set(declared) != observed:
                 errors.append(f"{package.name} signed license scan differs from the required packaged notices")
             bundled = {
-                normalize_component_name(component["name"]): component["license_files"]
+                normalize_component_name(component["name"]): component
                 for component in components if component["scope"] == "bundled"
             }
             for name, required in component_licenses.items():
@@ -1012,12 +1017,16 @@ def check_packaged_notice_scans(
                         record["sha256"],
                         record["size_bytes"],
                     )
-                    for record in bundled.get(name, [])
+                    for record in bundled.get(name, {}).get("license_files", [])
                 }
                 if not required <= declared_for_component:
                     errors.append(
                         f"{package.name} signed bundled component {name} does not bind its packaged licenses"
                     )
+            for name, version in sorted(component_versions):
+                component = bundled.get(name, {})
+                if component.get("version") != version or component.get("origin") != "native-component":
+                    errors.append(f"{package.name} signed bundled component {name} must match packaged version {version!r}")
     except (OSError, ValueError, tarfile.TarError, zipfile.BadZipFile) as exc:
         errors.append(f"exact native package notices: {exc}")
     return errors
@@ -1621,7 +1630,10 @@ def check_inventory(
             errors.append(f"{label} name must be non-empty and unique")
             continue
         indexed[normalized_name] = item
-        version_pattern = DEBIAN_VERSION_RE if normalized_name in debian_components else VERSION_RE
+        debian_component = normalized_name in debian_components or (
+            normalized_name.startswith(SYSTEM_LICENSE_PREFIX) and item.get("origin") == "native-component"
+        )
+        version_pattern = DEBIAN_VERSION_RE if debian_component else VERSION_RE
         if not isinstance(version, str) or version_pattern.fullmatch(version) is None:
             errors.append(f"{label} version must be exact")
         if item.get("scope") not in {"bundled", "build-only"}:

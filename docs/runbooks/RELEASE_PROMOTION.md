@@ -143,6 +143,13 @@ retains each distro copyright file and records its package name, version, and
 the Debian artifact scan. Keep their recorded paths. The signed audit scopes
 these files to the Debian packages that actually ship them.
 
+Linux packages built on Debian-family hosts also carry notices for distro
+libraries bundled by PyInstaller. The directories under
+`/usr/share/doc/remote-ops-workspace/licenses/system-<package>/` carry the
+distro copyright file and the exact version in `package-version.txt`.
+Use the extracted `system-<package>` component and version for those rows.
+The signed audit checks both the notice bytes and the packaged version.
+
 Windows packages ship their frozen runtime license files under
 `docs/licenses/runtime/`. Native smoke checks compare the installed bytes
 with the build staging files after portable extraction, EXE installation and

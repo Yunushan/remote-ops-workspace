@@ -16,7 +16,7 @@ def test_dpkg_owner_checks_exact_path_and_usrmerge_alias(monkeypatch):
         return subprocess.CompletedProcess(argv, 0, "libfoo:arm64: /lib/aarch64-linux-gnu/libfoo.so.1\n", "")
 
     monkeypatch.setattr(notices.subprocess, "run", lookup)
-    assert notices.dpkg_owner(Path("/usr/lib/aarch64-linux-gnu/libfoo.so.1"), "dpkg-query") == "libfoo"
+    assert notices.dpkg_owner(Path("/usr/lib/aarch64-linux-gnu/libfoo.so.1"), "dpkg-query") == "libfoo:arm64"
     assert calls == ["/usr/lib/aarch64-linux-gnu/libfoo.so.1", "/lib/aarch64-linux-gnu/libfoo.so.1"]
 
 
@@ -36,17 +36,23 @@ def test_only_bundled_debian_system_libraries_contribute_notices(tmp_path, monke
 
     def owner(path, _query):
         seen.append(path)
-        return "libfoo"
+        return "libfoo:arm64"
+
+    def version(argv, **_kwargs):
+        assert argv[-1] == "libfoo:arm64"
+        return subprocess.CompletedProcess(argv, 0, "1:3.1.4-2+deb13u1\n", "")
 
     monkeypatch.setattr(notices, "SYSTEM_LIBRARY_DIRS", (library,))
     monkeypatch.setattr(notices, "SYSTEM_DOC_ROOT", documentation)
     monkeypatch.setattr(notices.shutil, "which", lambda _tool: "dpkg-query")
     monkeypatch.setattr(notices, "dpkg_owner", owner)
+    monkeypatch.setattr(notices.subprocess, "run", version)
     out = tmp_path / "licenses"
     notices.stage_system_runtime_notices([a, b, bundled, a], out)
     assert set(seen) == {a, b} and len(seen) == 2
     assert [p.relative_to(out).as_posix() for p in out.rglob("copyright")] == ["system-libfoo/copyright"]
     assert (out / "system-libfoo/copyright").read_bytes() == copyright_file.read_bytes()
+    assert (out / "system-libfoo/package-version.txt").read_bytes() == b"1:3.1.4-2+deb13u1\n"
     assert notices.is_runtime_license_member(notices.LICENSE_ROOT / "system-libfoo/copyright")
     assert not notices.is_runtime_license_member(notices.LICENSE_ROOT / "system-libfoo/payload")
     assert not notices.is_runtime_license_member(notices.LICENSE_ROOT / "system-libfoo/nested/copyright")

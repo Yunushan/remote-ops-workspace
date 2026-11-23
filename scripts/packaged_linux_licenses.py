@@ -18,8 +18,15 @@ from check_preview_redistribution import (
 )
 from check_release_license_compliance import path_is_reparse
 from collect_unsigned_runtime import DEFAULT_LIMITS, Observations, cpio_members
+from debian_server_notices import VERSION_RE as DEBIAN_VERSION_RE
 from debian_server_notices import notice_path, observe_debian_notices
-from stage_linux_runtime_licenses import LICENSE_COMPONENTS, LICENSE_ROOT, is_runtime_license_member
+from stage_linux_runtime_licenses import (
+    LICENSE_COMPONENTS,
+    LICENSE_ROOT,
+    SYSTEM_LICENSE_PREFIX,
+    SYSTEM_VERSION_FILE,
+    is_runtime_license_member,
+)
 
 APPLICATION_LICENSE_PATH = LICENSE_ROOT.parent / "LICENSE"
 REQUIRED_LICENSE_PATHS = {
@@ -140,10 +147,20 @@ def read_frozen_licenses(
             f"{archive.name} is missing Linux runtime licenses "
             f"(components {sorted(missing_components)}, files {sorted(map(str, missing_paths))})"
         )
-    return [
+    versions = {}
+    for component in sorted(components):
+        if not component.startswith(SYSTEM_LICENSE_PREFIX):
+            continue
+        component_root = LICENSE_ROOT / component
+        raw = records.pop(component_root / SYSTEM_VERSION_FILE, b"")
+        version = raw.decode("ascii", errors="replace").removesuffix("\n")
+        if DEBIAN_VERSION_RE.fullmatch(version) is None or component_root / "copyright" not in records:
+            raise ValueError(f"{archive.name} is missing a valid bundled Debian notice and version for {component}")
+        versions[component] = version
+    licenses = [
         ComponentLicense(APPLICATION_LICENSE_PATH.as_posix(), application_license, "remote-ops-workspace"),
-        *(
-            ComponentLicense(path.as_posix(), data, path.relative_to(LICENSE_ROOT).parts[0])
-            for path, data in sorted(records.items())
-        ),
     ]
+    for path, data in sorted(records.items()):
+        component = path.relative_to(LICENSE_ROOT).parts[0]
+        licenses.append(ComponentLicense(path.as_posix(), data, component, versions.get(component)))
+    return licenses

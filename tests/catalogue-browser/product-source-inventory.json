@@ -283,8 +283,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_server_lifecycle.py",
-      "sha256": "3730b8d95e772d4daeee183224c98f6a21c67aa87f42323a4ca56e553a873f1f",
-      "size": 10069
+      "sha256": "fdac268a573fff5861a2dc626b77a1e6b59ad6579909cf9f148b7d451f0c2891",
+      "size": 10248
     },
     {
       "path": "src/remote_ops_workspace/gui_session_tabs.py",

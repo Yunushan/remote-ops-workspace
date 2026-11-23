@@ -298,6 +298,8 @@ def test_terminal_start_restart_and_nonblocking_stop_edges(
 
 @pytest.fixture
 def macro_workspace(gui_window, monkeypatch):
+    from PyQt6.QtCore import QProcess
+
     from remote_ops_workspace.moba_macros import MobaMacroStore
 
     _app, window = gui_window
@@ -313,11 +315,10 @@ def macro_workspace(gui_window, monkeypatch):
         return {action.text(): action for action in menu.actions() if not action.isSeparator()}
 
     yield window, pane, active, popup, MobaMacroStore()
-    # A failed assertion can leave the running fake in a workspace tab.
-    # Remove it before gui_window closes, or the native quit dialog waits for input.
-    index = window.tabs.indexOf(pane)
-    if index >= 0:
-        window.tabs.removeTab(index)
+    # Leave tab selection intact: removing the active pane can select Moba's
+    # new-session tab, which queues a real shell while the fixture is closing.
+    pane.prepare_for_close()
+    pane.process.process_state = QProcess.ProcessState.NotRunning
 
 
 def test_moba_quick_macro_keyboard_filter_and_guarded_replay(macro_workspace, monkeypatch):
@@ -761,8 +762,7 @@ for line in sys.stdin.buffer:
         QTest.keyClicks(app.focusWidget(), "42")
         QTest.keyClick(app.focusWidget(), Qt.Key.Key_Return)
         QTest.mouseClick(pane.macro_stop_button, Qt.MouseButton.LeftButton)
-        wait_for(received.exists)
-        assert received.read_bytes() == b"typed\t42\n"
+        wait_for(lambda: received.exists() and received.read_bytes() == b"typed\t42\n")
         saved = pane.macro_last_recording
         assert saved is not None and saved.input_text == "typed\t42\n"
         QTest.mouseClick(pane.macro_record_button, Qt.MouseButton.LeftButton)

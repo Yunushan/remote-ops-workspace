@@ -1191,13 +1191,14 @@ def test_main_window_close_confirms_detached_running_panes(gui_window, monkeypat
 
     process = _ProcessHandle()
     pane = SimpleNamespace(
-        is_running=lambda: True,
+        is_running=lambda: not process.killed,
         prepare_for_close=lambda: None,
         process=process,
     )
     detached = object()
     window._closing_tab_widgets = [detached]
-    monkeypatch.setattr(window, "running_terminal_panes", lambda: [])
+    attached = []
+    monkeypatch.setattr(window, "all_terminal_panes", lambda: list(attached))
     monkeypatch.setattr(window, "terminal_panes_in", lambda widget: [pane] if widget is detached else [])
 
     denied = SimpleNamespace(
@@ -1219,12 +1220,37 @@ def test_main_window_close_confirms_detached_running_panes(gui_window, monkeypat
     )
     original_dock = window.moba_connected_dock
     window.moba_connected_dock = None
-    monkeypatch.setattr(window, "confirm_stop_processes", lambda *_args: True)
+    late_process = _ProcessHandle()
+
+    def accept_while_a_new_pane_starts(_title, count):
+        assert count == 1
+        attached.append(SimpleNamespace(
+            is_running=lambda: not late_process.killed,
+            prepare_for_close=lambda: None,
+            process=late_process,
+        ))
+        return True
+
+    monkeypatch.setattr(window, "confirm_stop_processes", accept_while_a_new_pane_starts)
     window.closeEvent(accepted)
     window.moba_connected_dock = original_dock
     assert accepted.accepted is True
     assert process.killed is True
     assert process.closed is True
+    assert late_process.killed and late_process.closed
+
+
+def test_close_window_cancels_terminal_queued_to_start(gui_window, monkeypatch):
+    app, window = gui_window
+    window.open_terminal_tab(TerminalPanePlan("deferred", ["unused"], "test"))
+    pane = window.active_terminal_pane()
+    assert pane.property("terminalStartDeferredUntilTabReady") and not pane.is_running()
+    starts = []
+    monkeypatch.setattr(pane, "start", lambda: starts.append(True))
+
+    assert window.close()
+    app.processEvents()
+    assert pane.property("terminalClosing") and not starts
 
 
 def test_terminal_fallback_io_clipboard_and_empty_pipeline_edges(
@@ -2324,11 +2350,12 @@ def test_stop_and_window_close_process_optional_close_edges(
             kill=lambda: killed.append("kill"),
             close="not-callable",
         ),
+        is_running=lambda: True,
         prepare_for_close=lambda: prepared.append("prepare"),
     )
-    original_running = window.running_terminal_panes
+    original_panes = window.all_terminal_panes
     original_confirm = window.confirm_stop_processes
-    monkeypatch.setattr(window, "running_terminal_panes", lambda: [pane])
+    monkeypatch.setattr(window, "all_terminal_panes", lambda: [pane])
     monkeypatch.setattr(window, "confirm_stop_processes", lambda *_args: True)
 
     class _Event:
@@ -2346,7 +2373,7 @@ def test_stop_and_window_close_process_optional_close_edges(
     assert event.accepted is True
     assert prepared == ["prepare"]
     assert killed == ["kill"]
-    monkeypatch.setattr(window, "running_terminal_panes", original_running)
+    monkeypatch.setattr(window, "all_terminal_panes", original_panes)
     monkeypatch.setattr(window, "confirm_stop_processes", original_confirm)
 
 

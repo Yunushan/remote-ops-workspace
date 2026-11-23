@@ -1052,19 +1052,28 @@ def create_main_window(
             return answer == QMessageBox.StandardButton.Yes
 
         def closeEvent(self, event) -> None:
-            running = self.running_terminal_panes()
-            for widget in self._closing_tab_widgets:
-                running.extend(
-                    pane for pane in self.terminal_panes_in(widget) if pane.is_running()
-                )
-            if running and not self.confirm_stop_processes("Quit Remote Ops Workspace", len(running)):
+            def owned_panes() -> list[TerminalPane]:
+                panes = self.all_terminal_panes()
+                for widget in self._closing_tab_widgets:
+                    panes.extend(self.terminal_panes_in(widget))
+                return panes
+
+            running = sum(pane.is_running() for pane in owned_panes())
+            if running and not self.confirm_stop_processes("Quit Remote Ops Workspace", running):
                 event.ignore()
                 return
+            # The confirmation runs a nested event loop. Tabs may have started
+            # or finished closing while it was open. Cancel pending starts on
+            # every remaining pane before stopping the running processes.
+            panes = owned_panes()
+            for pane in panes:
+                pane.prepare_for_close()
             if self.moba_connected_dock is not None:
                 if hasattr(self.moba_connected_dock, "shutdown_runtime"):
                     self.moba_connected_dock.shutdown_runtime()
-            for pane in running:
-                pane.prepare_for_close()
+            for pane in panes:
+                if not pane.is_running():
+                    continue
                 pane.process.kill()
                 close_process = getattr(pane.process, "close", None)
                 if callable(close_process):

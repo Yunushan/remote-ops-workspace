@@ -1001,17 +1001,14 @@ def x_server_packaged_runtime_roots(roots: Iterable[Path] | None = None) -> tupl
     if env_value:
         raw_roots.extend(Path(part) for part in env_value.split(os.pathsep) if part)
     executable_dir = Path(sys.executable).resolve().parent
-    if sys.platform == "linux" and getattr(sys, "frozen", False):
+    frozen = getattr(sys, "frozen", False)
+    if sys.platform == "linux" and frozen:
         installed_root = executable_dir.parent / "lib" / "remote-ops-workspace" / "xserver"
         if (installed_root / XSERVER_RUNTIME_MANIFEST_NAME).is_file():
             raw_roots.append(installed_root)
-    raw_roots.extend(
-        [
-            executable_dir / "xserver",
-            executable_dir / "runtimes" / "xserver",
-            Path(__file__).resolve().parents[2] / "vendor" / "xserver",
-        ]
-    )
+    raw_roots.extend((executable_dir / "xserver", executable_dir / "runtimes" / "xserver"))
+    if not frozen:
+        raw_roots.append(Path(__file__).resolve().parents[2] / "vendor" / "xserver")
     seen: set[str] = set()
     resolved: list[Path] = []
     for root in raw_roots:

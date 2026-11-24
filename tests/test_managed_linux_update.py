@@ -392,6 +392,21 @@ def test_installed_files_must_match_the_signers_runtime_inventory(tmp_path, monk
             updater.verify_installed_runtime(digests, tmp_path)
 
 
+def test_verify_installed_xvfb_checks_only_package_owned_files(tmp_path, monkeypatch):
+    runtime = {updater.LAUNCHER: "d" * 64}
+    executable = tmp_path / updater.XVFB_EXECUTABLE
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"independent companion")
+    monkeypatch.setattr(updater, "trusted_path", lambda path, **_kwargs: path)
+    updater.verify_installed_runtime(runtime, tmp_path)
+
+    runtime[updater.XVFB_EXECUTABLE] = hashlib.sha256(b"candidate Xvfb").hexdigest()
+    with pytest.raises(updater.UpdateError, match="installed-runtime-payload-refused"):
+        updater.verify_installed_runtime(runtime, tmp_path)
+    executable.write_bytes(b"candidate Xvfb")
+    updater.verify_installed_runtime(runtime, tmp_path)
+
+
 def test_rollback_refuses_changed_candidate_runtime_before_changing_state(tmp_path, monkeypatch):
     runtime = {updater.LAUNCHER: "d" * 64}
     candidate = tmp_path / updater.CANDIDATE_PACKAGE

@@ -38,6 +38,7 @@ def validate_receipt(
         or receipt.get("workspace_unchanged") is not True
         or type(receipt.get("candidate_has_server_bundle")) is not bool
         or type(receipt.get("candidate_has_mobapt_cache", False)) is not bool
+        or type(receipt.get("candidate_has_xvfb", False)) is not bool
     ):
         raise ValueError(error)
     expected_steps = {
@@ -54,6 +55,9 @@ def validate_receipt(
     if receipt.get("candidate_has_mobapt_cache", False):
         expected_steps["changed-mobapt-cache-rollback"] = ("refused", 1)
         refusals["changed-mobapt-cache-rollback"] = "installed-runtime-payload-refused"
+    if receipt.get("candidate_has_xvfb", False):
+        expected_steps["changed-xvfb-rollback"] = ("refused", 1)
+        refusals["changed-xvfb-rollback"] = "installed-runtime-payload-refused"
     automatic_actions = {}
     if receipt["schema"] != PREVIOUS_SCHEMA:
         expected_steps.update({

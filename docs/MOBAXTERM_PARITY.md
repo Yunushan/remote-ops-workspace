@@ -309,6 +309,10 @@ reviews, and the downloaded release assets. See the
    downloads the frozen archive and compares the packaged executable,
    manifest, copyright notice and version with it. The sealed inventory
    records the input archive SHA-256 alongside the candidate DEB digest.
+   The managed Debian drill also checks the installed Xvfb executable and
+   manifest. It alters the executable in a disposable guest, verifies that
+   rollback is refused, and confirms that rollback restores the previous
+   Xvfb files after the original bytes are put back.
    The tagged X11 evidence workflow uses the installed runtime and requires
    proof that it ran as an unprivileged user.
    Full parity still needs

@@ -36,6 +36,7 @@ from remote_ops_workspace.update_channel import (  # noqa: E402
     MOBA_PROFESSIONAL_UPDATE_MANIFEST_SCHEMA,
 )
 from scripts.managed_debian_qualification import DEBIAN_TARGETS, SCHEMA  # noqa: E402
+from scripts.managed_linux_update import XVFB_EXECUTABLE, XVFB_MEMBERS  # noqa: E402
 from scripts.release_evidence_file import stream_sha256  # noqa: E402
 
 PACKAGE = "remote-ops-workspace"
@@ -304,6 +305,12 @@ def qualify(args, root: Path, architecture: str, machine: str) -> dict:
     checked("/usr/bin/dpkg", "--install", args.previous_deb)
     launcher = Path("/usr/bin/row")
     previous_launcher = sha256(launcher)
+    xvfb_paths = [Path("/") / member for member in XVFB_MEMBERS]
+
+    def xvfb_payload() -> dict[Path, str]:
+        return {path: sha256(path) for path in xvfb_paths if path.is_file()}
+
+    previous_xvfb = xvfb_payload()
     workspace = root / "workspace"
     workspace.mkdir(mode=0o700)
     sentinel = workspace / "retained-workspace.txt"
@@ -390,6 +397,7 @@ def qualify(args, root: Path, architecture: str, machine: str) -> dict:
         previous_installation_unchanged=True, journal_created=False,
     )
     bundled_servers = False
+    bundled_xvfb = False
     for name, expected_candidate in packages.items():
         policy, stage = stages[name]
         transaction = root / f"{name}-transaction"
@@ -422,6 +430,9 @@ def qualify(args, root: Path, architecture: str, machine: str) -> dict:
                 if cache_archive is None:
                     raise RuntimeError("The installed MobApt cache contains no Debian archive")
                 changed_files.append((cache_archive, "mobapt-cache", "installed-runtime-payload-refused"))
+            bundled_xvfb = f"/{XVFB_EXECUTABLE}" in checked("/usr/bin/dpkg-query", "--listfiles", PACKAGE).splitlines()
+            if bundled_xvfb:
+                changed_files.append((Path("/") / XVFB_EXECUTABLE, "xvfb", "installed-runtime-payload-refused"))
             # Keep dpkg's installed version unchanged while altering files in
             # the disposable container, then restore each before the real rollback.
             for path, label, refusal in changed_files:
@@ -484,6 +495,8 @@ def qualify(args, root: Path, architecture: str, machine: str) -> dict:
             }
         if checked(launcher, "--version") != f"{PACKAGE} {previous}" or sha256(launcher) != previous_launcher:
             raise RuntimeError("Rollback did not restore the original launcher")
+        if xvfb_payload() != previous_xvfb:
+            raise RuntimeError("Rollback did not restore the previous Xvfb payload")
         if sha256(sentinel) != original:
             raise RuntimeError("The package transition changed the retained workspace data")
 
@@ -492,7 +505,7 @@ def qualify(args, root: Path, architecture: str, machine: str) -> dict:
             "controller_sha256": sha256(MANAGER), "previous_sha256": args.previous_sha256,
             "candidate_sha256": args.candidate_sha256, "download_server_closed_before_apply": True,
             "workspace_unchanged": True, "candidate_has_server_bundle": bundled_servers,
-            "candidate_has_mobapt_cache": bundled_mobapt,
+            "candidate_has_mobapt_cache": bundled_mobapt, "candidate_has_xvfb": bundled_xvfb,
             "production_acceptance": False, "receipts": receipts}
 
 

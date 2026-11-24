@@ -1300,6 +1300,8 @@ def materialize_records(
             if expected_mobapt_review_sha256 is not None:
                 verify_candidate_mobapt(package, receipt, release_tag, expected_mobapt_review_sha256)
             if xvfb_input is not None:
+                if receipt.get("candidate_has_xvfb") is not True:
+                    raise ValueError("managed Debian receipt must qualify the packaged Xvfb runtime")
                 from scripts.stage_debian_xvfb import verify_packaged_xvfb
 
                 verify_packaged_xvfb(package, *xvfb_input, "amd64")
@@ -1478,7 +1480,9 @@ def validate_inventory(
             raise ValueError("candidate inventory must bind the reviewed MobApt cache and its rollback receipt")
     if "debian_xvfb_sha256" in value:
         digest = value["debian_xvfb_sha256"]
-        if schema < FEDORA_RELEASE_IMAGE_SCHEMA_VERSION or not isinstance(digest, str) or HASH.fullmatch(digest) is None:
+        if (schema < FEDORA_RELEASE_IMAGE_SCHEMA_VERSION or not isinstance(digest, str)
+                or HASH.fullmatch(digest) is None
+                or value["managed_debian_update"]["receipt"].get("candidate_has_xvfb") is not True):
             raise ValueError("candidate inventory must bind the frozen Debian Xvfb archive SHA-256")
     if schema >= RPM_SCHEMA_VERSION or "rpm_recovery" in value or "rpm_smoke" in value:
         artifact_id, rpm_sha = validate_rpm_report(

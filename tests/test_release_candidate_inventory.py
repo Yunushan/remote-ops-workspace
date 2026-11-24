@@ -486,11 +486,15 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     if bundled:
         steps["changed-server-manifest-rollback"] = {"phase": "refused", "exit_code": 1,
                                                     "refusal": "installed-runtime-payload-refused"}
+    if condition == "complete-bundled":
+        steps["changed-xvfb-rollback"] = {"phase": "refused", "exit_code": 1,
+                                          "refusal": "installed-runtime-payload-refused"}
     depends = "libc6 (>= 2.38), libvncserver1" if bundled else "libc6 (>= 2.38), zlib1g"
     managed_report = candidate.qualification_receipt_bytes({
         "schema": managed_debian_qualification.UPGRADE_PLAN_SCHEMA if condition == "old-managed-schema" else
                   managed_debian_qualification.SCHEMA, "status": "passed", "target": "linux-x86_64",
         "production_acceptance": False, "candidate_has_server_bundle": bundled,
+        "candidate_has_xvfb": condition == "complete-bundled",
         "previous_sha256": previous, "candidate_sha256": deb_sha,
         "controller_sha256": (
             "c" * 64 if condition == "wrong-managed-controller" else

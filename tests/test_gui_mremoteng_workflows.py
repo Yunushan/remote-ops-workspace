@@ -35,6 +35,64 @@ def workspace(monkeypatch, tmp_path):
     app.processEvents()
 
 
+def test_duplicate_saved_connection_from_menu_and_tree_shortcut(workspace):
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+
+    app, window = workspace
+    tree = window.profile_list
+    window.select_profile("Alpha")
+    original = window.store.get("Alpha", resolve=False)
+    menu = window.build_profile_context_menu(tree.currentItem())
+    action = next(action for action in menu.actions() if action.text() == "Duplicate connection")
+    assert action.isEnabled()
+    action.trigger()
+    assert window.selected_profile_name() == "Alpha (copy)"
+    clone = window.store.get("Alpha (copy)", resolve=False)
+    assert clone.to_dict() == replace(original, name="Alpha (copy)").to_dict()
+    assert window.store.get("Alpha (copy)").username == "inherited"
+
+    window.select_profile("Alpha")
+    window.activateWindow()
+    tree.setFocus()
+    app.processEvents()
+    QTest.keyClick(tree, Qt.Key.Key_D, Qt.KeyboardModifier.ControlModifier)
+    assert window.selected_profile_name() == "Alpha (copy 2)"
+    window.store.set_group_defaults("Ops", {"username": "new-default"})
+    assert window.store.get("Alpha (copy 2)").username == "new-default"
+    assert window.store.get("Alpha", resolve=False) == original
+
+    tree.setCurrentItem(tree.currentItem().parent())
+    folder_menu = window.build_profile_context_menu(tree.currentItem())
+    assert not next(action for action in folder_menu.actions() if action.text() == "Duplicate connection").isEnabled()
+    window.set_design_preset("native")
+    window.select_profile("Alpha")
+    assert "Duplicate connection" not in {action.text() for action in window.build_profile_context_menu().actions()}
+    tree.setFocus()
+    QTest.keyClick(tree, Qt.Key.Key_D, Qt.KeyboardModifier.ControlModifier)
+    assert window.selected_profile_name() == "Alpha"
+    assert len(window.store.load()) == 4
+    window.set_design_preset("mremoteng")
+    window.select_profile("Alpha")
+    tree.setFocus()
+    app.processEvents()
+    QTest.keyClick(tree, Qt.Key.Key_D, Qt.KeyboardModifier.ControlModifier)
+    assert window.selected_profile_name() == "Alpha (copy 3)"
+    assert len(window.store.load()) == 5
+
+
+def test_duplicate_connection_handles_profile_removed_by_another_writer(workspace):
+    _, window = workspace
+    window.select_profile("Alpha")
+    menu = window.build_profile_context_menu(window.profile_list.currentItem())
+    action = next(action for action in menu.actions() if action.text() == "Duplicate connection")
+    assert action.isEnabled()
+    window.store.remove("Alpha")
+    action.trigger()
+    assert "Cannot duplicate connection" in window.statusBar().currentMessage()
+    assert [row.name for row in window.store.load()] == ["Beta"]
+
+
 def test_tree_config_edit_preserves_inheritance_and_dock_choice(workspace):
     from PyQt6.QtCore import Qt, QTimer
     from PyQt6.QtTest import QTest

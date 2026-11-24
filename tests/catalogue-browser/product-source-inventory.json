@@ -193,8 +193,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_mremoteng.py",
-      "sha256": "02086ab926f8985c6752d57c19c85a80552d6c4696215458b90376e65a308ff0",
-      "size": 49807
+      "sha256": "7b5108095339c11e7eee897685f7962c43803307df1169e66a24e636b0286fb9",
+      "size": 51264
     },
     {
       "path": "src/remote_ops_workspace/gui_operator_workflows.py",
@@ -243,8 +243,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_profile_actions.py",
-      "sha256": "7acb6dcc68a9ef2b6c14b2478e2a2e2c2a38e2a3e342b369a47a25cea2e558cd",
-      "size": 16545
+      "sha256": "a985ef9ed9677e591e46075e9ea4996452415a781d97323c04d11124002ce283",
+      "size": 16904
     },
     {
       "path": "src/remote_ops_workspace/gui_profile_tree.py",

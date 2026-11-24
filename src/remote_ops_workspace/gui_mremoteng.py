@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import stat
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -145,6 +146,7 @@ class MRemoteNgWorkspace:
         def selected_profile_name(self) -> str | None: ...
         def create_profile(self) -> None: ...
         def edit_selected_profile(self) -> None: ...
+        def current_design_id(self) -> str: ...
         def refresh_profiles(self) -> None: ...
         def select_profile(self, name: str) -> None: ...
         def filter_profile_tree(self, text: str) -> None: ...
@@ -212,6 +214,30 @@ class MRemoteNgWorkspace:
             return name
         return value if field == "name" else name
 
+    def duplicate_mremoteng_connection(self) -> None:
+        name = self.selected_profile_name()
+        if not name or self.current_design_id() != "mremoteng" or self.property("guiPreviewSamples"):
+            return
+        copied_name = f"{name} (copy)"
+
+        def duplicate(profiles: list[Profile], _defaults: dict[str, dict[str, object]]) -> list[Profile]:
+            nonlocal copied_name
+            existing = {profile.name: profile for profile in profiles}
+            number = 2
+            while copied_name in existing:
+                copied_name = f"{name} (copy {number})"
+                number += 1
+            return [*profiles, replace(existing[name], name=copied_name)]
+
+        try:
+            self.store.update_profiles(duplicate, surface="profile-editor", action="add")
+        except (KeyError, OSError, ValueError) as exc:
+            self.statusBar().showMessage(f"Cannot duplicate connection: {exc}", 8000)
+            return
+        self.refresh_profiles()
+        self.select_profile(copied_name)
+        self.statusBar().showMessage(f"Duplicated connection as {copied_name}", 8000)
+
     def build_mremoteng_config_dock(self) -> QFrame:
         panel = QFrame()
         panel.setObjectName("mRemoteNgConfigDock")
@@ -270,6 +296,9 @@ class MRemoteNgWorkspace:
         rename = QShortcut(QKeySequence(Qt.Key.Key_F2), tree)
         rename.setContext(Qt.ShortcutContext.WidgetShortcut)
         rename.activated.connect(lambda: tree.editItem(tree.currentItem(), 0))
+        duplicate = QShortcut(QKeySequence("Ctrl+D"), tree)
+        duplicate.setContext(Qt.ShortcutContext.WidgetShortcut)
+        duplicate.activated.connect(self.duplicate_mremoteng_connection)
 
         grid.itemClicked.connect(lambda row, column: grid.editItem(row, 1) if column == 1 else None)
         grid.setMaximumHeight(145)
@@ -286,6 +315,7 @@ class MRemoteNgWorkspace:
                 return
             values = current.data(0, MREMOTENG_CONFIG_ROLE) if current is not None else None
             rename.setEnabled(bool(values) and not preview)
+            duplicate.setEnabled(bool(values) and not preview)
             active = grid.indexWidget(grid.currentIndex())
             if active is not None:
                 name, field, original = active.property("configProperty")

@@ -614,8 +614,16 @@ def _start_moba_x_server_locked(
     identity_factory: Callable[[Any], dict[str, Any]] | None,
 ) -> XServerLifecycleRecord:
     _prepare_x_server_authority(plan.command, plan.environment, plan.display)
-    factory = popen_hidden if popen_factory is None else popen_factory
-    process = factory(plan.command, env={**os.environ, **plan.environment})
+    env = {**os.environ, **plan.environment}
+    if popen_factory is None:
+        # The daemon outlives the command. Inheriting its pipes keeps callers
+        # waiting for EOF even after the CLI emits its result and exits.
+        process = popen_hidden(
+            plan.command, env=env, stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    else:
+        process = popen_factory(plan.command, env=env)
     try:
         identity = (identity_factory or register_process)(process)
         if process.poll() is not None:

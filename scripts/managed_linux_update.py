@@ -42,6 +42,8 @@ PREVIOUS_PACKAGE = "rollback.deb"
 CANDIDATE_PACKAGE = "candidate.deb"
 LAUNCHER = PurePosixPath("usr/bin/row")
 SERVER_ROOT = PurePosixPath("usr/lib/remote-ops-workspace/servers")
+MOBAPT_ROOT = PurePosixPath("usr/lib/remote-ops-workspace/mobapt")
+RUNTIME_ROOTS = (SERVER_ROOT, MOBAPT_ROOT)
 SYSTEM_LOCK_ROOT = Path("/var/lib/remote-ops-workspace-managed-update")
 APT_GET = "/usr/bin/apt-get"
 DPKG = "/usr/bin/dpkg"
@@ -151,7 +153,7 @@ def deb_runtime_digests(path: Path) -> dict[PurePosixPath, str]:
             for entry in archive:
                 name = entry.name.removeprefix("./")
                 relative = PurePosixPath(name.lstrip("/"))
-                if relative != LAUNCHER and not relative.is_relative_to(SERVER_ROOT):
+                if relative != LAUNCHER and not any(relative.is_relative_to(root) for root in RUNTIME_ROOTS):
                     continue
                 require(
                     name == relative.as_posix() and ".." not in relative.parts
@@ -163,7 +165,7 @@ def deb_runtime_digests(path: Path) -> dict[PurePosixPath, str]:
                     directories.add(relative)
                     continue
                 require(
-                    relative != SERVER_ROOT and entry.isfile() and entry.sparse is None
+                    relative not in RUNTIME_ROOTS and entry.isfile() and entry.sparse is None
                     and 0 < entry.size <= MAX_ARTIFACT_BYTES,
                     "deb-runtime-payload-refused",
                 )
@@ -178,8 +180,17 @@ def installed_launcher_sha256() -> str:
         return stream_sha256(stream)
 
 
-def verify_installed_servers(digests: dict[PurePosixPath, str], root: Path = Path("/") / SERVER_ROOT) -> None:
-    expected = {Path(path.relative_to(SERVER_ROOT)): sha for path, sha in digests.items() if path != LAUNCHER}
+def verify_installed_runtime(digests: dict[PurePosixPath, str], install_root: Path = Path("/")) -> None:
+    for runtime_root in RUNTIME_ROOTS:
+        expected = {
+            Path(path.relative_to(runtime_root)): sha
+            for path, sha in digests.items()
+            if path.is_relative_to(runtime_root)
+        }
+        verify_installed_runtime_tree(expected, install_root / runtime_root)
+
+
+def verify_installed_runtime_tree(expected: dict[Path, str], root: Path) -> None:
     try:
         if not expected and not root.exists() and not root.is_symlink():
             return
@@ -304,7 +315,7 @@ def read_journal(path: Path, architecture: str) -> dict:
 def verify_installation(architecture: str, version: str, digests: dict[PurePosixPath, str]) -> None:
     require(installed_package(architecture) == ("installed", version), "installed-package-identity-refused")
     require(installed_launcher_sha256() == digests[LAUNCHER], "installed-launcher-digest-refused")
-    verify_installed_servers(digests)
+    verify_installed_runtime(digests)
 
 
 def verify_transition_plan(

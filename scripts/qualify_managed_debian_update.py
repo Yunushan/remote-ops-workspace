@@ -41,6 +41,7 @@ from scripts.release_evidence_file import stream_sha256  # noqa: E402
 PACKAGE = "remote-ops-workspace"
 MANAGER = ROOT / "scripts/managed_linux_update.py"
 SERVER_MANIFEST = Path("/usr/lib/remote-ops-workspace/servers/servers-runtime.json")
+MOBAPT_CACHE = Path("/usr/lib/remote-ops-workspace/mobapt")
 ROLLBACK_BLOCKER = "row-qualification-rollback-blocker"
 
 
@@ -412,9 +413,15 @@ def qualify(args, root: Path, architecture: str, machine: str) -> dict:
             journal = transaction / "managed-update.json"
             applied_journal = journal.read_bytes()
             bundled_servers = SERVER_MANIFEST.is_file()
+            bundled_mobapt = (MOBAPT_CACHE / "mobapt-runtime.json").is_file()
             changed_files = [(launcher, "launcher", "installed-launcher-digest-refused")]
             if bundled_servers:
                 changed_files.append((SERVER_MANIFEST, "server-manifest", "installed-runtime-payload-refused"))
+            if bundled_mobapt:
+                cache_archive = min((MOBAPT_CACHE / "packages").glob("*.deb"), default=None)
+                if cache_archive is None:
+                    raise RuntimeError("The installed MobApt cache contains no Debian archive")
+                changed_files.append((cache_archive, "mobapt-cache", "installed-runtime-payload-refused"))
             # Keep dpkg's installed version unchanged while altering files in
             # the disposable container, then restore each before the real rollback.
             for path, label, refusal in changed_files:
@@ -485,6 +492,7 @@ def qualify(args, root: Path, architecture: str, machine: str) -> dict:
             "controller_sha256": sha256(MANAGER), "previous_sha256": args.previous_sha256,
             "candidate_sha256": args.candidate_sha256, "download_server_closed_before_apply": True,
             "workspace_unchanged": True, "candidate_has_server_bundle": bundled_servers,
+            "candidate_has_mobapt_cache": bundled_mobapt,
             "production_acceptance": False, "receipts": receipts}
 
 

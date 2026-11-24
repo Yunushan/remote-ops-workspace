@@ -100,6 +100,10 @@ journal if an installed dependency cannot satisfy the upgrade. APT uses the
 local installer and installed package database for the simulation. Use separate
 staging and transaction directories that do not overlap each other or the workspace.
 
+The updater checks the installed launcher, embedded servers, and MobApt cache
+against the authenticated DEB. A changed, missing, or unexpected file in a
+package-managed runtime directory can prevent an update or rollback.
+
 The updater uses `/var/lib/remote-ops-workspace-managed-update` for its
 system lock. Use a separate private directory for each package stage.
 An older standalone staging command pointed at the system lock directory

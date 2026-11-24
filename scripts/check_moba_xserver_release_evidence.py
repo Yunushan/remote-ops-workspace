@@ -42,7 +42,7 @@ NATIVE_PROBE_ARGV = [ROW_EXECUTABLE, "x11", "evidence-verify", "--evidence", "ev
 INSTALLED_XSERVER = PurePosixPath("/usr/lib/remote-ops-workspace/xserver")
 
 
-def check_packaged_runtime(root: Path, evidence: dict[str, Any]) -> bool:
+def check_packaged_runtime(root: Path, evidence: dict[str, Any]) -> tuple[bool, bool]:
     runtime = evidence["runtime"]
     path = bound_evidence_file(
         root, runtime.get("manifest"), runtime.get("manifest_sha256"), "runtime manifest"
@@ -77,6 +77,7 @@ def check_packaged_runtime(root: Path, evidence: dict[str, Any]) -> bool:
         start.get("command"),
     )
     from_package = "installed_runtime" in runtime
+    unprivileged = False
     if from_package:
         observed_path = INSTALLED_XSERVER / packaged["executable"]
         receipt_path = bound_evidence_file(
@@ -91,6 +92,16 @@ def check_packaged_runtime(root: Path, evidence: dict[str, Any]) -> bool:
             or receipt.get("sha256") != runtime["sha256"]
         ):
             raise ValueError("installed X server receipt must bind the package-owned executable to the live process")
+        if "uids" in receipt or "effective_capabilities" in receipt:
+            uids = receipt.get("uids")
+            capabilities = receipt.get("effective_capabilities")
+            if (
+                not isinstance(uids, list) or len(uids) != 4
+                or not all(type(uid) is int and uid > 0 for uid in uids) or len(set(uids)) != 1
+                or type(capabilities) is not int or capabilities != 0
+            ):
+                raise ValueError("installed X server receipt must show an unprivileged desktop process")
+            unprivileged = True
         selected_path_matches = executable_name(command) and command[0] == str(observed_path)
     else:
         selected_path_matches = executable_name(command) and command[0].replace("\\", "/").endswith(
@@ -114,7 +125,7 @@ def check_packaged_runtime(root: Path, evidence: dict[str, Any]) -> bool:
         raise ValueError(
             "managed X server start must record the live bundled runtime on the evidenced display"
         )
-    return from_package
+    return from_package, unprivileged
 
 
 def executable_name(argv: Any) -> str:
@@ -243,7 +254,7 @@ def validate_forwarding_capture(
         result = validate_moba_x_server_release_evidence(evidence_file, assets_dir=root)
         if not result.passed:
             return result
-        from_package = check_packaged_runtime(root, evidence)
+        from_package, unprivileged = check_packaged_runtime(root, evidence)
         check_display_probe(probe, evidence)
         check_forwarded_window(root, evidence, image)
         if "release_asset" in evidence:
@@ -255,12 +266,16 @@ def validate_forwarding_capture(
             if "tested_release_asset" not in result.summary:
                 raise ValueError("strict X11 evidence requires a native Debian release asset probe")
             identity = capture_release_identity(evidence, "X11 release evidence")
+            if from_package and not unprivileged:
+                raise ValueError("package-owned X11 release evidence requires an unprivileged desktop process")
             version = release_deb_version(identity["tested_release_asset"]["name"], evidence["release_target"])
             if identity["release_tag"] != f"v{version}":
                 raise ValueError("tested Debian package version must match the exact X11 release tag")
             result.summary.update(identity)
         if from_package:
             result.summary["installed_runtime_verified"] = True
+        if unprivileged:
+            result.summary["unprivileged_runtime_verified"] = True
     except (KeyError, OSError, ValueError, struct.error, zlib.error) as exc:
         return XServerReleaseEvidenceValidation(
             str(evidence_path), str(root), False, [str(exc)], [], {}

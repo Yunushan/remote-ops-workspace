@@ -292,8 +292,10 @@ reviews, and the downloaded release assets. See the
    for real X11-forwarded GUI applications. Status reports the managed
    process only for the display it serves. On Debian amd64, pass
    `--installed-runtime` with `--release-deb` to have the collector require
-   that the DEB owns Xvfb and its manifest. The resulting receipt binds the
-   running executable to the package and forwarded window. Full parity still needs
+   that the DEB owns Xvfb and its manifest. The collector starts ROW,
+   Xvfb, and the forwarding SSH client as an ordinary desktop user. The
+   receipt binds the running executable, process user and capabilities to
+   the package and forwarded window. Full parity still needs
    production-grade X server binaries attached to release targets and accepted
    passing evidence bundles from those targets.
 2. MobApt and embedded Unix environment parity: ROW now has a MobApt-style

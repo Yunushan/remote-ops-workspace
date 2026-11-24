@@ -191,6 +191,7 @@ Name: "{autodesktop}\$ProductName GUI"; Filename: "{app}\bin\row-gui.exe"; Tasks
 AppId={{$($Branding.inno_id)}
 AppName=$ProductName
 AppVersion=$Version
+VersionInfoVersion=$Version
 AppPublisher=$($Branding.publisher)
 DefaultDirName={autopf}\$($Branding.directory)
 DefaultGroupName=$($Branding.directory)
@@ -458,6 +459,7 @@ $PyDist = Join-Path $BuildDir "pyinstaller-dist"
 $PyWork = Join-Path $BuildDir "pyinstaller-work"
 $Launcher = Join-Path $BuildDir "row_launcher.py"
 $GuiLauncher = Join-Path $BuildDir "row_gui_launcher.py"
+$VersionFile = Join-Path $BuildDir "row_version_info.txt"
 $IconSvg = Join-Path $Root "src\remote_ops_workspace\assets\remote_ops_workspace.svg"
 $IconIco = Join-Path $Root "src\remote_ops_workspace\assets\remote_ops_workspace.ico"
 $GuiManifest = Join-Path $Root "src\remote_ops_workspace\assets\remote_ops_workspace_gui.manifest"
@@ -484,6 +486,12 @@ if (Test-Path -LiteralPath $BuildDir) {
   Remove-Item -LiteralPath $ResolvedBuildDir -Recurse -Force
 }
 New-Item -ItemType Directory -Force $Stage, $PyDist, $PyWork | Out-Null
+
+& $Python -I (Join-Path $PSScriptRoot "make_windows_version_info.py") --output $VersionFile `
+  "--version=$Version" "--product-name=$($Branding.name)" "--publisher=$($Branding.publisher)"
+if ($LASTEXITCODE -ne 0) {
+  throw "Failed to generate Windows executable version metadata"
+}
 
 @"
 from remote_ops_workspace.cli import main
@@ -512,6 +520,7 @@ Invoke-WindowsPyInstaller -Python $Python -Build {
     --name row `
     --console `
     --icon $IconIco `
+    --version-file $VersionFile `
     --distpath $PyDist `
     --workpath $PyWork `
     --specpath $BuildDir `
@@ -543,6 +552,7 @@ if ($BuildGuiLauncher) {
       --name row-gui `
       --windowed `
       --icon $IconIco `
+      --version-file $VersionFile `
       --manifest $GuiManifest `
       --add-data "$IconSvg;remote_ops_workspace/assets" `
       --distpath $PyDist `
@@ -566,6 +576,14 @@ if (!(Test-Path $RowExe)) {
   throw "PyInstaller did not create $RowExe"
 }
 $RowGuiExe = Join-Path $PyDist "row-gui.exe"
+$Launchers = @($RowExe)
+if ($BuildGuiLauncher) { $Launchers += $RowGuiExe }
+foreach ($Executable in $Launchers) {
+  $Info = [Diagnostics.FileVersionInfo]::GetVersionInfo($Executable)
+  if ($Info.ProductName -cne $Branding.name -or $Info.ProductVersion -cne $Version) {
+    throw "Windows executable $([IO.Path]::GetFileName($Executable)) has missing or incorrect product metadata"
+  }
+}
 if ($BuildGuiLauncher -and !(Test-Path $RowGuiExe)) {
   throw "PyInstaller did not create $RowGuiExe"
 }

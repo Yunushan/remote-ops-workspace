@@ -257,14 +257,14 @@ def capture(
             try:
                 wait_for_sshd(daemon)
                 try:
-                    # Xvfb can inherit the CLI's descriptors and outlive its process.
-                    with ((root / "start.json").open("w", encoding="utf-8") as stdout,
-                          (scratch / "xserver.log").open("w", encoding="utf-8") as stderr):
-                        subprocess.run(
-                            [*prefix, str(row), "x11", "start", "--display", DISPLAY,
-                             "--authority-file", env["XAUTHORITY"], "--json"],
-                            env=env, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, timeout=20, check=True,
-                        )
+                    # Read to EOF before probing the display. A daemon that
+                    # inherits the command's pipes will hit the startup timeout.
+                    startup = run(
+                        [*prefix, str(row), "x11", "start", "--display", DISPLAY,
+                         "--authority-file", env["XAUTHORITY"], "--json"], env=env,
+                    )
+                    json.loads(startup.stdout)
+                    (root / "start.json").write_text(startup.stdout, encoding="utf-8")
                     capture_smoke(row, root, env, client_prefix=prefix, scratch=client)
                     if packaged is not None:
                         capture_installed_runtime(root, packaged, uid, prefix)

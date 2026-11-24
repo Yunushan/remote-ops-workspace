@@ -148,6 +148,11 @@ reviews, and the downloaded release assets. See the
   Turning follow off preserves the selected path and lets its listing finish.
   Turning it back on uses the most recent valid report from that tab's current
   connection.
+  Mobatek describes the original's follow feature as experimental. In a
+  local MobaXterm Home 26.4 test under Wine, the browser stayed at its selected
+  location after plain shell directory changes and after matching OSC 7 reports.
+  This observation applies to that Wine and OpenSSH fixture.
+  [Mobatek SSH settings](https://mobaxterm.mobatek.net/documentation.html)
   Background SFTP and monitoring also start separate OpenSSH processes. Key or
   agent authentication works automatically; password-only profiles can use the
   explicit **Authenticate background tools** action with either a local encrypted

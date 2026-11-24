@@ -588,8 +588,8 @@
     },
     {
       "path": "src/remote_ops_workspace/x11.py",
-      "sha256": "cf6d4fb075b8794bde1c90a2f5c749a2e5256150873a42fa557b0de1e6fbfd54",
-      "size": 56627
+      "sha256": "22c383651f654e9521c5c46a65979b2135b80c9b5dffb1f6a2bbd549b724f7ab",
+      "size": 56901
     }
   ]
 }

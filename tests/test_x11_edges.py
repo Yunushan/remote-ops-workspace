@@ -144,6 +144,37 @@ def test_packaged_runtime_roots_include_environment_and_deduplicate(
     assert extra in roots
 
 
+@pytest.mark.parametrize(("system", "frozen", "manifest", "detected"), [
+    ("linux", True, True, True),
+    ("linux", True, False, False),
+    ("linux", False, True, False),
+    ("win32", True, True, False),
+])
+def test_frozen_linux_discovers_private_xserver_runtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, system: str, frozen: bool, manifest: bool, detected: bool,
+) -> None:
+    executable_dir = tmp_path / "usr/bin"
+    private = tmp_path / "usr/lib/remote-ops-workspace/xserver"
+    executable = private / "linux/bin/Xvfb"
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"fixture X server")
+    if manifest:
+        (private / x11.XSERVER_RUNTIME_MANIFEST_NAME).write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(x11.sys, "executable", str(executable_dir / "row"))
+    monkeypatch.setattr(x11.sys, "platform", system)
+    monkeypatch.setattr(x11.sys, "frozen", frozen, raising=False)
+    configured = tmp_path / "configured"
+    supplied = tmp_path / "supplied"
+    monkeypatch.setenv(x11.XSERVER_RUNTIME_DIR_ENV, str(configured))
+    roots = x11.x_server_packaged_runtime_roots([supplied])
+    assert roots[:2] == (supplied, configured)
+    assert (private in roots) is detected
+    if detected:
+        assert roots[2:4] == (private, executable_dir / "xserver")
+    available = x11.discover_packaged_x_server_runtimes(system="linux")
+    assert [candidate.executable for candidate in available] == ([str(executable)] if detected else [])
+
+
 @pytest.mark.parametrize(
     ("system", "key", "expected"),
     [

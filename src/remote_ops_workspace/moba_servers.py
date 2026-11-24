@@ -1120,8 +1120,11 @@ def _start_moba_server_locked(
         # The server outlives the CLI that starts it. A one-file PyInstaller
         # child needs its own extraction directory after that CLI exits.
         environment["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
-    # Never leave a CLI caller's capture pipe open in the scheduler or Iperf.
-    streams = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) if plan.service in {"cron", "iperf"} else {}
+    # Managed daemons outlive the CLI. Keep the caller's capture pipes out
+    # of the process while preserving the injected factory's existing API.
+    streams = {}
+    if popen_factory is None or plan.service in {"cron", "iperf"}:
+        streams = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     generation = uuid4().hex if plan.service == "cron" else ""
     control = target_state_path.with_suffix(".control")
     if generation:

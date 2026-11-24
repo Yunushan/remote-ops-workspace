@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 
+from remote_ops_workspace import moba_servers
 from remote_ops_workspace.cli import build_parser
 from remote_ops_workspace.moba_servers import (
     SERVER_DEFAULT_PORTS,
@@ -160,6 +162,24 @@ def test_moba_server_lifecycle_dry_run_does_not_write_state(tmp_path: Path) -> N
     assert record.state == "dry-run"
     assert record.pid is None
     assert not (tmp_path / "http-server-state.json").exists()
+
+
+def test_managed_http_launch_detaches_caller_streams(tmp_path, monkeypatch):
+    plan = build_moba_server_plan("http", root=tmp_path)
+    calls = []
+
+    def spawn(command, *, env, stdin, stdout, stderr):
+        assert (stdin, stdout, stderr) == (subprocess.DEVNULL,) * 3
+        calls.append(command)
+        return _FakeProcess(pid=6262)
+
+    monkeypatch.setattr(moba_servers, "popen_hidden", spawn)
+    record = start_moba_server(
+        plan, state_dir=tmp_path,
+        identity_factory=lambda process: {"pid": process.pid, "kind": "test"},
+    )
+    assert calls == [plan.command]
+    assert record.running and record.pid == 6262
 
 
 def test_moba_server_lifecycle_writes_loads_and_stops_state(tmp_path: Path) -> None:

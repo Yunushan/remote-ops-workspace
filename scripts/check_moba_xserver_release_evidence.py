@@ -266,8 +266,8 @@ def validate_forwarding_capture(
             if "tested_release_asset" not in result.summary:
                 raise ValueError("strict X11 evidence requires a native Debian release asset probe")
             identity = capture_release_identity(evidence, "X11 release evidence")
-            if from_package and not unprivileged:
-                raise ValueError("package-owned X11 release evidence requires an unprivileged desktop process")
+            if not (from_package and unprivileged):
+                raise ValueError("strict X11 evidence requires the package-owned runtime and an unprivileged desktop process")
             version = release_deb_version(identity["tested_release_asset"]["name"], evidence["release_target"])
             if identity["release_tag"] != f"v{version}":
                 raise ValueError("tested Debian package version must match the exact X11 release tag")

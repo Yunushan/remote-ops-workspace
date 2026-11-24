@@ -38,6 +38,9 @@ jobs:
       debian_amd64_mobapt_run_id: ${{ steps.debian-amd64-mobapt.outputs.run_id }}
       debian_amd64_mobapt_artifact_id: ${{ steps.debian-amd64-mobapt.outputs.artifact_id }}
       debian_amd64_mobapt_review_sha256: ${{ steps.debian-amd64-mobapt.outputs.review_sha256 }}
+      debian_amd64_xvfb_run_id: ${{ steps.debian-amd64-xvfb.outputs.run_id }}
+      debian_amd64_xvfb_artifact_id: ${{ steps.debian-amd64-xvfb.outputs.artifact_id }}
+      debian_amd64_xvfb_sha256: ${{ steps.debian-amd64-xvfb.outputs.sha256 }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -184,6 +187,40 @@ jobs:
           stage="$(mktemp -d "$RUNNER_TEMP/mobapt-preflight.XXXXXXXX")"
           python scripts/stage_debian_mobapt_cache.py --bundle "$RUNNER_TEMP/preflight-debian-amd64-mobapt" \
             --review-sha256 "$MOBAPT_REVIEW_SHA256" --tag "$RELEASE_TAG" --architecture amd64 --debian-root "$stage"
+      - name: Freeze the optional reviewed Debian amd64 Xvfb selection
+        id: debian-amd64-xvfb
+        if: ${{ steps.signing-readiness.outputs.candidate_build_ready == 'true' && vars.ROW_DEBIAN_AMD64_XVFB != '' }}
+        shell: bash
+        env:
+          XVFB_SELECTION: ${{ vars.ROW_DEBIAN_AMD64_XVFB }}
+        run: |
+          set -euo pipefail
+          selection_pattern='^(v[0-9]+\.[0-9]+\.[0-9]+) ([1-9][0-9]*) ([1-9][0-9]*) ([0-9a-f]{64})$'
+          if [[ ! "$XVFB_SELECTION" =~ $selection_pattern || "${BASH_REMATCH[1]}" != "$RELEASE_TAG" ]]; then
+            echo "ROW_DEBIAN_AMD64_XVFB must contain this release tag, a run ID, an artifact ID, and the reviewed Xvfb SHA-256" >&2
+            exit 1
+          fi
+          printf 'run_id=%s\nartifact_id=%s\nsha256=%s\n' \
+            "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" "${BASH_REMATCH[4]}" >> "$GITHUB_OUTPUT"
+      - name: Download the reviewed Xvfb input for preflight
+        if: ${{ steps.debian-amd64-xvfb.outputs.artifact_id != '' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v4
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.debian-amd64-xvfb.outputs.run_id }}
+          artifact-ids: ${{ steps.debian-amd64-xvfb.outputs.artifact_id }}
+          digest-mismatch: error
+          path: ${{ runner.temp }}/preflight-debian-amd64-xvfb
+      - name: Verify the reviewed Xvfb input before candidate builds
+        if: ${{ steps.debian-amd64-xvfb.outputs.artifact_id != '' }}
+        shell: bash
+        env:
+          XVFB_SHA256: ${{ steps.debian-amd64-xvfb.outputs.sha256 }}
+        run: |
+          stage="$(mktemp -d "$RUNNER_TEMP/xvfb-preflight.XXXXXXXX")"
+          python scripts/stage_debian_xvfb.py --xvfb-deb "$RUNNER_TEMP/preflight-debian-amd64-xvfb/xvfb.deb" \
+            --sha256 "$XVFB_SHA256" --architecture amd64 --debian-root "$stage"
       - name: Run release preflight verifier
         run: python scripts/verify.py --quick --no-cli-smoke --release-tag "$RELEASE_TAG"
       - name: Require Python 3.15, native Windows, and branch coverage CI evidence for release source
@@ -722,11 +759,24 @@ jobs:
         run: >-
           python scripts/candidate_native_proof.py bind --target "linux-${{ matrix.arch }}"
           --expected-sha "$EXPECTED_RELEASE_SHA" --asset-dir native-dist/linux
+      - name: Download the frozen Xvfb selection
+        id: debian-amd64-xvfb
+        if: ${{ matrix.arch == 'x86_64' && needs.release-preflight.outputs.debian_amd64_xvfb_artifact_id != '' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v4
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.release-preflight.outputs.debian_amd64_xvfb_run_id }}
+          artifact-ids: ${{ needs.release-preflight.outputs.debian_amd64_xvfb_artifact_id }}
+          digest-mismatch: error
+          path: ${{ runner.temp }}/debian-amd64-xvfb
       - name: Build Linux DEB, RPM and AppImage packages
         env:
           ROW_RELEASE_SERVER_BUNDLE: ${{ steps.debian-amd64-bundle.outputs.path }}
           ROW_RELEASE_MOBAPT_BUNDLE: ${{ steps.debian-amd64-mobapt.outputs.download-path }}
           ROW_RELEASE_MOBAPT_REVIEW_SHA256: ${{ matrix.arch == 'x86_64' && needs.release-preflight.outputs.debian_amd64_mobapt_review_sha256 || '' }}
+          ROW_RELEASE_XVFB_DEB: ${{ steps.debian-amd64-xvfb.outputs.download-path && format('{0}/xvfb.deb', steps.debian-amd64-xvfb.outputs.download-path) || '' }}
+          ROW_RELEASE_XVFB_SHA256: ${{ matrix.arch == 'x86_64' && needs.release-preflight.outputs.debian_amd64_xvfb_sha256 || '' }}
           APPIMAGETOOL_VERSION: "1.9.1"
           APPIMAGETOOL_SHA256: ${{ matrix.appimagetool_sha256 }}
           APPIMAGE_RUNTIME_VERSION: "20251108"

@@ -490,8 +490,11 @@ def check_validation_summary(article_id: str, summary: Any, *, release_target: A
             errors.append("mobapt-unix-runtime validation summary must record verified offline execution receipts")
         if details.get("installed_cache_verified") is not True:
             errors.append("mobapt-unix-runtime validation summary must record the verified Debian package-owned cache")
-    if article_id == "embedded-x-server" and details.get("live_forwarding_receipt_verified") is not True:
-        errors.append("embedded-x-server validation summary must record a verified live forwarding receipt")
+    if article_id == "embedded-x-server":
+        if details.get("live_forwarding_receipt_verified") is not True:
+            errors.append("embedded-x-server validation summary must record a verified live forwarding receipt")
+        if details.get("installed_runtime_verified") is not True or details.get("unprivileged_runtime_verified") is not True:
+            errors.append("embedded-x-server validation summary must record the package-owned and unprivileged runtime")
     if article_id == "embedded-server-suite":
         proof_count = details.get("live_client_proof_count")
         if type(proof_count) is not int or proof_count != 8:

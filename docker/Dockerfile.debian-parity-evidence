@@ -17,5 +17,5 @@ RUN --mount=type=bind,target=/release \
 FROM mobapt AS x11
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends xvfb xauth x11-apps x11-utils openssh-server openssh-client imagemagick \
+    && apt-get install -y --no-install-recommends xauth x11-apps x11-utils openssh-server openssh-client imagemagick \
     && rm -rf /var/lib/apt/lists/*

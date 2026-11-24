@@ -66,7 +66,7 @@ jobs:
             --env GITHUB_ACTIONS --env GITHUB_REF --env GITHUB_SHA --env GITHUB_REPOSITORY \
             --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT --env PYTHONDONTWRITEBYTECODE=1 \
             "$X11_IMAGE" python /src/scripts/capture_moba_xserver_forwarding.py \
-            --out /proof/embedded-x-server --release-deb "/release/$asset"
+            --installed-runtime --out /proof/embedded-x-server --release-deb "/release/$asset"
           evidence="$X11_WORK/review/embedded-x-server"
           python3 scripts/make_mobaxterm_parity_evidence_record.py \
             --article-id embedded-x-server --release-tag "$GITHUB_REF_NAME" --release-target linux-x86_64 \

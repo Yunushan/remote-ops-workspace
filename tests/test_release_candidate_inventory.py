@@ -269,6 +269,20 @@ def test_release_workflow_reuses_preflight_mobapt_selection_for_amd64() -> None:
     assert "MOBAPT_REVIEW_SHA256: ${{ needs.release-preflight.outputs.debian_amd64_mobapt_review_sha256 }}" in sealing
 
 
+def test_release_workflow_enables_packaged_xvfb_only_for_the_reviewed_amd64_selection() -> None:
+    source = (ROOT / candidate.BUILD_WORKFLOW).read_text(encoding="utf-8")
+    freeze = source.split("- name: Freeze the optional reviewed Debian amd64 Xvfb selection", 1)[1]
+    freeze = freeze.split("- name: Run release preflight verifier", 1)[0]
+    assert "vars.ROW_DEBIAN_AMD64_XVFB != ''" in freeze
+    assert '"${BASH_REMATCH[1]}" != "$RELEASE_TAG"' in freeze
+    assert "scripts/stage_debian_xvfb.py" in freeze and "digest-mismatch: error" in freeze
+    build = source.split("- name: Download the frozen Xvfb selection", 1)[1]
+    build = build.split("- name: Run Linux native installer smoke tests", 1)[0]
+    assert "matrix.arch == 'x86_64' && needs.release-preflight.outputs.debian_amd64_xvfb_artifact_id != ''" in build
+    assert "ROW_RELEASE_XVFB_DEB:" in build
+    assert "matrix.arch == 'x86_64' && needs.release-preflight.outputs.debian_amd64_xvfb_sha256" in build
+
+
 def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
     source = (ROOT / candidate.BUILD_WORKFLOW).read_text(encoding="utf-8")
     job = source.split("  linux-native:\n", 1)[1].split("  seal-release-candidate:\n", 1)[0]

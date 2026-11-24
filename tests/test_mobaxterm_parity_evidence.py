@@ -55,6 +55,9 @@ def test_debian_parity_capture_prepares_the_verified_asset_dependencies(
     assert "FROM mobapt AS x11" in fixture
     if target == "mobapt":
         assert "apt-get download" not in source and "--bundle" not in source[offline_capture:]
+    if target == "x11":
+        assert "--installed-runtime" in source[offline_capture:]
+        assert " xvfb " not in fixture.split("FROM mobapt AS x11", 1)[1]
 
 
 def test_mobaxterm_parity_evidence_empty_registry_is_valid_but_not_complete() -> None:
@@ -161,11 +164,17 @@ def test_registry_binds_native_debian_evidence_to_asset_and_source(article, vali
     expected = [f"{article} validation summary {missing_receipt}"]
     if article == "mobapt-unix-runtime":
         expected.append(f"{article} validation summary must record the verified Debian package-owned cache")
+    elif article == "embedded-x-server":
+        expected.append(f"{article} validation summary must record the package-owned and unprivileged runtime")
     assert checker.check_record(record) == expected
     summary[flag] = True
     if article == "mobapt-unix-runtime":
         assert checker.check_record(record) == expected[1:]
         summary["installed_cache_verified"] = True
+    elif article == "embedded-x-server":
+        summary["installed_runtime_verified"] = True
+        assert checker.check_record(record) == expected[1:]
+        summary["unprivileged_runtime_verified"] = True
     assert checker.check_record(record) == []
     summary["tested_release_asset"]["sha256"] = "b" * 64
     assert checker.check_record(record) == [f"{article} tested release asset must match the record artifact name and SHA-256"]
@@ -830,6 +839,8 @@ def reviewed_release(tmp_path, monkeypatch):
         if article == "embedded-x-server":
             record["validation_summary"]["summary"].update(
                 live_forwarding_receipt_verified=True,
+                installed_runtime_verified=True,
+                unprivileged_runtime_verified=True,
                 tested_release_asset={"name": debian_asset.name, "sha256": debian_digest},
             )
         if article == "embedded-server-suite":

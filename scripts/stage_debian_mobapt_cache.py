@@ -77,9 +77,12 @@ def stage_cache(bundle: Path, root: Path, architecture: str, review_sha256: str)
             shutil.copyfile(source, destination)
             destination.chmod(0o755 if name in tools else 0o644)
         for name, source in copyright_files.items():
-            shutil.copyfile(source, licenses / name)
-            (licenses / name).chmod(0o644)
-            bound_evidence_file(licenses, name, notices[name], "staged MobApt copyright notice")
+            relative = f"{name.removesuffix('.copyright')}/copyright"
+            destination = licenses / relative
+            destination.parent.mkdir(mode=0o755)
+            shutil.copyfile(source, destination)
+            destination.chmod(0o644)
+            bound_evidence_file(licenses, relative, notices[name], "staged MobApt copyright notice")
         shutil.copyfile(review, licenses / REVIEW)
         (licenses / REVIEW).chmod(0o644)
         bound_evidence_file(licenses, REVIEW, review_sha256, "staged MobApt review manifest")

@@ -25,8 +25,9 @@ from scripts.check_mobapt_cache_evidence import (  # noqa: E402
 from scripts.check_release_license_compliance import (  # noqa: E402
     bound_evidence_file,
     read_json_object,
+    sha256_file,
 )
-from scripts.debian_release_fixture import DEBIAN_TARGETS  # noqa: E402
+from scripts.debian_release_fixture import DEBIAN_TARGETS, release_deb_version  # noqa: E402
 
 EVIDENCE = "mobapt-cache-evidence.json"
 REVIEW = "mobapt-debian-review.json"
@@ -116,9 +117,34 @@ def stage_cache(
     return [cache / name for name in sorted(tools)]
 
 
-def verify_packaged_review(package: Path, release_tag: str, review_sha256: str) -> None:
-    names = {f"{NOTICE_ROOT}/{REVIEW}", f"{INSTALLED_CACHE.lstrip('/')}/{EVIDENCE}"}
-    files = {}
+def verify_packaged_review(
+    package: Path, release_tag: str, review_sha256: str | None, *, capture_root: Path | None = None,
+) -> None:
+    prefix = INSTALLED_CACHE.lstrip("/")
+    review_name = f"{NOTICE_ROOT}/{REVIEW}"
+    assembly_name = f"{prefix}/{EVIDENCE}"
+    metadata_names = {review_name, assembly_name}
+    expected = {}
+    data = None
+    if capture_root is not None:
+        _, data = read_json_object(capture_root / "evidence.json", "reviewed MobApt release evidence")
+        target = data["release_target"]
+        if release_tag != f"v{release_deb_version(package.name, target)}":
+            raise ValueError("the Debian MobApt package must match the reviewed release tag")
+        release_asset = {"name": package.name, "sha256": sha256_file(package)}
+        if data.get("release_asset") != release_asset:
+            raise ValueError("reviewed MobApt release asset differs from the Debian package")
+        tools, packages = check_runtime_and_cache(capture_root, data)
+        runtime, cache = data["runtime"], data["package_cache"]
+        expected = {
+            f"{prefix}/{runtime['manifest']}": runtime["manifest_sha256"],
+            f"{prefix}/{cache['index']}": cache["index_sha256"],
+            **{f"{prefix}/{name}": sha256_file(capture_root / name) for name in tools},
+            **{f"{prefix}/{row['archive']}": row["sha256"] for row in packages.values()},
+        }
+
+    files: dict[str, bytes] = {}
+    verified: set[str] = set()
     try:
         with TemporaryFile() as payload:
             subprocess.run(
@@ -129,25 +155,38 @@ def verify_packaged_review(package: Path, release_tag: str, review_sha256: str) 
             with tarfile.open(fileobj=payload, mode="r:") as archive:
                 for entry in archive:
                     name = entry.name.removeprefix("./")
-                    if name not in names:
+                    if name not in metadata_names and name not in expected:
                         continue
-                    if (name in files or not entry.isfile() or entry.sparse is not None
-                            or not 0 < entry.size <= 1024 * 1024):
-                        raise ValueError("invalid packaged MobApt review or assembly evidence")
+                    if name in verified or not entry.isfile() or entry.sparse is not None or entry.size <= 0:
+                        raise ValueError("invalid packaged MobApt review or cache member")
                     with archive.extractfile(entry) as stream:
-                        files[name] = stream.read()
+                        if name in metadata_names:
+                            if entry.size > 1024 * 1024:
+                                raise ValueError("invalid packaged MobApt review or assembly evidence")
+                            files[name] = stream.read()
+                        elif hashlib.file_digest(stream, "sha256").hexdigest() != expected[name]:
+                            raise ValueError(f"reviewed MobApt cache differs from the Debian package payload: {name}")
+                    verified.add(name)
     except (OSError, subprocess.SubprocessError, tarfile.TarError) as exc:
         raise ValueError("could not read the candidate Debian MobApt payload") from exc
-    if set(files) != names:
+    if set(files) != metadata_names:
         raise ValueError("candidate DEB lacks the packaged MobApt review or assembly evidence")
-    review = files[f"{NOTICE_ROOT}/{REVIEW}"]
-    if hashlib.sha256(review).hexdigest() != review_sha256:
+    if missing := expected.keys() - verified:
+        raise ValueError(f"candidate DEB lacks reviewed MobApt cache members: {sorted(missing)}")
+    review = files[review_name]
+    if review_sha256 is not None and hashlib.sha256(review).hexdigest() != review_sha256:
         raise ValueError("packaged MobApt review does not match the frozen SHA-256")
     document = json.loads(review)
-    assembly = files[f"{INSTALLED_CACHE.lstrip('/')}/{EVIDENCE}"]
+    assembly = files[assembly_name]
     if (not isinstance(document, dict) or document.get("release_tag") != release_tag
             or document.get("assembly_sha256") != hashlib.sha256(assembly).hexdigest()):
         raise ValueError("packaged MobApt review does not bind the release tag and assembly")
+    if data is not None:
+        assembly_data = json.loads(assembly)
+        if not isinstance(assembly_data, dict) or any(
+            assembly_data.get(key) != data[key] for key in ("release_target", "runtime", "package_cache")
+        ):
+            raise ValueError("reviewed MobApt cache differs from the release-bound assembly")
 
 
 def main() -> int:

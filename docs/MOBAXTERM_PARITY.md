@@ -334,6 +334,9 @@ reviews, and the downloaded release assets. See the
    verifies the chosen cache archive and the terminal output. When the
    collector runs without `--bundle`, it requires the tested DEB to own the
    cache and verifies that the launcher discovers it without an override.
+   Candidate and published audits compare the reviewed runtime executable,
+   manifest, index and package archives with the actual Debian payload.
+   The candidate audit also checks the frozen review manifest SHA-256.
    The tagged MobApt workflow uses that mode. An external cache remains
    available for local rehearsals with `--bundle`.
    To stage an approved cache in the Debian build, set

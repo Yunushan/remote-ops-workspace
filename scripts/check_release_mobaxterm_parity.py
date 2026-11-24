@@ -62,6 +62,9 @@ from scripts.release_candidate_inventory import (  # noqa: E402
     safe_name,
 )
 from scripts.release_evidence_file import stream_sha256  # noqa: E402
+from scripts.stage_debian_mobapt_cache import (  # noqa: E402
+    verify_packaged_review as verify_packaged_mobapt_review,
+)
 
 REGISTRY = "configs/mobaxterm_parity_evidence.json"
 MOBAPT_WORKFLOW = ".github/workflows/mobapt-offline-evidence.yml"
@@ -525,6 +528,7 @@ def audit_reviewed_records(
     sealed_assets: dict[str, str] | None = None,
     sealed_archives: list[dict[str, Any]] | None = None,
     sealed_xvfb_sha256: str | None = None,
+    sealed_mobapt_review_sha256: str | None = None,
     retain_workflow_artifacts: bool = False,
 ) -> list[str]:
     evidence_root = evidence_root.absolute()
@@ -609,6 +613,13 @@ def audit_reviewed_records(
             if review_acceptance_line(record) not in acceptance_lines:
                 raise ValueError("GitHub review does not explicitly accept this exact article evidence")
             verify_article_evidence(record, evidence_root)
+            if article == "mobapt-unix-runtime":
+                name = record["validation_summary"]["summary"]["tested_release_asset"]["name"]
+                package = assets.get(name)
+                if package is not None and digests.get(name) == record["artifact_sha256"][name]:
+                    verify_packaged_mobapt_review(
+                        package, tag, sealed_mobapt_review_sha256, capture_root=evidence_root / article,
+                    )
             if article == "embedded-x-server":
                 name = record["validation_summary"]["summary"]["tested_release_asset"]["name"]
                 package = assets.get(name)

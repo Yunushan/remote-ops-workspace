@@ -1046,6 +1046,11 @@ def reviewed_release(tmp_path, monkeypatch):
         release_parity, "verify_packaged_debian_server_evidence",
         lambda *values: server_payload_calls.append(values),
     )
+    mobapt_payload_calls = []
+    monkeypatch.setattr(
+        release_parity, "verify_packaged_mobapt_review",
+        lambda package, tag, digest, *, capture_root: mobapt_payload_calls.append((package, tag, digest, capture_root)),
+    )
     x11_payload_calls = []
 
     def verify_x11_payload(package, root, target, *, expected_xvfb_sha256):
@@ -1081,6 +1086,7 @@ def reviewed_release(tmp_path, monkeypatch):
         review=review, validator_calls=validator_calls,
         delivery_calls=delivery_calls,
         server_payload_calls=server_payload_calls, x11_payload_calls=x11_payload_calls,
+        mobapt_payload_calls=mobapt_payload_calls,
     )
 
 
@@ -1152,6 +1158,7 @@ def make_staged_parity_archives(assets_dir: Path, tag: str, fault: str) -> list[
     ("current-valid-indexes", ""),
     ("current-frozen-xvfb", ""),
     ("current-missing-xvfb", "missing the frozen Xvfb archive and its rollback qualification"),
+    ("current-missing-mobapt", "missing the frozen MobApt review and its rollback qualification"),
     ("current-swapped-checksums", "foreign, repeated or mismatched checksum"),
     ("current-missing-index", "missing sealed archive indexes"),
     ("missing-review", "must index all eight"),
@@ -1240,10 +1247,12 @@ def test_parity_preflight_uses_staged_bytes_original_archives_and_live_reviews(
         assert directory.is_dir() and pointer.run_id == 31 and pointer.artifact_id == 32
         assert pointer.archive_digest == "sha256:" + "7" * 64
         seen.append(pointer)
-        if fault in {"current-frozen-xvfb", "current-missing-xvfb"}:
+        if fault in {"current-frozen-xvfb", "current-missing-xvfb", "current-missing-mobapt"}:
             inventory = {"schema_version": candidate_parity.MIN_XVFB_INVENTORY_SCHEMA}
-            if fault == "current-frozen-xvfb":
+            if fault != "current-missing-xvfb":
                 inventory["debian_xvfb_sha256"] = "f" * 64
+            if fault != "current-missing-mobapt":
+                inventory["debian_mobapt_review_sha256"] = "e" * 64
             return make_staged_parity_archives(args["assets_dir"], tag, fault), inventory
         if fault.startswith("current-"):
             return make_staged_parity_archives(args["assets_dir"], tag, fault), {
@@ -1274,6 +1283,8 @@ def test_parity_preflight_uses_staged_bytes_original_archives_and_live_reviews(
     if not detail:
         assert len(reviewed_release.x11_payload_calls) == 1
         assert reviewed_release.x11_payload_calls[0][-1] == ("f" * 64 if fault == "current-frozen-xvfb" else None)
+        assert len(reviewed_release.mobapt_payload_calls) == 1
+        assert reviewed_release.mobapt_payload_calls[0][2] == ("e" * 64 if fault == "current-frozen-xvfb" else None)
     if retain:
         assert downloaded == {artifact_id: data for artifact_id, (_, data) in archives.items()}
         assert not list((root / "workflow-artifacts").glob(".row-parity-artifact-*"))
@@ -1448,6 +1459,18 @@ def test_mobapt_certification_refuses_successful_attempt_from_the_wrong_workflow
 
     assert release_parity.audit_release(**reviewed_release.args) == [
         "mobapt-unix-runtime MobApt evidence must come from its dedicated workflow dispatched at the release tag"
+    ]
+
+
+def test_mobapt_certification_refuses_bytes_not_shipped_in_the_published_package(reviewed_release, monkeypatch):
+    def reject_payload(package, tag, digest, *, capture_root):
+        assert package.name == "remote-ops-workspace-v1.0.2-linux-amd64.deb" and tag == "v1.0.2"
+        assert digest is None and capture_root.name == "mobapt-unix-runtime"
+        raise ValueError("reviewed MobApt cache differs from the Debian package payload")
+
+    monkeypatch.setattr(release_parity, "verify_packaged_mobapt_review", reject_payload)
+    assert release_parity.audit_release(**reviewed_release.args) == [
+        "mobapt-unix-runtime reviewed MobApt cache differs from the Debian package payload"
     ]
 
 

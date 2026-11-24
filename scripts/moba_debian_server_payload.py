@@ -168,7 +168,7 @@ def verify_debian_notice_inputs(root: Path, value: object) -> dict[str, bytes]:
     return notices
 
 
-def stage_payload(source: Path, package_root: Path, target: str) -> str:
+def stage_payload(source: Path, package_root: Path, target: str, *, extra_executables: tuple[Path, ...] = ()) -> str:
     document, expected = server_payload(source, target, EXTERNAL_SERVICES)
     notices = verify_debian_notice_inputs(source, document.get("debian_notices"))
     destination = package_root / PAYLOAD
@@ -197,7 +197,9 @@ def stage_payload(source: Path, package_root: Path, target: str) -> str:
                 "source": "packaged", "bundled": True, "placeholder": False, "sha256": launcher_digest,
             },
         })
-    document["debian_depends"] = debian_dependencies(launcher, (destination / name for name in expected))
+    document["debian_depends"] = debian_dependencies(
+        launcher, [*(destination / name for name in expected), *extra_executables],
+    )
     depends = dependency_field(document["debian_depends"])
     for name, data in notices.items():
         path = package_root / notice_path(name)
@@ -294,11 +296,12 @@ def main() -> int:
     operation.add_argument("--debian-root", type=Path)
     operation.add_argument("--deb", type=Path)
     parser.add_argument("--target", required=True, choices=sorted(ELF_TARGETS))
+    parser.add_argument("--extra-executable", action="append", type=Path, default=[])
     args = parser.parse_args()
     if args.deb:
         verify_debian_payload(args.deb, args.bundle / MANIFEST, args.target)
     else:
-        print(stage_payload(args.bundle, args.debian_root, args.target))
+        print(stage_payload(args.bundle, args.debian_root, args.target, extra_executables=tuple(args.extra_executable)))
     return 0
 
 

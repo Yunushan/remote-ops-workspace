@@ -157,6 +157,18 @@ fi
 DEB_ROOT="$BUILD_DIR/debroot"
 mkdir -p "$DEB_ROOT"
 cp -a "$PKGROOT/." "$DEB_ROOT/"
+mobapt_executables=()
+server_extra_executables=()
+if [[ -n "${ROW_RELEASE_MOBAPT_BUNDLE:-}" || -n "${ROW_RELEASE_MOBAPT_REVIEW_SHA256:-}" ]]; then
+  mobapt_tools="$("$PYTHON_BIN" scripts/stage_debian_mobapt_cache.py \
+    --bundle "${ROW_RELEASE_MOBAPT_BUNDLE:?Set ROW_RELEASE_MOBAPT_BUNDLE}" \
+    --review-sha256 "${ROW_RELEASE_MOBAPT_REVIEW_SHA256:?Set ROW_RELEASE_MOBAPT_REVIEW_SHA256}" \
+    --debian-root "$DEB_ROOT" --architecture "$DEB_ARCH")"
+  mapfile -t mobapt_executables <<< "$mobapt_tools"
+  for executable in "${mobapt_executables[@]}"; do
+    server_extra_executables+=(--extra-executable "$executable")
+  done
+fi
 if [[ -n "${ROW_RELEASE_SERVER_BUNDLE:-}" ]]; then
   case "$DEB_ARCH" in
     amd64) server_target="linux-x86_64" ;;
@@ -164,7 +176,10 @@ if [[ -n "${ROW_RELEASE_SERVER_BUNDLE:-}" ]]; then
     *) echo "Embedded server bundle is unsupported for Debian $DEB_ARCH" >&2; exit 1 ;;
   esac
   deb_depends="$("$PYTHON_BIN" scripts/moba_debian_server_payload.py \
-    --bundle "$ROW_RELEASE_SERVER_BUNDLE" --debian-root "$DEB_ROOT" --target "$server_target")"
+    --bundle "$ROW_RELEASE_SERVER_BUNDLE" --debian-root "$DEB_ROOT" --target "$server_target" \
+    "${server_extra_executables[@]}")"
+elif (( ${#mobapt_executables[@]} )); then
+  deb_depends="$("$PYTHON_BIN" scripts/debian_native_dependencies.py "$ROW_BIN" "${mobapt_executables[@]}")"
 else
   deb_depends="$launcher_depends"
 fi

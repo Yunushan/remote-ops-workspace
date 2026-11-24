@@ -127,8 +127,9 @@ def dependency_field(dependencies: object) -> str:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Print the Debian Depends field for a frozen CLI.")
     parser.add_argument("launcher", type=Path)
+    parser.add_argument("executables", type=Path, nargs="*")
     args = parser.parse_args(argv)
-    print(dependency_field(debian_dependencies(args.launcher, ())))
+    print(dependency_field(debian_dependencies(args.launcher, args.executables)))
 
 
 if __name__ == "__main__":

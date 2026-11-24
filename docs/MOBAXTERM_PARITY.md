@@ -306,6 +306,12 @@ reviews, and the downloaded release assets. See the
    verifies the chosen cache archive and the terminal output. When the
    collector runs without `--bundle`, it requires the tested DEB to own the
    cache and verifies that the launcher discovers it without an override.
+   To stage an approved cache in the Debian build, set
+   `ROW_RELEASE_MOBAPT_BUNDLE` to its assembly directory and
+   `ROW_RELEASE_MOBAPT_REVIEW_SHA256` to the digest of its
+   `mobapt-debian-review.json`. The review manifest's `assembly_sha256`
+   pins `mobapt-cache-evidence.json`. Its `notices` object maps each
+   `<component>.copyright` filename under `notices/` to its SHA-256.
    Full parity still needs
    production-grade Unix command binaries, real package archives attached to
    releases and accepted passing release evidence proving newly installed Unix

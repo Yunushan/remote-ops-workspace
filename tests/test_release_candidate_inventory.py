@@ -281,6 +281,12 @@ def test_release_workflow_enables_packaged_xvfb_only_for_the_reviewed_amd64_sele
     assert "matrix.arch == 'x86_64' && needs.release-preflight.outputs.debian_amd64_xvfb_artifact_id != ''" in build
     assert "ROW_RELEASE_XVFB_DEB:" in build
     assert "matrix.arch == 'x86_64' && needs.release-preflight.outputs.debian_amd64_xvfb_sha256" in build
+    preparation = (ROOT / ".github/workflows/prepare-debian-xvfb.yml").read_text(encoding="utf-8")
+    assert 'test "$RELEASE_TAG" = "v$project_version"' in preparation
+    assert 'apt-get download "xvfb=$XVFB_PACKAGE_VERSION"' in preparation
+    assert 'grep -Fx -- "SHA256: $digest" /out/debian-package-index.txt' in preparation
+    assert 'install -m 0644 -- "$archive" /out/xvfb.deb' in preparation
+    assert '"$RELEASE_TAG" "$GITHUB_RUN_ID" "$ARTIFACT_ID"' in preparation
 
 
 def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:

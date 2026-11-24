@@ -299,9 +299,12 @@ reviews, and the downloaded release assets. See the
    opt-in DEB build, set `ROW_RELEASE_XVFB_DEB` to the exact architecture's
    reviewed Debian Xvfb archive and `ROW_RELEASE_XVFB_SHA256` to its hash.
    The build retains Debian's copyright notice and minimum dependencies.
-   For a tagged amd64 candidate, retain the reviewed archive as `xvfb.deb`
-   at the root of an Actions artifact and set the release environment
-   variable `ROW_DEBIAN_AMD64_XVFB` to `vX.Y.Z RUN_ID ARTIFACT_ID SHA256`.
+   Run **Prepare Debian amd64 Xvfb input** on main with the target tag and
+   exact Debian package version. Review the downloaded archive, package
+   index record, dependency list, runtime manifest and notice in the
+   resulting artifact. Use the selection from its workflow summary to set
+   the release environment variable `ROW_DEBIAN_AMD64_XVFB` to
+   `vX.Y.Z RUN_ID ARTIFACT_ID SHA256`.
    The tagged X11 evidence workflow uses the installed runtime and requires
    proof that it ran as an unprivileged user.
    Full parity still needs

@@ -65,6 +65,8 @@ def test_duplicate_saved_connection_from_menu_and_tree_shortcut(workspace):
     tree.setCurrentItem(tree.currentItem().parent())
     folder_menu = window.build_profile_context_menu(tree.currentItem())
     assert not next(action for action in folder_menu.actions() if action.text() == "Duplicate connection").isEnabled()
+    window.duplicate_mremoteng_connection()
+    assert len(window.store.load()) == 4
     window.set_design_preset("native")
     window.select_profile("Alpha")
     assert "Duplicate connection" not in {action.text() for action in window.build_profile_context_menu().actions()}

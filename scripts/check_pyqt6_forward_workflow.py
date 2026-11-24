@@ -68,15 +68,22 @@ def check_workflow(workflow: str | None = None) -> list[str]:
         "--extra-index-url https://www.riverbankcomputing.com/pypi/simple/": (
             "Riverbank prerelease package index"
         ),
-        "name: Install the latest PyQt6 and Qt 6.12 wheels": "target-line selection step",
+        "name: Install the latest PyQt6 and Qt 6.12 wheels\n        shell: bash": (
+            "Bash shell with pipeline failure handling for wheel selection"
+        ),
         "python -m pip install --upgrade --upgrade-strategy eager --pre": "prerelease wheel upgrade",
         '"PyQt6>=6.12.0,<6.13.0"': "exact PyQt6 6.12 dependency range",
         '"PyQt6-Qt6>=6.12.0,<6.13.0"': "exact Qt 6.12 dependency range",
         "--only-binary=:all:": "binary PyQt6 runtime wheels",
-        "python scripts/check_pyqt6_compatibility.py --require-pyqt6\n"
-        "          --target-version 6.12.0 --require-target --require-forward-binding": (
+        "2>&1 | tee artifacts/pyqt6-forward-wheel-install.log": "wheel installation evidence",
+        "name: Verify PyQt6 6.12 forward-compatibility contract\n        shell: bash": (
+            "Bash shell with pipeline failure handling for the compatibility contract"
+        ),
+        "python scripts/check_pyqt6_compatibility.py --require-pyqt6": "required PyQt6 runtime check",
+        "--target-version 6.12.0 --require-target --require-forward-binding": (
             "strict PyQt6 6.12 runtime contract with a newer binding"
         ),
+        "2>&1 | tee artifacts/pyqt6-forward-compatibility.log": "compatibility contract evidence",
         "python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 300": (
             "all-preset PyQt6 render evidence"
         ),

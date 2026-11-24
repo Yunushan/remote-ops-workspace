@@ -62,6 +62,18 @@ def test_pyqt6_forward_workflow_requires_real_runtime_and_gui_evidence() -> None
             "--only-binary=PyQt6",
             "binary PyQt6 runtime wheels",
         ),
+        "2>&1 | tee artifacts/pyqt6-forward-wheel-install.log": (
+            "",
+            "wheel installation evidence",
+        ),
+        "2>&1 | tee artifacts/pyqt6-forward-compatibility.log": (
+            "",
+            "compatibility contract evidence",
+        ),
+        "name: Verify PyQt6 6.12 forward-compatibility contract\n        shell: bash": (
+            "name: Verify PyQt6 6.12 forward-compatibility contract",
+            "pipeline failure handling for the compatibility contract",
+        ),
     }
 
     for original, (replacement, label) in mutations.items():

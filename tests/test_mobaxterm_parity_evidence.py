@@ -53,6 +53,8 @@ def test_debian_parity_capture_prepares_the_verified_asset_dependencies(
     assert fixture.index("sha256sum --check --strict") < fixture.index("apt-get update")
     assert 'satisfy -- "$depends"' in fixture
     assert "FROM mobapt AS x11" in fixture
+    if target == "mobapt":
+        assert "apt-get download" not in source and "--bundle" not in source[offline_capture:]
 
 
 def test_mobaxterm_parity_evidence_empty_registry_is_valid_but_not_complete() -> None:
@@ -156,8 +158,14 @@ def test_registry_binds_native_debian_evidence_to_asset_and_source(article, vali
         "run_attempt": source["run_attempt"], "source_head_sha": source["head_sha"],
         "tested_release_asset": {"name": name, "sha256": "a" * 64},
     }
-    assert checker.check_record(record) == [f"{article} validation summary {missing_receipt}"]
+    expected = [f"{article} validation summary {missing_receipt}"]
+    if article == "mobapt-unix-runtime":
+        expected.append(f"{article} validation summary must record the verified Debian package-owned cache")
+    assert checker.check_record(record) == expected
     summary[flag] = True
+    if article == "mobapt-unix-runtime":
+        assert checker.check_record(record) == expected[1:]
+        summary["installed_cache_verified"] = True
     assert checker.check_record(record) == []
     summary["tested_release_asset"]["sha256"] = "b" * 64
     assert checker.check_record(record) == [f"{article} tested release asset must match the record artifact name and SHA-256"]
@@ -816,6 +824,7 @@ def reviewed_release(tmp_path, monkeypatch):
         if article == "mobapt-unix-runtime":
             record["validation_summary"]["summary"].update(
                 offline_execution_receipts_verified=True,
+                installed_cache_verified=True,
                 tested_release_asset={"name": debian_asset.name, "sha256": debian_digest},
             )
         if article == "embedded-x-server":

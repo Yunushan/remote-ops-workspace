@@ -181,10 +181,14 @@ def validate_mobapt_cache_execution(
             version = release_deb_version(identity["tested_release_asset"]["name"], data["release_target"])
             if identity["release_tag"] != f"v{version}":
                 raise ValueError("tested Debian package version must match the exact MobApt release tag")
+            if not installed_cache:
+                raise ValueError("strict MobApt evidence requires a cache owned by the tested Debian package")
             result.summary.update(identity)
     except (KeyError, OSError, ValueError) as exc:
         return MobAptCacheEvidenceValidation(str(evidence_path), str(root), False, [str(exc)], [], {})
     result.summary["offline_execution_receipts_verified"] = True
+    if installed_cache:
+        result.summary["installed_cache_verified"] = True
     return result
 
 

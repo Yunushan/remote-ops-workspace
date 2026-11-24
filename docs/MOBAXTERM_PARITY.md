@@ -306,6 +306,8 @@ reviews, and the downloaded release assets. See the
    verifies the chosen cache archive and the terminal output. When the
    collector runs without `--bundle`, it requires the tested DEB to own the
    cache and verifies that the launcher discovers it without an override.
+   The tagged MobApt workflow uses that mode. An external cache remains
+   available for local rehearsals with `--bundle`.
    To stage an approved cache in the Debian build, set
    `ROW_RELEASE_MOBAPT_BUNDLE` to its assembly directory and
    `ROW_RELEASE_MOBAPT_REVIEW_SHA256` to the digest of its

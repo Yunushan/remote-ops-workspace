@@ -13,6 +13,7 @@ from remote_ops_workspace.moba_mobapt import (
 from scripts import capture_mobapt_offline_evidence as capture
 from scripts.check_mobapt_cache_evidence import (
     EXECUTION_SCHEMA,
+    INSTALLED_CACHE,
     NATIVE_PROBE_ARGV,
     NATIVE_PROBE_PATH,
     NATIVE_PROBE_SCHEMA,
@@ -87,14 +88,14 @@ def test_release_checker_binds_runtime_cache_and_receipts(captured_bundle):
     assert not result.passed and "requires a native Debian release asset probe" in result.errors[0]
 
 
-def native_install_result(package):
+def native_install_result(package, cache_root=INSTALLED_CACHE):
     return {
         "executed": True, "ok": True, "returncode": 0,
         "plan": {
             "action": "install", "package": package["name"], "cached_package_version": package["version"],
             "cached_archive_sha256": package["sha256"],
             "command": ["/usr/bin/apt", "-o", "Dir::Etc::sourcelist=", "-o", "Dir::Etc::sourceparts=",
-                        "install", "--", f"/capture/{package['archive']}"],
+                        "install", "--", f"{cache_root}/{package['archive']}"],
         },
     }
 
@@ -102,6 +103,7 @@ def native_install_result(package):
 @pytest.fixture
 def native_capture(captured_bundle, request):
     evidence, payload, receipts = captured_bundle
+    payload["installed_cache"] = True
     if not getattr(request, "param", False):
         package = payload["package_cache"]["packages"][0]
         install = {**receipts["offline-install"], "argv": native_install_argv(package["name"]),
@@ -132,6 +134,7 @@ def test_strict_capture_binds_installer_and_workflow_attempt(native_capture):
     assert result.summary["tested_release_asset"] == payload["release_asset"]
     assert result.summary["source_head_sha"] == payload["source"]["head_sha"]
     assert result.summary["run_attempt"] == 2
+    assert result.summary["installed_cache_verified"] is True
 
 
 @pytest.mark.parametrize("native_capture", [True], indirect=True)
@@ -160,11 +163,23 @@ def test_native_capture_rejects_an_unbound_or_online_install(native_capture, fie
 
 
 def test_installed_cache_evidence_rejects_an_external_archive(native_capture):
-    evidence, payload, _, _ = native_capture
-    payload["installed_cache"] = True
+    evidence, payload, probe, probe_receipt = native_capture
+    package = payload["package_cache"]["packages"][0]
+    record = payload["install_tests"][0]
+    receipt = json.loads((evidence.parent / record["evidence_file"]).read_bytes())
+    receipt["stdout"] = json.dumps(native_install_result(package, cache_root="/external"))
+    bind_receipt(evidence, record, receipt)
     write_json(evidence, payload)
     result = validate_mobapt_offline_execution(evidence)
     assert not result.passed and "executed offline install of the verified package" in result.errors[0]
+
+    payload.pop("installed_cache")
+    write_json(evidence, payload)
+    probe_receipt["evidence_sha256"] = sha256_file(evidence)
+    write_json(probe, probe_receipt)
+    assert validate_mobapt_offline_execution(evidence).passed
+    result = validate_mobapt_release_cache_evidence(evidence)
+    assert not result.passed and "a cache owned by the tested Debian package" in result.errors[0]
 
 
 def test_collector_rejects_an_unowned_installed_archive(tmp_path, monkeypatch):

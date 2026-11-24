@@ -51,7 +51,7 @@ _Observation = tuple[MobaEmbeddedServerLifecycleRecord | None, _OwnedRun | None,
 
 
 class ServerLifecycleManager(QObject):
-    changed = pyqtSignal(str, str, str)
+    changed = pyqtSignal(str, str, str)  # type: ignore[call-arg]
 
     def __init__(self, parent: QObject) -> None:
         super().__init__(parent)

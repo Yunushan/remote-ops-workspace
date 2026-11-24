@@ -306,8 +306,8 @@ class TerminalTextEdit(QTextEdit):
 
 
 class TerminalPane(QWidget):
-    macroRecordingChanged = pyqtSignal()
-    remoteDirectoryChanged = pyqtSignal()
+    macroRecordingChanged = pyqtSignal()  # type: ignore[call-arg]
+    remoteDirectoryChanged = pyqtSignal()  # type: ignore[call-arg]
     STOP_POLICY = ProcessStopPolicy()
     OUTPUT_RENDER_BATCH_BYTES = 16 * 1024
     OUTPUT_RENDER_TURN_BUDGET_BYTES = 256 * 1024
@@ -1488,10 +1488,8 @@ class TerminalPane(QWidget):
         if bool(menu.property("terminalMousePasteMenuAdded")):
             return
         menu.setProperty("terminalMousePasteMenuAdded", True)
-        mouse_menu = _required_gui_value(
-            menu.addMenu("Mouse paste behavior (this terminal)"),
-            "terminal mouse paste menu",
-        )
+        mouse_menu = QMenu("Mouse paste behavior (this terminal)", menu)
+        menu.addMenu(mouse_menu)
         mouse_menu.setObjectName("terminalMousePasteMenu")
         right_click_action = _required_gui_value(
             mouse_menu.addAction("Right-click pastes automatically"),

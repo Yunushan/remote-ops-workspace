@@ -44,7 +44,7 @@ class SharedSshConnectionState:
 class SharedSshConnection(QObject):
     """Confirm a managed socket via a bounded local OpenSSH control request."""
 
-    changed = pyqtSignal(object)
+    changed = pyqtSignal(object)  # type: ignore[call-arg]
 
     def __init__(self, socket_path: str, ssh_executable: str, parent: QObject) -> None:
         super().__init__(parent)

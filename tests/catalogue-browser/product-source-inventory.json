@@ -128,8 +128,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_connected_terminal.py",
-      "sha256": "90668c123a9519a1e131bcd2c5a7a11073ee117f690ba552bbb7f362273e85d0",
-      "size": 58398
+      "sha256": "b354fb6c2b1e59b3cb33d5e1089af08ae958e2d6e9c620b8517a1c4806e2e075",
+      "size": 58272
     },
     {
       "path": "src/remote_ops_workspace/gui_design_activation.py",
@@ -183,8 +183,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_menus.py",
-      "sha256": "95c5bce630fec4b45a0e1e3d8763c7d34df6930f61b2d50ead163609c0bebd03",
-      "size": 18336
+      "sha256": "e283e7dc4f76b329b3eb7b31ee5fe00f1007190f72b215653c2f66612b5541c7",
+      "size": 18301
     },
     {
       "path": "src/remote_ops_workspace/gui_moba_sessions.py",
@@ -283,8 +283,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_server_lifecycle.py",
-      "sha256": "fdac268a573fff5861a2dc626b77a1e6b59ad6579909cf9f148b7d451f0c2891",
-      "size": 10248
+      "sha256": "e0f70c340c3b318267e7be6bcbbc09316c5bb26029402d00cfc9183777a06d97",
+      "size": 10274
     },
     {
       "path": "src/remote_ops_workspace/gui_session_tabs.py",
@@ -313,13 +313,13 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_ssh_connection.py",
-      "sha256": "a3de3cd0f4337d3401ff91eed4fc3bb3c650d82fffe8755505a4d2853fe77bf3",
-      "size": 5789
+      "sha256": "2832e59ddf65499d9e62b726028c0cddb52564d88b8a7f56ebf67d914a89f602",
+      "size": 5815
     },
     {
       "path": "src/remote_ops_workspace/gui_terminal.py",
-      "sha256": "6b9b7bae365348a284cdbae6a65766cc808c9070733e18eb4f9b05066b99293e",
-      "size": 140436
+      "sha256": "66f5b749a380e57375614ee03ff7ae0d345052e7adabe1fa5be474c8b52cd1d9",
+      "size": 140435
     },
     {
       "path": "src/remote_ops_workspace/gui_terminal_lifecycle.py",
@@ -488,8 +488,8 @@
     },
     {
       "path": "src/remote_ops_workspace/qt_terminal_process.py",
-      "sha256": "a8edbc61c497f609131c6d258178d831260a03635212f6ac0e37c7b7984f8e9d",
-      "size": 59447
+      "sha256": "397c869d1bc6a68cddc54e37a5a7036df708e66d08dfdfc39fa54c0cb9b2271b",
+      "size": 59786
     },
     {
       "path": "src/remote_ops_workspace/quick_connect.py",

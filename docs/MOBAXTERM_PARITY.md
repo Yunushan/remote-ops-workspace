@@ -321,7 +321,8 @@ reviews, and the downloaded release assets. See the
    environment variable `ROW_DEBIAN_AMD64_MOBAPT_BUNDLE` to
    `vX.Y.Z RUN_ID ARTIFACT_ID REVIEW_MANIFEST_SHA256`. Preflight and the
    amd64 builder use the same frozen selection, and preflight checks the tag
-   recorded in the review manifest.
+   recorded in the review manifest. Candidate sealing records that manifest's
+   hash after checking the actual DEB and its managed rollback receipt.
    Full parity still needs
    production-grade Unix command binaries, real package archives attached to
    releases and accepted passing release evidence proving newly installed Unix

@@ -264,6 +264,9 @@ def test_release_workflow_reuses_preflight_mobapt_selection_for_amd64() -> None:
     assert 'apt-get download "bash=$BASH_PACKAGE_VERSION" "tree=$TREE_PACKAGE_VERSION"' in preparation
     assert 'prepare_debian_mobapt_cache.py --tag "$RELEASE_TAG"' in preparation
     assert '"$RELEASE_TAG" "$GITHUB_RUN_ID" "$ARTIFACT_ID"' in preparation
+    sealing = source.split("  seal-release-candidate:\n", 1)[1]
+    assert '--mobapt-review-sha256 "$MOBAPT_REVIEW_SHA256"' in sealing
+    assert "MOBAPT_REVIEW_SHA256: ${{ needs.release-preflight.outputs.debian_amd64_mobapt_review_sha256 }}" in sealing
 
 
 def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:

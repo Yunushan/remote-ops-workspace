@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import shutil
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, TemporaryFile
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -27,6 +30,7 @@ from scripts.debian_release_fixture import DEBIAN_TARGETS  # noqa: E402
 
 EVIDENCE = "mobapt-cache-evidence.json"
 REVIEW = "mobapt-debian-review.json"
+NOTICE_ROOT = "usr/share/doc/remote-ops-workspace/mobapt-notices"
 ELF_ARCHES = {"amd64": "x86_64", "arm64": "aarch64", "i386": "i686", "armhf": "armhf"}
 
 
@@ -68,7 +72,7 @@ def stage_cache(
     }
 
     cache = root / INSTALLED_CACHE.lstrip("/")
-    doc = root / "usr/share/doc/remote-ops-workspace/mobapt-notices"
+    doc = root / NOTICE_ROOT
     if any(path.exists() or path.is_symlink() for path in (cache, doc)):
         raise ValueError("Debian MobApt payload already exists")
     with TemporaryDirectory(prefix="mobapt-stage-", dir=root) as scratch:
@@ -110,6 +114,40 @@ def stage_cache(
         staged.rename(cache)
         licenses.rename(doc)
     return [cache / name for name in sorted(tools)]
+
+
+def verify_packaged_review(package: Path, release_tag: str, review_sha256: str) -> None:
+    names = {f"{NOTICE_ROOT}/{REVIEW}", f"{INSTALLED_CACHE.lstrip('/')}/{EVIDENCE}"}
+    files = {}
+    try:
+        with TemporaryFile() as payload:
+            subprocess.run(
+                ["dpkg-deb", "--fsys-tarfile", str(package.resolve())], stdout=payload,
+                stderr=subprocess.PIPE, check=True, timeout=120,
+            )
+            payload.seek(0)
+            with tarfile.open(fileobj=payload, mode="r:") as archive:
+                for entry in archive:
+                    name = entry.name.removeprefix("./")
+                    if name not in names:
+                        continue
+                    if (name in files or not entry.isfile() or entry.sparse is not None
+                            or not 0 < entry.size <= 1024 * 1024):
+                        raise ValueError("invalid packaged MobApt review or assembly evidence")
+                    with archive.extractfile(entry) as stream:
+                        files[name] = stream.read()
+    except (OSError, subprocess.SubprocessError, tarfile.TarError) as exc:
+        raise ValueError("could not read the candidate Debian MobApt payload") from exc
+    if set(files) != names:
+        raise ValueError("candidate DEB lacks the packaged MobApt review or assembly evidence")
+    review = files[f"{NOTICE_ROOT}/{REVIEW}"]
+    if hashlib.sha256(review).hexdigest() != review_sha256:
+        raise ValueError("packaged MobApt review does not match the frozen SHA-256")
+    document = json.loads(review)
+    assembly = files[f"{INSTALLED_CACHE.lstrip('/')}/{EVIDENCE}"]
+    if (not isinstance(document, dict) or document.get("release_tag") != release_tag
+            or document.get("assembly_sha256") != hashlib.sha256(assembly).hexdigest()):
+        raise ValueError("packaged MobApt review does not bind the release tag and assembly")
 
 
 def main() -> int:

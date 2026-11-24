@@ -848,6 +848,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SERVER_BUNDLE_ARTIFACT_ID: ${{ needs.release-preflight.outputs.debian_amd64_bundle_artifact_id }}
           SERVER_BUNDLE_SHA256: ${{ needs.release-preflight.outputs.debian_amd64_bundle_sha256 }}
+          MOBAPT_REVIEW_SHA256: ${{ needs.release-preflight.outputs.debian_amd64_mobapt_review_sha256 }}
         run: >-
           python scripts/release_candidate_inventory.py stage
           --repository "${{ github.repository }}"
@@ -857,6 +858,7 @@ jobs:
           --build-run-attempt "$GITHUB_RUN_ATTEMPT"
           --server-bundle-artifact-id "$SERVER_BUNDLE_ARTIFACT_ID"
           --server-bundle-sha256 "$SERVER_BUNDLE_SHA256"
+          --mobapt-review-sha256 "$MOBAPT_REVIEW_SHA256"
           --assets-root candidate-staging/assets
           --output candidate-staging/release-candidate-inventory.json
       - name: Validate staged standard release assets

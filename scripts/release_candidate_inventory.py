@@ -171,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
                 output=args.output,
                 server_bundle_artifact_id=positive_int(args.server_bundle_artifact_id, "Debian server bundle artifact id"),
                 server_bundle_sha256=args.server_bundle_sha256,
+                mobapt_review_sha256=args.mobapt_review_sha256,
             )
         else:
             inventory_artifact_id = positive_int(
@@ -214,6 +215,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             child.add_argument("--output", required=True, type=Path)
             child.add_argument("--server-bundle-artifact-id", required=True)
             child.add_argument("--server-bundle-sha256", required=True)
+            child.add_argument("--mobapt-review-sha256", required=True)
         else:
             child.add_argument("--inventory-artifact-id", required=True)
             child.add_argument("--inventory-archive-digest", required=True)
@@ -327,7 +329,10 @@ def stage(
     output: Path,
     server_bundle_artifact_id: int,
     server_bundle_sha256: str,
+    mobapt_review_sha256: str | None = None,
 ) -> None:
+    if mobapt_review_sha256 is not None and HASH.fullmatch(mobapt_review_sha256) is None:
+        raise ValueError("MobApt review SHA-256 must be 64 lowercase hexadecimal characters")
     run = client.json(f"actions/runs/{run_id}")
     check_build_run(
         run,
@@ -415,6 +420,7 @@ def stage(
         expected_archive_files=expected_candidate_archive_files(release_tag),
         managed_deb=(release_tag, managed["receipt"]),
         expected_runtime_sha256=server_bundle["runtime_sha256"],
+        expected_mobapt_review_sha256=mobapt_review_sha256,
         release_rpm=(release_tag, rpm_sha),
         smoked_installers=(release_tag, smoke),
     )
@@ -436,6 +442,8 @@ def stage(
         "gui_smoke": {name: smoke[name] for name in GUI_SMOKE_ARTIFACT_NAMES},
         "linux_smoke": {name: smoke[name] for name in LINUX_SMOKE_ARTIFACT_NAMES},
     }
+    if mobapt_review_sha256 is not None:
+        inventory["debian_mobapt_review_sha256"] = mobapt_review_sha256
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(canonical_json(inventory), encoding="utf-8")
 
@@ -981,6 +989,16 @@ def verify_candidate_deb_metadata(
         raise ValueError("managed Debian receipt server bundle claim differs from the candidate DEB")
 
 
+def verify_candidate_mobapt(
+    package: Path, receipt: dict[str, Any], release_tag: str, review_sha256: str,
+) -> None:
+    from scripts.stage_debian_mobapt_cache import verify_packaged_review
+
+    if receipt.get("candidate_has_mobapt_cache") is not True:
+        raise ValueError("managed Debian receipt must qualify the packaged MobApt cache")
+    verify_packaged_review(package, release_tag, review_sha256)
+
+
 def require_release_rpm(records: list[dict[str, Any]], release_tag: str, sha256: str) -> None:
     name = rpm_qualification.rpm_name(release_tag.removeprefix("v"))
     require_linux_installer(records, name, sha256, "RPM recovery")
@@ -1011,6 +1029,11 @@ def validate_managed_release_qualification(
             deb_package, inventory["managed_debian_update"]["receipt"],
             expected_runtime_sha256=inventory.get("debian_server_bundle", {}).get("runtime_sha256"),
         )
+        if "debian_mobapt_review_sha256" in inventory:
+            verify_candidate_mobapt(
+                deb_package, inventory["managed_debian_update"]["receipt"], release_tag,
+                inventory["debian_mobapt_review_sha256"],
+            )
     return records
 
 
@@ -1161,6 +1184,7 @@ def materialize_sealed_records(
             if inventory["schema_version"] >= ARCHIVE_FILE_SCOPE_SCHEMA_VERSION else None
         ),
         expected_runtime_sha256=inventory.get("debian_server_bundle", {}).get("runtime_sha256"),
+        expected_mobapt_review_sha256=inventory.get("debian_mobapt_review_sha256"),
     )
 
 
@@ -1231,6 +1255,7 @@ def materialize_records(
     expected_archive_files: dict[str, set[str]] | None = None,
     managed_deb: tuple[str, dict[str, Any]] | None = None,
     expected_runtime_sha256: str | None = None,
+    expected_mobapt_review_sha256: str | None = None,
     release_rpm: tuple[str, str] | None = None,
     smoked_installers: tuple[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
@@ -1259,6 +1284,8 @@ def materialize_records(
             require_managed_deb(records, release_tag, receipt["candidate_sha256"])
             package = staged_root / f"remote-ops-workspace-{release_tag}-linux-amd64.deb"
             verify_candidate_deb_metadata(package, receipt, expected_runtime_sha256=expected_runtime_sha256)
+            if expected_mobapt_review_sha256 is not None:
+                verify_candidate_mobapt(package, receipt, release_tag, expected_mobapt_review_sha256)
         if release_rpm is not None:
             require_release_rpm(records, *release_rpm)
         if smoked_installers is not None:
@@ -1426,6 +1453,12 @@ def validate_inventory(
                    for key in ("archive_sha256", "runtime_sha256"))
         ):
             raise ValueError("approved candidate inventory is missing verified Debian server archive coordinates")
+    if "debian_mobapt_review_sha256" in value:
+        review = value["debian_mobapt_review_sha256"]
+        if (schema < FEDORA_RELEASE_IMAGE_SCHEMA_VERSION or not isinstance(review, str)
+                or HASH.fullmatch(review) is None
+                or value["managed_debian_update"]["receipt"].get("candidate_has_mobapt_cache") is not True):
+            raise ValueError("candidate inventory must bind the reviewed MobApt cache and its rollback receipt")
     if schema >= RPM_SCHEMA_VERSION or "rpm_recovery" in value or "rpm_smoke" in value:
         artifact_id, rpm_sha = validate_rpm_report(
             value.get("rpm_recovery"), repository, release_tag, release_sha, run_id, run_attempt,

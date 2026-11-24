@@ -26,9 +26,13 @@ jobs:
         include:
           - os: ubuntu-latest
             qt_platform: "offscreen"
+          - os: ubuntu-24.04-arm
+            qt_platform: "offscreen"
           - os: windows-2025-vs2026
             qt_platform: "windows"
           - os: macos-15-intel
+            qt_platform: "offscreen"
+          - os: macos-latest
             qt_platform: "offscreen"
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"

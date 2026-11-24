@@ -30,6 +30,14 @@ def test_pyqt6_forward_workflow_requires_real_runtime_and_gui_evidence() -> None
         encoding="utf-8"
     )
     mutations = {
+        '- os: ubuntu-24.04-arm\n            qt_platform: "offscreen"': (
+            "",
+            "Linux ARM64 target runner",
+        ),
+        '- os: macos-latest\n            qt_platform: "offscreen"': (
+            "",
+            "Apple silicon target runner",
+        ),
         "--target-version 6.12.0 --require-target --require-forward-binding": (
             "--target-version 6.12.0 --require-target",
             "strict PyQt6 6.12 runtime contract with a newer binding",

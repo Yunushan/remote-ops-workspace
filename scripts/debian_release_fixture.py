@@ -33,7 +33,7 @@ def unpack_deb_inputs(package: Path, name: str, architecture: str, outputs: dict
     if package_name != name or not version or package_arch != architecture:
         raise ValueError(f"expected the Debian {architecture} {name} package")
     with TemporaryFile() as payload:
-        subprocess.run(["dpkg-deb", "--fsys-tarfile", str(package)], stdout=payload, check=True, timeout=30)
+        subprocess.run(["dpkg-deb", "--fsys-tarfile", str(package)], stdout=payload, check=True, timeout=120)
         payload.seek(0)
         with tarfile.open(fileobj=payload, mode="r:") as archive:
             remaining = dict(outputs)
@@ -41,7 +41,8 @@ def unpack_deb_inputs(package: Path, name: str, architecture: str, outputs: dict
                 key = member.name.removeprefix("./")
                 if key not in outputs:
                     continue
-                if key not in remaining or not member.isfile() or not 0 < member.size <= 4 * 1024 * 1024:
+                if (key not in remaining or not member.isfile() or member.sparse is not None
+                        or not 0 < member.size <= 4 * 1024 * 1024):
                     raise ValueError(f"invalid Debian package member: {key}")
                 with archive.extractfile(member) as stream, remaining.pop(key).open("xb") as destination:
                     shutil.copyfileobj(stream, destination)

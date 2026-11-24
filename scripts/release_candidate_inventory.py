@@ -172,6 +172,8 @@ def main(argv: list[str] | None = None) -> int:
                 server_bundle_artifact_id=positive_int(args.server_bundle_artifact_id, "Debian server bundle artifact id"),
                 server_bundle_sha256=args.server_bundle_sha256,
                 mobapt_review_sha256=args.mobapt_review_sha256,
+                xvfb_deb=args.xvfb_deb,
+                xvfb_sha256=args.xvfb_sha256,
             )
         else:
             inventory_artifact_id = positive_int(
@@ -216,6 +218,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             child.add_argument("--server-bundle-artifact-id", required=True)
             child.add_argument("--server-bundle-sha256", required=True)
             child.add_argument("--mobapt-review-sha256", required=True)
+            child.add_argument("--xvfb-deb", type=Path)
+            child.add_argument("--xvfb-sha256")
         else:
             child.add_argument("--inventory-artifact-id", required=True)
             child.add_argument("--inventory-archive-digest", required=True)
@@ -330,9 +334,14 @@ def stage(
     server_bundle_artifact_id: int,
     server_bundle_sha256: str,
     mobapt_review_sha256: str | None = None,
+    xvfb_deb: Path | None = None,
+    xvfb_sha256: str | None = None,
 ) -> None:
     if mobapt_review_sha256 is not None and HASH.fullmatch(mobapt_review_sha256) is None:
         raise ValueError("MobApt review SHA-256 must be 64 lowercase hexadecimal characters")
+    if (xvfb_deb is None) != (xvfb_sha256 is None) or (xvfb_sha256 is not None and HASH.fullmatch(xvfb_sha256) is None):
+        raise ValueError("Xvfb sealing requires both the frozen archive and its lowercase SHA-256")
+    xvfb_input = (xvfb_deb, xvfb_sha256) if xvfb_deb is not None and xvfb_sha256 is not None else None
     run = client.json(f"actions/runs/{run_id}")
     check_build_run(
         run,
@@ -421,6 +430,7 @@ def stage(
         managed_deb=(release_tag, managed["receipt"]),
         expected_runtime_sha256=server_bundle["runtime_sha256"],
         expected_mobapt_review_sha256=mobapt_review_sha256,
+        xvfb_input=xvfb_input,
         release_rpm=(release_tag, rpm_sha),
         smoked_installers=(release_tag, smoke),
     )
@@ -444,6 +454,8 @@ def stage(
     }
     if mobapt_review_sha256 is not None:
         inventory["debian_mobapt_review_sha256"] = mobapt_review_sha256
+    if xvfb_sha256 is not None:
+        inventory["debian_xvfb_sha256"] = xvfb_sha256
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(canonical_json(inventory), encoding="utf-8")
 
@@ -1256,6 +1268,7 @@ def materialize_records(
     managed_deb: tuple[str, dict[str, Any]] | None = None,
     expected_runtime_sha256: str | None = None,
     expected_mobapt_review_sha256: str | None = None,
+    xvfb_input: tuple[Path, str] | None = None,
     release_rpm: tuple[str, str] | None = None,
     smoked_installers: tuple[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
@@ -1286,6 +1299,10 @@ def materialize_records(
             verify_candidate_deb_metadata(package, receipt, expected_runtime_sha256=expected_runtime_sha256)
             if expected_mobapt_review_sha256 is not None:
                 verify_candidate_mobapt(package, receipt, release_tag, expected_mobapt_review_sha256)
+            if xvfb_input is not None:
+                from scripts.stage_debian_xvfb import verify_packaged_xvfb
+
+                verify_packaged_xvfb(package, *xvfb_input, "amd64")
         if release_rpm is not None:
             require_release_rpm(records, *release_rpm)
         if smoked_installers is not None:
@@ -1459,6 +1476,10 @@ def validate_inventory(
                 or HASH.fullmatch(review) is None
                 or value["managed_debian_update"]["receipt"].get("candidate_has_mobapt_cache") is not True):
             raise ValueError("candidate inventory must bind the reviewed MobApt cache and its rollback receipt")
+    if "debian_xvfb_sha256" in value:
+        digest = value["debian_xvfb_sha256"]
+        if schema < FEDORA_RELEASE_IMAGE_SCHEMA_VERSION or not isinstance(digest, str) or HASH.fullmatch(digest) is None:
+            raise ValueError("candidate inventory must bind the frozen Debian Xvfb archive SHA-256")
     if schema >= RPM_SCHEMA_VERSION or "rpm_recovery" in value or "rpm_smoke" in value:
         artifact_id, rpm_sha = validate_rpm_report(
             value.get("rpm_recovery"), repository, release_tag, release_sha, run_id, run_attempt,

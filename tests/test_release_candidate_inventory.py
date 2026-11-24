@@ -280,6 +280,12 @@ def test_release_workflow_enables_packaged_xvfb_only_for_the_reviewed_amd64_sele
     build = build.split("- name: Run Linux native installer smoke tests", 1)[0]
     assert "matrix.arch == 'x86_64' && needs.release-preflight.outputs.debian_amd64_xvfb_artifact_id != ''" in build
     assert "ROW_RELEASE_XVFB_DEB:" in build
+    sealing = source.split("  seal-release-candidate:\n", 1)[1]
+    download = sealing.split("- name: Download the frozen Xvfb input for candidate sealing", 1)[1].split("- name:", 1)[0]
+    assert "digest-mismatch: error" in download
+    for field in ("run_id", "artifact_id"):
+        assert f"needs.release-preflight.outputs.debian_amd64_xvfb_{field}" in download
+    assert '--xvfb-deb "$RUNNER_TEMP/seal-debian-amd64-xvfb/xvfb.deb" --xvfb-sha256 "$XVFB_SHA256"' in sealing
     assert "matrix.arch == 'x86_64' && needs.release-preflight.outputs.debian_amd64_xvfb_sha256" in build
     preparation = (ROOT / ".github/workflows/prepare-debian-xvfb.yml").read_text(encoding="utf-8")
     assert 'test "$RELEASE_TAG" = "v$project_version"' in preparation
@@ -787,6 +793,19 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
         )
 
     monkeypatch.setattr(candidate, "read_candidate_deb_metadata", deb_metadata)
+    xvfb_input = {}
+    xvfb_reads = []
+    if condition == "complete-bundled":
+        from scripts import stage_debian_xvfb
+
+        xvfb_input = {"xvfb_deb": tmp_path / "xvfb.deb", "xvfb_sha256": "e" * 64}
+
+        def verify_xvfb(package, source, digest, architecture):
+            assert package.name == deb_name and package.read_bytes() == deb_bytes
+            assert (source, digest, architecture) == (xvfb_input["xvfb_deb"], xvfb_input["xvfb_sha256"], "amd64")
+            xvfb_reads.append((output.exists(), root.exists()))
+
+        monkeypatch.setattr(stage_debian_xvfb, "verify_packaged_xvfb", verify_xvfb)
 
     def seal() -> None:
         candidate.stage(
@@ -799,6 +818,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
             output=output,
             server_bundle_artifact_id=reviewed_bundle["artifact_id"],
             server_bundle_sha256=reviewed_bundle["archive_sha256"],
+            **xvfb_input,
         )
 
     if error:
@@ -839,6 +859,16 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     seal()
     assert metadata_reads == [(False, False)]
     inventory = json.loads(output.read_text(encoding="utf-8"))
+    if xvfb_input:
+        assert xvfb_reads == [(False, False)]
+        assert inventory["debian_xvfb_sha256"] == xvfb_input["xvfb_sha256"]
+        with pytest.raises(ValueError, match="bind the frozen Debian Xvfb archive SHA-256"):
+            candidate.validate_inventory(
+                {**inventory, "debian_xvfb_sha256": True}, repository="example/project",
+                release_tag=tag, release_sha=sha, run_id=123, run_attempt=1,
+            )
+    else:
+        assert not xvfb_reads and "debian_xvfb_sha256" not in inventory
     records = candidate.validate_inventory(
         inventory, repository="example/project", release_tag=tag, release_sha=sha,
         run_id=123, run_attempt=1,
@@ -886,6 +916,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                 "size_bytes": len(encoded)}
 
     historic = json.loads(output.read_bytes())
+    historic.pop("debian_xvfb_sha256", None)
     historic["schema_version"] = candidate.ARCHIVE_FILE_SCOPE_SCHEMA_VERSION
     with pytest.raises(ValueError, match="pinned Fedora qualification image"):
         candidate.validate_inventory(historic, **coordinates)
@@ -907,6 +938,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     x64[x64.index(x64_manifest)], x86[x86.index(x86_manifest)] = x86_manifest, x64_manifest
     with pytest.raises(ValueError, match="files differ from its release matrix assignment"):
         candidate.validate_inventory(swapped, **coordinates)
+    swapped.pop("debian_xvfb_sha256", None)
     swapped["schema_version"] = candidate.GUI_MODULE_PROOF_SCHEMA_VERSION
     swapped["rpm_recovery"] = old_rpm
     candidate.validate_inventory(swapped, **coordinates)
@@ -918,6 +950,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     inventory.pop("rpm_smoke")
     inventory.pop("gui_smoke")
     inventory.pop("linux_smoke")
+    inventory.pop("debian_xvfb_sha256", None)
     inventory["schema_version"] = candidate.LEGACY_SCHEMA_VERSION
     candidate.validate_inventory(inventory, **coordinates)
     with pytest.raises(ValueError, match="requires the current sealed candidate inventory"):

@@ -305,6 +305,10 @@ reviews, and the downloaded release assets. See the
    resulting artifact. Use the selection from its workflow summary to set
    the release environment variable `ROW_DEBIAN_AMD64_XVFB` to
    `vX.Y.Z RUN_ID ARTIFACT_ID SHA256`.
+   Before sealing an opted-in candidate, the release workflow independently
+   downloads the frozen archive and compares the packaged executable,
+   manifest, copyright notice and version with it. The sealed inventory
+   records the input archive SHA-256 alongside the candidate DEB digest.
    The tagged X11 evidence workflow uses the installed runtime and requires
    proof that it ran as an unprivileged user.
    Full parity still needs

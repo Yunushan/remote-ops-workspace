@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
 from remote_ops_workspace.x11 import (  # noqa: E402
+    XSERVER_RUNTIME_MANIFEST_NAME,
     build_moba_x_server_runtime_bundle_plan,
     write_moba_x_server_runtime_bundle,
 )
@@ -24,7 +25,11 @@ from scripts.debian_native_dependencies import (  # noqa: E402
     dependency_field,
     merge_debian_dependencies,
 )
-from scripts.debian_release_fixture import DEBIAN_TARGETS, unpack_deb_inputs  # noqa: E402
+from scripts.debian_release_fixture import (  # noqa: E402
+    DEBIAN_TARGETS,
+    PRODUCT_PACKAGE,
+    unpack_deb_inputs,
+)
 from scripts.stage_linux_runtime_licenses import (  # noqa: E402
     LICENSE_ROOT,
     SYSTEM_LICENSE_PREFIX,
@@ -33,11 +38,12 @@ from scripts.stage_linux_runtime_licenses import (  # noqa: E402
 
 ELF_ARCHES = {"amd64": "x86_64", "arm64": "aarch64"}
 RUNTIME_ROOT = Path("usr/lib/remote-ops-workspace/xserver")
+NOTICE_ROOT = LICENSE_ROOT / f"{SYSTEM_LICENSE_PREFIX}xvfb"
 
 
 def stage_xvfb(package: Path, digest: str, root: Path, architecture: str) -> str:
     runtime = root / RUNTIME_ROOT
-    notices = root / LICENSE_ROOT / f"{SYSTEM_LICENSE_PREFIX}xvfb"
+    notices = root / NOTICE_ROOT
     if any(path.exists() or path.is_symlink() for path in (runtime, notices)):
         raise ValueError("the Xvfb runtime or notice output already exists")
     with TemporaryDirectory(prefix="row-debian-xvfb-", dir=root) as scratch:
@@ -72,6 +78,26 @@ def stage_xvfb(package: Path, digest: str, root: Path, architecture: str) -> str
         (notices / SYSTEM_VERSION_FILE).write_text(source["version"] + "\n", encoding="utf-8")
         bundle.rename(runtime)
     return relationships
+
+
+def verify_packaged_xvfb(package: Path, source: Path, digest: str, architecture: str) -> None:
+    """Compare the candidate payload against the separately downloaded Debian input."""
+    with TemporaryDirectory(prefix="row-verify-debian-xvfb-") as scratch:
+        work = Path(scratch)
+        expected = work / "expected"
+        expected.mkdir()
+        try:
+            stage_xvfb(source, digest, expected, architecture)
+            manifest = RUNTIME_ROOT / XSERVER_RUNTIME_MANIFEST_NAME
+            executable = json.loads((expected / manifest).read_bytes())["runtime"]["executable"]
+            members = [manifest, RUNTIME_ROOT / executable, NOTICE_ROOT / "copyright", NOTICE_ROOT / SYSTEM_VERSION_FILE]
+            extracted = {member.as_posix(): work / member.name for member in members}
+            unpack_deb_inputs(package, PRODUCT_PACKAGE, architecture, extracted)
+        except (OSError, subprocess.SubprocessError, tarfile.TarError) as exc:
+            raise ValueError("could not read the frozen Xvfb input or candidate Debian payload") from exc
+        for member in members:
+            if sha256_file(extracted[member.as_posix()]) != sha256_file(expected / member):
+                raise ValueError(f"candidate DEB Xvfb member differs from the frozen input: {member.as_posix()}")
 
 
 def main() -> int:

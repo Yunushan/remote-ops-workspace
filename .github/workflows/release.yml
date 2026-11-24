@@ -894,6 +894,7 @@ jobs:
         with:
           python-version: "3.14.10"
       - name: Download the frozen Xvfb input for candidate sealing
+        id: frozen-xvfb-input
         if: ${{ needs.release-preflight.outputs.debian_amd64_xvfb_artifact_id != '' }}
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v4
         with:
@@ -904,29 +905,24 @@ jobs:
           digest-mismatch: error
           path: ${{ runner.temp }}/seal-debian-amd64-xvfb
       - name: Materialize exact staged artifacts and seal candidate inventory
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           SERVER_BUNDLE_ARTIFACT_ID: ${{ needs.release-preflight.outputs.debian_amd64_bundle_artifact_id }}
           SERVER_BUNDLE_SHA256: ${{ needs.release-preflight.outputs.debian_amd64_bundle_sha256 }}
           MOBAPT_REVIEW_SHA256: ${{ needs.release-preflight.outputs.debian_amd64_mobapt_review_sha256 }}
-          XVFB_SHA256: ${{ needs.release-preflight.outputs.debian_amd64_xvfb_sha256 }}
-        run: |
-          xvfb=()
-          if [[ -n "$XVFB_SHA256" ]]; then
-            xvfb=(--xvfb-deb "$RUNNER_TEMP/seal-debian-amd64-xvfb/xvfb.deb" --xvfb-sha256 "$XVFB_SHA256")
-          fi
-          python scripts/release_candidate_inventory.py stage \
-          --repository "${{ github.repository }}" \
-          --release-tag "$RELEASE_TAG" \
-          --release-sha "${{ needs.release-preflight.outputs.release_sha }}" \
-          --build-run-id "$GITHUB_RUN_ID" \
-          --build-run-attempt "$GITHUB_RUN_ATTEMPT" \
-          --server-bundle-artifact-id "$SERVER_BUNDLE_ARTIFACT_ID" \
-          --server-bundle-sha256 "$SERVER_BUNDLE_SHA256" \
-          --mobapt-review-sha256 "$MOBAPT_REVIEW_SHA256" \
-          "${xvfb[@]}" \
-          --assets-root candidate-staging/assets \
+          ROW_RELEASE_XVFB_INPUT_DIR: ${{ steps.frozen-xvfb-input.outputs.download-path }}
+          ROW_RELEASE_XVFB_SHA256: ${{ needs.release-preflight.outputs.debian_amd64_xvfb_sha256 }}
+        run: >-
+          python scripts/release_candidate_inventory.py stage
+          --repository "${{ github.repository }}"
+          --release-tag "$RELEASE_TAG"
+          --release-sha "${{ needs.release-preflight.outputs.release_sha }}"
+          --build-run-id "$GITHUB_RUN_ID"
+          --build-run-attempt "$GITHUB_RUN_ATTEMPT"
+          --server-bundle-artifact-id "$SERVER_BUNDLE_ARTIFACT_ID"
+          --server-bundle-sha256 "$SERVER_BUNDLE_SHA256"
+          --mobapt-review-sha256 "$MOBAPT_REVIEW_SHA256"
+          --assets-root candidate-staging/assets
           --output candidate-staging/release-candidate-inventory.json
       - name: Validate staged standard release assets
         run: >-

@@ -285,7 +285,8 @@ def test_release_workflow_enables_packaged_xvfb_only_for_the_reviewed_amd64_sele
     assert "digest-mismatch: error" in download
     for field in ("run_id", "artifact_id"):
         assert f"needs.release-preflight.outputs.debian_amd64_xvfb_{field}" in download
-    assert '--xvfb-deb "$RUNNER_TEMP/seal-debian-amd64-xvfb/xvfb.deb" --xvfb-sha256 "$XVFB_SHA256"' in sealing
+    assert "ROW_RELEASE_XVFB_INPUT_DIR: ${{ steps.frozen-xvfb-input.outputs.download-path }}" in sealing
+    assert "ROW_RELEASE_XVFB_SHA256: ${{ needs.release-preflight.outputs.debian_amd64_xvfb_sha256 }}" in sealing
     assert "matrix.arch == 'x86_64' && needs.release-preflight.outputs.debian_amd64_xvfb_sha256" in build
     preparation = (ROOT / ".github/workflows/prepare-debian-xvfb.yml").read_text(encoding="utf-8")
     assert 'test "$RELEASE_TAG" = "v$project_version"' in preparation

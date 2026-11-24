@@ -219,8 +219,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             child.add_argument("--server-bundle-artifact-id", required=True)
             child.add_argument("--server-bundle-sha256", required=True)
             child.add_argument("--mobapt-review-sha256", required=True)
-            child.add_argument("--xvfb-deb", type=Path)
-            child.add_argument("--xvfb-sha256")
+            xvfb_dir = os.environ.get("ROW_RELEASE_XVFB_INPUT_DIR")
+            child.add_argument("--xvfb-deb", type=Path, default=Path(xvfb_dir) / "xvfb.deb" if xvfb_dir else None)
+            child.add_argument("--xvfb-sha256", default=os.environ.get("ROW_RELEASE_XVFB_SHA256") or None)
         else:
             child.add_argument("--inventory-artifact-id", required=True)
             child.add_argument("--inventory-archive-digest", required=True)

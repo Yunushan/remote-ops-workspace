@@ -315,6 +315,9 @@ reviews, and the downloaded release assets. See the
    Xvfb files after the original bytes are put back.
    The tagged X11 evidence workflow uses the installed runtime and requires
    proof that it ran as an unprivileged user.
+   Candidate review requires the sealed archive and rollback receipt. Both
+   candidate and published audits compare the reviewed runtime and manifest
+   with the actual Debian package payload.
    Full parity still needs
    production-grade X server binaries attached to release targets and accepted
    passing evidence bundles from those targets.

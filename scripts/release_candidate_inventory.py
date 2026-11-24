@@ -63,6 +63,7 @@ GUI_MODULE_PROOF_SCHEMA_VERSION = 12
 ARCHIVE_FILE_SCOPE_SCHEMA_VERSION = 13
 FEDORA_RELEASE_IMAGE_SCHEMA_VERSION = 14
 SCHEMA_VERSION = FEDORA_RELEASE_IMAGE_SCHEMA_VERSION
+MIN_XVFB_INVENTORY_SCHEMA = 14
 REVIEWED_SERVER_BUNDLE_SCHEMA_VERSION = 11
 SERVER_BUNDLE_SCHEMA_VERSION = 10
 LINUX_INSTALLER_SCHEMA_VERSION = 9
@@ -1480,7 +1481,7 @@ def validate_inventory(
             raise ValueError("candidate inventory must bind the reviewed MobApt cache and its rollback receipt")
     if "debian_xvfb_sha256" in value:
         digest = value["debian_xvfb_sha256"]
-        if (schema < FEDORA_RELEASE_IMAGE_SCHEMA_VERSION or not isinstance(digest, str)
+        if (schema < MIN_XVFB_INVENTORY_SCHEMA or not isinstance(digest, str)
                 or HASH.fullmatch(digest) is None
                 or value["managed_debian_update"]["receipt"].get("candidate_has_xvfb") is not True):
             raise ValueError("candidate inventory must bind the frozen Debian Xvfb archive SHA-256")

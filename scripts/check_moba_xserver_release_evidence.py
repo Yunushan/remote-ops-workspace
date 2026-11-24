@@ -4,9 +4,12 @@ import argparse
 import json
 import re
 import struct
+import subprocess
 import sys
+import tarfile
 import zlib
 from pathlib import Path, PurePosixPath
+from tempfile import TemporaryDirectory
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +20,7 @@ for location in (ROOT, SRC):
 
 from remote_ops_workspace.x11 import (  # noqa: E402
     XSERVER_RUNTIME_BUNDLE_SCHEMA,
+    XSERVER_RUNTIME_MANIFEST_NAME,
     XServerReleaseEvidenceValidation,
     validate_moba_x_server_release_evidence,
 )
@@ -26,11 +30,14 @@ from scripts.check_release_license_compliance import (  # noqa: E402
     bound_evidence_file,
     read_json_object,
     secure_regular_file,
+    sha256_file,
 )
 from scripts.debian_release_fixture import (  # noqa: E402
+    DEBIAN_TARGETS,
     PRODUCT_PACKAGE,
     ROW_EXECUTABLE,
     release_deb_version,
+    unpack_deb_inputs,
     validate_native_debian_probe,
 )
 
@@ -40,6 +47,37 @@ NATIVE_PROBE_SCHEMA = "row.x11.native-evidence-verify.v1"
 NATIVE_PROBE_PATH = "row-native-evidence-verify.json"
 NATIVE_PROBE_ARGV = [ROW_EXECUTABLE, "x11", "evidence-verify", "--evidence", "evidence.json", "--assets-dir", ".", "--json"]
 INSTALLED_XSERVER = PurePosixPath("/usr/lib/remote-ops-workspace/xserver")
+
+
+def verify_packaged_debian_x11_evidence(
+    package: Path, root: Path, target: str, *, expected_xvfb_sha256: str | None = None,
+) -> None:
+    _, evidence = read_json_object(root / "evidence.json", "reviewed X11 release evidence")
+    runtime = evidence["runtime"]
+    version = release_deb_version(package.name, target)
+    architecture = next(arch for arch, release_target in DEBIAN_TARGETS.items() if release_target == target)
+    prefix = INSTALLED_XSERVER.relative_to("/")
+    with TemporaryDirectory(prefix="row-verify-x11-package-") as temporary:
+        manifest, executable = (Path(temporary) / filename for filename in (XSERVER_RUNTIME_MANIFEST_NAME, "Xvfb"))
+        members = {
+            str(prefix / manifest.name): manifest,
+            str(prefix / "linux/bin" / executable.name): executable,
+        }
+        try:
+            identity = unpack_deb_inputs(package, PRODUCT_PACKAGE, architecture, members)
+        except (OSError, subprocess.SubprocessError, tarfile.TarError) as exc:
+            raise ValueError("could not read the reviewed Debian X11 payload") from exc
+        if identity["version"] != version:
+            raise ValueError("reviewed Debian X11 package version differs from the release asset name")
+        if evidence.get("release_asset") != {"name": package.name, "sha256": identity["sha256"]}:
+            raise ValueError("reviewed X11 release asset differs from the Debian package")
+        if sha256_file(manifest) != runtime["manifest_sha256"] or sha256_file(executable) != runtime["sha256"]:
+            raise ValueError("reviewed X11 runtime differs from the Debian package payload")
+        if expected_xvfb_sha256 is not None:
+            _, document = read_json_object(manifest, "Debian X11 runtime manifest")
+            source = document.get("debian_source")
+            if not isinstance(source, dict) or source.get("sha256") != expected_xvfb_sha256:
+                raise ValueError("reviewed X11 runtime differs from the frozen Xvfb archive")
 
 
 def check_packaged_runtime(root: Path, evidence: dict[str, Any]) -> tuple[bool, bool]:

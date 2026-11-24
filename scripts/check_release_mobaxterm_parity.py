@@ -47,6 +47,9 @@ from scripts.check_moba_professional_deployment_evidence import (  # noqa: E402
 from scripts.check_moba_server_release_evidence import (  # noqa: E402
     verify_packaged_debian_server_evidence,
 )
+from scripts.check_moba_xserver_release_evidence import (  # noqa: E402
+    verify_packaged_debian_x11_evidence,
+)
 from scripts.make_mobaxterm_parity_evidence_record import VALIDATORS  # noqa: E402
 from scripts.release_candidate_inventory import (  # noqa: E402
     DIGEST_RE,
@@ -521,6 +524,7 @@ def audit_reviewed_records(
     professional_update_origins: list[str],
     sealed_assets: dict[str, str] | None = None,
     sealed_archives: list[dict[str, Any]] | None = None,
+    sealed_xvfb_sha256: str | None = None,
     retain_workflow_artifacts: bool = False,
 ) -> list[str]:
     evidence_root = evidence_root.absolute()
@@ -605,6 +609,13 @@ def audit_reviewed_records(
             if review_acceptance_line(record) not in acceptance_lines:
                 raise ValueError("GitHub review does not explicitly accept this exact article evidence")
             verify_article_evidence(record, evidence_root)
+            if article == "embedded-x-server":
+                name = record["validation_summary"]["summary"]["tested_release_asset"]["name"]
+                package = assets.get(name)
+                if package is not None and digests.get(name) == record["artifact_sha256"][name]:
+                    verify_packaged_debian_x11_evidence(
+                        package, evidence_root / article, record["release_target"], expected_xvfb_sha256=sealed_xvfb_sha256,
+                    )
             if article == "embedded-server-suite" and record["release_target"].startswith("linux-"):
                 name = record["validation_summary"]["summary"]["tested_release_asset"]["name"]
                 package = assets.get(name)

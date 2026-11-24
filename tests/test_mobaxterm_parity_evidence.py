@@ -1046,6 +1046,12 @@ def reviewed_release(tmp_path, monkeypatch):
         release_parity, "verify_packaged_debian_server_evidence",
         lambda *values: server_payload_calls.append(values),
     )
+    x11_payload_calls = []
+
+    def verify_x11_payload(package, root, target, *, expected_xvfb_sha256):
+        x11_payload_calls.append((package, root, target, expected_xvfb_sha256))
+
+    monkeypatch.setattr(release_parity, "verify_packaged_debian_x11_evidence", verify_x11_payload)
     delivery_calls = []
 
     def verify_delivery(evidence, **requirements):
@@ -1074,7 +1080,7 @@ def reviewed_release(tmp_path, monkeypatch):
         hosted_archives=hosted_archives,
         review=review, validator_calls=validator_calls,
         delivery_calls=delivery_calls,
-        server_payload_calls=server_payload_calls,
+        server_payload_calls=server_payload_calls, x11_payload_calls=x11_payload_calls,
     )
 
 
@@ -1144,6 +1150,8 @@ def make_staged_parity_archives(assets_dir: Path, tag: str, fault: str) -> list[
 @pytest.mark.parametrize(("fault", "detail"), [
     ("none", ""),
     ("current-valid-indexes", ""),
+    ("current-frozen-xvfb", ""),
+    ("current-missing-xvfb", "missing the frozen Xvfb archive and its rollback qualification"),
     ("current-swapped-checksums", "foreign, repeated or mismatched checksum"),
     ("current-missing-index", "missing sealed archive indexes"),
     ("missing-review", "must index all eight"),
@@ -1232,6 +1240,11 @@ def test_parity_preflight_uses_staged_bytes_original_archives_and_live_reviews(
         assert directory.is_dir() and pointer.run_id == 31 and pointer.artifact_id == 32
         assert pointer.archive_digest == "sha256:" + "7" * 64
         seen.append(pointer)
+        if fault in {"current-frozen-xvfb", "current-missing-xvfb"}:
+            inventory = {"schema_version": candidate_parity.MIN_XVFB_INVENTORY_SCHEMA}
+            if fault == "current-frozen-xvfb":
+                inventory["debian_xvfb_sha256"] = "f" * 64
+            return make_staged_parity_archives(args["assets_dir"], tag, fault), inventory
         if fault.startswith("current-"):
             return make_staged_parity_archives(args["assets_dir"], tag, fault), {
                 "schema_version": candidate_inventory.ARCHIVE_FILE_SCOPE_SCHEMA_VERSION,
@@ -1258,6 +1271,9 @@ def test_parity_preflight_uses_staged_bytes_original_archives_and_live_reviews(
         assert status == 0 and "8/8 reviewed candidates verified" in output.out and not output.err
         assert len(seen) == 1 and set(reviewed_release.validator_calls) == set(release_parity.ARTICLE_SPECS)
         assert len(reviewed_release.delivery_calls) == 1 and reviewed_release.delivery_calls[0][1]["published"] is True
+    if not detail:
+        assert len(reviewed_release.x11_payload_calls) == 1
+        assert reviewed_release.x11_payload_calls[0][-1] == ("f" * 64 if fault == "current-frozen-xvfb" else None)
     if retain:
         assert downloaded == {artifact_id: data for artifact_id, (_, data) in archives.items()}
         assert not list((root / "workflow-artifacts").glob(".row-parity-artifact-*"))
@@ -1395,6 +1411,20 @@ def test_linux_server_certification_requires_the_reviewed_payload_in_the_release
     monkeypatch.setattr(release_parity, "verify_packaged_debian_server_evidence", reject_unshipped_runtime)
     assert release_parity.audit_release(**reviewed_release.args) == [
         "embedded-server-suite reviewed daemon differs from published Debian payload"
+    ]
+
+
+def test_x11_certification_refuses_a_different_runtime_in_the_published_package(reviewed_release, monkeypatch):
+    def reject_payload(*args, **requirements):
+        package, root, target = args
+        assert package.name == "remote-ops-workspace-v1.0.2-linux-amd64.deb"
+        assert root.name == "embedded-x-server" and target == "linux-x86_64"
+        assert requirements == {"expected_xvfb_sha256": None}
+        raise ValueError("reviewed X11 runtime differs from the Debian package payload")
+
+    monkeypatch.setattr(release_parity, "verify_packaged_debian_x11_evidence", reject_payload)
+    assert release_parity.audit_release(**reviewed_release.args) == [
+        "embedded-x-server reviewed X11 runtime differs from the Debian package payload"
     ]
 
 

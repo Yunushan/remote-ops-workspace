@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tarfile
 from pathlib import Path
-from tempfile import TemporaryDirectory, TemporaryFile
+from tempfile import TemporaryDirectory
 
 import tomllib
 
@@ -21,34 +21,8 @@ from remote_ops_workspace.moba_mobapt import (  # noqa: E402
     write_mobapt_runtime_bundle,
 )
 from scripts.check_release_license_compliance import sha256_file  # noqa: E402
+from scripts.debian_release_fixture import unpack_deb_inputs  # noqa: E402
 from scripts.stage_debian_mobapt_cache import EVIDENCE, REVIEW, stage_cache  # noqa: E402
-
-
-def unpack_inputs(package: Path, name: str, outputs: dict[str, Path]) -> dict[str, str]:
-    fields = subprocess.check_output(
-        ["dpkg-deb", "--field", str(package), "Package", "Version", "Architecture"], text=True, timeout=30,
-    )
-    package_name, version, architecture = [line.partition(": ")[2] for line in fields.splitlines()]
-    if package_name != name or not version or architecture != "amd64":
-        raise ValueError(f"expected the Debian amd64 {name} package")
-    with TemporaryFile() as payload:
-        subprocess.run(
-            ["dpkg-deb", "--fsys-tarfile", str(package)], stdout=payload, check=True, timeout=30,
-        )
-        payload.seek(0)
-        with tarfile.open(fileobj=payload, mode="r:") as archive:
-            remaining = dict(outputs)
-            for member in archive:
-                key = member.name.removeprefix("./")
-                if key not in outputs:
-                    continue
-                if key not in remaining or not member.isfile() or not 0 < member.size <= 4 * 1024 * 1024:
-                    raise ValueError(f"invalid Debian package member: {key}")
-                with archive.extractfile(member) as stream, remaining.pop(key).open("xb") as destination:
-                    shutil.copyfileobj(stream, destination)
-            if remaining:
-                raise ValueError(f"Debian {name} package lacks {', '.join(remaining)}")
-    return {"version": version, "architecture": architecture, "sha256": sha256_file(package)}
 
 
 def prepare_cache(bash: Path, tree: Path, release_tag: str, output: Path) -> str:
@@ -63,10 +37,12 @@ def prepare_cache(bash: Path, tree: Path, release_tag: str, output: Path) -> str
         tree_notice = root / "tree.copyright"
         bash_binary = root / "bash"
         inputs = {
-            "bash": unpack_inputs(bash.resolve(strict=True), "bash", {
+            "bash": unpack_deb_inputs(bash.resolve(strict=True), "bash", "amd64", {
                 "usr/bin/bash": bash_binary, "usr/share/doc/bash/copyright": bash_notice,
             }),
-            "tree": unpack_inputs(tree.resolve(strict=True), "tree", {"usr/share/doc/tree/copyright": tree_notice}),
+            "tree": unpack_deb_inputs(tree.resolve(strict=True), "tree", "amd64", {
+                "usr/share/doc/tree/copyright": tree_notice,
+            }),
         }
         bash_binary.chmod(0o755)
         bundle = root / "bundle"

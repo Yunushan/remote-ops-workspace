@@ -25,7 +25,11 @@ from remote_ops_workspace.moba_servers import (  # noqa: E402
 )
 from scripts.check_linux_native_elf import validate_elf  # noqa: E402
 from scripts.check_release_license_compliance import secure_regular_file, sha256_file  # noqa: E402
-from scripts.debian_native_dependencies import debian_dependencies, dependency_field  # noqa: E402
+from scripts.debian_native_dependencies import (  # noqa: E402
+    debian_dependencies,
+    dependency_field,
+    merge_debian_dependencies,
+)
 from scripts.debian_release_fixture import release_deb_version  # noqa: E402
 from scripts.debian_server_notices import (  # noqa: E402
     EXTERNAL_SERVICES,
@@ -168,7 +172,10 @@ def verify_debian_notice_inputs(root: Path, value: object) -> dict[str, bytes]:
     return notices
 
 
-def stage_payload(source: Path, package_root: Path, target: str, *, extra_executables: tuple[Path, ...] = ()) -> str:
+def stage_payload(
+    source: Path, package_root: Path, target: str, *,
+    extra_executables: tuple[Path, ...] = (), extra_relationships: str = "",
+) -> str:
     document, expected = server_payload(source, target, EXTERNAL_SERVICES)
     notices = verify_debian_notice_inputs(source, document.get("debian_notices"))
     destination = package_root / PAYLOAD
@@ -197,9 +204,10 @@ def stage_payload(source: Path, package_root: Path, target: str, *, extra_execut
                 "source": "packaged", "bundled": True, "placeholder": False, "sha256": launcher_digest,
             },
         })
-    document["debian_depends"] = debian_dependencies(
+    native = debian_dependencies(
         launcher, [*(destination / name for name in expected), *extra_executables],
     )
+    document["debian_depends"] = merge_debian_dependencies(native, extra_relationships)
     depends = dependency_field(document["debian_depends"])
     for name, data in notices.items():
         path = package_root / notice_path(name)
@@ -297,11 +305,15 @@ def main() -> int:
     operation.add_argument("--deb", type=Path)
     parser.add_argument("--target", required=True, choices=sorted(ELF_TARGETS))
     parser.add_argument("--extra-executable", action="append", type=Path, default=[])
+    parser.add_argument("--extra-relationships", default="")
     args = parser.parse_args()
     if args.deb:
         verify_debian_payload(args.deb, args.bundle / MANIFEST, args.target)
     else:
-        print(stage_payload(args.bundle, args.debian_root, args.target, extra_executables=tuple(args.extra_executable)))
+        print(stage_payload(
+            args.bundle, args.debian_root, args.target, extra_executables=tuple(args.extra_executable),
+            extra_relationships=args.extra_relationships,
+        ))
     return 0
 
 

@@ -159,6 +159,13 @@ mkdir -p "$DEB_ROOT"
 cp -a "$PKGROOT/." "$DEB_ROOT/"
 mobapt_executables=()
 server_extra_executables=()
+xvfb_depends=""
+if [[ -n "${ROW_RELEASE_XVFB_DEB:-}" || -n "${ROW_RELEASE_XVFB_SHA256:-}" ]]; then
+  xvfb_depends="$("$PYTHON_BIN" scripts/stage_debian_xvfb.py \
+    --xvfb-deb "${ROW_RELEASE_XVFB_DEB:?Set ROW_RELEASE_XVFB_DEB}" \
+    --sha256 "${ROW_RELEASE_XVFB_SHA256:?Set ROW_RELEASE_XVFB_SHA256}" \
+    --debian-root "$DEB_ROOT" --architecture "$DEB_ARCH")"
+fi
 if [[ -n "${ROW_RELEASE_MOBAPT_BUNDLE:-}" || -n "${ROW_RELEASE_MOBAPT_REVIEW_SHA256:-}" ]]; then
   mobapt_tools="$("$PYTHON_BIN" scripts/stage_debian_mobapt_cache.py \
     --bundle "${ROW_RELEASE_MOBAPT_BUNDLE:?Set ROW_RELEASE_MOBAPT_BUNDLE}" \
@@ -177,9 +184,11 @@ if [[ -n "${ROW_RELEASE_SERVER_BUNDLE:-}" ]]; then
   esac
   deb_depends="$("$PYTHON_BIN" scripts/moba_debian_server_payload.py \
     --bundle "$ROW_RELEASE_SERVER_BUNDLE" --debian-root "$DEB_ROOT" --target "$server_target" \
+    --extra-relationships "$xvfb_depends" \
     "${server_extra_executables[@]}")"
-elif (( ${#mobapt_executables[@]} )); then
-  deb_depends="$("$PYTHON_BIN" scripts/debian_native_dependencies.py "$ROW_BIN" "${mobapt_executables[@]}")"
+elif [[ -n "$xvfb_depends" ]] || (( ${#mobapt_executables[@]} )); then
+  deb_depends="$("$PYTHON_BIN" scripts/debian_native_dependencies.py \
+    --extra-relationships "$xvfb_depends" "$ROW_BIN" "${mobapt_executables[@]}")"
 else
   deb_depends="$launcher_depends"
 fi

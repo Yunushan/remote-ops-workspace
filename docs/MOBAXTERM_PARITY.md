@@ -295,7 +295,11 @@ reviews, and the downloaded release assets. See the
    that the DEB owns Xvfb and its manifest. The collector starts ROW,
    Xvfb, and the forwarding SSH client as an ordinary desktop user. The
    receipt binds the running executable, process user and capabilities to
-   the package and forwarded window. Full parity still needs
+   the package and forwarded window. To include Debian's Xvfb in an
+   opt-in DEB build, set `ROW_RELEASE_XVFB_DEB` to the exact architecture's
+   reviewed Debian Xvfb archive and `ROW_RELEASE_XVFB_SHA256` to its hash.
+   The build retains Debian's copyright notice and minimum dependencies.
+   Full parity still needs
    production-grade X server binaries attached to release targets and accepted
    passing evidence bundles from those targets.
 2. MobApt and embedded Unix environment parity: ROW now has a MobApt-style

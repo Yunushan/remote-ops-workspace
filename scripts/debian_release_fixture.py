@@ -5,8 +5,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
+import tarfile
 from pathlib import Path
+from tempfile import TemporaryFile
 from typing import Any
 
 from scripts.check_release_license_compliance import (
@@ -20,6 +23,31 @@ DEBIAN_TARGETS = {"amd64": "linux-x86_64", "arm64": "linux-arm64", "i386": "linu
 PRODUCT_PACKAGE = "remote-ops-workspace"
 ROW_EXECUTABLE = "/usr/bin/row"
 PROCESS_ENV = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C", "SHELL": "/bin/sh", "TERM": "dumb"}
+
+
+def unpack_deb_inputs(package: Path, name: str, architecture: str, outputs: dict[str, Path]) -> dict[str, str]:
+    fields = subprocess.check_output(
+        ["dpkg-deb", "--field", str(package), "Package", "Version", "Architecture"], text=True, timeout=30,
+    )
+    package_name, version, package_arch = [line.partition(": ")[2] for line in fields.splitlines()]
+    if package_name != name or not version or package_arch != architecture:
+        raise ValueError(f"expected the Debian {architecture} {name} package")
+    with TemporaryFile() as payload:
+        subprocess.run(["dpkg-deb", "--fsys-tarfile", str(package)], stdout=payload, check=True, timeout=30)
+        payload.seek(0)
+        with tarfile.open(fileobj=payload, mode="r:") as archive:
+            remaining = dict(outputs)
+            for member in archive:
+                key = member.name.removeprefix("./")
+                if key not in outputs:
+                    continue
+                if key not in remaining or not member.isfile() or not 0 < member.size <= 4 * 1024 * 1024:
+                    raise ValueError(f"invalid Debian package member: {key}")
+                with archive.extractfile(member) as stream, remaining.pop(key).open("xb") as destination:
+                    shutil.copyfileobj(stream, destination)
+            if remaining:
+                raise ValueError(f"Debian {name} package lacks {', '.join(remaining)}")
+    return {"version": version, "architecture": architecture, "sha256": sha256_file(package)}
 
 
 def release_deb_version(name: str, target: str) -> str:

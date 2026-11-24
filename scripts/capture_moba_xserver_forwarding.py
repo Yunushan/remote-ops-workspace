@@ -8,6 +8,7 @@ import os
 import re
 import select
 import shlex
+import shutil
 import socket
 import subprocess
 import sys
@@ -25,6 +26,7 @@ from remote_ops_workspace.launcher import build_launch_plan  # noqa: E402
 from remote_ops_workspace.models import Profile  # noqa: E402
 from scripts.check_moba_xserver_release_evidence import (  # noqa: E402
     FORWARDING_SCHEMA,
+    INSTALLED_XSERVER,
     NATIVE_PROBE_ARGV,
     NATIVE_PROBE_PATH,
     NATIVE_PROBE_SCHEMA,
@@ -32,8 +34,9 @@ from scripts.check_moba_xserver_release_evidence import (  # noqa: E402
     validate_moba_x_server_live_release_evidence,
     validate_moba_x_server_release_asset_evidence,
 )
-from scripts.check_release_license_compliance import sha256_file  # noqa: E402
+from scripts.check_release_license_compliance import secure_regular_file, sha256_file  # noqa: E402
 from scripts.debian_release_fixture import (  # noqa: E402
+    PRODUCT_PACKAGE,
     ROW_EXECUTABLE,
     capture_native_debian_probe,
     install_release_deb,
@@ -160,8 +163,36 @@ def wait_for_window(process: subprocess.Popen, env: dict[str, str]) -> str:
     raise ValueError("no forwarded X11 clock appeared on the managed display")
 
 
-def capture(row: Path, output: Path, *, release_deb: Path | None = None) -> None:
+def copy_installed_runtime(bundle: Path) -> Path:
+    installed = Path(INSTALLED_XSERVER)
+    manifest, error = secure_regular_file(installed, "xserver-runtime.json", "installed X server manifest")
+    if manifest is None:
+        raise ValueError(error)
+    document = json.loads(manifest.read_bytes())
+    runtime = document.get("runtime") if isinstance(document, dict) else None
+    if not isinstance(runtime, dict):
+        raise ValueError("the installed X server manifest lacks runtime metadata")
+    executable, error = secure_regular_file(installed, runtime.get("executable"), "installed X server executable")
+    if executable is None:
+        raise ValueError(error)
+    files = set(run(["dpkg-query", "--listfiles", "--", PRODUCT_PACKAGE]).stdout.splitlines())
+    if not {str(manifest), str(executable)} <= files:
+        raise ValueError("the tested Debian package must own the X server manifest and executable")
+    if sha256_file(executable) != runtime.get("sha256"):
+        raise ValueError("the installed X server differs from its package manifest")
+    snapshot = bundle / executable.relative_to(installed)
+    snapshot.parent.mkdir(parents=True)
+    shutil.copy2(manifest, bundle / manifest.name)
+    shutil.copy2(executable, snapshot)
+    return executable
+
+
+def capture(
+    row: Path, output: Path, *, release_deb: Path | None = None, installed_runtime: bool = False,
+) -> None:
     require_offline_container()
+    if installed_runtime and release_deb is None:
+        raise ValueError("installed X server capture requires the tested Debian package")
     if os.uname().machine != "x86_64":
         raise ValueError("this qualification uses a Linux x86_64 Xvfb runtime")
     if output.exists() or output.is_symlink():
@@ -182,8 +213,13 @@ def capture(row: Path, output: Path, *, release_deb: Path | None = None) -> None
         bundle = root / "bundle"
         env = {**os.environ, "LC_ALL": "C", "DISPLAY": DISPLAY, "ROW_HOME": str(scratch / "row"),
                "XAUTHORITY": str(scratch / "Xauthority"), "ROW_XSERVER_RUNTIME_DIR": str(bundle)}
-        run([str(row), "x11", "bundle-runtime", "--out", str(bundle), "--runtime", "xvfb",
-             "--source", "/usr/bin/Xvfb", "--system", "linux", "--release-target", TARGET], env=env)
+        packaged = None
+        if installed_runtime:
+            env.pop("ROW_XSERVER_RUNTIME_DIR")
+            packaged = copy_installed_runtime(bundle)
+        else:
+            run([str(row), "x11", "bundle-runtime", "--out", str(bundle), "--runtime", "xvfb",
+                 "--source", "/usr/bin/Xvfb", "--system", "linux", "--release-target", TARGET], env=env)
         config = prepare_sshd(scratch)
         daemon_log = scratch / "sshd.log"
         with daemon_log.open("w", encoding="utf-8") as log:
@@ -200,6 +236,8 @@ def capture(row: Path, output: Path, *, release_deb: Path | None = None) -> None
                             env=env, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, timeout=20, check=True,
                         )
                     capture_smoke(row, root, env)
+                    if packaged is not None:
+                        capture_installed_runtime(root, packaged)
                     receipt = forward_window(scratch, root, env)
                 finally:
                     run([str(row), "x11", "stop"], env=env)
@@ -217,6 +255,17 @@ def capture(row: Path, output: Path, *, release_deb: Path | None = None) -> None
         if not result.passed:
             raise ValueError(f"forwarded X11 evidence failed its release checks: {result.errors}")
         root.rename(output)
+
+
+def capture_installed_runtime(root: Path, packaged: Path) -> None:
+    start = json.loads((root / "start.json").read_bytes())
+    pid = start["lifecycle"]["pid"]
+    proc = Path("/proc") / str(pid) / "exe"
+    if proc.resolve(strict=True) != packaged or start["command"][0] != str(packaged):
+        raise ValueError("the managed X server did not launch from the tested Debian package")
+    write_json(root / "installed-xserver.json", {
+        "executable": str(packaged), "pid": pid, "sha256": sha256_file(proc), "owner": PRODUCT_PACKAGE,
+    })
 
 
 def capture_smoke(row: Path, root: Path, env: dict[str, str]) -> None:
@@ -237,6 +286,9 @@ def finish_evidence(root: Path, receipt: dict[str, Any], release: dict[str, Any]
     runtime = {key: bundled[key] for key in ("key", "sha256", "source", "bundled")}
     runtime.update(executable=f"bundle/{bundled['executable']}", manifest=manifest_name,
                    manifest_sha256=sha256_file(manifest_path), start="start.json", start_sha256=sha256_file(root / "start.json"))
+    installed = root / "installed-xserver.json"
+    if installed.is_file():
+        runtime.update(installed_runtime=installed.name, installed_runtime_sha256=sha256_file(installed))
     smoke_sha256 = sha256_file(root / "smoke.json")
     receipt.update(runtime_sha256=runtime["sha256"], start_sha256=runtime["start_sha256"], smoke_sha256=smoke_sha256)
     write_json(root / "forwarding.json", receipt)
@@ -258,10 +310,12 @@ def main() -> int:
     native = parser.add_mutually_exclusive_group()
     native.add_argument("--row", type=Path, help="preinstalled ROW executable for local capture")
     native.add_argument("--release-deb", type=Path, help="install and qualify the exact Debian release asset")
+    parser.add_argument("--installed-runtime", action="store_true", help="require Xvfb owned by the tested Debian package")
     parser.add_argument("--out", required=True, type=Path)
     args = parser.parse_args()
     try:
-        capture(args.row or Path(ROW_EXECUTABLE), args.out, release_deb=args.release_deb)
+        capture(args.row or Path(ROW_EXECUTABLE), args.out, release_deb=args.release_deb,
+                installed_runtime=args.installed_runtime)
     except subprocess.CalledProcessError as exc:
         print(f"X11 capture: {exc}\n{exc.stderr or ''}", file=sys.stderr)
         return 1

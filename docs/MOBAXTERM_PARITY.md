@@ -290,7 +290,10 @@ reviews, and the downloaded release assets. See the
    inventory, display collision checks, lifecycle supervision, smoke evidence
    capture, a packaged-runtime bundle writer and a release-evidence verifier
    for real X11-forwarded GUI applications. Status reports the managed
-   process only for the display it serves. Full parity still needs
+   process only for the display it serves. On Debian amd64, pass
+   `--installed-runtime` with `--release-deb` to have the collector require
+   that the DEB owns Xvfb and its manifest. The resulting receipt binds the
+   running executable to the package and forwarded window. Full parity still needs
    production-grade X server binaries attached to release targets and accepted
    passing evidence bundles from those targets.
 2. MobApt and embedded Unix environment parity: ROW now has a MobApt-style

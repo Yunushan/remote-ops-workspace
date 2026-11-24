@@ -28,6 +28,7 @@ from scripts.check_release_license_compliance import (  # noqa: E402
     secure_regular_file,
 )
 from scripts.debian_release_fixture import (  # noqa: E402
+    PRODUCT_PACKAGE,
     ROW_EXECUTABLE,
     release_deb_version,
     validate_native_debian_probe,
@@ -38,9 +39,10 @@ REMOTE_DISPLAY_PROBE = 'printf "remote_display=%s\\n" "$DISPLAY"'
 NATIVE_PROBE_SCHEMA = "row.x11.native-evidence-verify.v1"
 NATIVE_PROBE_PATH = "row-native-evidence-verify.json"
 NATIVE_PROBE_ARGV = [ROW_EXECUTABLE, "x11", "evidence-verify", "--evidence", "evidence.json", "--assets-dir", ".", "--json"]
+INSTALLED_XSERVER = PurePosixPath("/usr/lib/remote-ops-workspace/xserver")
 
 
-def check_packaged_runtime(root: Path, evidence: dict[str, Any]) -> None:
+def check_packaged_runtime(root: Path, evidence: dict[str, Any]) -> bool:
     runtime = evidence["runtime"]
     path = bound_evidence_file(
         root, runtime.get("manifest"), runtime.get("manifest_sha256"), "runtime manifest"
@@ -74,14 +76,33 @@ def check_packaged_runtime(root: Path, evidence: dict[str, Any]) -> None:
         start.get("lifecycle"),
         start.get("command"),
     )
+    from_package = "installed_runtime" in runtime
+    if from_package:
+        observed_path = INSTALLED_XSERVER / packaged["executable"]
+        receipt_path = bound_evidence_file(
+            root, runtime["installed_runtime"], runtime.get("installed_runtime_sha256"), "installed X server receipt",
+        )
+        _, receipt = read_json_object(receipt_path, "installed X server receipt")
+        if (
+            "release_asset" not in evidence or not isinstance(lifecycle, dict)
+            or type(receipt.get("pid")) is not int or receipt["pid"] <= 1 or receipt["pid"] != lifecycle.get("pid")
+            or receipt.get("executable") != str(observed_path)
+            or receipt.get("owner") != PRODUCT_PACKAGE
+            or receipt.get("sha256") != runtime["sha256"]
+        ):
+            raise ValueError("installed X server receipt must bind the package-owned executable to the live process")
+        selected_path_matches = executable_name(command) and command[0] == str(observed_path)
+    else:
+        selected_path_matches = executable_name(command) and command[0].replace("\\", "/").endswith(
+            "/" + runtime["executable"],
+        )
     if (
         start.get("display") != evidence["display"]
         or not isinstance(selected, dict)
         or selected.get("bundled") is not True
         or selected.get("key") != runtime["key"]
-        or not executable_name(command)
+        or not selected_path_matches
         or command[0] != selected.get("executable")
-        or not command[0].replace("\\", "/").endswith("/" + runtime["executable"])
         or not isinstance(lifecycle, dict)
         or lifecycle.get("command") != command
         or lifecycle.get("runtime_key") != runtime["key"]
@@ -93,6 +114,7 @@ def check_packaged_runtime(root: Path, evidence: dict[str, Any]) -> None:
         raise ValueError(
             "managed X server start must record the live bundled runtime on the evidenced display"
         )
+    return from_package
 
 
 def executable_name(argv: Any) -> str:
@@ -221,7 +243,7 @@ def validate_forwarding_capture(
         result = validate_moba_x_server_release_evidence(evidence_file, assets_dir=root)
         if not result.passed:
             return result
-        check_packaged_runtime(root, evidence)
+        from_package = check_packaged_runtime(root, evidence)
         check_display_probe(probe, evidence)
         check_forwarded_window(root, evidence, image)
         if "release_asset" in evidence:
@@ -237,6 +259,8 @@ def validate_forwarding_capture(
             if identity["release_tag"] != f"v{version}":
                 raise ValueError("tested Debian package version must match the exact X11 release tag")
             result.summary.update(identity)
+        if from_package:
+            result.summary["installed_runtime_verified"] = True
     except (KeyError, OSError, ValueError, struct.error, zlib.error) as exc:
         return XServerReleaseEvidenceValidation(
             str(evidence_path), str(root), False, [str(exc)], [], {}

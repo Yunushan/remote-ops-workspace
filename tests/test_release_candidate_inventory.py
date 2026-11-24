@@ -251,6 +251,7 @@ def test_release_workflow_reuses_preflight_mobapt_selection_for_amd64() -> None:
     assert "steps.debian-amd64-mobapt.outputs.artifact_id" in preflight
     assert "steps.debian-amd64-mobapt.outputs.review_sha256" in preflight
     assert "scripts/stage_debian_mobapt_cache.py" in preflight and "digest-mismatch: error" in preflight
+    assert '--tag "$RELEASE_TAG"' in preflight
     linux = source.split("  linux-native:\n", 1)[1].split("  seal-release-candidate:\n", 1)[0]
     download = linux.split("- name: Download the frozen MobApt cache selection", 1)[1]
     download = download.split("- name:", 1)[0]
@@ -259,6 +260,10 @@ def test_release_workflow_reuses_preflight_mobapt_selection_for_amd64() -> None:
         assert f"needs.release-preflight.outputs.debian_amd64_mobapt_{field}" in download
     assert "ROW_RELEASE_MOBAPT_BUNDLE: ${{ steps.debian-amd64-mobapt.outputs.download-path }}" in linux
     assert "matrix.arch == 'x86_64' && needs.release-preflight.outputs.debian_amd64_mobapt_review_sha256" in linux
+    preparation = (ROOT / ".github/workflows/prepare-debian-mobapt-cache.yml").read_text(encoding="utf-8")
+    assert 'apt-get download "bash=$BASH_PACKAGE_VERSION" "tree=$TREE_PACKAGE_VERSION"' in preparation
+    assert 'prepare_debian_mobapt_cache.py --tag "$RELEASE_TAG"' in preparation
+    assert '"$RELEASE_TAG" "$GITHUB_RUN_ID" "$ARTIFACT_ID"' in preparation
 
 
 def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:

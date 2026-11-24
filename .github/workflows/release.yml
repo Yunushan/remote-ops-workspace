@@ -183,7 +183,7 @@ jobs:
         run: |
           stage="$(mktemp -d "$RUNNER_TEMP/mobapt-preflight.XXXXXXXX")"
           python scripts/stage_debian_mobapt_cache.py --bundle "$RUNNER_TEMP/preflight-debian-amd64-mobapt" \
-            --review-sha256 "$MOBAPT_REVIEW_SHA256" --architecture amd64 --debian-root "$stage"
+            --review-sha256 "$MOBAPT_REVIEW_SHA256" --tag "$RELEASE_TAG" --architecture amd64 --debian-root "$stage"
       - name: Run release preflight verifier
         run: python scripts/verify.py --quick --no-cli-smoke --release-tag "$RELEASE_TAG"
       - name: Require Python 3.15, native Windows, and branch coverage CI evidence for release source

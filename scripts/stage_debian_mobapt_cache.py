@@ -30,9 +30,13 @@ REVIEW = "mobapt-debian-review.json"
 ELF_ARCHES = {"amd64": "x86_64", "arm64": "aarch64", "i386": "i686", "armhf": "armhf"}
 
 
-def stage_cache(bundle: Path, root: Path, architecture: str, review_sha256: str) -> list[Path]:
+def stage_cache(
+    bundle: Path, root: Path, architecture: str, review_sha256: str, *, release_tag: str | None = None,
+) -> list[Path]:
     review = bound_evidence_file(bundle, REVIEW, review_sha256, "MobApt review manifest")
     _, metadata = read_json_object(review, "MobApt review manifest")
+    if release_tag is not None and metadata.get("release_tag") != release_tag:
+        raise ValueError("MobApt review manifest does not match the release tag")
     evidence = bound_evidence_file(bundle, EVIDENCE, metadata.get("assembly_sha256"), "MobApt assembly")
     checked = validate_mobapt_cache_evidence(evidence, assets_dir=bundle)
     if not checked.passed:
@@ -114,9 +118,12 @@ def main() -> int:
     parser.add_argument("--debian-root", required=True, type=Path)
     parser.add_argument("--architecture", required=True, choices=DEBIAN_TARGETS)
     parser.add_argument("--review-sha256", required=True)
+    parser.add_argument("--tag")
     args = parser.parse_args()
     try:
-        for executable in stage_cache(args.bundle, args.debian_root, args.architecture, args.review_sha256):
+        for executable in stage_cache(
+            args.bundle, args.debian_root, args.architecture, args.review_sha256, release_tag=args.tag,
+        ):
             print(executable)
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         print(f"Debian MobApt cache: {exc}", file=sys.stderr)

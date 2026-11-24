@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 import stat
 import struct
 import tarfile
@@ -114,6 +115,29 @@ def test_packaged_linux_system_notice_requires_approved_distro_version(
     assert check_packaged_notice_scans(tmp_path, set(approved), approved) == [
         f"{package.name} signed bundled component {component} must match packaged version '1:3.1.4-2+deb13u1'",
     ]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows rename sharing errors")
+def test_notice_capture_retries_transient_windows_rename_denial(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    import check_packaged_release_notices as notices
+
+    destination = tmp_path / "packaged-notices"
+    native_rename = type(destination).rename
+    attempts = []
+
+    def rename(path, target):
+        attempts.append(target)
+        if len(attempts) == 1:
+            error = PermissionError("briefly locked")
+            error.winerror = 5
+            raise error
+        return native_rename(path, target)
+
+    monkeypatch.setattr(type(destination), "rename", rename)
+    notices.publish_notice_capture(destination, "v1.0.28", {}, {})
+    assert attempts == [destination, destination]
+    assert (destination / "notice-extraction.json").is_file()
 
 
 def test_production_notices_cover_protected_linux_and_require_exact_bytes(

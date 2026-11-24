@@ -301,7 +301,9 @@ reviews, and the downloaded release assets. See the
    tools from the selected runtime. On Debian,
    `row mobapt install <name> --offline` plans an install from the selected cache. Add `--execute` to
    verify the staged archive's SHA-256, Debian package name and version before
-   installing it with package repositories disabled. Full parity still needs
+   installing it with package repositories disabled. The Debian release
+   collector records this install through the installed release CLI and
+   verifies the chosen cache archive and the terminal output. Full parity still needs
    production-grade Unix command binaries, real package archives attached to
    releases and accepted passing release evidence proving newly installed Unix
    tools are usable inside the terminal.

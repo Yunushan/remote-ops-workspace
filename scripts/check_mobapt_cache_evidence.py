@@ -4,7 +4,7 @@ import argparse
 import json
 import shlex
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +25,7 @@ from scripts.check_release_license_compliance import (  # noqa: E402
     secure_regular_file,
 )
 from scripts.debian_release_fixture import (  # noqa: E402
+    ROW_EXECUTABLE,
     release_deb_version,
     validate_native_debian_probe,
 )
@@ -75,7 +76,36 @@ def check_runtime_and_cache(root: Path, data: dict[str, Any]) -> tuple[set[str],
     return paths, packages
 
 
-def execution_argv(root: Path, test: dict[str, Any], kind: str, runtime_sha: str, archive_sha: str) -> list[str]:
+def native_install_argv(package: str) -> list[str]:
+    return [ROW_EXECUTABLE, "mobapt", "install", package, "--offline", "--execute", "--json"]
+
+
+def check_native_install_output(stdout: str, package: dict[str, Any]) -> None:
+    try:
+        result = json.loads(stdout)
+        plan = result["plan"]
+        command = plan["command"]
+        archive = PurePosixPath(command[-1])
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
+        raise ValueError("native MobApt install receipt requires a JSON execution result") from exc
+    relative = PurePosixPath(package["archive"])
+    if (
+        result.get("executed") is not True or result.get("ok") is not True
+        or type(result.get("returncode")) is not int or result["returncode"] != 0
+        or plan.get("action") != "install" or plan.get("package") != package["name"]
+        or plan.get("cached_package_version") != package["version"]
+        or plan.get("cached_archive_sha256") != package["sha256"]
+        or command[:-1] != [
+            "/usr/bin/apt", "-o", "Dir::Etc::sourcelist=", "-o", "Dir::Etc::sourceparts=", "install", "--",
+        ]
+        or not archive.is_absolute() or archive.parts[-len(relative.parts):] != relative.parts
+    ):
+        raise ValueError("native MobApt install receipt must show an executed offline install of the verified package")
+
+
+def execution_receipt(
+    root: Path, test: dict[str, Any], kind: str, runtime_sha: str, archive_sha: str,
+) -> dict[str, Any]:
     proof = bound_evidence_file(root, test["evidence_file"], test["evidence_sha256"], f"{kind} receipt")
     try:
         _, receipt = read_json_object(proof, f"{kind} receipt")
@@ -97,7 +127,7 @@ def execution_argv(root: Path, test: dict[str, Any], kind: str, runtime_sha: str
     stdout, stderr = receipt.get("stdout"), receipt.get("stderr")
     if not isinstance(stdout, str) or not isinstance(stderr, str) or (kind == "terminal-probe" and not stdout.strip()):
         raise ValueError(f"{kind} receipt requires captured output")
-    return arguments
+    return receipt
 
 
 def validate_mobapt_cache_execution(
@@ -120,14 +150,19 @@ def validate_mobapt_cache_execution(
             raise ValueError("each cached package requires one offline installation receipt")
         for name, record in installs.items():
             package = packages[name]
-            if package["archive"] not in execution_argv(root, record, "offline-install", runtime_sha, package["sha256"]):
+            receipt = execution_receipt(root, record, "offline-install", runtime_sha, package["sha256"])
+            if receipt["argv"] == native_install_argv(name):
+                check_native_install_output(receipt["stdout"], package)
+            elif "release_asset" in data:
+                raise ValueError("native Debian evidence requires installation through the installed row command")
+            elif package["archive"] not in receipt["argv"]:
                 raise ValueError("offline install receipt argv must name the verified package archive")
         terminal = data["terminal_probe"]
         name = terminal.get("package")
         if not isinstance(name, str) or name not in packages:
             raise ValueError("terminal probe must name a verified installed package")
-        arguments = execution_argv(root, terminal, "terminal-probe", runtime_sha, packages[name]["sha256"])
-        if arguments[0] not in paths:
+        receipt = execution_receipt(root, terminal, "terminal-probe", runtime_sha, packages[name]["sha256"])
+        if receipt["argv"][0] not in paths:
             raise ValueError("terminal probe must invoke a verified bundled runtime executable")
         if "release_asset" in data:
             result.summary["tested_release_asset"] = validate_native_debian_probe(

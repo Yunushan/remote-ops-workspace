@@ -16,6 +16,7 @@ from scripts.check_mobapt_cache_evidence import (
     NATIVE_PROBE_ARGV,
     NATIVE_PROBE_PATH,
     NATIVE_PROBE_SCHEMA,
+    native_install_argv,
     validate_mobapt_offline_execution,
     validate_mobapt_release_cache_evidence,
 )
@@ -86,9 +87,26 @@ def test_release_checker_binds_runtime_cache_and_receipts(captured_bundle):
     assert not result.passed and "requires a native Debian release asset probe" in result.errors[0]
 
 
+def native_install_result(package):
+    return {
+        "executed": True, "ok": True, "returncode": 0,
+        "plan": {
+            "action": "install", "package": package["name"], "cached_package_version": package["version"],
+            "cached_archive_sha256": package["sha256"],
+            "command": ["/usr/bin/apt", "-o", "Dir::Etc::sourcelist=", "-o", "Dir::Etc::sourceparts=",
+                        "install", "--", f"/capture/{package['archive']}"],
+        },
+    }
+
+
 @pytest.fixture
-def native_capture(captured_bundle):
-    evidence, payload, _ = captured_bundle
+def native_capture(captured_bundle, request):
+    evidence, payload, receipts = captured_bundle
+    if not getattr(request, "param", False):
+        package = payload["package_cache"]["packages"][0]
+        install = {**receipts["offline-install"], "argv": native_install_argv(package["name"]),
+                   "stdout": json.dumps(native_install_result(package))}
+        bind_receipt(evidence, payload["install_tests"][0], install)
     payload["release_asset"] = {
         "name": "remote-ops-workspace-v1.0.28-linux-amd64.deb", "sha256": "1" * 64,
     }
@@ -114,6 +132,31 @@ def test_strict_capture_binds_installer_and_workflow_attempt(native_capture):
     assert result.summary["tested_release_asset"] == payload["release_asset"]
     assert result.summary["source_head_sha"] == payload["source"]["head_sha"]
     assert result.summary["run_attempt"] == 2
+
+
+@pytest.mark.parametrize("native_capture", [True], indirect=True)
+def test_native_capture_rejects_direct_package_manager_receipt(native_capture):
+    evidence, _, _, _ = native_capture
+    result = validate_mobapt_release_cache_evidence(evidence)
+    assert not result.passed and "through the installed row command" in result.errors[0]
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("cached_archive_sha256", "a" * 64),
+    ("cached_package_version", "9.9"),
+    ("command", ["/usr/bin/apt", "install", "/capture/packages/tree-2.2.1.deb"]),
+])
+def test_native_capture_rejects_an_unbound_or_online_install(native_capture, field, value):
+    evidence, payload, _, _ = native_capture
+    record = payload["install_tests"][0]
+    receipt = json.loads((evidence.parent / record["evidence_file"]).read_bytes())
+    result = json.loads(receipt["stdout"])
+    result["plan"][field] = value
+    receipt["stdout"] = json.dumps(result)
+    bind_receipt(evidence, record, receipt)
+    write_json(evidence, payload)
+    rejected = validate_mobapt_release_cache_evidence(evidence)
+    assert not rejected.passed and "executed offline install of the verified package" in rejected.errors[0]
 
 
 @pytest.mark.parametrize("field", ["evidence_sha256", "release_asset_sha256", "installed_version", "argv"])

@@ -241,6 +241,26 @@ def test_release_workflow_qualifies_and_uploads_the_amd64_deb_before_inventory_s
     assert "needs.linux-native.result == 'success'" in sealer
 
 
+def test_release_workflow_reuses_preflight_mobapt_selection_for_amd64() -> None:
+    source = (ROOT / candidate.BUILD_WORKFLOW).read_text(encoding="utf-8")
+    preflight = source.split("- name: Freeze the reviewed Debian amd64 MobApt cache selection", 1)[1]
+    preflight = preflight.split("- name: Run release preflight verifier", 1)[0]
+    assert "vars.ROW_DEBIAN_AMD64_MOBAPT_BUNDLE" in preflight
+    assert '"${BASH_REMATCH[1]}" != "$RELEASE_TAG"' in preflight
+    assert "steps.debian-amd64-mobapt.outputs.run_id" in preflight
+    assert "steps.debian-amd64-mobapt.outputs.artifact_id" in preflight
+    assert "steps.debian-amd64-mobapt.outputs.review_sha256" in preflight
+    assert "scripts/stage_debian_mobapt_cache.py" in preflight and "digest-mismatch: error" in preflight
+    linux = source.split("  linux-native:\n", 1)[1].split("  seal-release-candidate:\n", 1)[0]
+    download = linux.split("- name: Download the frozen MobApt cache selection", 1)[1]
+    download = download.split("- name:", 1)[0]
+    assert "if: ${{ matrix.arch == 'x86_64' }}" in download and "digest-mismatch: error" in download
+    for field in ("run_id", "artifact_id"):
+        assert f"needs.release-preflight.outputs.debian_amd64_mobapt_{field}" in download
+    assert "ROW_RELEASE_MOBAPT_BUNDLE: ${{ steps.debian-amd64-mobapt.outputs.download-path }}" in linux
+    assert "matrix.arch == 'x86_64' && needs.release-preflight.outputs.debian_amd64_mobapt_review_sha256" in linux
+
+
 def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
     source = (ROOT / candidate.BUILD_WORKFLOW).read_text(encoding="utf-8")
     job = source.split("  linux-native:\n", 1)[1].split("  seal-release-candidate:\n", 1)[0]

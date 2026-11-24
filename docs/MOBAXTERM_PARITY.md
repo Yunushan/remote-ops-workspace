@@ -314,6 +314,11 @@ reviews, and the downloaded release assets. See the
    `mobapt-debian-review.json`. The review manifest's `assembly_sha256`
    pins `mobapt-cache-evidence.json`. Its `notices` object maps each
    `<component>.copyright` filename under `notices/` to its SHA-256.
+   For the tagged build, retain those files in an Actions artifact in this
+   repository with the review manifest at the artifact root. Set the release
+   environment variable `ROW_DEBIAN_AMD64_MOBAPT_BUNDLE` to
+   `vX.Y.Z RUN_ID ARTIFACT_ID REVIEW_MANIFEST_SHA256`. Preflight and the
+   amd64 builder use the same frozen selection.
    Full parity still needs
    production-grade Unix command binaries, real package archives attached to
    releases and accepted passing release evidence proving newly installed Unix

@@ -35,6 +35,9 @@ jobs:
       candidate_build_ready: ${{ steps.signing-readiness.outputs.candidate_build_ready }}
       debian_amd64_bundle_artifact_id: ${{ steps.debian-amd64-bundle.outputs.artifact_id }}
       debian_amd64_bundle_sha256: ${{ steps.debian-amd64-bundle.outputs.sha256 }}
+      debian_amd64_mobapt_run_id: ${{ steps.debian-amd64-mobapt.outputs.run_id }}
+      debian_amd64_mobapt_artifact_id: ${{ steps.debian-amd64-mobapt.outputs.artifact_id }}
+      debian_amd64_mobapt_review_sha256: ${{ steps.debian-amd64-mobapt.outputs.review_sha256 }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -147,6 +150,40 @@ jobs:
           python scripts/stage_debian_server_bundle.py
           --artifact-id "$SERVER_BUNDLE_ARTIFACT_ID" --sha256 "$SERVER_BUNDLE_SHA256"
           --target linux-x86_64 --out "$RUNNER_TEMP/preflight-debian-amd64-server-bundle"
+      - name: Freeze the reviewed Debian amd64 MobApt cache selection
+        id: debian-amd64-mobapt
+        if: ${{ steps.signing-readiness.outputs.candidate_build_ready == 'true' }}
+        shell: bash
+        env:
+          MOBAPT_SELECTION: ${{ vars.ROW_DEBIAN_AMD64_MOBAPT_BUNDLE }}
+        run: |
+          set -euo pipefail
+          selection_pattern='^(v[0-9]+\.[0-9]+\.[0-9]+) ([1-9][0-9]*) ([1-9][0-9]*) ([0-9a-f]{64})$'
+          if [[ ! "$MOBAPT_SELECTION" =~ $selection_pattern || "${BASH_REMATCH[1]}" != "$RELEASE_TAG" ]]; then
+            echo "ROW_DEBIAN_AMD64_MOBAPT_BUNDLE must contain this release tag, a run ID, an artifact ID, and the reviewed manifest SHA-256" >&2
+            exit 1
+          fi
+          printf 'run_id=%s\nartifact_id=%s\nreview_sha256=%s\n' \
+            "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" "${BASH_REMATCH[4]}" >> "$GITHUB_OUTPUT"
+      - name: Download the reviewed MobApt cache for preflight
+        if: ${{ steps.signing-readiness.outputs.candidate_build_ready == 'true' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v4
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.debian-amd64-mobapt.outputs.run_id }}
+          artifact-ids: ${{ steps.debian-amd64-mobapt.outputs.artifact_id }}
+          digest-mismatch: error
+          path: ${{ runner.temp }}/preflight-debian-amd64-mobapt
+      - name: Verify the reviewed MobApt cache before candidate builds
+        if: ${{ steps.signing-readiness.outputs.candidate_build_ready == 'true' }}
+        shell: bash
+        env:
+          MOBAPT_REVIEW_SHA256: ${{ steps.debian-amd64-mobapt.outputs.review_sha256 }}
+        run: |
+          stage="$(mktemp -d "$RUNNER_TEMP/mobapt-preflight.XXXXXXXX")"
+          python scripts/stage_debian_mobapt_cache.py --bundle "$RUNNER_TEMP/preflight-debian-amd64-mobapt" \
+            --review-sha256 "$MOBAPT_REVIEW_SHA256" --architecture amd64 --debian-root "$stage"
       - name: Run release preflight verifier
         run: python scripts/verify.py --quick --no-cli-smoke --release-tag "$RELEASE_TAG"
       - name: Require Python 3.15, native Windows, and branch coverage CI evidence for release source
@@ -668,6 +705,17 @@ jobs:
           python scripts/stage_debian_server_bundle.py --artifact-id "$SERVER_BUNDLE_ARTIFACT_ID" \
             --sha256 "$SERVER_BUNDLE_SHA256" --target linux-x86_64 --out "$bundle"
           printf 'path=%s\n' "$bundle" >> "$GITHUB_OUTPUT"
+      - name: Download the frozen MobApt cache selection
+        id: debian-amd64-mobapt
+        if: ${{ matrix.arch == 'x86_64' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v4
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.release-preflight.outputs.debian_amd64_mobapt_run_id }}
+          artifact-ids: ${{ needs.release-preflight.outputs.debian_amd64_mobapt_artifact_id }}
+          digest-mismatch: error
+          path: ${{ runner.temp }}/debian-amd64-mobapt
       - name: Bind the Linux release checkout before packaging
         env:
           EXPECTED_RELEASE_SHA: ${{ needs.release-preflight.outputs.release_sha }}
@@ -677,6 +725,8 @@ jobs:
       - name: Build Linux DEB, RPM and AppImage packages
         env:
           ROW_RELEASE_SERVER_BUNDLE: ${{ steps.debian-amd64-bundle.outputs.path }}
+          ROW_RELEASE_MOBAPT_BUNDLE: ${{ steps.debian-amd64-mobapt.outputs.download-path }}
+          ROW_RELEASE_MOBAPT_REVIEW_SHA256: ${{ matrix.arch == 'x86_64' && needs.release-preflight.outputs.debian_amd64_mobapt_review_sha256 || '' }}
           APPIMAGETOOL_VERSION: "1.9.1"
           APPIMAGETOOL_SHA256: ${{ matrix.appimagetool_sha256 }}
           APPIMAGE_RUNTIME_VERSION: "20251108"

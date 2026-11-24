@@ -303,7 +303,10 @@ reviews, and the downloaded release assets. See the
    verify the staged archive's SHA-256, Debian package name and version before
    installing it with package repositories disabled. The Debian release
    collector records this install through the installed release CLI and
-   verifies the chosen cache archive and the terminal output. Full parity still needs
+   verifies the chosen cache archive and the terminal output. When the
+   collector runs without `--bundle`, it requires the tested DEB to own the
+   cache and verifies that the launcher discovers it without an override.
+   Full parity still needs
    production-grade Unix command binaries, real package archives attached to
    releases and accepted passing release evidence proving newly installed Unix
    tools are usable inside the terminal.

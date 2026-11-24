@@ -159,6 +159,37 @@ def test_native_capture_rejects_an_unbound_or_online_install(native_capture, fie
     assert not rejected.passed and "executed offline install of the verified package" in rejected.errors[0]
 
 
+def test_installed_cache_evidence_rejects_an_external_archive(native_capture):
+    evidence, payload, _, _ = native_capture
+    payload["installed_cache"] = True
+    write_json(evidence, payload)
+    result = validate_mobapt_offline_execution(evidence)
+    assert not result.passed and "executed offline install of the verified package" in result.errors[0]
+
+
+def test_collector_rejects_an_unowned_installed_archive(tmp_path, monkeypatch):
+    evidence = assemble(tmp_path)
+    directory = evidence.parent
+    monkeypatch.setattr(capture, "INSTALLED_CACHE", str(directory))
+    monkeypatch.setattr(capture, "require_offline_container", lambda: None)
+    monkeypatch.setattr(
+        capture, "install_release_deb", lambda *_: ({"name": "release.deb", "sha256": "1" * 64}, None),
+    )
+
+    def run(argv, _cwd):
+        if argv == ["dpkg", "--print-architecture"]:
+            return subprocess.CompletedProcess(argv, 0, "amd64\n")
+        assert argv == ["dpkg-query", "--listfiles", "--", "remote-ops-workspace"]
+        owned = [str(path) for path in directory.rglob("*") if path.is_file() and path.suffix != ".deb"]
+        return subprocess.CompletedProcess(argv, 0, "\n".join(owned))
+
+    monkeypatch.setattr(capture, "run", run)
+    output = tmp_path / "capture"
+    with pytest.raises(ValueError, match="must own every MobApt cache input"):
+        capture.capture(None, output, "tree", "/usr/bin/tree", [], release_deb=tmp_path / "release.deb")
+    assert not output.exists()
+
+
 @pytest.mark.parametrize("field", ["evidence_sha256", "release_asset_sha256", "installed_version", "argv"])
 def test_strict_capture_rejects_receipt_from_different_execution(native_capture, field):
     evidence, _, probe, receipt = native_capture

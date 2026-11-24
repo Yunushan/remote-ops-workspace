@@ -33,6 +33,7 @@ from scripts.debian_release_fixture import (  # noqa: E402
 EXECUTION_SCHEMA = "row.mobapt.offline-execution.v1"
 NATIVE_PROBE_SCHEMA = "row.mobapt.native-cache-verify.v1"
 NATIVE_PROBE_PATH = "evidence/row-native-cache-verify.json"
+INSTALLED_CACHE = "/usr/lib/remote-ops-workspace/mobapt"
 NATIVE_PROBE_ARGV = [
     "/usr/bin/row", "mobapt", "cache-verify", "--evidence", "evidence.json", "--assets-dir", ".", "--json",
 ]
@@ -80,7 +81,7 @@ def native_install_argv(package: str) -> list[str]:
     return [ROW_EXECUTABLE, "mobapt", "install", package, "--offline", "--execute", "--json"]
 
 
-def check_native_install_output(stdout: str, package: dict[str, Any]) -> None:
+def check_native_install_output(stdout: str, package: dict[str, Any], *, installed_cache: bool = False) -> None:
     try:
         result = json.loads(stdout)
         plan = result["plan"]
@@ -99,6 +100,7 @@ def check_native_install_output(stdout: str, package: dict[str, Any]) -> None:
             "/usr/bin/apt", "-o", "Dir::Etc::sourcelist=", "-o", "Dir::Etc::sourceparts=", "install", "--",
         ]
         or not archive.is_absolute() or archive.parts[-len(relative.parts):] != relative.parts
+        or (installed_cache and archive != PurePosixPath(INSTALLED_CACHE) / relative)
     ):
         raise ValueError("native MobApt install receipt must show an executed offline install of the verified package")
 
@@ -144,6 +146,9 @@ def validate_mobapt_cache_execution(
             return result
         _, data = read_json_object(evidence_file, "release cache evidence")
         paths, packages = check_runtime_and_cache(root, data)
+        installed_cache = data.get("installed_cache", False)
+        if type(installed_cache) is not bool or (installed_cache and "release_asset" not in data):
+            raise ValueError("installed MobApt cache evidence requires the Debian release asset")
         runtime_sha = data["runtime"]["manifest_sha256"]
         installs = {record["package"]: record for record in data["install_tests"]}
         if installs.keys() != packages.keys() or len(installs) != len(data["install_tests"]):
@@ -152,7 +157,7 @@ def validate_mobapt_cache_execution(
             package = packages[name]
             receipt = execution_receipt(root, record, "offline-install", runtime_sha, package["sha256"])
             if receipt["argv"] == native_install_argv(name):
-                check_native_install_output(receipt["stdout"], package)
+                check_native_install_output(receipt["stdout"], package, installed_cache=installed_cache)
             elif "release_asset" in data:
                 raise ValueError("native Debian evidence requires installation through the installed row command")
             elif package["archive"] not in receipt["argv"]:

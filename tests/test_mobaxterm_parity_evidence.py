@@ -302,6 +302,7 @@ def test_server_candidate_and_release_audit_validate_the_same_client_evidence(em
 
 @pytest.mark.parametrize(("change", "reason"), [
     (None, None),
+    ("iperf", None),
     ("package", "capture index must bind the supplied Debian asset"),
     ("receipt", "must bind a successful protocol client"),
     ("attempt", "capture index must bind the current Actions workflow attempt"),
@@ -314,6 +315,29 @@ def test_assemble_debian_server_review_inputs(embedded_server_bundle, tmp_path, 
     installed = tmp_path / "installed"
     runtime_root = installed / assembly.PAYLOAD
     shutil.copytree(captures / "runtimes", runtime_root)
+    if change == "iperf":
+        manifest_path = runtime_root / assembly.MANIFEST
+        manifest = json.loads(manifest_path.read_bytes())
+        relative = "linux/iperf/bin/iperf"
+        daemon = runtime_root / relative
+        daemon.parent.mkdir(parents=True)
+        launcher = runtime_root / "linux/http/bin/python"
+        daemon.write_bytes(launcher.read_bytes() + b"iperf")
+        manifest["services"].append({"service": "iperf", "runtime": {
+            "source": "packaged", "bundled": True, "placeholder": False, "key": "iperf2",
+            "executable": relative, "sha256": hashlib.sha256(daemon.read_bytes()).hexdigest(),
+        }})
+        manifest["debian_notices"] = {}
+        for component, services in (("server-suite", ["tftp", "ssh", "sftp", "telnet", "vnc", "nfs"]), ("iperf", ["iperf"])):
+            path = installed / assembly.notice_path(component)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            raw = component.encode()
+            path.write_bytes(raw)
+            manifest["debian_notices"][component] = {
+                "version": "1:2.3-1", "services": services, "size_bytes": len(raw),
+                "sha256": hashlib.sha256(raw).hexdigest(),
+            }
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     authoring_index = {key: evidence[key] for key in ("source", "release_asset")}
     source = evidence["source"]
     for key, value in {
@@ -367,6 +391,9 @@ def test_assemble_debian_server_review_inputs(embedded_server_bundle, tmp_path, 
     evidence_path = assembly.assemble(package, evidence["release_target"], installed, captures, output)
     result = server_evidence.validate_live_server_release_evidence(evidence_path)
     assert result.passed and result.summary["live_client_proof_count"] == 8
+    if change == "iperf":
+        assert (output / assembly.RUNTIME_DIR / relative).read_bytes() == daemon.read_bytes()
+        assert (output / assembly.RUNTIME_DIR / "notices/iperf.copyright").read_bytes() == b"iperf"
     assert audited == [evidence["release_target"]]
     assert not (output / assembly.CAPTURES_INDEX).exists()
 

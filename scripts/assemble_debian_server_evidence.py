@@ -63,7 +63,7 @@ def copy_runtime(installed_root: Path, target: str, output: Path) -> dict[str, A
     for name, digest in runtime_digests.items():
         copy_bound_file(source, name, digest, output, relative=f"{RUNTIME_DIR}/{name}")
     if "debian_notices" in manifest:
-        for component, notice in notice_records(manifest["debian_notices"]).items():
+        for component, notice in notice_records(manifest).items():
             copy_bound_file(installed_root, notice_path(component).as_posix(), notice["sha256"], output,
                             relative=f"{RUNTIME_DIR}/notices/{component}.copyright")
     return manifest
@@ -131,7 +131,7 @@ def assemble(package: Path, target: str, installed_root: Path, captures: Path, o
     with TemporaryDirectory(prefix=".server-evidence-", dir=output.parent) as temporary:
         root = Path(temporary) / "review"
         manifest = copy_runtime(installed_root, target, root)
-        runtimes = service_inventory(manifest["services"], "installed runtime manifest")
+        runtimes = {row["service"]: row for row in manifest["services"]}
         services = [
             capture_entry(service, entry, runtimes[service]["runtime"], captures, root)
             for service, entry in sorted(observations.items())

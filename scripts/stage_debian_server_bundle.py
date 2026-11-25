@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts.debian_server_notices import OPTIONAL_EXTERNAL_SERVICES  # noqa: E402
 from scripts.moba_debian_server_payload import (  # noqa: E402
     ELF_TARGETS,
     EXTERNAL_SERVICES,
@@ -38,7 +39,7 @@ from scripts.release_candidate_inventory import (  # noqa: E402
 
 ARCHIVE_NAME = "server-bundle.tar.gz"
 MAX_MEMBERS = 64
-MAX_TAR_BYTES = (len(EXTERNAL_SERVICES) + 2) * SERVER_RUNTIME_MAX_BYTES + 8 * 1024 * 1024
+MAX_TAR_BYTES = (len(EXTERNAL_SERVICES | OPTIONAL_EXTERNAL_SERVICES) + 2) * SERVER_RUNTIME_MAX_BYTES + 8 * 1024 * 1024
 MAX_COMPRESSED_BYTES = MAX_TAR_BYTES + 1024 * 1024
 SAFE_COMPONENT = re.compile(r"[A-Za-z0-9._+-]+")
 
@@ -129,7 +130,7 @@ def stage_bundle(archive_path: Path, expected_sha256: str, target: str, output: 
             with tarfile.open(fileobj=expanded, mode="r:") as archive:
                 files, directories = extract_bundle(archive, staged)
         manifest, payload = server_payload(staged, target, EXTERNAL_SERVICES)
-        notices = verify_debian_notice_inputs(staged, manifest.get("debian_notices"))
+        notices = verify_debian_notice_inputs(staged, manifest)
         expected_files = {PurePosixPath(path) for path in payload}
         expected_files.update(PurePosixPath("notices", f"{name}.copyright") for name in notices)
         expected_directories = {parent for path in expected_files for parent in path.parents}

@@ -40,6 +40,7 @@ from scripts.debian_server_notices import (  # noqa: E402
     SHA256_RE,
     notice_path,
     notice_records,
+    optional_external_services,
     verify_notice_members,
 )
 from scripts.release_evidence_file import stream_sha256  # noqa: E402
@@ -63,8 +64,12 @@ def server_manifest(
     if (
         not isinstance(document, dict) or document.get("schema") != SCHEMA
         or document.get("release_target") != target or document.get("system") != "linux"
-        or not isinstance(services := document.get("services"), list) or len(services) != len(required)
+        or not isinstance(services := document.get("services"), list)
     ):
+        raise ValueError("embedded server manifest must describe the required services for the exact Linux target")
+    optional = optional_external_services(services)
+    required = required | optional
+    if len(services) != len(required):
         raise ValueError("embedded server manifest must describe the required services for the exact Linux target")
     digests = {MANIFEST: hashlib.sha256(raw).hexdigest()}
     seen = set()
@@ -86,6 +91,8 @@ def server_manifest(
             raise ValueError(f"{service} executable must use the installed runtime layout")
         if service in BUILTINS and (runtime["key"], parts[3]) != BUILTINS[service]:
             raise ValueError(f"{service} must use the packaged ROW launcher runtime")
+        if service == "iperf" and (runtime["key"], parts[3]) != ("iperf2", "iperf"):
+            raise ValueError("Debian server bundle must use the Iperf 2 executable for Iperf")
         digest = runtime.get("sha256")
         if not isinstance(digest, str) or SHA256_RE.fullmatch(digest) is None:
             raise ValueError(f"{service} daemon has an invalid manifest SHA-256")
@@ -98,14 +105,18 @@ def server_manifest(
             if not isinstance(digest, str) or SHA256_RE.fullmatch(digest) is None:
                 raise ValueError(f"OpenSSH helper has an invalid SHA-256: {name}")
             digests[f"{SERVER_OPENSSH_HELPER_DIR}/{name}"] = digest
+    if optional:
+        notice_records(document)
     return document, digests
 
 
 def reviewed_runtime_sha256(document: dict) -> str:
     """Fingerprint the manifest fields that staging carries into the package."""
     reviewed = {key: value for key, value in document.items() if key != "debian_depends"}
+    services = document["services"]
+    external = EXTERNAL_SERVICES | optional_external_services(services)
     reviewed["services"] = sorted(
-        (row for row in document["services"] if row["service"] in EXTERNAL_SERVICES),
+        (row for row in services if row["service"] in external),
         key=lambda row: row["service"],
     )
     encoded = json.dumps(reviewed, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -157,9 +168,9 @@ def server_payload(
     return document, digests
 
 
-def verify_debian_notice_inputs(root: Path, value: object) -> dict[str, bytes]:
+def verify_debian_notice_inputs(root: Path, manifest: dict) -> dict[str, bytes]:
     notices = {}
-    for name, row in notice_records(value).items():
+    for name, row in notice_records(manifest).items():
         relative = f"notices/{name}.copyright"
         path, error = secure_regular_file(root, relative, "Debian server notice")
         if path is None:
@@ -177,7 +188,7 @@ def stage_payload(
     extra_executables: tuple[Path, ...] = (), extra_relationships: str = "",
 ) -> str:
     document, expected = server_payload(source, target, EXTERNAL_SERVICES)
-    notices = verify_debian_notice_inputs(source, document.get("debian_notices"))
+    notices = verify_debian_notice_inputs(source, document)
     destination = package_root / PAYLOAD
     launcher = package_root / LAUNCHER
     validate_elf(launcher, ELF_TARGETS[target])
@@ -286,7 +297,7 @@ def verify_debian_payload(package: Path, manifest: Path, target: str) -> None:
             with tarfile.open(fileobj=payload, mode="r:") as archive:
                 compare_payload_tar(archive, expected)
                 if "debian_notices" in document:
-                    verify_notice_members(archive, notice_records(document["debian_notices"]))
+                    verify_notice_members(archive, notice_records(document))
         if "debian_depends" in document:
             depends = subprocess.check_output(
                 ["dpkg-deb", "--field", str(package.resolve()), "Depends"], text=True, timeout=30,

@@ -20,6 +20,7 @@ MOBAPT_CACHE_DIR = PurePosixPath("usr/lib/remote-ops-workspace/mobapt")
 MOBAPT_REVIEW = "mobapt-debian-review.json"
 MOBAPT_ASSEMBLY = "mobapt-cache-evidence.json"
 EXTERNAL_SERVICES = frozenset({"tftp", "ssh", "sftp", "telnet", "vnc", "nfs"})
+OPTIONAL_EXTERNAL_SERVICES = frozenset({"iperf"})
 NOTICE_MAX_BYTES = 1024 * 1024
 PACKAGE_RE = re.compile(r"[a-z0-9][a-z0-9+.-]+")
 VERSION_RE = re.compile(r"(?:[0-9]+:)?[0-9][A-Za-z0-9.+~-]*")
@@ -94,11 +95,22 @@ def observe_mobapt_notices(archive: tarfile.TarFile, release_tag: str) -> dict[s
     return notices
 
 
-def notice_records(value: Any) -> dict[str, dict[str, Any]]:
+def optional_external_services(services: object) -> frozenset[str]:
+    if not isinstance(services, list):
+        return frozenset()
+    return frozenset(
+        row["service"] for row in services
+        if isinstance(row, dict) and isinstance(row.get("service"), str)
+        and row["service"] in OPTIONAL_EXTERNAL_SERVICES
+    )
+
+
+def notice_records(manifest: dict) -> dict[str, dict[str, Any]]:
     """Validate the component records and cover each external daemon once."""
-    if not isinstance(value, dict) or not value or len(value) > len(EXTERNAL_SERVICES):
+    remaining = set(EXTERNAL_SERVICES | optional_external_services(manifest.get("services")))
+    value = manifest.get("debian_notices")
+    if not isinstance(value, dict) or not value or len(value) > len(remaining):
         raise ValueError("Debian server bundle requires a distro notice inventory")
-    remaining = set(EXTERNAL_SERVICES)
     for name, row in value.items():
         if (
             not isinstance(name, str) or PACKAGE_RE.fullmatch(name) is None
@@ -207,7 +219,7 @@ def observe_debian_notices(
             or document.get("system") != "linux" or document.get("release_target") != target
         ):
             raise ValueError("invalid Debian embedded server manifest")
-    records = notice_records(document.get("debian_notices"))
+    records = notice_records(document)
     contents = verify_notice_members(archive, records)
     return {name: DebianNotice(row, contents[notice_path(name)]) for name, row in records.items()}
 

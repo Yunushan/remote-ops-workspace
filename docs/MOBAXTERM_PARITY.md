@@ -384,6 +384,11 @@ reviews, and the downloaded release assets. See the
    package hashes and verifies that stopping revokes the active job
    generation and leaves the following minute quiet. The release evidence
    schema covers the original eight protocol checks.
+   A reviewed Debian server bundle can also include `iperf2` at
+   `linux/iperf/bin/iperf` with its distro copyright notice. Staging checks
+   the binary's architecture and digest, adds its native dependencies to
+   the package, and carries the approved binary and notice into the sealed
+   inventory. Bundles without Iperf keep the host adapter behavior.
    Full parity still needs production-grade daemon binaries for every
    embedded service attached to releases and accepted passing evidence proving
    each daemon serves real clients on supported targets.

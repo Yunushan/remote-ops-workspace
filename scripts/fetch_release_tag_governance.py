@@ -9,6 +9,7 @@ import re
 import sys
 import time
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 from urllib.error import HTTPError
 
@@ -22,6 +23,7 @@ from check_release_license_compliance import (
     verify_tag_governance_signature,
 )
 from check_release_remote_preconditions import get_json, require_token
+from release_evidence_file import publish_evidence_directory
 
 ATTESTATION = "tag-governance-attestation.json"
 SIGNATURE = "tag-governance-attestation.sig.json"
@@ -57,15 +59,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Waiting for independent tag governance proof on {ref}", flush=True)
         attestation, signature = fetch_proof(repository, ref, require_token("GITHUB_TOKEN"))
         verify_proof(attestation, signature, policy, repository, tag, sha, transaction)
-        args.out_dir.mkdir(mode=0o700)
-        for name, raw in ((ATTESTATION, attestation), (SIGNATURE, signature)):
-            with (args.out_dir / name).open("xb") as handle:
-                handle.write(raw)
+        publish_proof(args.out_dir, attestation, signature)
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"release governance refresh: {exc}", file=sys.stderr)
         return 1
     print(f"Independent tag governance proof verified for {args.operation}")
     return 0
+
+
+def publish_proof(destination: Path, attestation: bytes, signature: bytes) -> None:
+    with TemporaryDirectory(prefix=".tag-governance-", dir=destination.parent) as temporary:
+        staged = Path(temporary) / "proof"
+        staged.mkdir(mode=0o700)
+        (staged / ATTESTATION).write_bytes(attestation)
+        (staged / SIGNATURE).write_bytes(signature)
+        publish_evidence_directory(staged, destination, label="tag governance proof directory")
 
 
 def promotion_transaction(

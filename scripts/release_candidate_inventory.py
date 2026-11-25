@@ -58,7 +58,7 @@ from scripts.managed_debian_qualification import (  # noqa: E402
     validate_receipt,
 )
 from scripts.qualify_deb_loader import validate_probe_inventory  # noqa: E402
-from scripts.release_evidence_file import retry_evidence_operation, stream_sha256  # noqa: E402
+from scripts.release_evidence_file import publish_evidence_directory, stream_sha256  # noqa: E402
 
 GUI_MODULE_PROOF_SCHEMA_VERSION = 12
 ARCHIVE_FILE_SCOPE_SCHEMA_VERSION = 13
@@ -1389,21 +1389,7 @@ def materialize_records(
 
 
 def publish_candidate_directory(staged_root: Path, assets_root: Path) -> None:
-    expected = staged_root.lstat()
-
-    def publish() -> None:
-        current = staged_root.lstat()
-        if (
-            not stat.S_ISDIR(current.st_mode)
-            or getattr(current, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
-            or (current.st_dev, current.st_ino) != (expected.st_dev, expected.st_ino)
-        ):
-            raise ValueError("verified candidate staging directory changed before publication")
-        if assets_root.is_symlink() or assets_root.exists():
-            raise ValueError("candidate assets root appeared before publication")
-        staged_root.rename(assets_root)
-
-    retry_evidence_operation(publish)
+    publish_evidence_directory(staged_root, assets_root, label="candidate assets root")
 
 
 def materialize_candidate_files(

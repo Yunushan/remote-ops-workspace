@@ -124,6 +124,36 @@ def test_capture_signs_only_live_protected_tag(
     assert tag_reads == 2
 
 
+def test_governance_proof_can_retry_after_signature_write_failure(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
+    fetch = importlib.import_module("fetch_release_tag_governance")
+    destination = tmp_path / "proof"
+    write_bytes = Path.write_bytes
+
+    def fail_signature(path, contents):
+        if path.name == fetch.SIGNATURE:
+            assert (path.parent / fetch.ATTESTATION).read_bytes() == b"reviewed attestation"
+            assert not destination.exists()
+            raise OSError("signature write failed")
+        return write_bytes(path, contents)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "write_bytes", fail_signature)
+        with pytest.raises(OSError, match="signature write failed"):
+            fetch.publish_proof(destination, b"reviewed attestation", b"detached signature")
+    assert not list(tmp_path.iterdir())
+
+    fetch.publish_proof(destination, b"reviewed attestation", b"detached signature")
+    assert {item.name for item in destination.iterdir()} == {fetch.ATTESTATION, fetch.SIGNATURE}
+    assert (destination / fetch.ATTESTATION).read_bytes() == b"reviewed attestation"
+    assert (destination / fetch.SIGNATURE).read_bytes() == b"detached signature"
+    with pytest.raises(ValueError, match="proof directory appeared"):
+        fetch.publish_proof(destination, b"other attestation", b"other signature")
+    assert (destination / fetch.ATTESTATION).read_bytes() == b"reviewed attestation"
+    assert (destination / fetch.SIGNATURE).read_bytes() == b"detached signature"
+    assert list(tmp_path.iterdir()) == [destination]
+
+
 def test_fetch_pins_both_files_to_the_same_git_commit(monkeypatch) -> None:
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
     fetch = importlib.import_module("fetch_release_tag_governance")

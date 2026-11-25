@@ -27,7 +27,7 @@ from check_release_provenance import (
     workflow_path_matches,
 )
 from check_repository_governance import fetch_tag_rulesets, protected_tag_ruleset_ids
-from fetch_release_tag_governance import promotion_transaction, proof_ref
+from fetch_release_tag_governance import promotion_transaction, proof_ref, publish_proof
 from release_review_key import load_review_key
 
 
@@ -163,13 +163,7 @@ def capture(args: argparse.Namespace) -> None:
         "signature": base64.b64encode(key.sign(encoded)).decode("ascii"),
     }
     verify_tag_governance_signature(encoded, signature, policy)
-    args.out_dir.mkdir()
-    for name, data in (
-        ("tag-governance-attestation.json", encoded),
-        ("tag-governance-attestation.sig.json", json_bytes(signature)),
-    ):
-        with (args.out_dir / name).open("xb") as output:
-            output.write(data)
+    publish_proof(args.out_dir, encoded, json_bytes(signature))
     if transaction is not None:
         print(f"Proof ref: {proof_ref(transaction)}")
 

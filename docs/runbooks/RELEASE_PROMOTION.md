@@ -496,41 +496,18 @@ Once the reviewer has approved the exact tagged candidate and bundle, save
 the approved JSON as `release-evidence.json`. In the tagged checkout, use a
 Linux x64 Python environment with
 `python -m pip install --require-hashes --requirement requirements-locks/release-verifier-linux-x86_64.txt`.
-The example signs the existing bytes and verifies the signature against the
-enrolled public key. Set the three shell variables to the reviewed JSON, the
-enrolled key ID and the path to the reviewer's local Ed25519 PEM.
+The signer checks the release identity, policy digest and review window before
+signing the existing bytes. It verifies the signature against the enrolled
+public key and creates `release-evidence.sig.json` beside the approval. Set
+the shell variables to the exact release, reviewed JSON, enrolled key ID and
+the reviewer's local Ed25519 PKCS#8 PEM. For an encrypted PEM, run the command
+in an interactive terminal to enter the passphrase without echo.
 
 ```bash
-python - "$approval_json" "$review_key_id" "$review_private_key" <<'PY'
-import base64
-import json
-import sys
-from pathlib import Path
-
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.serialization import load_pem_private_key
-from scripts.check_release_license_compliance import verify_evidence_signature
-
-approval, key_id, private_key = sys.argv[1:]
-approval_path = Path(approval)
-if approval_path.name != "release-evidence.json":
-    raise SystemExit("expected release-evidence.json")
-payload = approval_path.read_bytes()
-key = load_pem_private_key(Path(private_key).read_bytes(), password=None)
-if not isinstance(key, Ed25519PrivateKey):
-    raise SystemExit("the review key must be Ed25519")
-signature = {
-    "schema_version": 1,
-    "algorithm": "ed25519",
-    "key_id": key_id,
-    "signature": base64.b64encode(key.sign(payload)).decode("ascii"),
-}
-policy = json.loads(Path("configs/release_compliance_policy.json").read_bytes())
-verify_evidence_signature(payload, signature, policy)
-with approval_path.with_name("release-evidence.sig.json").open("x", encoding="utf-8") as output:
-    json.dump(signature, output, indent=2)
-    output.write("\n")
-PY
+python scripts/sign_release_redistribution_approval.py \
+  --repository "$release_repository" --tag "$release_tag" --sha "$release_sha" \
+  --policy configs/release_compliance_policy.json --approval "$approval_json" \
+  --key-id "$review_key_id" --private-key "$review_private_key"
 ```
 
 Run the exact-byte audit from the tagged checkout with the same sealed

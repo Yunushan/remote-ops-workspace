@@ -2258,10 +2258,12 @@ def create_moba_connected_classes(
             if pending is None or self.runtime_shutting_down:
                 return
             pending_path, pending_reason = pending
+            pending_generation = self.sftp_refresh_generation
 
             def start_pending() -> None:
                 if (
                     not self.runtime_shutting_down
+                    and self.sftp_refresh_generation == pending_generation
                     and normalise_remote_path(self.active_remote_path)
                     == pending_path
                 ):

@@ -1549,6 +1549,41 @@ def test_connected_dock_remaining_auth_monitoring_and_sftp_routes(
     app.processEvents()
 
 
+def test_newer_sftp_refresh_wins_over_deferred_same_path_refresh(
+    connected_workspace, monkeypatch,
+) -> None:
+    from PyQt6.QtCore import QProcess
+
+    app, _window, _panel, dock, profile = connected_workspace
+    process = _FakeProcess()
+    monkeypatch.setattr(dock, "sftp_refresh_process", process)
+    monkeypatch.setattr(dock, "ensure_background_authentication_for_request", lambda: True)
+    monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: profile)
+    monkeypatch.setattr(dock, "shared_ssh_control_path", lambda: "")
+
+    dock.request_sftp_refresh(reason="in-flight")
+    dock.request_sftp_refresh(reason="older-queued")
+    assert dock.sftp_refresh_pending == (dock.active_remote_path, "older-queued")
+    process.process_state = QProcess.ProcessState.NotRunning
+    dock.handle_sftp_refresh_finished(0, QProcess.ExitStatus.NormalExit)
+
+    dock.request_sftp_refresh(reason="newest")
+    current_generation = dock.sftp_refresh_active_generation
+    app.processEvents()
+    assert process.start_calls == 2
+    assert dock.sftp_refresh_pending is None
+    assert dock.sftp_refresh_generation == current_generation
+    assert dock.property("mobaSftpRefreshLastReason") == "newest"
+
+    process.process_state = QProcess.ProcessState.NotRunning
+    process.output = b"-rw-r--r-- 1 operator operator 23 Jan 15 12:00 newest.txt\n"
+    dock.handle_sftp_refresh_finished(0, QProcess.ExitStatus.NormalExit)
+    assert dock.property("mobaSftpRefreshLastError") == ""
+    assert [entry.name for entry in dock.state.file_entries] == ["newest.txt"]
+    app.processEvents()
+    assert process.start_calls == 2
+
+
 def test_sftp_refresh_and_transfer_workflow_edges(
     connected_workspace,
     monkeypatch,

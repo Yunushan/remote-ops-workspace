@@ -127,14 +127,19 @@ def check_repo_policy_job(workflow: str) -> list[str]:
     block = workflow_job_block(workflow, "repo-policy")
     if not block:
         return ["ci workflow missing repo-policy job for single-row repository gates"]
+    release_type_step = "- name: Type-check with release-pinned PyQt6\n        run: python scripts/check_non_gui_types.py"
+    minimum_runtime_step = "- name: Install minimum PyQt runtime for policy checks"
     required_snippets = {
         "name: Repository policy and lint": "clear policy job label",
         "runs-on: ubuntu-latest": "stable policy runner",
         "timeout-minutes: 15": "bounded policy job timeout",
         'python-version: "3.12"': "stable policy Python version",
         "run: bash scripts/install_ci_ubuntu_packages.sh libegl1": "Qt headless runtime dependency",
-        "python -m pip install -r requirements-dev.txt": "policy dependency installation",
-        "- name: Install minimum PyQt runtime for policy checks\n"
+        "python -m pip install -r requirements-dev.txt --constraint requirements-release.txt": (
+            "release-constrained policy dependency installation"
+        ),
+        release_type_step: "type gate with release-pinned PyQt6",
+        minimum_runtime_step + "\n"
         "        run: >-\n"
         "          python -m pip install --force-reinstall --require-hashes --only-binary=:all:\n"
         "          --requirement tests/fixtures/pyqt6-minimum-requirements.txt": (
@@ -155,11 +160,16 @@ def check_repo_policy_job(workflow: str) -> list[str]:
         "python -m mypy src/remote_ops_workspace/gui.py --platform darwin": (
             "macOS GUI type-safety gate"
         ),
-        "python scripts/check_non_gui_types.py": "bounded non-GUI production type gate",
+        "- name: Non-GUI production type gate\n        run: python scripts/check_non_gui_types.py": (
+            "bounded non-GUI production type gate on minimum PyQt6"
+        ),
     }
     for snippet, label in required_snippets.items():
         if snippet not in block:
             errors.append(f"ci repo-policy job missing {label}: {snippet}")
+    if release_type_step in block and minimum_runtime_step in block:
+        if block.index(release_type_step) > block.index(minimum_runtime_step):
+            errors.append("ci repo-policy job must type-check release-pinned PyQt6 before installing minimum PyQt6")
     return errors
 
 

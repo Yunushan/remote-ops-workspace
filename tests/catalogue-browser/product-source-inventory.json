@@ -308,8 +308,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_smoke.py",
-      "sha256": "50471087a9a0895fa84969c831149796ddb9428ba268a16495d81356e6b13401",
-      "size": 5675
+      "sha256": "79766a3d653b56ca51b7a1ae4503b63418dbfb67a925ce8400f6df42af352d33",
+      "size": 5665
     },
     {
       "path": "src/remote_ops_workspace/gui_ssh_connection.py",

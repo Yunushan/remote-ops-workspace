@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -56,6 +57,27 @@ def test_pyqt6_runtime_accepts_current_minimum_and_defers_target() -> None:
         checker.load_policy(),
         (6, 12, 0),
         require_target=False,
+    ) == []
+
+
+def test_probe_validates_the_loaded_qt_patch_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    checker = _load_checker()
+    versions = {"PyQt6": "6.12.1", "PyQt6-Qt6": "6.12.1", "PyQt6-sip": "13.13.1"}
+    monkeypatch.setattr(checker, "distribution_version", versions.get)
+    monkeypatch.setitem(
+        sys.modules,
+        "PyQt6.QtCore",
+        SimpleNamespace(PYQT_VERSION_STR="6.12.1", QT_VERSION_STR="6.12.0", qVersion=lambda: "6.12.1"),
+    )
+
+    runtime = checker.probe_runtime()
+
+    assert runtime.qt_version == "6.12.1"
+    assert checker.validate_runtime(
+        runtime,
+        checker.load_policy(),
+        (6, 12, 1),
+        require_target=True,
     ) == []
 
 

@@ -143,7 +143,7 @@ def probe_runtime() -> PyQt6Runtime:
         raise RuntimeError(f"missing distributions: {', '.join(missing)}")
 
     try:
-        from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR
+        from PyQt6.QtCore import PYQT_VERSION_STR, qVersion
     except (ImportError, OSError) as exc:
         raise RuntimeError(f"PyQt6 modules could not be imported: {exc}") from exc
 
@@ -151,7 +151,7 @@ def probe_runtime() -> PyQt6Runtime:
         distribution_version=versions["PyQt6"] or "",
         binding_version=PYQT_VERSION_STR,
         qt_distribution_version=versions["PyQt6-Qt6"] or "",
-        qt_version=QT_VERSION_STR,
+        qt_version=qVersion(),
         sip_distribution_version=versions["PyQt6-sip"] or "",
     )
 

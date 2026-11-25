@@ -29,7 +29,7 @@ def run(output: Path) -> int:
     if home.exists() and any(home.iterdir()):
         raise ValueError("GUI smoke refuses to modify a nonempty ROW_HOME")
 
-    from PyQt6.QtCore import QT_VERSION_STR, QBuffer, QByteArray, QIODevice, Qt, QTimer
+    from PyQt6.QtCore import QBuffer, QByteArray, QIODevice, Qt, QTimer, qVersion
     from PyQt6.QtWidgets import QTreeWidgetItemIterator
 
     from .gui import create_main_window
@@ -43,7 +43,7 @@ def run(output: Path) -> int:
         "schema_version": 1,
         "version": __version__,
         "frozen": bool(getattr(sys, "frozen", False)),
-        "qt_version": QT_VERSION_STR,
+        "qt_version": qVersion(),
         "qt_platform": app.platformName(),
         "workflow": "packaged-startup-profile-selection-and-paint",
         "success": False,

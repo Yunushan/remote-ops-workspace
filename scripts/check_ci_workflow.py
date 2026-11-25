@@ -391,7 +391,7 @@ def check_python315_optional_dependencies_job(workflow: str) -> list[str]:
         "import bcrypt, cryptography, truststore": (
             "Python 3.15 security dependency import smoke"
         ),
-        "from PyQt6.QtCore import QT_VERSION_STR": "Python 3.15 PyQt6 import smoke",
+        "from PyQt6.QtCore import qVersion": "Python 3.15 PyQt6 import smoke",
         "from PyQt6.QtWidgets import QApplication, QLabel": (
             "Python 3.15 QtWidgets application smoke"
         ),

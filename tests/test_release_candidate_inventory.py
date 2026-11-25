@@ -333,6 +333,9 @@ def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
         ("wrong-linux-cron-loader", "Cron receipt must bind one scheduled job"),
         ("wrong-linux-cron-observation", "requires the installed DEB launcher observation"),
         ("linux-cron-ran-after-stop", "Cron receipt must bind one scheduled job"),
+        ("missing-linux-loader-workload", "must include version, platform and vault workloads"),
+        ("foreign-linux-loader-path", "invalid host observations"),
+        ("missing-linux-vault-library", "Vault workload did not load"),
         ("swapped-native-manifests", "files differ from its release matrix assignment"),
         ("unexpected-source-file", "files differ from its release matrix assignment"),
         ("foreign-checksum-reference", "foreign, repeated or mismatched checksum"),
@@ -706,12 +709,26 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                     digests[next(iter(digests))] = "b" * 64
                 launcher = "c" * 64
                 deb, = (asset for asset in digests if asset.endswith(".deb"))
+                probes = {
+                    name: {
+                        "host_files": {"/lib/libc.so.6": "a" * 64, "/lib/libz.so.1": "b" * 64},
+                        "archive_members": {"libpython3.14.so.1.0": "c" * 64, "libz.so.1": "d" * 64},
+                        "attempted_paths": {"host": ["/lib/libc.so.6"], "extraction": ["libz.so.1"]},
+                    }
+                    for name in ("version", "platforms", "vault-init")
+                }
+                if not (changed and condition == "missing-linux-vault-library"):
+                    probes["vault-init"]["archive_members"]["cryptography/_rust.abi3.so"] = "e" * 64
+                if changed and condition == "missing-linux-loader-workload":
+                    del probes["platforms"]
+                if changed and condition == "foreign-linux-loader-path":
+                    probes["version"]["attempted_paths"]["host"].append("/build/runner/lib/libz.so.1")
                 loader = candidate.qualification_receipt_bytes({
                     "schema_version": 1, "target": target, "kernel_machine": target.removeprefix("linux-"),
                     "deb": deb, "deb_sha256": digests[deb], "launcher_sha256": launcher,
                     "source_sha": sha,
                     "github_run_id": "99" if changed and condition == "wrong-linux-cron-run" else "123",
-                    "github_run_attempt": "1", "staged_runpath_changes": {},
+                    "github_run_attempt": "1", "staged_runpath_changes": {}, "probes": probes,
                 })
                 cron = {
                     "schema": "row.native-frozen-cron.v1", "target": target,
@@ -890,6 +907,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
         elif condition in {
             "wrong-linux-proof", "missing-linux-cron", "wrong-linux-cron-run",
             "wrong-linux-cron-loader", "wrong-linux-cron-observation", "linux-cron-ran-after-stop",
+            "missing-linux-loader-workload", "foreign-linux-loader-path", "missing-linux-vault-library",
         }:
             assert len(downloads) == len(runtime) + 2 + len(smoke) + len(linux_smoke)
         else:

@@ -12,7 +12,7 @@ import secrets
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -27,8 +27,58 @@ DEBIAN_ARCHITECTURES = {
     "linux-i386": "i386",
     "linux-armhf": "armhf",
 }
-SYSTEM_LIBRARY_ROOTS = (Path("/lib"), Path("/lib64"), Path("/usr/lib"), Path("/usr/lib64"))
+SYSTEM_LIBRARY_ROOTS = ("/lib", "/lib64", "/usr/lib", "/usr/lib64")
 GLIBC_TRY = re.compile(r"^[ \t]*\d+:[ \t]+trying file=([^\r\n]+)", re.MULTILINE)
+WORKLOADS = {
+    "version": ["--version"],
+    "platforms": ["platforms", "--json"],
+    "vault-init": ["vault", "init"],
+}
+
+
+def valid_library_path(name: object, *, host: bool) -> bool:
+    if not isinstance(name, str) or not name or "\\" in name or any(ord(char) < 32 for char in name):
+        return False
+    path = PurePosixPath(name)
+    if not path.parts or path.as_posix() != name or ".." in path.parts:
+        return False
+    if host:
+        return any(path != PurePosixPath(root) and path.is_relative_to(root) for root in SYSTEM_LIBRARY_ROOTS)
+    return not path.is_absolute()
+
+
+def validate_probe_inventory(probes: object) -> None:
+    if not isinstance(probes, dict) or probes.keys() != WORKLOADS.keys():
+        raise ValueError("Debian loader evidence must include version, platform and vault workloads")
+    for name, details in probes.items():
+        if not isinstance(details, dict) or details.keys() != {"host_files", "archive_members", "attempted_paths"}:
+            raise ValueError(f"Debian loader evidence lacks complete library observations for {name}")
+        attempts = details["attempted_paths"]
+        if not isinstance(attempts, dict) or attempts.keys() != {"host", "extraction"}:
+            raise ValueError(f"Debian loader evidence lacks lookup paths for {name}")
+        for provider, inventory in (("host", "host_files"), ("extraction", "archive_members")):
+            paths = attempts[provider]
+            initialized = details[inventory]
+            host = provider == "host"
+            if (
+                not isinstance(paths, list) or not paths
+                or not all(valid_library_path(path, host=host) for path in paths)
+                or len(set(paths)) != len(paths) or not isinstance(initialized, dict)
+                or any(not valid_library_path(path, host=host) or not isinstance(digest, str)
+                       or re.fullmatch(r"[0-9a-f]{64}", digest) is None for path, digest in initialized.items())
+            ):
+                raise ValueError(f"Debian loader evidence contains invalid {provider} observations for {name}")
+        bundled = details["archive_members"]
+        host_names = {PurePosixPath(path).name for path in details["host_files"]}
+        if (
+            not {"libc.so.6", "libz.so.1"} <= host_names or "libz.so.1" not in bundled
+            or not any(path.startswith("libpython") for path in bundled)
+        ):
+            raise ValueError(f"Incomplete host/bootstrap or extracted-Python glibc trace for {name}")
+        if name == "vault-init" and not any(
+            path.startswith("cryptography/") and "_rust." in path for path in bundled
+        ):
+            raise ValueError("Vault workload did not load the packaged cryptography extension")
 
 
 def sha256(path: Path) -> str:
@@ -126,11 +176,7 @@ def qualify(
                     )
         home = work / "home"
         home.mkdir(mode=0o700)
-        for name, args in (
-            ("version", ["--version"]),
-            ("platforms", ["platforms", "--json"]),
-            ("vault-init", ["vault", "init"]),
-        ):
+        for name, args in WORKLOADS.items():
             trace = work / name
             env = {
                 "HOME": str(home),
@@ -153,23 +199,8 @@ def qualify(
             )
             if name == "platforms" and not json.loads(probe.stdout):
                 raise ValueError("Empty platform inventory")
-            loaded = selections(sorted(work.glob(name + ".*")), work, members)
-            names = set(loaded["archive_members"])
-            host_names = {Path(p).name for p in loaded["host_files"]}
-            if (
-                not {"libc.so.6", "libz.so.1"} <= host_names
-                or "libz.so.1" not in names
-                or not any(n.startswith("libpython") for n in names)
-                or not all(loaded["attempted_paths"].values())
-            ):
-                raise ValueError(
-                    f"Incomplete host/bootstrap or extracted-Python glibc trace for {name}"
-                )
-            if name == "vault-init" and not any(
-                n.startswith("cryptography/") and "_rust." in n for n in names
-            ):
-                raise ValueError("Vault workload did not load the packaged cryptography extension")
-            probes[name] = loaded
+            probes[name] = selections(sorted(work.glob(name + ".*")), work, members)
+    validate_probe_inventory(probes)
     return {
         "schema_version": 1,
         "scope": "Observed glibc library lookups and initializations for three offline CLI workloads. "

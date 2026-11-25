@@ -82,7 +82,9 @@ one scheduled job, stopped cleanly and stayed quiet through the next minute.
 The loader receipt lists glibc's attempted library paths alongside initialized
 libraries for the version, platform, and vault probes. An attempted path can
 be absent. The smoke check rejects lookups outside the system library roots
-and the launcher's temporary extraction tree.
+and the launcher's temporary extraction tree. Sealing and later audits
+require these observations for all three workloads, including the packaged
+cryptography extension used by the vault.
 Inventory schema 10 requires a bundled Debian amd64
 installer. Sealing, review, promotion, and the published audit open the
 installer to verify its `Depends` field and distro notices. They compare

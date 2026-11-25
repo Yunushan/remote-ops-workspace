@@ -57,6 +57,7 @@ from scripts.managed_debian_qualification import (  # noqa: E402
     REPORT_NAME,
     validate_receipt,
 )
+from scripts.qualify_deb_loader import validate_probe_inventory  # noqa: E402
 from scripts.release_evidence_file import retry_evidence_operation, stream_sha256  # noqa: E402
 
 GUI_MODULE_PROOF_SCHEMA_VERSION = 12
@@ -874,6 +875,7 @@ def validate_linux_cron_reports(
         or loader.get("github_run_attempt") != "1" or not isinstance(loader.get("staged_runpath_changes"), dict)
     ):
         raise ValueError("Linux Cron loader receipt differs from the exact release build and installed DEB")
+    validate_probe_inventory(loader.get("probes"))
     if (
         cron.get("schema") != "row.native-frozen-cron.v1" or cron.get("target") != target
         or cron.get("source_sha") != release_sha or cron.get("deb") != deb or cron.get("deb_sha256") != deb_sha

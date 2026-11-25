@@ -483,7 +483,10 @@ def test_manual_sftp_browsing_preserves_each_tabs_listing_without_follow(connect
 
 
 def test_live_sftp_listing_inserts_one_batch_and_reuses_row_icons(connected_workspace, monkeypatch):
+    from PyQt6.QtCore import Qt
+
     from remote_ops_workspace.file_transfer import build_sftp_list_plan
+    from remote_ops_workspace.gui_sftp_editor import SFTP_ROW_INDEX_ROLE, SFTP_ROW_SOURCE_PATH_ROLE
     from remote_ops_workspace.moba_connected import RemoteFileEntry
 
     _app, _window, panel, dock, profile = connected_workspace
@@ -496,12 +499,19 @@ def test_live_sftp_listing_inserts_one_batch_and_reuses_row_icons(connected_work
     dock.file_table.model().rowsInserted.connect(lambda _parent, first, last: insertions.append((first, last)))
     renders = []
     render = dock.sftp_file_row_icon
+    metadata_rows = []
+    apply_metadata = dock.apply_sftp_routed_file_row_metadata
 
     def record_icon(key, *, size):
         renders.append(key)
         return render(key, size=size)
 
+    def record_metadata(item, rows, **fields):
+        metadata_rows.append(fields["row_index"])
+        apply_metadata(item, rows, **fields)
+
     monkeypatch.setattr(dock, "sftp_file_row_icon", record_icon)
+    monkeypatch.setattr(dock, "apply_sftp_routed_file_row_metadata", record_metadata)
     monkeypatch.setattr(dock, "request_sftp_refresh", lambda **_kwargs: None)
     assert dock.navigate_moba_sftp_path("/home")
     dock.apply_live_sftp_entries(entries, request_path="/home", plan=build_sftp_list_plan(profile, "/home"))
@@ -509,10 +519,16 @@ def test_live_sftp_listing_inserts_one_batch_and_reuses_row_icons(connected_work
     table = dock.file_table
     assert insertions == [(0, 3)]
     assert renders == ["folder-up", "folder", "file"]
+    assert metadata_rows == [0]
     assert [table.topLevelItem(index).text(0) for index in range(table.topLevelItemCount())] == [
         "..", "logs", "first.txt", "second.txt",
     ]
     assert table.currentItem() is table.topLevelItem(0)
+    assert [table.topLevelItem(i).data(0, SFTP_ROW_INDEX_ROLE) for i in range(4)] == list(range(4))
+    assert [table.topLevelItem(i).data(0, SFTP_ROW_SOURCE_PATH_ROLE) for i in range(4)] == ["/home"] * 4
+    assert [table.topLevelItem(i).data(0, Qt.ItemDataRole.UserRole) for i in range(4)] == [
+        "parent-dir", "dir", "file", "file",
+    ]
     assert panel.state.file_entries == entries
     assert dock.sftp_remote_path_for_item(table.topLevelItem(2)) == "/home/first.txt"
 

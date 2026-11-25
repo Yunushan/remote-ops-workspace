@@ -2377,31 +2377,26 @@ def create_moba_connected_classes(
                 routed_rows,
                 row_index=0,
                 name=chrome.parent_row_label,
-                selected=True,
+                selected=False,
                 source_path=source_path,
             )
             parent_item.setSizeHint(0, row_size)
             parent_item.setToolTip(0, "parent directory")
             items = [parent_item]
+            # Each row shares the directory route, column tooltips, and size hint.
             for row_index, entry in enumerate(entries, start=1):
-                item = QTreeWidgetItem(
-                    [entry.name, str(entry.size_kb), entry.modified]
-                )
+                item = parent_item.clone()
+                item.setText(0, entry.name)
+                item.setText(1, str(entry.size_kb))
+                item.setText(2, entry.modified)
+                item.setData(0, SFTP_ROW_INDEX_ROLE, row_index)
                 self.apply_sftp_file_row_icon(item, entry.kind, icons)
-                self.apply_sftp_routed_file_row_metadata(
-                    item,
-                    routed_rows,
-                    row_index=row_index,
-                    name=entry.name,
-                    selected=False,
-                    source_path=source_path,
-                )
-                item.setSizeHint(0, row_size)
                 item.setToolTip(
                     0,
                     _safe_tooltip_html(f"{entry.kind}: {entry.name}"),
                 )
                 items.append(item)
+            parent_item.setData(0, SFTP_ROW_SELECTED_BY_ROUTE_ROLE, True)
             self.file_table.clear()
             self.file_table.addTopLevelItems(items)
             parent_item.setSelected(True)

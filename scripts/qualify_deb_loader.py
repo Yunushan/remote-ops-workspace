@@ -27,6 +27,8 @@ DEBIAN_ARCHITECTURES = {
     "linux-i386": "i386",
     "linux-armhf": "armhf",
 }
+SYSTEM_LIBRARY_ROOTS = (Path("/lib"), Path("/lib64"), Path("/usr/lib"), Path("/usr/lib64"))
+GLIBC_TRY = re.compile(r"^[ \t]*\d+:[ \t]+trying file=([^\r\n]+)", re.MULTILINE)
 
 
 def sha256(path: Path) -> str:
@@ -40,12 +42,25 @@ def sha256(path: Path) -> str:
 def selections(logs: list[Path], temporary: Path, members: dict[str, str]) -> dict:
     bundled = {}
     host = {}
+    attempted_archive = set()
+    attempted_host = set()
     for trace in logs:
         if trace.stat().st_size > 8 * 1024**2:
             raise ValueError("Unexpected glibc trace size")
         text = trace.read_text(encoding="utf-8")
         if re.search(TOOLCACHE_LIB.pattern + rb"(?=[:/\s)\]]|$)", text.encode()):
             raise ValueError("glibc searched or loaded a hosted toolcache path")
+        for name in GLIBC_TRY.findall(text):
+            path = Path(os.path.normpath(name.strip()))
+            if path.is_relative_to(temporary):
+                relative = path.relative_to(temporary)
+                if len(relative.parts) >= 2 and relative.parts[0].startswith("_MEI"):
+                    attempted_archive.add("/".join(relative.parts[1:]))
+                    continue
+            elif any(path.is_relative_to(root) for root in SYSTEM_LIBRARY_ROOTS):
+                attempted_host.add(path.as_posix())
+                continue
+            raise ValueError(f"Unexpected glibc library search path: {name}")
         for name in re.findall(r"^\s*\d+:\s+calling init:\s+(\S.*?)\s*$", text, re.MULTILINE):
             path = Path(name)
             if path.is_relative_to(temporary):
@@ -59,7 +74,7 @@ def selections(logs: list[Path], temporary: Path, members: dict[str, str]) -> di
             elif path.is_absolute() and path.parts[1:2] in {("lib",), ("lib64",), ("usr",)}:
                 actual = path.resolve(strict=True)
                 if not any(
-                    actual.is_relative_to(p) for p in ("/lib", "/lib64", "/usr/lib", "/usr/lib64")
+                    actual.is_relative_to(root) for root in SYSTEM_LIBRARY_ROOTS
                 ):
                     raise ValueError(f"Unexpected host library: {name}")
                 if path.name in members and path.name != "libz.so.1":
@@ -72,6 +87,7 @@ def selections(logs: list[Path], temporary: Path, members: dict[str, str]) -> di
     return {
         "archive_members": dict(sorted(bundled.items())),
         "host_files": dict(sorted(host.items())),
+        "attempted_paths": {"extraction": sorted(attempted_archive), "host": sorted(attempted_host)},
     }
 
 
@@ -144,6 +160,7 @@ def qualify(
                 not {"libc.so.6", "libz.so.1"} <= host_names
                 or "libz.so.1" not in names
                 or not any(n.startswith("libpython") for n in names)
+                or not all(loaded["attempted_paths"].values())
             ):
                 raise ValueError(
                     f"Incomplete host/bootstrap or extracted-Python glibc trace for {name}"
@@ -155,8 +172,9 @@ def qualify(
             probes[name] = loaded
     return {
         "schema_version": 1,
-        "scope": "Observed glibc initializations for three offline CLI workloads. "
-        "Archive hashes identify packaged member bytes. Host hashes identify the observed filesystem providers."
+        "scope": "Observed glibc library lookups and initializations for three offline CLI workloads. "
+        "Lookup paths may be absent. Archive hashes identify packaged member bytes. "
+        "Host hashes identify the observed filesystem providers."
         + (" Installed-package inspection without a build-time staging report." if staged_report is None else ""),
         "target": target,
         "kernel_machine": platform.machine(),

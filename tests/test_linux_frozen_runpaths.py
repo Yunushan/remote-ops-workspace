@@ -116,6 +116,35 @@ def test_trace_rejects_search_and_unverified_extraction_member(tmp_path):
         selections([trace], tmp_path, {})
 
 
+def test_trace_retains_unsuccessful_library_lookups_without_random_extraction_root(tmp_path):
+    trace = tmp_path / "trace"
+    extract = tmp_path / "_MEI000001"
+    trace.write_text(
+        f"  23: trying file={extract}/glibc-hwcaps/x86-64-v3/libz.so.1\n"
+        f"  23: trying file={extract}/libz.so.1\n"
+        f"  23: trying file={tmp_path / '_MEI000002'}/libz.so.1\n"
+        "  24: trying file=/usr/lib/x86_64-linux-gnu/libz.so.1\n"
+        "  24: trying file=/lib/x86_64-linux-gnu/libz.so.1\n"
+    )
+    assert selections([trace], tmp_path, {}) == {
+        "archive_members": {},
+        "host_files": {},
+        "attempted_paths": {
+            "extraction": ["glibc-hwcaps/x86-64-v3/libz.so.1", "libz.so.1"],
+            "host": ["/lib/x86_64-linux-gnu/libz.so.1", "/usr/lib/x86_64-linux-gnu/libz.so.1"],
+        },
+    }
+
+
+@pytest.mark.parametrize("searched", ["libz.so.1", "/build/runner/lib/libz.so.1", "/usr/share/lib/libz.so.1",
+                                     "/usr/lib/../../build/libz.so.1"])
+def test_trace_rejects_even_unsuccessful_lookups_outside_library_roots(tmp_path, searched):
+    trace = tmp_path / "trace"
+    trace.write_text(f"  23: trying file={searched}\n")
+    with pytest.raises(ValueError, match="Unexpected glibc library search path"):
+        selections([trace], tmp_path, {})
+
+
 @pytest.mark.parametrize(("target", "architecture"), [("linux-i386", "i386"), ("linux-armhf", "armhf")])
 def test_loader_rejects_deb_from_another_architecture(tmp_path, monkeypatch, target, architecture):
     deb = tmp_path / "row.deb"

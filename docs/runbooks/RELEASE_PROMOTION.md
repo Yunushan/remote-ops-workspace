@@ -79,6 +79,10 @@ published bytes. Starting with inventory schema 15, both Linux smoke ZIPs
 must include the Cron and Debian loader receipts for the same workflow run,
 source commit, installed package and launcher. They record that Cron ran
 one scheduled job, stopped cleanly and stayed quiet through the next minute.
+The loader receipt lists glibc's attempted library paths alongside initialized
+libraries for the version, platform, and vault probes. An attempted path can
+be absent. The smoke check rejects lookups outside the system library roots
+and the launcher's temporary extraction tree.
 Inventory schema 10 requires a bundled Debian amd64
 installer. Sealing, review, promotion, and the published audit open the
 installer to verify its `Depends` field and distro notices. They compare

@@ -99,6 +99,7 @@ GENERATED_PROFILE_TREE_ICON_PRESETS = {"mobaxterm", "securecrt", "termius", "rem
 
 @dataclass
 class _RemminaSearchTree:
+    roots: list[QTreeWidgetItem]
     groups: list[tuple[QTreeWidgetItem, bool]]
     rows: list[tuple[QTreeWidgetItem, QTreeWidgetItem, int]]
     selection: QTreeWidgetItem | None
@@ -994,6 +995,7 @@ class ProfileTree:
             return
         current = tree.currentItem()
         with QSignalBlocker(tree):
+            root = cast(QTreeWidgetItem, tree.invisibleRootItem())
             if state is None:
                 groups = []
                 rows = []
@@ -1003,11 +1005,14 @@ class ProfileTree:
                         rows.append((item, parent, parent.indexOfChild(item)))
                     else:
                         groups.append((item, item.isExpanded()))
-                self._remmina_search = state = _RemminaSearchTree(groups, rows, current)
-                for group, _ in groups:
-                    group.setHidden(True)
+                # Move rows off-model so opening search removes the tree in one batch.
+                roots = root.takeChildren()
+                self._remmina_search = state = _RemminaSearchTree(roots, groups, rows, current)
                 for item, parent, _ in rows:
                     parent.removeChild(item)
+                tree.addTopLevelItems(roots)
+                for group, _ in groups:
+                    group.setHidden(True)
                 tree.addTopLevelItems(sorted((item for item, _, _ in rows), key=lambda item: item.text(0).casefold()))
                 tree.setRootIsDecorated(False)
             if needle:
@@ -1016,11 +1021,11 @@ class ProfileTree:
                 if current is not None and current.isHidden():
                     current = None
             else:
-                # The flat rows follow the hidden top-level groups. Move the same items back in order.
-                for _ in state.rows:
-                    tree.takeTopLevelItem(tree.topLevelItemCount() - 1)
+                root.takeChildren()
                 for item, parent, index in state.rows:
                     parent.insertChild(index, item)
+                tree.addTopLevelItems(state.roots)
+                for item, _, _ in state.rows:
                     item.setHidden(False)
                 for group, expanded in state.groups:
                     group.setHidden(False)

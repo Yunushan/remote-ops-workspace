@@ -148,10 +148,13 @@ def test_remmina_search_switches_between_folder_tree_and_flat_results(clean_gui_
         Profile("North database", "rdp", "north.example.invalid", group="Field/Primary", tags=["alpha"]),
         Profile("Night desk", "rdp", "standby.example.invalid", group="Field/Standby", tags=["beta"]),
         Profile("Home desk", "vnc", "home.example.invalid", group="Home"),
+        Profile("Z Field overview", "ssh", "overview.example.invalid", group="Field"),
     ])
     window.set_design_preset("remmina")
     tree = window.profile_list
     search = window.remmina_profile_filter
+    rows_removed = Mock()
+    tree.model().rowsRemoved.connect(rows_removed)
 
     def top_rows():
         items = (tree.topLevelItem(i) for i in range(tree.topLevelItemCount()))
@@ -165,15 +168,18 @@ def test_remmina_search_switches_between_folder_tree_and_flat_results(clean_gui_
     load_profiles = Mock(wraps=window.store.load)
     monkeypatch.setattr(window.store, "load", load_profiles)
     for query, expected in [
-        ("Field", ["Night desk", "North database"]), ("FIELD/STANDBY", ["Night desk"]),
+        ("Field", ["Night desk", "North database", "Z Field overview"]), ("FIELD/STANDBY", ["Night desk"]),
         ("vnc", ["Home desk"]), ("north.example.invalid", ["North database"]), ("beta", ["Night desk"]), ("absent", []),
     ]:
         search.setText(query)
         assert top_rows() == expected
+        assert rows_removed.call_count == 1
     load_profiles.assert_not_called()
     assert window.selected_profile_name() is None
     window.refresh_profiles()
+    rows_removed.reset_mock()
     search.clear()
+    assert rows_removed.call_count == 1
     assert top_rows() == ["Field", "Home"]
     assert not tree.topLevelItem(1).isExpanded()
     assert window.selected_profile_name() == "North database"
@@ -199,7 +205,7 @@ def test_remmina_search_switches_between_folder_tree_and_flat_results(clean_gui_
     QTest.keyClick(tree, Qt.Key.Key_Return)
     assert opened == ["Night desk", "Night desk"]
     assert [item.text(0) for item in window.iter_profile_tree_items()] == [
-        "Field", "Primary", "North database", "Standby", "Night desk", "Home", "Home desk",
+        "Field", "Z Field overview", "Primary", "North database", "Standby", "Night desk", "Home", "Home desk",
     ]
     window.set_design_preset("native")
     window.select_profile("Night desk")

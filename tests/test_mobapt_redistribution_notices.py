@@ -22,11 +22,33 @@ TAG = "v1.0.28"
 
 
 def package_payload(*, change: str = "") -> io.BytesIO:
-    assembly = b"assembly"
+    binary, cached = b"reviewed Bash binary", b"reviewed tree archive"
+    rows = [{
+        "name": "tree", "version": "2.2.1-1", "archive": "packages/tree.deb",
+        "sha256": hashlib.sha256(cached).hexdigest(), "source": "supplied", "synthetic": False,
+    }]
+    manifest = json.dumps({
+        "packages": rows, "runtime": {"binaries": [{
+            "path": "bin/bash", "sha256": hashlib.sha256(binary).hexdigest(),
+            "source": "supplied", "shim": False,
+        }]},
+    }).encode()
+    index = json.dumps({"schema": "row.mobapt.package-index.v1", "packages": rows,
+                        "runtime": {"release_target": "linux-x86_64"}}).encode()
+    assembly = json.dumps({
+        "release_target": "linux-x86_64",
+        "runtime": {"manifest": "mobapt-runtime.json", "manifest_sha256": hashlib.sha256(manifest).hexdigest()},
+        "package_cache": {"index": "packages/index.json", "index_sha256": hashlib.sha256(index).hexdigest(),
+                          "packages": rows},
+    }).encode()
     notice = b"Debian license notice"
     path = MOBAPT_NOTICE_DIR / "bash/copyright"
     data = {
         MOBAPT_CACHE_DIR / MOBAPT_ASSEMBLY: assembly,
+        MOBAPT_CACHE_DIR / "mobapt-runtime.json": manifest,
+        MOBAPT_CACHE_DIR / "packages/index.json": index,
+        MOBAPT_CACHE_DIR / "bin/bash": binary if change != "changed-binary" else b"changed binary",
+        MOBAPT_CACHE_DIR / "packages/tree.deb": cached if change != "changed-archive" else b"changed archive",
         MOBAPT_NOTICE_DIR / MOBAPT_REVIEW: json.dumps({
             "release_tag": "v1.0.27" if change == "wrong-tag" else TAG,
             "assembly_sha256": hashlib.sha256(assembly).hexdigest(),
@@ -42,6 +64,8 @@ def package_payload(*, change: str = "") -> io.BytesIO:
         del data[path]
     if change == "wrong-assembly":
         data[MOBAPT_CACHE_DIR / MOBAPT_ASSEMBLY] = b"another assembly"
+    if change == "missing-index":
+        del data[MOBAPT_CACHE_DIR / "packages/index.json"]
     payload = io.BytesIO()
     with tarfile.open(fileobj=payload, mode="w") as archive:
         for name, raw in data.items():
@@ -96,8 +120,13 @@ def test_mobapt_notice_is_required_for_the_deb_only():
     assert not errors and len(required[asset]) == 1 and required[rpm] == set()
 
 
-@pytest.mark.parametrize("change", ["", "changed", "missing-notice"])
-def test_candidate_mobapt_sealing_checks_the_notice_bytes(tmp_path, monkeypatch, change):
+@pytest.mark.parametrize(
+    ("change", "error"),
+    [("", ""), ("changed", "notice differs"), ("missing-notice", "requires one packaged file"),
+     ("changed-binary", "bundled runtime executable differs"), ("changed-archive", "offline package archive differs"),
+     ("missing-index", "expected one regular packaged MobApt member")],
+)
+def test_candidate_mobapt_sealing_checks_the_reviewed_payload(tmp_path, monkeypatch, change, error):
     package = tmp_path / "remote-ops-workspace-v1.0.28-linux-amd64.deb"
     package.write_bytes(b"fixture Debian package")
     payload = package_payload(change=change)
@@ -112,8 +141,8 @@ def test_candidate_mobapt_sealing_checks_the_notice_bytes(tmp_path, monkeypatch,
 
     monkeypatch.setattr(mobapt.subprocess, "run", dpkg)
     receipt = {"candidate_has_mobapt_cache": True}
-    if change:
-        with pytest.raises(ValueError, match="MobApt (notice differs|requires one packaged file)"):
+    if error:
+        with pytest.raises(ValueError, match=error):
             inventory.verify_candidate_mobapt(package, receipt, TAG, trusted_review)
     else:
         inventory.verify_candidate_mobapt(package, receipt, TAG, trusted_review)

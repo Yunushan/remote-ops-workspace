@@ -4,6 +4,7 @@ import argparse
 import json
 import shlex
 import sys
+from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -45,6 +46,16 @@ def check_runtime_and_cache(root: Path, data: dict[str, Any]) -> tuple[set[str],
     index = bound_evidence_file(root, cache["index"], cache["index_sha256"], "package index")
     _, manifest_data = read_json_object(manifest, "runtime manifest")
     _, index_data = read_json_object(index, "package index")
+    return check_runtime_and_cache_members(
+        data, manifest_data, index_data, lambda name, digest, label: bound_evidence_file(root, name, digest, label),
+    )
+
+
+def check_runtime_and_cache_members(
+    data: dict[str, Any], manifest_data: dict[str, Any], index_data: dict[str, Any],
+    verify_member: Callable[[str, str, str], object],
+) -> tuple[set[str], dict[str, dict[str, Any]]]:
+    cache = data["package_cache"]
     rows = cache["packages"]
     if (index_data.get("schema") != "row.mobapt.package-index.v1"
             or manifest_data.get("packages") != rows or index_data.get("packages") != rows):
@@ -58,7 +69,7 @@ def check_runtime_and_cache(root: Path, data: dict[str, Any]) -> tuple[set[str],
     for row in rows:
         if row.get("synthetic") is not False or row.get("source") != "supplied":
             raise ValueError("release evidence requires real supplied package archives")
-        bound_evidence_file(root, row["archive"], row["sha256"], "offline package archive")
+        verify_member(row["archive"], row["sha256"], "offline package archive")
 
     runtime_info = manifest_data.get("runtime")
     binaries = runtime_info.get("binaries") if isinstance(runtime_info, dict) else None
@@ -70,7 +81,7 @@ def check_runtime_and_cache(root: Path, data: dict[str, Any]) -> tuple[set[str],
                 or binary.get("source") not in ("supplied", "host-path")):
             raise ValueError("release evidence requires real runtime binaries without shims")
         path = binary.get("path")
-        bound_evidence_file(root, path, binary.get("sha256"), "bundled runtime executable")
+        verify_member(path, binary.get("sha256"), "bundled runtime executable")
         paths.add(path)
     if len(paths) != len(binaries):
         raise ValueError("bundled runtime executable paths must be unique")

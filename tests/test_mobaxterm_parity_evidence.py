@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import json
 import shlex
+import shutil
 import struct
 import subprocess
 import sys
@@ -312,8 +313,7 @@ def test_assemble_debian_server_review_inputs(embedded_server_bundle, tmp_path, 
     captures, package, evidence, attachment = embedded_server_bundle
     installed = tmp_path / "installed"
     runtime_root = installed / assembly.PAYLOAD
-    runtime_root.parent.mkdir(parents=True)
-    (captures / "runtimes").rename(runtime_root)
+    shutil.copytree(captures / "runtimes", runtime_root)
     authoring_index = {key: evidence[key] for key in ("source", "release_asset")}
     source = evidence["source"]
     for key, value in {

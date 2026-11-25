@@ -1,13 +1,14 @@
-"""Remove hosted CPython search directories from staged Linux ELF RUNPATHs."""
+"""Normalize the Linux frozen payload before PyInstaller assembles it."""
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import re
 import struct
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 if __package__:
     from .stage_linux_runtime_licenses import stage_system_runtime_notices
@@ -117,6 +118,34 @@ def stage_binaries(binaries: list, directory: Path) -> list:
     return staged
 
 
+def stage_distribution_metadata(datas: list, directory: Path) -> list:
+    staged = []
+    for name, source, kind in datas:
+        member = PurePosixPath(name)
+        if not re.fullmatch(r"remote_ops_workspace-[^/]+\.dist-info", member.parent.as_posix()):
+            staged.append((name, source, kind))
+            continue
+        if member.name == "direct_url.json":
+            continue
+        if member.name == "RECORD":
+            copy = directory / member
+            copy.parent.mkdir(parents=True, exist_ok=True)
+            origin = (member.parent / "direct_url.json").as_posix()
+            # The build environment's console wrappers are not shipped in the
+            # frozen launcher. Their shebang hashes depend on the checkout path.
+            with Path(source).open(encoding="utf-8", newline="") as original, copy.open(
+                "w", encoding="utf-8", newline=""
+            ) as output:
+                rows = csv.reader(original)
+                csv.writer(output).writerows(
+                    row for row in rows
+                    if row and row[0] != origin and ".." not in PurePosixPath(row[0]).parts
+                )
+            source = str(copy)
+        staged.append((name, source, kind))
+    return staged
+
+
 def prepare_spec(path: Path) -> None:
     # PyInstaller's locked makespec CLI writes this boundary between collection
     # and one-file assembly. Fail explicitly if its generated recipe changes.
@@ -128,9 +157,10 @@ def prepare_spec(path: Path) -> None:
         "\nfrom pathlib import Path\n"
         "import sys\n"
         f"sys.path.insert(0, {str(Path(__file__).resolve().parent)!r})\n"
-        "from linux_frozen_runpaths import stage_binaries\n"
+        "from linux_frozen_runpaths import stage_binaries, stage_distribution_metadata\n"
         "staged = stage_binaries(a.binaries + pyz.dependencies, Path(SPECPATH) / 'staged-elf')\n"
         "a.binaries, pyz.dependencies = staged[:len(a.binaries)], staged[len(a.binaries):]\n"
+        "a.datas = stage_distribution_metadata(a.datas, Path(SPECPATH) / 'staged-metadata')\n"
     )
     # PYZ adds separate bootstrap extensions such as _struct and zlib after Analysis.
     path.write_text(spec.replace(marker, marker + insertion), encoding="utf-8")

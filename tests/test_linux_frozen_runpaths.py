@@ -8,7 +8,12 @@ from pathlib import Path
 import pytest
 
 from scripts.debian_native_dependencies import elf_requirements
-from scripts.linux_frozen_runpaths import prepare_spec, stage_binaries, without_toolcache_runpath
+from scripts.linux_frozen_runpaths import (
+    prepare_spec,
+    stage_binaries,
+    stage_distribution_metadata,
+    without_toolcache_runpath,
+)
 from scripts.qualify_deb_loader import qualify, selections
 
 HOSTED = "/opt/hostedtoolcache/Python/3.14.10/x64/lib"
@@ -69,9 +74,43 @@ def test_only_known_pyinstaller_spec_is_adjusted(tmp_path):
     assert path.read_text().index("pyz = PYZ") < path.read_text().index(
         "stage_binaries(a.binaries + pyz.dependencies"
     )
+    assert "a.datas = stage_distribution_metadata(a.datas" in path.read_text()
     path.write_text("unknown format", encoding="utf-8")
     with pytest.raises(ValueError, match="Unrecognized"):
         prepare_spec(path)
+
+
+def test_frozen_metadata_is_independent_of_install_checkout(tmp_path):
+    project = "remote_ops_workspace-1.0.28.dist-info"
+    expected = [f"{project}/METADATA,sha256=stable,4", f"{project}/RECORD,,"]
+    staged_records = []
+    for checkout in ("first", "alternate"):
+        root = tmp_path / checkout
+        root.mkdir()
+        metadata = root / "METADATA"
+        metadata.write_text("Name: remote-ops-workspace\n", encoding="utf-8")
+        origin = root / "direct_url.json"
+        origin.write_text(f'{{"url":"file:///{checkout}"}}', encoding="utf-8")
+        record = root / "RECORD"
+        installed = "\n".join([
+            f"../../../bin/remote-ops-workspace,sha256={checkout},20",
+            f"../../../bin/row,sha256={checkout},18",
+            *expected,
+            f"{project}/direct_url.json,sha256={checkout},25",
+        ]) + "\n"
+        record.write_text(installed, encoding="utf-8")
+        unrelated = ("dependency-1.0.dist-info/direct_url.json", str(origin), "DATA")
+        datas = [
+            (f"{project}/{file.name}", str(file), "DATA")
+            for file in (metadata, origin, record)
+        ]
+        staged = stage_distribution_metadata([*datas, unrelated], root / "stage")
+        assert staged[0] == datas[0] and staged[-1] == unrelated
+        assert [row[0] for row in staged] == [datas[0][0], datas[2][0], unrelated[0]]
+        staged_records.append(Path(staged[1][1]).read_bytes())
+        assert record.read_text(encoding="utf-8") == installed
+    assert staged_records[0] == staged_records[1]
+    assert staged_records[0].decode().splitlines() == expected
 
 
 @pytest.mark.skipif(

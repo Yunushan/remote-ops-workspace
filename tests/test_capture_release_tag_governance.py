@@ -4,6 +4,7 @@ import base64
 import importlib
 import json
 from datetime import datetime, timedelta, timezone
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.error import HTTPError
@@ -270,3 +271,63 @@ def test_fetch_keeps_the_proof_deadline_and_propagates_forbidden_reads(monkeypat
     with pytest.raises(RuntimeError, match=message):
         fetch.fetch_proof("example/project", ref, "fixture-token")
     assert waits == ([3] if status == 404 else [])
+
+
+@pytest.mark.parametrize("foreign_transaction", [False, True])
+def test_promotion_waits_for_replacement_only_when_a_trusted_proof_expired(monkeypatch, capsys, foreign_transaction):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
+    fetch = importlib.import_module("fetch_release_tag_governance")
+    key = Ed25519PrivateKey.generate()
+    policy = {"tag_governance_attestation": {
+        "max_validity_seconds": 300, "trusted_ed25519_keys": [{
+            "key_id": "auditor", "public_key": base64.b64encode(key.public_key().public_bytes_raw()).decode(),
+        }],
+    }}
+    repo, tag, sha = "example/project", "v1.2.3", "1" * 40
+    transaction = fetch.promotion_transaction(123, 1, "publish", 77)
+    ref = fetch.proof_ref(transaction)
+    now = datetime.now(timezone.utc)
+
+    def proof(observed, *, mismatched=False):
+        raw = json.dumps({
+            "schema_version": 1, "decision": "approved", "source": "github-rulesets-api",
+            "repository": repo, "release_tag": tag, "release_sha": sha,
+            "tag_update_blocked": True, "tag_deletion_blocked": True, "bypass_actors": [],
+            "ruleset_ids": [42], "auditor": {"kind": "github-app", "identity": "fixture"},
+            "observed_at": observed.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "expires_at": (observed + timedelta(minutes=4)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "promotion_transaction": {**transaction, "draft_release_id": 78} if mismatched else transaction,
+        }).encode()
+        signature = json.dumps({
+            "schema_version": 1, "algorithm": "ed25519", "key_id": "auditor",
+            "signature": base64.b64encode(key.sign(raw)).decode(),
+        }).encode()
+        return raw, signature
+
+    old = proof(now - timedelta(minutes=5), mismatched=foreign_transaction)
+    fresh = proof(now - timedelta(seconds=10))
+    commits = iter(("a" * 40, "a" * 40, "b" * 40))
+    reads, waits = [], []
+
+    def github(url, _token, *, api_version):
+        if "/git/ref/" in url:
+            return {"ref": ref, "object": {"type": "commit", "sha": next(commits)}}, {}
+        name, commit = url.split("/contents/")[1].split("?ref=")
+        reads.append(commit)
+        attestation, signature = old if commit == "a" * 40 else fresh
+        data = attestation if name == fetch.ATTESTATION else signature
+        return {"type": "file", "path": name, "encoding": "base64", "size": len(data),
+                "content": base64.b64encode(data).decode()}, {}
+
+    monkeypatch.setattr(fetch, "time", SimpleNamespace(monotonic=lambda: 0, sleep=waits.append))
+    monkeypatch.setattr(fetch, "get_json", github)
+    verify = partial(fetch.verify_proof, policy=policy, repository=repo, tag=tag, sha=sha,
+                     expected_transaction=transaction)
+    if foreign_transaction:
+        with pytest.raises(ValueError, match="exact promotion transaction"):
+            fetch.fetch_proof(repo, ref, "fixture-token", verify=verify)
+        assert waits == [] and reads == ["a" * 40] * 2
+    else:
+        assert fetch.fetch_proof(repo, ref, "fixture-token", verify=verify) == fresh
+        assert waits == [10, 10] and reads == ["a" * 40] * 2 + ["b" * 40] * 2
+        assert capsys.readouterr().out.count("Publish a fresh proof") == 1

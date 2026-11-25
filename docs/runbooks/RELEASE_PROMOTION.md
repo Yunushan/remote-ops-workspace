@@ -590,6 +590,8 @@ Push that commit to the exact ref printed by the command and the workflow.
 The workflow waits up to 15 minutes for the ref and both proof files. If a file
 is temporarily unavailable, it rereads the ref and retrieves both files from
 one commit. It then checks the signature and the short validity window.
+If the signed proof expired while the workflow was waiting, the auditor can
+push a new commit to the same proof ref before the 15-minute deadline.
 The workflow also revalidates the signed redistribution approval and
 its expiry immediately before creating the draft and before publishing it.
 

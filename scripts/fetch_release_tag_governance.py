@@ -8,12 +8,15 @@ import json
 import re
 import sys
 import time
+from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 from urllib.error import HTTPError
 
 from check_release_license_compliance import (
+    TAG_GOVERNANCE_EXPIRED,
     check_tag_governance_attestation,
     normalize_repository,
     normalize_sha,
@@ -30,6 +33,10 @@ SIGNATURE = "tag-governance-attestation.sig.json"
 API_ROOT = "https://api.github.com"
 API_VERSION = "2022-11-28"
 MAX_PROOF_BYTES = 64 * 1024
+
+
+class ExpiredGovernanceProof(ValueError):
+    """A trusted proof for this transaction needs a fresh observation."""
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -57,8 +64,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.draft_id is not None:
             print(f"Numeric draft release ID: {args.draft_id}", flush=True)
         print(f"Waiting for independent tag governance proof on {ref}", flush=True)
-        attestation, signature = fetch_proof(repository, ref, require_token("GITHUB_TOKEN"))
-        verify_proof(attestation, signature, policy, repository, tag, sha, transaction)
+        verify = partial(verify_proof, policy=policy, repository=repository, tag=tag, sha=sha,
+                         expected_transaction=transaction)
+        attestation, signature = fetch_proof(repository, ref, require_token("GITHUB_TOKEN"), verify=verify)
         publish_proof(args.out_dir, attestation, signature)
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"release governance refresh: {exc}", file=sys.stderr)
@@ -102,10 +110,13 @@ def require_transaction(attestation: dict[str, Any], expected_transaction: dict[
         raise ValueError("governance proof must bind the exact promotion transaction")
 
 
-def fetch_proof(repository: str, ref: str, token: str) -> tuple[bytes, bytes]:
+def fetch_proof(
+    repository: str, ref: str, token: str, *, verify: Callable[[bytes, bytes], None] | None = None,
+) -> tuple[bytes, bytes]:
     base = f"{API_ROOT}/repos/{repository}"
     ref_url = f"{base}/git/ref/{ref.removeprefix('refs/')}"
     deadline = time.monotonic() + 900
+    expired_commit = None
     while True:
         try:
             payload, _ = get_json(ref_url, token, api_version=API_VERSION)
@@ -117,9 +128,20 @@ def fetch_proof(repository: str, ref: str, token: str) -> tuple[bytes, bytes]:
                 raise ValueError("governance proof ref must point to a commit")
             # A freshly pushed ref can be visible before both content reads succeed.
             # On retry, discard the partial pair and pin both files to one commit again.
-            return fetch_file(base, commit, ATTESTATION, token), fetch_file(base, commit, SIGNATURE, token)
-        except RuntimeError as exc:
-            if not isinstance(exc.__cause__, HTTPError) or exc.__cause__.code != 404:
+            if commit == expired_commit:
+                raise ExpiredGovernanceProof(TAG_GOVERNANCE_EXPIRED)
+            proof = fetch_file(base, commit, ATTESTATION, token), fetch_file(base, commit, SIGNATURE, token)
+            if verify is not None:
+                try:
+                    verify(*proof)
+                except ExpiredGovernanceProof:
+                    expired_commit = commit
+                    print("The signed tag governance proof expired. Publish a fresh proof on the same ref.", flush=True)
+                    raise
+            return proof
+        except (RuntimeError, ExpiredGovernanceProof) as exc:
+            missing = isinstance(exc.__cause__, HTTPError) and exc.__cause__.code == 404
+            if not missing and not isinstance(exc, ExpiredGovernanceProof):
                 raise
             remaining = deadline - time.monotonic()
             if remaining > 0:
@@ -166,6 +188,8 @@ def verify_proof(
     verify_tag_governance_signature(attestation_bytes, signature, policy)
     require_transaction(attestation, expected_transaction)
     errors = check_tag_governance_attestation(attestation, policy=policy, repository=repository, tag=tag, sha=sha)
+    if errors == [TAG_GOVERNANCE_EXPIRED]:
+        raise ExpiredGovernanceProof(TAG_GOVERNANCE_EXPIRED)
     if errors:
         raise ValueError("; ".join(errors))
 

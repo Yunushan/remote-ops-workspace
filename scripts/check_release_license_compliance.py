@@ -1301,6 +1301,9 @@ def check_review_window(evidence: dict[str, Any], *, now: datetime | None) -> li
     return errors
 
 
+TAG_GOVERNANCE_EXPIRED = "tag governance attestation has expired"
+
+
 def check_tag_governance_attestation(
     attestation: dict[str, Any],
     *,
@@ -1361,7 +1364,7 @@ def check_tag_governance_attestation(
     if expires <= observed:
         errors.append("tag governance attestation expires_at must be after observed_at")
     if expires <= current:
-        errors.append("tag governance attestation has expired")
+        errors.append(TAG_GOVERNANCE_EXPIRED)
     if isinstance(max_validity, int) and (expires - observed).total_seconds() > max_validity:
         errors.append("tag governance attestation validity exceeds the approved short window")
     return errors

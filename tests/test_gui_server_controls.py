@@ -76,6 +76,7 @@ def test_servers_window_routes_independent_lifecycle_actions(desktop, monkeypatc
             manager.changed.emit("iperf", "running", "")
             assert iperf.row.text(2) == endpoint
             assert f"iperf3 listening on {endpoint}" in dialog.detail.toPlainText()
+        manager.changed.emit("cron", "stopped", "")
         manager.observed_records["cron"] = replace(live, service="cron", command=["row", "--crontab", "custom-tab"])
         manager.changed.emit("cron", "running", "")
         tree.setCurrentItem(cron.row)
@@ -94,6 +95,39 @@ def test_servers_window_routes_independent_lifecycle_actions(desktop, monkeypatc
 
 def _refuse(message):
     raise ValueError(message)
+
+
+def test_servers_keep_lifecycle_error_after_refresh_and_reselection(desktop, monkeypatch):
+    from remote_ops_workspace.gui_dialogs import WorkflowDialog
+    from remote_ops_workspace.gui_server_controls import ServerRowControls
+
+    manager = desktop.server_lifecycle
+    monkeypatch.setattr(manager, "refresh", lambda _: None)
+
+    def interact(dialog):
+        iperf = next(control for control in dialog.findChildren(ServerRowControls) if control.service == "iperf")
+        dialog.rows.setCurrentItem(iperf.row)
+        manager.changed.emit("iperf", "starting", "")
+        error = "Iperf cannot bind 127.0.0.1:5001"
+        manager.changed.emit("iperf", "stopped", error)
+        assert dialog.detail.toPlainText().endswith(error)
+        manager.changed.emit("iperf", "stopped", "")
+        assert dialog.detail.toPlainText().endswith(error)
+        dialog.rows.setCurrentItem(dialog.rows.topLevelItem(0))
+        assert error not in dialog.detail.toPlainText()
+        dialog.rows.setCurrentItem(iperf.row)
+        assert dialog.detail.toPlainText().endswith(error)
+        manager.changed.emit("iperf", "starting", "")
+        assert error not in dialog.detail.toPlainText()
+        manager.changed.emit("iperf", "running", "")
+        manager.changed.emit("iperf", "running", "Temporary status error")
+        assert dialog.detail.toPlainText().endswith("Temporary status error")
+        manager.changed.emit("iperf", "running", "")
+        assert "Temporary status error" not in dialog.detail.toPlainText()
+        dialog.reject()
+
+    monkeypatch.setattr(WorkflowDialog, "exec", interact)
+    desktop.show_moba_servers_status()
 
 
 def test_settings_defaults_disabled_timeout_and_persistence(desktop, monkeypatch):

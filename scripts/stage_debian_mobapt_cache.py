@@ -32,6 +32,7 @@ from scripts.debian_server_notices import (  # noqa: E402
     MOBAPT_ASSEMBLY,
     MOBAPT_NOTICE_DIR,
     MOBAPT_REVIEW,
+    observe_mobapt_notices,
 )
 
 EVIDENCE = MOBAPT_ASSEMBLY
@@ -172,6 +173,7 @@ def verify_packaged_review(
                         elif hashlib.file_digest(stream, "sha256").hexdigest() != expected[name]:
                             raise ValueError(f"reviewed MobApt cache differs from the Debian package payload: {name}")
                     verified.add(name)
+                observe_mobapt_notices(archive, release_tag)
     except (OSError, subprocess.SubprocessError, tarfile.TarError) as exc:
         raise ValueError("could not read the candidate Debian MobApt payload") from exc
     if set(files) != metadata_names:

@@ -8,6 +8,8 @@ import tarfile
 import pytest
 
 from scripts import check_release_license_compliance as compliance
+from scripts import release_candidate_inventory as inventory
+from scripts import stage_debian_mobapt_cache as mobapt
 from scripts.debian_server_notices import (
     MOBAPT_ASSEMBLY,
     MOBAPT_CACHE_DIR,
@@ -92,3 +94,26 @@ def test_mobapt_notice_is_required_for_the_deb_only():
     assert not errors
     required = compliance.required_artifact_license_records(components, {asset, rpm}, scoped, "review", errors)
     assert not errors and len(required[asset]) == 1 and required[rpm] == set()
+
+
+@pytest.mark.parametrize("change", ["", "changed", "missing-notice"])
+def test_candidate_mobapt_sealing_checks_the_notice_bytes(tmp_path, monkeypatch, change):
+    package = tmp_path / "remote-ops-workspace-v1.0.28-linux-amd64.deb"
+    package.write_bytes(b"fixture Debian package")
+    payload = package_payload(change=change)
+    with tarfile.open(fileobj=payload, mode="r:") as archive:
+        member = archive.extractfile("./" + (MOBAPT_NOTICE_DIR / MOBAPT_REVIEW).as_posix())
+        trusted_review = hashlib.sha256(member.read()).hexdigest()
+
+    def dpkg(command, *, stdout, stderr, check, timeout):
+        assert command == ["dpkg-deb", "--fsys-tarfile", str(package)]
+        assert check and timeout > 0
+        stdout.write(payload.getvalue())
+
+    monkeypatch.setattr(mobapt.subprocess, "run", dpkg)
+    receipt = {"candidate_has_mobapt_cache": True}
+    if change:
+        with pytest.raises(ValueError, match="MobApt (notice differs|requires one packaged file)"):
+            inventory.verify_candidate_mobapt(package, receipt, TAG, trusted_review)
+    else:
+        inventory.verify_candidate_mobapt(package, receipt, TAG, trusted_review)

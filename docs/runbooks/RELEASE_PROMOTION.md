@@ -95,7 +95,8 @@ and tagged checkout.
 When the Debian installer includes the MobApt cache, the review records the
 bundled tools and cached packages with their reviewed Debian versions and
 copyright files. Compliance requires these notice records for the exact DEB
-that contains the cache.
+that contains the cache. Sealing checks the packaged notice bytes against
+the frozen MobApt review before the candidate is offered for approval.
 `review-materials.json` lists the retained qualification archive paths, hashes,
 and source references. The command copies the sealed inventory, report
 payloads, and matching tagged resolver locks into `bundle/` and verifies the

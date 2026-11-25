@@ -23,24 +23,31 @@ green build.
 
 | Field | Value |
 | --- | --- |
-| Assessed on | 2026-11-23 |
+| Assessed on | 2026-11-25 |
 | Version | 1.0.28 candidate |
 | Assessed `main` commit | [`b4f730793ff58b6f4eccff147e35cd833ff1aa39`](https://github.com/Yunushan/remote-ops-workspace/commit/b4f730793ff58b6f4eccff147e35cd833ff1aa39) |
-| Overall engineering score | **81 / 100** |
+| Overall engineering score | **82 / 100** |
 | Strict certification gate | **Pending a signed, release-bound audit** |
 | Release status | v1.0.28 is untagged. The previous version has an [unsigned preview](https://github.com/Yunushan/remote-ops-workspace/releases/tag/v1.0.27). |
 
 PR #194 completed the GUI and CLI refactor tracked as M3. The three-point
-increase reflects the merged code, complete branch coverage and native GUI
-interaction tests. All other area scores carry forward. The release CI
-verifier accepted attempt 2 of the push workflow on the assessed commit.
+increase on November 23 reflected the merged code, complete branch coverage
+and native GUI interaction tests. The release CI verifier accepted attempt 2
+of the push workflow on the assessed commit.
 [Merged changes](https://github.com/Yunushan/remote-ops-workspace/pull/194) · [Accepted main CI attempt](https://github.com/Yunushan/remote-ops-workspace/actions/runs/45170610904/attempts/2)
+
+The November 25 retry closed the remaining code-quality point on the same
+commit. Windows x64 and Linux x64 passed with Riverbank's PyQt6 preview
+`6.12.2.dev2611241405`. Intel macOS had passed with preview
+`6.12.2.dev2611151023`. All three jobs used Qt `6.12.0` and passed rendering
+and interaction checks for all GUI presets.
+[Forward compatibility attempt 2](https://github.com/Yunushan/remote-ops-workspace/actions/runs/45178873700/attempts/2)
 
 ## A. Engineering production-readiness score
 
 | Area | Weight | Score | Basis |
 | --- | --- | --- | --- |
-| Code quality and tests | 15 | 14 | Main CI, CodeQL and the Ubuntu browser qualification passed. The coverage job passed 8,946 tests with 100% statement and branch coverage. A separate scheduled check exercised a newer PyQt6 binding on Intel macOS. Its Linux x64 and Windows x64 jobs could obtain only the pinned 6.12.1 binding. [Coverage](https://github.com/Yunushan/remote-ops-workspace/actions/runs/45170610904/job/137702174949) · [CodeQL](https://github.com/Yunushan/remote-ops-workspace/actions/runs/45170611005) · [Browser](https://github.com/Yunushan/remote-ops-workspace/actions/runs/45170610989) · [Forward compatibility](https://github.com/Yunushan/remote-ops-workspace/actions/runs/45178873700) |
+| Code quality and tests | 15 | 15 | Main CI, CodeQL and the Ubuntu browser qualification passed. The coverage job passed 8,946 tests with 100% statement and branch coverage. The scheduled forward-compatibility workflow passed with PyQt6 bindings newer than the release pin on Windows x64, Linux x64 and Intel macOS. [Coverage](https://github.com/Yunushan/remote-ops-workspace/actions/runs/45170610904/job/137702174949) · [CodeQL](https://github.com/Yunushan/remote-ops-workspace/actions/runs/45170611005) · [Browser](https://github.com/Yunushan/remote-ops-workspace/actions/runs/45170610989) · [Forward compatibility](https://github.com/Yunushan/remote-ops-workspace/actions/runs/45178873700/attempts/2) |
 | Runtime security | 20 | 20 | The earlier runtime integrity, input validation, FTP, and plugin fixes remain in place. X11 servers now require explicit TCP opt-in, including the Windows TCP-only backends that require it to serve X clients. [PR #183](https://github.com/Yunushan/remote-ops-workspace/pull/183) |
 | Supply chain and CI | 15 | 15 | Main CI verified build provenance and a CycloneDX SBOM for the smoke-tested Web/PWA image `sha256:2c192195e126257d618ea3c92220c61f4e335822343b41a3336cb772d17002df`. Live end-to-end verification of a published installer requires the first certified release. [Provenance](https://github.com/Yunushan/remote-ops-workspace/attestations/71079485) · [SBOM](https://github.com/Yunushan/remote-ops-workspace/attestations/71079494) · [Verification](https://github.com/Yunushan/remote-ops-workspace/actions/runs/45170610904/job/137681726182) |
 | Release and distribution | 15 | 5 | Seven native v1.0.28 candidates passed on the assessed commit across Windows x64, x86 and ARM64, Linux x64 and ARM64, and macOS Intel and Apple silicon. Production signing and independent redistribution approval for the exact artifacts remain open. [Merged-commit native matrix](https://github.com/Yunushan/remote-ops-workspace/actions/runs/45180801759) · [Compliance policy](../configs/release_compliance_policy.json) |
@@ -48,7 +55,7 @@ verifier accepted attempt 2 of the push workflow on the assessed commit.
 | Operability and observability | 10 | 9 | The Windows NTFS job verified authenticated staging and interrupted recovery. Debian upgrade and recovery passed on x64 and ARM64, as did RPM upgrade and rollback on x64. Cross-version Windows installer recovery still requires two genuinely signed MSI packages. [NTFS qualification](https://github.com/Yunushan/remote-ops-workspace/actions/runs/45170611006/job/137678852885) · [Linux x64](https://github.com/Yunushan/remote-ops-workspace/actions/runs/45180801759/job/137713870303) · [Linux ARM64](https://github.com/Yunushan/remote-ops-workspace/actions/runs/45180801759/job/137713870235) · [Signed MSI qualification](../.github/workflows/windows-msi-upgrade-qualification.yml) |
 | Maintainability | 10 | 10 | Qt actions, session lifecycle, preset layouts and CLI commands now live in dedicated modules. Six desktop presets use a packaged stylesheet and settings. From the previous assessment, `gui.py` fell from 13,033 to 1,143 lines and `cli.py` from 3,472 to 1,725. Full coverage and native Windows rendering and interaction tests passed through the desktop entry point. [Merged refactor](https://github.com/Yunushan/remote-ops-workspace/pull/194) · [Native GUI interactions](https://github.com/Yunushan/remote-ops-workspace/actions/runs/45170610904/job/137702106015) · [Coverage](https://github.com/Yunushan/remote-ops-workspace/actions/runs/45170610904/job/137702174949) |
 | Docs and governance | 5 | 5 | Retains the previously verified engineering controls. Public GitHub metadata confirms that `main` is protected and the `v*` ruleset is active with update and deletion restrictions. Release certification still requires the authenticated exact-tag audit and an independent auditor signature. [Tag ruleset](https://github.com/Yunushan/remote-ops-workspace/rules/24350907) |
-| **Total** | **100** | **81** | |
+| **Total** | **100** | **82** | |
 
 The assessed commit supports source use and unsigned-preview distribution.
 A certified release requires the evidence below.
@@ -113,6 +120,7 @@ steps 6-8. See the backlog for the owner's production scope decision (D1).
 | 2026-11-17 | Windows X11 TCP opt-in, NTFS private-staging qualification, and shared Qt menu and Quick Connect extraction verified on `a1d14f1`. | **78** | Pending release-bound audit |
 | 2026-11-22 | The merged Qt dependency updates passed all 74 hosted checks on `4b1f02a`, including GUI interaction, coverage and image attestation. | **78** | Pending release-bound audit |
 | 2026-11-23 | Merged the GUI and CLI decomposition on `b4f7307`. Native GUI interaction and full statement and branch coverage passed on main. | **81** | Pending release-bound audit |
+| 2026-11-25 | Hosted forward-compatibility checks passed with newer PyQt6 bindings on Windows x64, Linux x64 and Intel macOS on `b4f7307`. | **82** | Pending release-bound audit |
 
 ## How to re-score
 

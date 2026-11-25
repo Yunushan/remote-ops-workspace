@@ -2385,7 +2385,7 @@ def create_moba_connected_classes(
             items = [parent_item]
             # Each row shares the directory route, column tooltips, and size hint.
             for row_index, entry in enumerate(entries, start=1):
-                item = parent_item.clone()
+                item = _required_gui_value(parent_item.clone(), "SFTP file row")
                 item.setText(0, entry.name)
                 item.setText(1, str(entry.size_kb))
                 item.setText(2, entry.modified)

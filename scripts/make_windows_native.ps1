@@ -445,6 +445,12 @@ $BuildGuiLauncher = $Arch -ne "x86"
 if ($BuildGuiLauncher -and !(Test-PythonModule -Python $Python -Module "PyQt6")) {
   throw "PyQt6 is required to build the Windows $Arch GUI launcher. Install the desktop extra before running this script."
 }
+if ($BuildGuiLauncher -and $env:ROW_REQUIRE_RELEASE_SIGNING -eq "1") {
+  & $Python (Join-Path $PSScriptRoot "check_pyqt6_compatibility.py") --require-release-pins
+  if ($LASTEXITCODE -ne 0) {
+    throw "Windows signing requires the pinned PyQt6 and Qt source versions"
+  }
+}
 
 $Destination = Join-Path $Root $Dist
 $BuildDir = Join-Path $Root "build\native\windows"

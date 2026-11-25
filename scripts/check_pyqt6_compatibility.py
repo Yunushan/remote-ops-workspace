@@ -9,6 +9,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+if __package__:
+    from .check_preview_redistribution import pinned_gui_versions
+else:
+    from check_preview_redistribution import pinned_gui_versions
+
 ROOT = Path(__file__).resolve().parents[1]
 TOOLCHAIN_PATH = ROOT / "configs" / "release_toolchain.json"
 VERSION_RE = re.compile(
@@ -57,6 +62,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Require a binding newer than the release-toolchain pin.",
     )
+    parser.add_argument(
+        "--require-release-pins",
+        action="store_true",
+        help="Require the installed distributions and loaded runtimes to match the release source descriptors.",
+    )
     args = parser.parse_args(argv)
     if args.require_forward_binding and not args.require_target:
         parser.error("--require-forward-binding requires --require-target")
@@ -81,9 +91,11 @@ def main(argv: list[str] | None = None) -> int:
     errors, messages = check_runtime(
         policy,
         target_version=target_version,
-        require_pyqt6=args.require_pyqt6 or args.require_target,
+        require_pyqt6=args.require_pyqt6 or args.require_target or args.require_release_pins,
         require_target=args.require_target,
+        run_widget_smoke=not args.require_release_pins,
         require_forward_binding=args.require_forward_binding,
+        require_release_pins=args.require_release_pins,
     )
     for message in messages:
         print(f"PyQt6 compatibility: {message}")
@@ -164,6 +176,7 @@ def check_runtime(
     require_target: bool,
     run_widget_smoke: bool = True,
     require_forward_binding: bool = False,
+    require_release_pins: bool = False,
 ) -> tuple[list[str], list[str]]:
     target_errors = validate_target_version(policy, target_version)
     if target_errors:
@@ -183,6 +196,19 @@ def check_runtime(
         require_target=require_target,
         require_forward_binding=require_forward_binding,
     )
+    if require_release_pins:
+        try:
+            pins = pinned_gui_versions()
+        except (OSError, ValueError) as exc:
+            return [f"Could not load GUI source pins: {exc}"], []
+        for name, label, version in (
+            ("PyQt6", "PyQt6 distribution", runtime.distribution_version),
+            ("PyQt6", "PyQt6 binding", runtime.binding_version),
+            ("PyQt6-Qt6", "PyQt6-Qt6 distribution", runtime.qt_distribution_version),
+            ("PyQt6-Qt6", "Qt runtime", runtime.qt_version),
+        ):
+            if version != pins[name]:
+                errors.append(f"{label} {version} differs from release source pin {pins[name]}")
     if errors:
         return errors, []
 

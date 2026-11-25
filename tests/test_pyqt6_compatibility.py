@@ -81,6 +81,32 @@ def test_probe_validates_the_loaded_qt_patch_version(monkeypatch: pytest.MonkeyP
     ) == []
 
 
+@pytest.mark.parametrize(
+    ("qt_distribution", "qt_runtime", "expected"),
+    [
+        ("6.12.0", "6.12.0", []),
+        ("6.12.1", "6.12.0", ["PyQt6-Qt6 distribution 6.12.1 differs from release source pin 6.12.0"]),
+        ("6.12.0", "6.12.1", ["Qt runtime 6.12.1 differs from release source pin 6.12.0"]),
+    ],
+)
+def test_release_source_pins_require_exact_qt_patch(
+    monkeypatch: pytest.MonkeyPatch,
+    qt_distribution: str,
+    qt_runtime: str,
+    expected: list[str],
+) -> None:
+    checker = _load_checker()
+    runtime = checker.PyQt6Runtime("6.12.1", "6.12.1", qt_distribution, qt_runtime, "13.13.1")
+    monkeypatch.setattr(checker, "probe_runtime", lambda: runtime)
+
+    errors, _ = checker.check_runtime(
+        checker.load_policy(), target_version=(6, 12, 0), require_pyqt6=True, require_target=False,
+        run_widget_smoke=False, require_release_pins=True,
+    )
+
+    assert errors == expected
+
+
 def test_pyqt6_runtime_rejects_mismatched_binding_and_qt() -> None:
     checker = _load_checker()
     runtime = checker.PyQt6Runtime(
@@ -315,7 +341,7 @@ def test_pyqt6_check_runtime_reports_platform_loader_errors(monkeypatch) -> None
 
 def _load_checker():
     path = Path("scripts/check_pyqt6_compatibility.py")
-    spec = importlib.util.spec_from_file_location("check_pyqt6_compatibility_script", path)
+    spec = importlib.util.spec_from_file_location("scripts.check_pyqt6_compatibility_script", path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     sys.modules[spec.name] = module

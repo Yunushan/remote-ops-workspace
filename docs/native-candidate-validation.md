@@ -45,6 +45,21 @@ directory. The bootloader uses host zlib before unpacking its bundled zlib.
 The three workloads exercise the CLI start-up and vault paths. Optional
 plugins and external protocol tools require their own runtime observations.
 
+The same loader verifier can inspect an installed i386 or armhf DEB on
+matching Debian userspace using an interpreter with PyInstaller installed.
+Supply the original build's
+`--staged-elf-report` to validate the staging changes against the archive.
+For a supplemental installed-package check without that build report, use
+`--inspect-installed`. This mode compares the launcher with the supplied
+DEB and checks the same three workloads. Its receipt records
+`staged_runpath_changes` as JSON `null`.
+
+```bash
+python scripts/qualify_deb_loader.py --target linux-armhf \
+  --deb /path/to/remote-ops-workspace-v1.0.28-linux-armhf.deb \
+  --executable /usr/bin/row --inspect-installed --report deb-loader-selection.json
+```
+
 The RPM build preserves the finalized onefile executable by disabling its ELF
 stripping hooks. Its `%check` compares the staged executable with the original
 package input and fails the build if their bytes differ. Other packaging hooks

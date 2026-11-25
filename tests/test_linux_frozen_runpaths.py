@@ -9,7 +9,7 @@ import pytest
 
 from scripts.debian_native_dependencies import elf_requirements
 from scripts.linux_frozen_runpaths import prepare_spec, stage_binaries, without_toolcache_runpath
-from scripts.qualify_deb_loader import selections
+from scripts.qualify_deb_loader import qualify, selections
 
 HOSTED = "/opt/hostedtoolcache/Python/3.14.10/x64/lib"
 
@@ -114,3 +114,19 @@ def test_trace_rejects_search_and_unverified_extraction_member(tmp_path):
     }
     with pytest.raises(ValueError, match="absent"):
         selections([trace], tmp_path, {})
+
+
+@pytest.mark.parametrize(("target", "architecture"), [("linux-i386", "i386"), ("linux-armhf", "armhf")])
+def test_loader_rejects_deb_from_another_architecture(tmp_path, monkeypatch, target, architecture):
+    deb = tmp_path / "row.deb"
+
+    def check_output(command, *, text):
+        assert text
+        if command == ["dpkg", "--print-architecture"]:
+            return architecture + "\n"
+        assert command == ["dpkg-deb", "-f", str(deb), "Architecture"]
+        return "amd64\n"
+
+    monkeypatch.setattr(subprocess, "check_output", check_output)
+    with pytest.raises(ValueError, match="package architecture does not match"):
+        qualify(tmp_path / "row", deb, target, None, None)

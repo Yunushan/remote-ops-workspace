@@ -21,6 +21,13 @@ if str(ROOT) not in sys.path:
 from scripts.linux_frozen_elf import archive_elf_members  # noqa: E402
 from scripts.linux_frozen_runpaths import TOOLCACHE_LIB  # noqa: E402
 
+DEBIAN_ARCHITECTURES = {
+    "linux-x86_64": "amd64",
+    "linux-aarch64": "arm64",
+    "linux-i386": "i386",
+    "linux-armhf": "armhf",
+}
+
 
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -69,9 +76,9 @@ def selections(logs: list[Path], temporary: Path, members: dict[str, str]) -> di
 
 
 def qualify(
-    executable: Path, deb: Path, target: str, source_sha: str | None, staged_report: Path
+    executable: Path, deb: Path, target: str, source_sha: str | None, staged_report: Path | None
 ) -> dict:
-    arch = {"linux-aarch64": "arm64", "linux-x86_64": "amd64"}[target]
+    arch = DEBIAN_ARCHITECTURES[target]
     if subprocess.check_output(["dpkg", "--print-architecture"], text=True).strip() != arch:
         raise ValueError("Debian userland architecture does not match the qualification target")
     if (
@@ -90,15 +97,17 @@ def qualify(
         members = {
             name: hashlib.sha256(raw).hexdigest() for name, raw in archive_elf_members(executable)
         }
-        changes = json.loads(staged_report.read_bytes())
-        for member, change in changes.items():
-            if (
-                change["staged_sha256"] != members.get(member)
-                or change["input_sha256"] == change["staged_sha256"]
-            ):
-                raise ValueError(
-                    f"Staged RUNPATH change does not match the packaged ELF member: {member}"
-                )
+        changes = None
+        if staged_report is not None:
+            changes = json.loads(staged_report.read_bytes())
+            for member, change in changes.items():
+                if (
+                    change["staged_sha256"] != members.get(member)
+                    or change["input_sha256"] == change["staged_sha256"]
+                ):
+                    raise ValueError(
+                        f"Staged RUNPATH change does not match the packaged ELF member: {member}"
+                    )
         home = work / "home"
         home.mkdir(mode=0o700)
         for name, args in (
@@ -147,7 +156,8 @@ def qualify(
     return {
         "schema_version": 1,
         "scope": "Observed glibc initializations for three offline CLI workloads. "
-        "Archive hashes identify packaged member bytes. Host hashes identify the observed filesystem providers.",
+        "Archive hashes identify packaged member bytes. Host hashes identify the observed filesystem providers."
+        + (" Installed-package inspection without a build-time staging report." if staged_report is None else ""),
         "target": target,
         "kernel_machine": platform.machine(),
         "glibc": os.confstr("CS_GNU_LIBC_VERSION"),
@@ -164,12 +174,14 @@ def qualify(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", choices=("linux-x86_64", "linux-aarch64"), required=True)
+    parser.add_argument("--target", choices=DEBIAN_ARCHITECTURES, required=True)
     parser.add_argument("--deb", type=Path, required=True)
     parser.add_argument("--executable", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--source-sha")
-    parser.add_argument("--staged-elf-report", type=Path, required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--staged-elf-report", type=Path, help="validate the packaging build's ELF report")
+    mode.add_argument("--inspect-installed", action="store_true", help="inspect an installed DEB without a build report")
     args = parser.parse_args()
     if args.source_sha and not re.fullmatch("[0-9a-f]{40}", args.source_sha):
         parser.error("--source-sha must be a complete Git commit ID")

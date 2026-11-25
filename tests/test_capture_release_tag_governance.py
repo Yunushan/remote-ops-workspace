@@ -5,6 +5,8 @@ import importlib
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
+from urllib.error import HTTPError
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -215,3 +217,56 @@ def test_fetch_requires_exact_transaction_even_with_valid_auditor_signature(monk
     fetch.verify_proof(proof, signature, policy, repository, tag, sha, transaction)
     with pytest.raises(ValueError, match="exact promotion transaction"):
         fetch.verify_proof(proof, signature, policy, repository, tag, sha, {**transaction, "draft_release_id": 78})
+
+
+def test_fetch_retries_a_missing_signature_without_mixing_proof_commits(monkeypatch):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
+    fetch = importlib.import_module("fetch_release_tag_governance")
+    ref = fetch.proof_ref(fetch.promotion_transaction(123, 1, "create-draft", None))
+    pinned = iter(("a" * 40, "b" * 40))
+    reads = []
+    waits = []
+
+    def github(url, _token, *, api_version):
+        if "/git/ref/" in url:
+            return {"ref": ref, "object": {"type": "commit", "sha": next(pinned)}}, {}
+        name, commit = url.split("/contents/")[1].split("?ref=")
+        reads.append((name, commit))
+        if name == fetch.SIGNATURE and commit == "a" * 40:
+            raise RuntimeError("content unavailable") from HTTPError(url, 404, "Not Found", {}, None)
+        data = (name + commit).encode()
+        return {
+            "type": "file", "path": name, "encoding": "base64", "size": len(data),
+            "content": base64.b64encode(data).decode(),
+        }, {}
+
+    monkeypatch.setattr(fetch, "time", SimpleNamespace(monotonic=lambda: 0, sleep=waits.append))
+    monkeypatch.setattr(fetch, "get_json", github)
+    assert fetch.fetch_proof("example/project", ref, "fixture-token") == (
+        (fetch.ATTESTATION + "b" * 40).encode(), (fetch.SIGNATURE + "b" * 40).encode(),
+    )
+    assert reads == [(name, "a" * 40) for name in (fetch.ATTESTATION, fetch.SIGNATURE)] + [
+        (name, "b" * 40) for name in (fetch.ATTESTATION, fetch.SIGNATURE)
+    ]
+    assert waits == [10]
+
+
+@pytest.mark.parametrize("status", [403, 404])
+def test_fetch_keeps_the_proof_deadline_and_propagates_forbidden_reads(monkeypatch, status):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
+    fetch = importlib.import_module("fetch_release_tag_governance")
+    ref = fetch.proof_ref(fetch.promotion_transaction(123, 1, "create-draft", None))
+    observations = iter((0, 897, 900))
+    waits = []
+
+    def github(url, _token, *, api_version):
+        if "/git/ref/" in url:
+            return {"ref": ref, "object": {"type": "commit", "sha": "a" * 40}}, {}
+        raise RuntimeError("content request failed") from HTTPError(url, status, "fixture error", {}, None)
+
+    monkeypatch.setattr(fetch, "time", SimpleNamespace(monotonic=lambda: next(observations), sleep=waits.append))
+    monkeypatch.setattr(fetch, "get_json", github)
+    message = "did not arrive within 15 minutes" if status == 404 else "content request failed"
+    with pytest.raises(RuntimeError, match=message):
+        fetch.fetch_proof("example/project", ref, "fixture-token")
+    assert waits == ([3] if status == 404 else [])

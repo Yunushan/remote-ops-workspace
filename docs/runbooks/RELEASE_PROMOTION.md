@@ -587,9 +587,10 @@ Wait for the promotion job to print the proof ref. From a separate auditor
 checkout, put `tag-governance-attestation.json` and its detached
 `tag-governance-attestation.sig.json` at the root of one data-only commit.
 Push that commit to the exact ref printed by the command and the workflow.
-The workflow reads both files from the same commit. It waits up to 15 minutes
-for the ref to appear and then checks the signature and the short validity
-window. The workflow also revalidates the signed redistribution approval and
+The workflow waits up to 15 minutes for the ref and both proof files. If a file
+is temporarily unavailable, it rereads the ref and retrieves both files from
+one commit. It then checks the signature and the short validity window.
+The workflow also revalidates the signed redistribution approval and
 its expiry immediately before creating the draft and before publishing it.
 
 After upload and draft verification, capture a second proof with

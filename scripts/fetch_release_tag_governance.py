@@ -109,21 +109,24 @@ def fetch_proof(repository: str, ref: str, token: str) -> tuple[bytes, bytes]:
     while True:
         try:
             payload, _ = get_json(ref_url, token, api_version=API_VERSION)
-            break
+            if not isinstance(payload, dict) or payload.get("ref") != ref:
+                raise ValueError("governance proof ref response must match the exact requested ref")
+            target = payload.get("object")
+            commit = target.get("sha") if isinstance(target, dict) and target.get("type") == "commit" else None
+            if not isinstance(commit, str) or re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+                raise ValueError("governance proof ref must point to a commit")
+            # A freshly pushed ref can be visible before both content reads succeed.
+            # On retry, discard the partial pair and pin both files to one commit again.
+            return fetch_file(base, commit, ATTESTATION, token), fetch_file(base, commit, SIGNATURE, token)
         except RuntimeError as exc:
             if not isinstance(exc.__cause__, HTTPError) or exc.__cause__.code != 404:
                 raise
             remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise RuntimeError("independent auditor proof did not arrive within 15 minutes") from exc
-            time.sleep(min(10, remaining))
-    if not isinstance(payload, dict) or payload.get("ref") != ref:
-        raise ValueError("governance proof ref response must match the exact requested ref")
-    target = payload.get("object")
-    commit = target.get("sha") if isinstance(target, dict) and target.get("type") == "commit" else None
-    if not isinstance(commit, str) or re.fullmatch(r"[0-9a-f]{40}", commit) is None:
-        raise ValueError("governance proof ref must point to a commit")
-    return fetch_file(base, commit, ATTESTATION, token), fetch_file(base, commit, SIGNATURE, token)
+            if remaining > 0:
+                time.sleep(min(10, remaining))
+                if time.monotonic() < deadline:
+                    continue
+            raise RuntimeError("independent auditor proof did not arrive within 15 minutes") from exc
 
 
 def fetch_file(base: str, commit: str, name: str, token: str) -> bytes:

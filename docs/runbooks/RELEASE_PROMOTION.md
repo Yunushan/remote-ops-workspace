@@ -581,6 +581,8 @@ python scripts/capture_release_tag_governance.py \
 The command reads the exact tag and its policy from GitHub, checks active tag
 rulesets for update and deletion protection with no bypass actors, and checks
 the tag again before signing. Keep the private key on the auditor's system.
+For an encrypted PKCS#8 PEM, run the command in an interactive terminal. It
+prompts without echo before starting the live checks.
 Wait for the promotion job to print the proof ref. From a separate auditor
 checkout, put `tag-governance-attestation.json` and its detached
 `tag-governance-attestation.sig.json` at the root of one data-only commit.

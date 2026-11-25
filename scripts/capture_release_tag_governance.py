@@ -27,9 +27,8 @@ from check_release_provenance import (
     workflow_path_matches,
 )
 from check_repository_governance import fetch_tag_rulesets, protected_tag_ruleset_ids
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from fetch_release_tag_governance import promotion_transaction, proof_ref
+from release_review_key import load_review_key
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -68,6 +67,8 @@ def capture(args: argparse.Namespace) -> None:
     transaction = None
     if any(value is not None for value in (args.operation, args.run_id, args.run_attempt, args.draft_id)):
         transaction = promotion_transaction(args.run_id, args.run_attempt, args.operation, args.draft_id)
+    # Unlock before reading GitHub so the prompt cannot age the live observations.
+    key = load_review_key(args.private_key, role="auditor")
 
     def fetch(endpoint: str) -> dict[str, Any]:
         data = run_gh_json(
@@ -128,11 +129,6 @@ def capture(args: argparse.Namespace) -> None:
     lifetime = governance.get("max_validity_seconds")
     if type(lifetime) is not int or not 60 <= lifetime <= 900:
         raise ValueError("tag governance policy has an invalid proof lifetime")
-    if args.private_key.is_symlink() or not args.private_key.is_file():
-        raise ValueError("auditor private key must be a regular file")
-    key = load_pem_private_key(args.private_key.read_bytes(), password=None)
-    if not isinstance(key, Ed25519PrivateKey):
-        raise ValueError("auditor private key must be Ed25519")
     observed = datetime.now(timezone.utc).replace(microsecond=0)
     ids, errors = protected_tag_ruleset_ids(fetch_tag_rulesets(repository), tag)
     if errors:

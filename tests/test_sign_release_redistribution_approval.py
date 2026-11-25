@@ -32,6 +32,7 @@ from scripts.check_release_license_compliance import verify_evidence_signature
 def test_signer_preserves_exact_reviewed_bytes_and_fails_closed(tmp_path, monkeypatch, capsys, scenario, error):
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
     signer = importlib.import_module("sign_release_redistribution_approval")
+    key_loader = importlib.import_module("release_review_key")
     key = Ed25519PrivateKey.generate()
     enrolled = Ed25519PrivateKey.generate() if scenario == "unenrolled" else key
     policy = {
@@ -65,8 +66,8 @@ def test_signer_preserves_exact_reviewed_bytes_and_fails_closed(tmp_path, monkey
     encryption = (BestAvailableEncryption(b"disposable passphrase")
                   if scenario in {"encrypted", "noninteractive", "bad-passphrase"} else NoEncryption())
     private_key.write_bytes(key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, encryption))
-    monkeypatch.setattr(signer.sys.stdin, "isatty", lambda: scenario != "noninteractive")
-    monkeypatch.setattr(signer.getpass, "getpass", lambda _: "wrong" if scenario == "bad-passphrase" else "disposable passphrase")
+    monkeypatch.setattr(key_loader.sys.stdin, "isatty", lambda: scenario != "noninteractive")
+    monkeypatch.setattr(key_loader.getpass, "getpass", lambda _: "wrong" if scenario == "bad-passphrase" else "disposable passphrase")
     arguments = [
         "--repository", "example/project", "--tag", "v1.2.3", "--sha", "a" * 40,
         "--policy", str(policy_path), "--approval", str(approval_path),

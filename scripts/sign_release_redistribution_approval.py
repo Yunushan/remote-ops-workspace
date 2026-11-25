@@ -5,11 +5,9 @@ from __future__ import annotations
 
 import argparse
 import base64
-import getpass
 import hashlib
 import json
 import sys
-import warnings
 from pathlib import Path
 
 from check_release_license_compliance import (
@@ -20,8 +18,7 @@ from check_release_license_compliance import (
     read_json_object,
     verify_evidence_signature,
 )
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.serialization import load_pem_private_key
+from release_review_key import load_review_key
 
 
 def sign_approval(args: argparse.Namespace) -> Path:
@@ -45,23 +42,7 @@ def sign_approval(args: argparse.Namespace) -> Path:
     errors = check_review_window(approval, now=None)
     if errors:
         raise ValueError("\n".join(errors))
-    if args.private_key.is_symlink() or not args.private_key.is_file():
-        raise ValueError("reviewer's private key must be a regular file")
-    key_bytes = args.private_key.read_bytes()
-    if key_bytes.lstrip().startswith(b"-----BEGIN ENCRYPTED PRIVATE KEY-----"):
-        if not sys.stdin.isatty():
-            raise ValueError("open an interactive terminal to unlock the reviewer's key")
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", getpass.GetPassWarning)
-            password = getpass.getpass("Reviewer key passphrase: ").encode("utf-8")
-    else:
-        password = None
-    try:
-        key = load_pem_private_key(key_bytes, password=password)
-    except (ValueError, TypeError) as exc:
-        raise ValueError("could not unlock an Ed25519 PKCS#8 PEM key") from exc
-    if not isinstance(key, Ed25519PrivateKey):
-        raise ValueError("the reviewer key must be Ed25519")
+    key = load_review_key(args.private_key, role="reviewer")
     signature = {
         "schema_version": 1,
         "algorithm": "ed25519",
@@ -87,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--private-key", required=True, type=Path)
     try:
         output = sign_approval(parser.parse_args(argv))
-    except (OSError, ValueError, RuntimeError, TypeError, EOFError, getpass.GetPassWarning) as exc:
+    except (OSError, ValueError, RuntimeError, TypeError) as exc:
         print(f"redistribution approval signing: {exc}", file=sys.stderr)
         return 1
     print(f"Verified detached redistribution signature at {output}")

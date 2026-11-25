@@ -8,13 +8,19 @@ from pathlib import Path
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
+from cryptography.hazmat.primitives.serialization import (
+    BestAvailableEncryption,
+    Encoding,
+    NoEncryption,
+    PrivateFormat,
+)
 
 from scripts.check_release_license_compliance import verify_tag_governance_signature
 
 
 @pytest.mark.parametrize("scenario", [
-    "approved", "hidden-bypass", "tag-moved", "untrusted-key", "wrong-draft-run",
+    "approved", "approved-encrypted", "encrypted-without-terminal", "encrypted-wrong-passphrase",
+    "hidden-bypass", "tag-moved", "untrusted-key", "wrong-draft-run",
     "wrong-repository", "wrong-head-repository",
 ])
 def test_capture_signs_only_live_protected_tag(
@@ -26,7 +32,8 @@ def test_capture_signs_only_live_protected_tag(
     key = Ed25519PrivateKey.generate()
     enrolled = Ed25519PrivateKey.generate() if scenario == "untrusted-key" else key
     private_key = tmp_path / "auditor.pem"
-    private_key.write_bytes(key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()))
+    encryption = BestAvailableEncryption(b"disposable password") if "encrypted" in scenario else NoEncryption()
+    private_key.write_bytes(key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, encryption))
     output = tmp_path / "proof"
     policy = {
         "tag_governance_attestation": {
@@ -39,6 +46,14 @@ def test_capture_signs_only_live_protected_tag(
         },
     }
     tag_reads = 0
+    key_loader = importlib.import_module("release_review_key")
+    monkeypatch.setattr(key_loader.sys.stdin, "isatty", lambda: scenario != "encrypted-without-terminal")
+
+    def passphrase(prompt):
+        assert prompt == "Auditor key passphrase: " and tag_reads == 0
+        return "incorrect" if scenario == "encrypted-wrong-passphrase" else "disposable password"
+
+    monkeypatch.setattr(key_loader.getpass, "getpass", passphrase)
 
     def gh(args: list[str], _label: str, _timeout: int) -> dict:
         nonlocal tag_reads
@@ -88,9 +103,11 @@ def test_capture_signs_only_live_protected_tag(
         "--private-key", str(private_key), "--out-dir", str(output),
         "--operation", "publish", "--run-id", "123", "--run-attempt", "1", "--draft-id", "77",
     ]
-    if scenario != "approved":
+    if scenario not in {"approved", "approved-encrypted"}:
         assert capture.main(args) == 1
         assert not output.exists()
+        if scenario.startswith("encrypted-"):
+            assert tag_reads == 0
         return
 
     assert capture.main(args) == 0

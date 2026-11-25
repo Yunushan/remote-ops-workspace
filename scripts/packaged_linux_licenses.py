@@ -19,7 +19,7 @@ from check_preview_redistribution import (
 from check_release_license_compliance import path_is_reparse
 from collect_unsigned_runtime import DEFAULT_LIMITS, Observations, cpio_members
 from debian_server_notices import VERSION_RE as DEBIAN_VERSION_RE
-from debian_server_notices import notice_path, observe_debian_notices
+from debian_server_notices import notice_path, observe_debian_notices, observe_mobapt_notices
 from stage_linux_runtime_licenses import (
     LICENSE_COMPONENTS,
     LICENSE_ROOT,
@@ -112,13 +112,18 @@ def license_members(archive: Path) -> Iterator[tuple[PurePosixPath, bytes]]:
 def read_linux_component_licenses(archive: Path) -> list[ComponentLicense]:
     if archive.suffix.lower() != ".deb":
         return read_frozen_licenses(archive, license_members(archive))
-    architecture = archive.stem.rsplit("-linux-", 1)[-1]
+    release_name, _, architecture = archive.stem.rpartition("-linux-")
+    tag = release_name.removeprefix("remote-ops-workspace-")
     target = "linux-x86_64" if architecture == "amd64" else f"linux-{architecture}"
     with tarfile.open(fileobj=io.BytesIO(deb_tar_payload(archive)), mode="r:") as payload:
         licenses = read_frozen_licenses(archive, tar_license_members(payload))
         notices = observe_debian_notices(payload, target=target)
+        mobapt = observe_mobapt_notices(payload, tag)
+    if notices.keys() & mobapt.keys():
+        raise ValueError("Debian server and MobApt notice component names overlap")
+    notices.update(mobapt)
     licenses.extend(
-        ComponentLicense(notice_path(name).as_posix(), notice.data, name, notice.record["version"])
+        ComponentLicense(notice.record.get("path", notice_path(name).as_posix()), notice.data, name, notice.record["version"])
         for name, notice in sorted(notices.items())
     )
     return licenses

@@ -28,10 +28,15 @@ from scripts.check_release_license_compliance import (  # noqa: E402
     sha256_file,
 )
 from scripts.debian_release_fixture import DEBIAN_TARGETS, release_deb_version  # noqa: E402
+from scripts.debian_server_notices import (  # noqa: E402
+    MOBAPT_ASSEMBLY,
+    MOBAPT_NOTICE_DIR,
+    MOBAPT_REVIEW,
+)
 
-EVIDENCE = "mobapt-cache-evidence.json"
-REVIEW = "mobapt-debian-review.json"
-NOTICE_ROOT = "usr/share/doc/remote-ops-workspace/mobapt-notices"
+EVIDENCE = MOBAPT_ASSEMBLY
+REVIEW = MOBAPT_REVIEW
+NOTICE_ROOT = MOBAPT_NOTICE_DIR.as_posix()
 ELF_ARCHES = {"amd64": "x86_64", "arm64": "aarch64", "i386": "i686", "armhf": "armhf"}
 
 

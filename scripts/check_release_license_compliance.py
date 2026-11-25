@@ -944,7 +944,7 @@ def check_evidence(
                 if not artifact.endswith(".deb"):
                     continue
                 try:
-                    if notices := read_verified_debian_notices(assets_dir / artifact, target=target):
+                    if notices := read_verified_debian_notices(assets_dir / artifact, target=target, mobapt_release_tag=tag):
                         debian_notices[artifact] = notices
                 except ValueError as exc:
                     errors.append(f"{artifact}: {exc}")
@@ -1794,7 +1794,7 @@ def check_debian_notice_inventory(
     for artifact, records in notices.items():
         for name, row in records.items():
             component = components.get(normalize_component_name(name))
-            key = (notice_path(name).as_posix(), row["sha256"], row["size_bytes"])
+            key = (row.get("path", notice_path(name).as_posix()), row["sha256"], row["size_bytes"])
             if (
                 component is None or component.get("scope") != "bundled"
                 or component.get("origin") != "native-component" or component.get("version") != row["version"]

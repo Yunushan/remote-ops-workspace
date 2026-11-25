@@ -21,7 +21,11 @@ ATTRIBUTES = (
     'requirements-locks/*.txt text eol=lf',
     'requirements-locks/protected-linux/*.txt text eol=lf',
     'requirements-locks/inputs/*.in text eol=lf',
-    'redistribution-evidence/*.txt text eol=lf', '*.png binary',
+    'redistribution-evidence/*.txt text eol=lf',
+    '/LICENSE text eol=lf', '/NOTICE text eol=lf',
+    '/apps/web/*.css text eol=lf', '/apps/web/*.html text eol=lf', '/apps/web/*.js text eol=lf',
+    '/src/remote_ops_workspace/assets/*.manifest text eol=lf',
+    '/src/remote_ops_workspace/assets/*.svg text eol=lf', '*.png binary',
 )
 ALLOWED = {
     'gc': {'auto': {'0'}},

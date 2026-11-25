@@ -800,6 +800,8 @@ jobs:
           path: |
             build/native-smoke/linux-${{ matrix.arch }}/finish.json
             build/native-smoke/linux-${{ matrix.arch }}/candidate-runtime-byte-binding.json
+            build/native-smoke/linux-${{ matrix.arch }}/frozen-cron.json
+            build/native-smoke/linux-${{ matrix.arch }}/deb-loader-selection.json
           if-no-files-found: error
           retention-days: 90
       - name: Qualify the exact release RPM upgrade and rollback

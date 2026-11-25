@@ -313,6 +313,7 @@ def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
         assert "matrix.arch" in marker
     assert "scripts/candidate_native_proof.py finish" in verify
     assert candidate.LINUX_SMOKE_PROOF_FILE in retained and candidate.NATIVE_BYTE_BINDING_FILE in retained
+    assert candidate.LINUX_CRON_PROOF_FILE in retained and candidate.LINUX_DEB_LOADER_FILE in retained
     assert "python -m scripts.qualify_rpm_candidate" in step
     assert "path: build/release-rpm-evidence/" in job
     assert all(name in step for name in (*candidate.RPM_SMOKE_FILES, candidate.RPM_REPORT_NAME))
@@ -327,6 +328,11 @@ def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
         ("missing-linux-smoke", "missing=.*release-linux-native-smoke-aarch64"),
         ("wrong-linux-proof", "native proof does not bind the completed exact-run installer smoke receipt"),
         ("wrong-linux-package", "smoke receipt differs from the candidate installer"),
+        ("missing-linux-cron", "archive must contain one root frozen-cron.json"),
+        ("wrong-linux-cron-run", "loader receipt differs from the exact release build"),
+        ("wrong-linux-cron-loader", "Cron receipt must bind one scheduled job"),
+        ("wrong-linux-cron-observation", "requires the installed DEB launcher observation"),
+        ("linux-cron-ran-after-stop", "Cron receipt must bind one scheduled job"),
         ("swapped-native-manifests", "files differ from its release matrix assignment"),
         ("unexpected-source-file", "files differ from its release matrix assignment"),
         ("foreign-checksum-reference", "foreign, repeated or mismatched checksum"),
@@ -698,8 +704,36 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                 changed = name == "release-linux-native-smoke-aarch64"
                 if changed and condition == "wrong-linux-package":
                     digests[next(iter(digests))] = "b" * 64
+                launcher = "c" * 64
+                deb, = (asset for asset in digests if asset.endswith(".deb"))
+                loader = candidate.qualification_receipt_bytes({
+                    "schema_version": 1, "target": target, "kernel_machine": target.removeprefix("linux-"),
+                    "deb": deb, "deb_sha256": digests[deb], "launcher_sha256": launcher,
+                    "source_sha": sha,
+                    "github_run_id": "99" if changed and condition == "wrong-linux-cron-run" else "123",
+                    "github_run_attempt": "1", "staged_runpath_changes": {},
+                })
+                cron = {
+                    "schema": "row.native-frozen-cron.v1", "target": target,
+                    "deb": deb, "deb_sha256": digests[deb], "row_sha256": launcher, "source_sha": sha,
+                    "deb_loader_report_sha256": "d" * 64 if changed and condition == "wrong-linux-cron-loader"
+                    else hashlib.sha256(loader).hexdigest(),
+                    "real_minute_job_count": 1, "stopped_pid_exited": True,
+                    "next_minute_quiet": not (changed and condition == "linux-cron-ran-after-stop"),
+                    "linux_process_identity_verified": True, "onefile_extraction_released": True,
+                    "public_status_and_generation_verified": True,
+                }
+                archive.writestr(candidate.LINUX_DEB_LOADER_FILE, loader)
+                if not (changed and condition == "missing-linux-cron"):
+                    archive.writestr(candidate.LINUX_CRON_PROOF_FILE, candidate.qualification_receipt_bytes(cron))
                 raw_binding = candidate.qualification_receipt_bytes({
                     "target": target, "status": "bound", "smoke_complete": True, "installer_sha256": digests,
+                    "expected_executables": [{"role": "cli", "sha256": launcher}],
+                    "observations": [{
+                        "path": "deb/usr/bin/row", "phase": "install", "probe": "version", "role": "cli",
+                        "matched": True, "expected_sha256": launcher,
+                        "observed_sha256": "d" * 64 if changed and condition == "wrong-linux-cron-observation" else launcher,
+                    }],
                 })
                 proof_sha = "b" * 40 if changed and condition == "wrong-linux-proof" else sha
                 archive.writestr(candidate.NATIVE_BYTE_BINDING_FILE, raw_binding)
@@ -853,7 +887,10 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
             "missing-gui-module", "unverified-gui-module", "wrong-gui-path",
         }:
             assert len(downloads) == len(runtime) + 3
-        elif condition == "wrong-linux-proof":
+        elif condition in {
+            "wrong-linux-proof", "missing-linux-cron", "wrong-linux-cron-run",
+            "wrong-linux-cron-loader", "wrong-linux-cron-observation", "linux-cron-ran-after-stop",
+        }:
             assert len(downloads) == len(runtime) + 2 + len(smoke) + len(linux_smoke)
         else:
             assert len(downloads) == (1 if condition in {"bad-runtime-report", "nonregular-runtime-report"} else 0)
@@ -1139,6 +1176,16 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     gui_archive.write_bytes(gui_bytes)
     arm_archive = retained / f"{linux_smoke[1]}.zip"
     arm_bytes = arm_archive.read_bytes()
+    with zipfile.ZipFile(io.BytesIO(arm_bytes)) as original, zipfile.ZipFile(arm_archive, "w") as legacy:
+        for filename in (candidate.LINUX_SMOKE_PROOF_FILE, candidate.NATIVE_BYTE_BINDING_FILE):
+            legacy.writestr(filename, original.read(filename))
+    legacy_arm = arm_archive.read_bytes()
+    assert candidate.check_smoke_archive(
+        io.BytesIO(legacy_arm), linux_smoke[1], {}, 123, sha, candidate.FEDORA_RELEASE_IMAGE_SCHEMA_VERSION,
+    ) == linux_archives[linux_smoke[1]]["installer_sha256"]
+    with pytest.raises(ValueError, match="one root frozen-cron.json"):
+        candidate.check_smoke_archive(io.BytesIO(legacy_arm), linux_smoke[1], {}, 123, sha, candidate.SCHEMA_VERSION)
+    arm_archive.write_bytes(arm_bytes)
     arm_archive.unlink()
     with pytest.raises(ValueError, match="missing or invalid retained.*aarch64"):
         candidate.verify_retained_qualification_archives(retained, inventory)

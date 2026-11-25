@@ -62,7 +62,8 @@ from scripts.release_evidence_file import retry_evidence_operation, stream_sha25
 GUI_MODULE_PROOF_SCHEMA_VERSION = 12
 ARCHIVE_FILE_SCOPE_SCHEMA_VERSION = 13
 FEDORA_RELEASE_IMAGE_SCHEMA_VERSION = 14
-SCHEMA_VERSION = FEDORA_RELEASE_IMAGE_SCHEMA_VERSION
+LINUX_CRON_PROOF_SCHEMA_VERSION = 15
+SCHEMA_VERSION = LINUX_CRON_PROOF_SCHEMA_VERSION
 MIN_XVFB_INVENTORY_SCHEMA = 14
 REVIEWED_SERVER_BUNDLE_SCHEMA_VERSION = 11
 SERVER_BUNDLE_SCHEMA_VERSION = 10
@@ -126,6 +127,8 @@ MAX_MEMBERS = 20_000
 MAX_JSON_BYTES = 10 * 1024 * 1024
 MAX_SMOKE_ARCHIVE_BYTES = 64 * 1024 * 1024
 LINUX_SMOKE_PROOF_FILE = "finish.json"
+LINUX_CRON_PROOF_FILE = "frozen-cron.json"
+LINUX_DEB_LOADER_FILE = "deb-loader-selection.json"
 GUI_ARCHIVE_PROOF_FILE = "gui-archive-proof.json"
 NATIVE_BYTE_BINDING_FILE = "candidate-runtime-byte-binding.json"
 
@@ -830,8 +833,68 @@ def validate_gui_smoke_archive(path: Path | io.BytesIO, name: str, *, require_mo
     return binding.get("installer_sha256")
 
 
-def validate_linux_smoke_archive(path: Path | io.BytesIO, name: str, run_id: int, release_sha: str) -> Any:
-    reports = read_archive_reports(path, name, (LINUX_SMOKE_PROOF_FILE, NATIVE_BYTE_BINDING_FILE))
+def validate_linux_cron_reports(
+    reports: dict[str, bytes], binding: dict[str, Any], target: str, run_id: int, release_sha: str,
+) -> None:
+    raw_loader = reports[LINUX_DEB_LOADER_FILE]
+    loader = json.loads(raw_loader)
+    cron = json.loads(reports[LINUX_CRON_PROOF_FILE])
+    machine, suffix = {"linux-x86_64": ("x86_64", "-linux-amd64.deb"),
+                       "linux-aarch64": ("aarch64", "-linux-arm64.deb")}[target]
+    installers = binding.get("installer_sha256")
+    executables = binding.get("expected_executables")
+    if not isinstance(installers, dict) or not isinstance(executables, list):
+        raise ValueError("Linux Cron qualification requires the installed DEB and frozen launcher bindings")
+    packages = [(name, digest) for name, digest in installers.items() if name.endswith(suffix)]
+    launchers = [row.get("sha256") for row in executables if isinstance(row, dict) and row.get("role") == "cli"]
+    if len(packages) != 1 or len(launchers) != 1 or not isinstance(loader, dict) or not isinstance(cron, dict):
+        raise ValueError("Linux Cron qualification requires the installed DEB and frozen launcher bindings")
+    deb, deb_sha = packages[0]
+    launcher_sha = launchers[0]
+    for digest in (deb_sha, launcher_sha):
+        if not isinstance(digest, str) or DIGEST_RE.fullmatch(f"sha256:{digest}") is None:
+            raise ValueError("Linux Cron qualification requires canonical installer and launcher digests")
+    observations = binding.get("observations")
+    if not isinstance(observations, list):
+        raise ValueError("Linux Cron qualification requires the installed DEB launcher observation")
+    installed = [
+        row for row in observations if isinstance(row, dict)
+        and (row.get("path"), row.get("phase"), row.get("probe")) == ("deb/usr/bin/row", "install", "version")
+    ]
+    if (
+        len(installed) != 1 or installed[0].get("matched") is not True or installed[0].get("role") != "cli"
+        or installed[0].get("expected_sha256") != launcher_sha or installed[0].get("observed_sha256") != launcher_sha
+    ):
+        raise ValueError("Linux Cron qualification requires the installed DEB launcher observation")
+    if (
+        type(loader.get("schema_version")) is not int or loader["schema_version"] != 1
+        or loader.get("target") != target or loader.get("kernel_machine") != machine
+        or loader.get("deb") != deb or loader.get("deb_sha256") != deb_sha or loader.get("launcher_sha256") != launcher_sha
+        or loader.get("source_sha") != release_sha or loader.get("github_run_id") != str(run_id)
+        or loader.get("github_run_attempt") != "1" or not isinstance(loader.get("staged_runpath_changes"), dict)
+    ):
+        raise ValueError("Linux Cron loader receipt differs from the exact release build and installed DEB")
+    if (
+        cron.get("schema") != "row.native-frozen-cron.v1" or cron.get("target") != target
+        or cron.get("source_sha") != release_sha or cron.get("deb") != deb or cron.get("deb_sha256") != deb_sha
+        or cron.get("row_sha256") != launcher_sha
+        or cron.get("deb_loader_report_sha256") != hashlib.sha256(raw_loader).hexdigest()
+        or type(cron.get("real_minute_job_count")) is not int or cron["real_minute_job_count"] != 1
+        or any(cron.get(key) is not True for key in (
+            "stopped_pid_exited", "next_minute_quiet", "linux_process_identity_verified",
+            "onefile_extraction_released", "public_status_and_generation_verified",
+        ))
+    ):
+        raise ValueError("Linux Cron receipt must bind one scheduled job, clean stop and a quiet next minute to the exact launcher")
+
+
+def validate_linux_smoke_archive(
+    path: Path | io.BytesIO, name: str, run_id: int, release_sha: str, *, require_cron: bool,
+) -> Any:
+    filenames = (LINUX_SMOKE_PROOF_FILE, NATIVE_BYTE_BINDING_FILE)
+    if require_cron:
+        filenames += (LINUX_CRON_PROOF_FILE, LINUX_DEB_LOADER_FILE)
+    reports = read_archive_reports(path, name, filenames)
     proof = json.loads(reports[LINUX_SMOKE_PROOF_FILE])
     raw = reports[NATIVE_BYTE_BINDING_FILE]
     binding = json.loads(raw)
@@ -851,6 +914,8 @@ def validate_linux_smoke_archive(path: Path | io.BytesIO, name: str, run_id: int
         or binding.get("status") != "bound" or binding.get("smoke_complete") is not True
     ):
         raise ValueError(f"{name} native proof does not bind the completed exact-run installer smoke receipt")
+    if require_cron:
+        validate_linux_cron_reports(reports, binding, target, run_id, release_sha)
     return binding.get("installer_sha256")
 
 
@@ -888,7 +953,9 @@ def check_smoke_archive(
     archive: Path | io.BytesIO, name: str, record: dict[str, Any], run_id: int, release_sha: str, inventory_schema: int,
 ) -> Any:
     observed = (
-        validate_linux_smoke_archive(archive, name, run_id, release_sha)
+        validate_linux_smoke_archive(
+            archive, name, run_id, release_sha, require_cron=inventory_schema >= LINUX_CRON_PROOF_SCHEMA_VERSION,
+        )
         if name in LINUX_SMOKE_ARTIFACT_NAMES
         else validate_gui_smoke_archive(archive, name, require_modules=inventory_schema >= GUI_MODULE_PROOF_SCHEMA_VERSION)
     )

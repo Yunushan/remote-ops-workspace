@@ -75,7 +75,11 @@ smoke hashes the Windows ZIP, EXE, and MSI and the macOS DMG and PKG before
 and after installer testing. Both Linux jobs do the same for the DEB, RPM,
 and AppImage. Sealing compares those digests with the candidate assets,
 and the final audit compares the approved candidate assets with the
-published bytes. Inventory schema 10 requires a bundled Debian amd64
+published bytes. Starting with inventory schema 15, both Linux smoke ZIPs
+must include the Cron and Debian loader receipts for the same workflow run,
+source commit, installed package and launcher. They record that Cron ran
+one scheduled job, stopped cleanly and stayed quiet through the next minute.
+Inventory schema 10 requires a bundled Debian amd64
 installer. Sealing, review, promotion, and the published audit open the
 installer to verify its `Depends` field and distro notices. They compare
 the packaged daemons, OpenSSH helpers, and HTTP and FTP launchers with

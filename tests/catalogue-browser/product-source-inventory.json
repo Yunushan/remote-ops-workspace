@@ -248,8 +248,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_profile_tree.py",
-      "sha256": "569ecad208c377d2bd5b5fae997d1c4004368ece87587c15819479931445d40b",
-      "size": 58834
+      "sha256": "85008f29099fd24e2c406f94dc2f97b7587a9b00fb37ba2182154de5487c734f",
+      "size": 60000
     },
     {
       "path": "src/remote_ops_workspace/gui_quick_connect.py",

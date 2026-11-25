@@ -51,6 +51,7 @@ TREE_ROW_STATIC_LABEL_X_ROLE = int(Qt.ItemDataRole.UserRole) + 37
 TREE_ROW_STATIC_TARGET_X_ROLE = int(Qt.ItemDataRole.UserRole) + 38
 TREE_SEARCH_TEXT_ROLE = int(Qt.ItemDataRole.UserRole) + 39
 TREE_CONNECT_ENDPOINT_ROLE = int(Qt.ItemDataRole.UserRole) + 40
+TREE_SEARCH_OPENED_ROLE = int(Qt.ItemDataRole.UserRole) + 41
 MREMOTENG_ROUTE_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 61
 MREMOTENG_ROUTE_ROLE_ROLE = int(Qt.ItemDataRole.UserRole) + 62
 MREMOTENG_ROUTE_PROFILE_ROLE = int(Qt.ItemDataRole.UserRole) + 63
@@ -121,6 +122,7 @@ class ProfileTree:
     """Project saved profiles into the Qt tree and maintain its selection."""
 
     _remmina_search: _RemminaSearchTree | None = None
+    _profile_tree_search_active = False
 
     if TYPE_CHECKING:
         _profile_icons: dict[tuple[str, bool, int, float], QIcon]
@@ -163,11 +165,17 @@ class ProfileTree:
             {group.toolTip(0) for group, expanded in previous_search.groups if not expanded}
             if previous_search else set()
         )
+        if self._profile_tree_search_active:
+            collapsed.update(
+                item.toolTip(0) for item in self.iter_profile_tree_items()
+                if item.childCount() and (not item.isExpanded() or item.data(0, TREE_SEARCH_OPENED_ROLE))
+            )
         selection_key = (
             previous_search.selection_key(previous_search.selection)
             if previous_search and previous_search.selection is not None else None
         )
         self._remmina_search = None
+        self._profile_tree_search_active = False
         self.profile_list.clear()
         preview = bool(cast("QWidget", self).property("guiPreviewSamples"))
         self._saved_profile_names = {profile.name for profile in profiles}
@@ -352,7 +360,7 @@ class ProfileTree:
             self.filter_profile_tree_names(set(moba_favorite_profile_names(profiles)))
         self.profile_list.expandAll()
         if collapsed:
-            for folder in group_nodes.values():
+            for folder in (root, *group_nodes.values()):
                 if folder.toolTip(0) in collapsed:
                     folder.setExpanded(False)
         if selected_name:
@@ -968,6 +976,14 @@ class ProfileTree:
             self._filter_remmina_saved_profiles(needle)
             self.update_profile_action_states()
             return
+        selected_ancestors: list[QTreeWidgetItem] = []
+        if self._profile_tree_search_active and not needle:
+            current = self.profile_list.currentItem()
+            ancestor = current.parent() if current is not None else None
+            while ancestor is not None:
+                selected_ancestors.append(ancestor)
+                ancestor = ancestor.parent()
+        self._profile_tree_search_active = bool(needle)
 
         def apply_filter(item) -> bool:
             own_text = item.data(0, TREE_SEARCH_TEXT_ROLE) or item.text(0).casefold()
@@ -976,8 +992,12 @@ class ProfileTree:
                 child_match = apply_filter(item.child(child_index)) or child_match
             item_match = not needle or needle in own_text or child_match
             item.setHidden(not item_match)
-            if item_match and child_match:
+            if needle and child_match and not item.isExpanded():
+                item.setData(0, TREE_SEARCH_OPENED_ROLE, True)
                 item.setExpanded(True)
+            elif not needle and item.childCount() and item.data(0, TREE_SEARCH_OPENED_ROLE):
+                item.setData(0, TREE_SEARCH_OPENED_ROLE, None)
+                item.setExpanded(item in selected_ancestors)
             return item_match
 
         for index in range(self.profile_list.topLevelItemCount()):

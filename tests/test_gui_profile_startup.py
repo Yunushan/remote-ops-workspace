@@ -134,6 +134,53 @@ def test_saved_group_navigation_and_search(clean_gui_window, preset, prefix) -> 
     assert json.loads(window.store.path.read_text(encoding="utf-8"))["profiles"] == profiles
 
 
+@pytest.mark.parametrize(("design", "search_name"), [
+    ("mremoteng", "mRemoteNgDocumentFilter"),
+    ("securecrt", "secureCrtSessionFilter"),
+    ("termius", "termiusHostSearch"),
+])
+def test_saved_search_restores_collapsed_folders(clean_gui_window, design, search_name):
+    from PyQt6.QtWidgets import QLineEdit
+
+    from remote_ops_workspace.models import Profile
+
+    _app, window = clean_gui_window
+    window.store.save([
+        Profile("Primary server", "ssh", "primary.example.invalid", group="Ops/Primary"),
+        Profile("Standby server", "ssh", "standby.example.invalid", group="Ops/Standby"),
+    ])
+    window.set_design_preset(design)
+    tree = window.profile_list
+    search = window.findChild(QLineEdit, search_name)
+    assert search is not None
+
+    def folders():
+        ops = tree.topLevelItem(0).child(0)
+        return ops.child(0), ops.child(1)
+
+    primary, standby = folders()
+    primary.setExpanded(False)
+    standby.setExpanded(False)
+    search.setText("Primary server")
+    assert primary.isExpanded()
+    assert standby.isHidden() and not standby.isExpanded()
+    search.setText("Standby server")
+    assert primary.isHidden() and standby.isExpanded()
+    search.clear()
+    assert all(not folder.isHidden() and not folder.isExpanded() for folder in folders())
+    search.setText("Primary server")
+    window.refresh_profiles()
+    primary, standby = folders()
+    assert primary.isExpanded() and standby.isHidden()
+    search.clear()
+    assert all(not folder.isHidden() and not folder.isExpanded() for folder in folders())
+    search.setText("Primary server")
+    window.select_profile("Primary server")
+    search.clear()
+    assert primary.isExpanded() and not standby.isExpanded()
+    assert window.selected_profile_name() == "Primary server"
+
+
 def test_remmina_search_switches_between_folder_tree_and_flat_results(clean_gui_window, monkeypatch):
     from unittest.mock import Mock
 

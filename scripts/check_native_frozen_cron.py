@@ -1,4 +1,4 @@
-"""Qualify Cron through the frozen Windows CLI or macOS application exercised by installer smoke."""
+"""Qualify Cron through a frozen launcher exercised by installer smoke."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import tempfile
@@ -26,10 +27,12 @@ from scripts.candidate_posix_byte_binding import (  # noqa: E402
     binding_schema,
     validate_app_bundle_observations,
 )
+from scripts.qualify_deb_loader import sha256  # noqa: E402
 
 CLI = "build/native/windows/pyinstaller-dist/row.exe"
 MAC_LAUNCHER = "Contents/MacOS/Remote Ops Workspace"
 MAC_CLI = f"{MAC_APP_SOURCE}/{MAC_LAUNCHER}"
+LINUX_MACHINES = {"linux-x86_64": "x86_64", "linux-aarch64": "aarch64"}
 
 
 def verify_candidate(row: Path, binding: dict, target: str) -> str:
@@ -50,6 +53,27 @@ def verify_candidate(row: Path, binding: dict, target: str) -> str:
     if mac:
         validate_app_bundle_observations(binding, app_bundle_inventory(row.parents[2]))
     return digest
+
+
+def verify_linux_candidate(row: Path, deb: Path, loader_report: Path, target: str) -> dict:
+    binding = json.loads(loader_report.read_bytes())
+    if (
+        binding.get("schema_version") != 1 or binding.get("target") != target
+        or binding.get("kernel_machine") != LINUX_MACHINES[target]
+        or binding.get("deb") != deb.name or binding.get("deb_sha256") != sha256(deb)
+        or binding.get("launcher_sha256") != sha256(row)
+        or not isinstance(binding.get("staged_runpath_changes"), dict)
+        or not isinstance(source_sha := binding.get("source_sha"), str)
+        or re.fullmatch(r"[0-9a-f]{40}", source_sha) is None
+    ):
+        raise ValueError("Cron probe requires the exact Debian package and launcher verified during installer smoke")
+    return {
+        "row_sha256": binding["launcher_sha256"],
+        "deb": deb.name,
+        "deb_sha256": binding["deb_sha256"],
+        "deb_loader_report_sha256": sha256(loader_report),
+        "source_sha": source_sha,
+    }
 
 
 def darwin_process(pid: int) -> str:
@@ -90,7 +114,10 @@ def verify_quiet_minute(marker: Path, token: str) -> None:
         time.sleep(min(wait, deadline - now, 1.0))
 
 
-def capture(row: Path, home: Path, *, mac: bool) -> dict:
+def capture(row: Path, home: Path, *, target: str) -> dict:
+    mac = target.startswith("macos-")
+    linux = target.startswith("linux-")
+    identity_kind = "owned" if mac else "linux" if linux else "windows"
     # All supported shells resolve the relative job output inside the disposable home.
     extraction = home / "temp"
     extraction.mkdir()
@@ -116,9 +143,9 @@ def capture(row: Path, home: Path, *, mac: bool) -> dict:
         alive = (str(row) in process and "_cron-runtime" in process and str(table) in process
                  if mac else recorded_process_is_running(pid, identity))
         if not (record["state"] == "started" and record["service"] == "cron" and record["running"] is True
-                and record["runtime_key"] == "row-cron" and identity["kind"] == ("owned" if mac else "windows") and alive):
+                and record["runtime_key"] == "row-cron" and identity["kind"] == identity_kind and alive):
             raise RuntimeError("frozen Cron did not record a running native process identity")
-        if mac:
+        if mac or linux:
             generation = record["cron_generation"]
             if not generation or not isinstance(generation, str):
                 raise RuntimeError("frozen Cron did not publish its generation")
@@ -143,13 +170,13 @@ def capture(row: Path, home: Path, *, mac: bool) -> dict:
 
     if stopped["state"] != "stopped" or stopped["running"] or stopped["pid"] is not None or stopped["process_identity"] != identity:
         raise RuntimeError("frozen Cron stop did not release the recorded process")
-    if mac:
+    if mac or linux:
         closed, = (s["lifecycle"] for s in cli("status")["services"] if s["key"] == "cron")
         control = Path(record["state_path"]).with_suffix(".control")
         if (not control.is_relative_to(home) or control.read_text(encoding="utf-8") != f"revoked {generation}"
                 or closed["running"] or closed["pid"] is not None or closed["state"] != "stopped"):
             raise RuntimeError("frozen Cron stop did not revoke its original generation")
-    elif recorded_process_is_running(pid, identity):
+    if not mac and recorded_process_is_running(pid, identity):
         raise RuntimeError("frozen Cron stop did not release the recorded process")
     verify_quiet_minute(marker, token)
     # lstart has five fields. A command name can change when a process becomes
@@ -158,29 +185,45 @@ def capture(row: Path, home: Path, *, mac: bool) -> dict:
         raise RuntimeError("the original macOS Cron worker survived stop")
     if any(extraction.glob("_MEI*")):
         raise RuntimeError("frozen Cron left a one-file extraction directory after stop")
-    return {"real_minute_job_count": 1, "stopped_pid_exited": True, "next_minute_quiet": True,
-            **({"darwin_command_and_start_time_verified": True, "public_status_and_lease_verified": True} if mac
-               else {"windows_process_identity_verified": True, "onefile_extraction_released": True})}
+    receipt = {"real_minute_job_count": 1, "stopped_pid_exited": True, "next_minute_quiet": True}
+    if mac:
+        return {**receipt, "darwin_command_and_start_time_verified": True, "public_status_and_lease_verified": True}
+    return {**receipt, f"{identity_kind}_process_identity_verified": True, "onefile_extraction_released": True,
+            **({"public_status_and_generation_verified": True} if linux else {})}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", choices=("windows-x86", "windows-x64", "windows-arm64", "macos-arm64", "macos-x64"), required=True)
+    parser.add_argument("--target", choices=("windows-x86", "windows-x64", "windows-arm64", "macos-arm64", "macos-x64", *LINUX_MACHINES), required=True)
+    parser.add_argument("--deb", type=Path)
+    parser.add_argument("--proof-dir", type=Path)
     args = parser.parse_args()
     target = args.target
     mac = target.startswith("macos-")
-    if mac:
-        if sys.platform != "darwin" or platform.machine() != {"macos-arm64": "arm64", "macos-x64": "x86_64"}[target]:
-            raise RuntimeError("matching native macOS target required")
-    elif os.name != "nt":
-        raise RuntimeError("native Windows required")
-    proof = ROOT / "build/native-smoke" / target
-    row = ROOT / (MAC_CLI if mac else CLI)
-    binding = json.loads((proof / "candidate-runtime-byte-binding.json").read_text(encoding="utf-8-sig"))
-    digest = verify_candidate(row, binding, target)
+    linux = target in LINUX_MACHINES
+    if linux:
+        if sys.platform != "linux" or platform.machine() != LINUX_MACHINES[target]:
+            raise RuntimeError("matching native Linux target required")
+        if args.deb is None or args.proof_dir is None:
+            parser.error("Linux Cron verification requires --deb and --proof-dir")
+        proof = args.proof_dir
+        row = Path("/usr/bin/row")
+        artifact = verify_linux_candidate(row, args.deb, proof / "deb-loader-selection.json", target)
+    else:
+        if args.deb is not None or args.proof_dir is not None:
+            parser.error("--deb and --proof-dir apply only to Linux")
+        if mac:
+            if sys.platform != "darwin" or platform.machine() != {"macos-arm64": "arm64", "macos-x64": "x86_64"}[target]:
+                raise RuntimeError("matching native macOS target required")
+        elif os.name != "nt":
+            raise RuntimeError("native Windows required")
+        proof = ROOT / "build/native-smoke" / target
+        row = ROOT / (MAC_CLI if mac else CLI)
+        binding = json.loads((proof / "candidate-runtime-byte-binding.json").read_text(encoding="utf-8-sig"))
+        artifact = {"row_sha256": verify_candidate(row, binding, target)}
     with tempfile.TemporaryDirectory(prefix="row-frozen-cron-") as home:
-        result = capture(row, Path(home).resolve(), mac=mac)
-    receipt = {"schema": "row.native-frozen-cron.v1", "target": target, "row_sha256": digest, **result}
+        result = capture(row, Path(home).resolve(), target=target)
+    receipt = {"schema": "row.native-frozen-cron.v1", "target": target, **artifact, **result}
     (proof / "frozen-cron.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
     print(f"{target} frozen CLI passed scheduled execution, stop and next-minute quiescence")
     return 0

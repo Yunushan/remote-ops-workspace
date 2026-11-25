@@ -379,8 +379,11 @@ reviews, and the downloaded release assets. See the
    to stopping after 360 seconds, as observed in the 26.4 Home frontend.
    ROW's timer can be disabled or set to
    1–65,535 seconds. Closing the desktop stops services it started. The
-   existing release evidence schema continues to cover the original eight
-   protocol checks.
+   native Linux installer smoke runs a scheduled job through the installed
+   amd64 and arm64 Debian launchers. Its receipt binds the launcher and
+   package hashes and verifies that stopping revokes the active job
+   generation and leaves the following minute quiet. The release evidence
+   schema covers the original eight protocol checks.
    Full parity still needs production-grade daemon binaries for every
    embedded service attached to releases and accepted passing evidence proving
    each daemon serves real clients on supported targets.

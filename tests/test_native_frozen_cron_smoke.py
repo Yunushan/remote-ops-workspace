@@ -52,6 +52,32 @@ def test_macos_frozen_cron_requires_intact_installer_qualified_app_bundle(tmp_pa
         smoke.verify_candidate(row, binding, "macos-arm64")
 
 
+def test_linux_frozen_cron_requires_the_installed_deb_and_loader_report(tmp_path):
+    row = tmp_path / "row"
+    deb = tmp_path / "remote-ops-workspace-v1.0.28-linux-arm64.deb"
+    report = tmp_path / "deb-loader-selection.json"
+    row.write_bytes(b"frozen launcher")
+    deb.write_bytes(b"Debian package")
+    binding = {
+        "schema_version": 1, "target": "linux-aarch64", "kernel_machine": "aarch64",
+        "deb": deb.name, "deb_sha256": smoke.sha256(deb), "launcher_sha256": smoke.sha256(row),
+        "source_sha": "1" * 40, "staged_runpath_changes": {},
+    }
+    report.write_text(json.dumps(binding))
+    result = smoke.verify_linux_candidate(row, deb, report, "linux-aarch64")
+    assert result == {
+        "row_sha256": binding["launcher_sha256"], "deb": deb.name, "deb_sha256": binding["deb_sha256"],
+        "deb_loader_report_sha256": smoke.sha256(report), "source_sha": "1" * 40,
+    }
+    for key, value in (
+        ("kernel_machine", "x86_64"), ("deb", "other.deb"), ("deb_sha256", "2" * 64),
+        ("launcher_sha256", "3" * 64), ("staged_runpath_changes", None), ("source_sha", "invalid"),
+    ):
+        report.write_text(json.dumps({**binding, key: value}))
+        with pytest.raises(ValueError, match="exact Debian package and launcher"):
+            smoke.verify_linux_candidate(row, deb, report, "linux-aarch64")
+
+
 COMMON_CASES = [
     ("none", ""), ("wrong-runtime", "process identity"), ("missing-job", "first real minute"),
     ("stale-worker", "did not release"), ("repeated-job", "continued scheduling"),
@@ -59,17 +85,20 @@ COMMON_CASES = [
 ]
 
 
-@pytest.mark.parametrize(("mac", "fault", "failure"), [
-    *((mac, fault, failure) for mac in (False, True) for fault, failure in COMMON_CASES),
-    (True, "status-generation", "active generation"),
-    (True, "stop-generation", "revoke its original generation"),
+@pytest.mark.parametrize(("target", "fault", "failure"), [
+    *((target, fault, failure) for target in ("windows-x64", "macos-x64", "linux-x86_64") for fault, failure in COMMON_CASES),
+    *((target, fault, failure) for target in ("macos-x64", "linux-x86_64") for fault, failure in (
+        ("status-generation", "active generation"), ("stop-generation", "revoke its original generation"),
+    )),
 ])
-def test_frozen_cron_acceptance_requires_effect_and_natural_stop(tmp_path, monkeypatch, fault, failure, mac):
+def test_frozen_cron_acceptance_requires_effect_and_natural_stop(tmp_path, monkeypatch, fault, failure, target):
+    mac = target.startswith("macos-")
+    linux = target.startswith("linux-")
     elapsed = [5.0]
     stopped = []
     token = []
     marker = tmp_path / "cron-marker.txt"
-    identity = {"kind": "owned" if mac else "windows", "pid": 42}
+    identity = {"kind": "owned" if mac else "linux" if linux else "windows", "pid": 42}
     state_path = tmp_path / "servers.json"
     generation = "1" * 32
     launcher = tmp_path / "row"
@@ -88,7 +117,7 @@ def test_frozen_cron_acceptance_requires_effect_and_natural_stop(tmp_path, monke
                                      "process_identity": identity, "runtime_key": "other" if fault == "wrong-runtime" else "row-cron",
                                      "cron_generation": generation, "state_path": str(state_path)}}
         elif args[2] == "status":
-            assert mac
+            assert mac or linux
             payload = {"services":[{"key":"cron","lifecycle":{"state":"stopped" if stopped else "started",
                                   "running":not stopped,"port":0,"host":"","pid":None if stopped else 42,
                                   "cron_generation":"2" * 32 if fault == "status-generation" else generation,
@@ -121,9 +150,9 @@ def test_frozen_cron_acceptance_requires_effect_and_natural_stop(tmp_path, monke
         failure = "survived stop"
     if failure:
         with pytest.raises(RuntimeError, match=failure):
-            smoke.capture(launcher, tmp_path, mac=mac)
+            smoke.capture(launcher, tmp_path, target=target)
     else:
-        assert smoke.capture(launcher, tmp_path, mac=mac)["next_minute_quiet"]
+        assert smoke.capture(launcher, tmp_path, target=target)["next_minute_quiet"]
     assert stopped == [True]
 
 
@@ -141,6 +170,10 @@ def test_native_targets_require_frozen_cron_and_windows_job_drain():
     step = job.split("      - name: Verify frozen Cron", 1)[1].split("      - name:", 1)[0]
     assert "if:" not in step
     assert 'check_native_frozen_cron.py --target "macos-${{ matrix.arch }}"' in step
+    script = (smoke.ROOT / "scripts/smoke_linux_native.sh").read_text()
+    installed = script.split('echo "native installer smoke: DEB verify"', 1)[1].split('echo "native installer smoke: DEB upgrade"', 1)[0]
+    assert installed.index("qualify_deb_loader.py") < installed.index("check_native_frozen_cron.py")
+    assert 'check_native_frozen_cron.py --target "$BINDING_TARGET" --deb "$DEB" --proof-dir "$SMOKE_ROOT"' in installed
 
 
 @pytest.mark.parametrize(("shift", "failure"), [

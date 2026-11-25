@@ -566,6 +566,7 @@ if [[ -n "$BINDING_TARGET" ]]; then
   python3 scripts/qualify_deb_loader.py --target "$BINDING_TARGET" --deb "$DEB" \
     --staged-elf-report "$ROOT/build/native/linux/staged-elf.json" \
     --executable /usr/bin/row --source-sha "$SMOKE_GIT_HEAD_SHA" --report "$SMOKE_ROOT/deb-loader-selection.json"
+  python3 scripts/check_native_frozen_cron.py --target "$BINDING_TARGET" --deb "$DEB" --proof-dir "$SMOKE_ROOT"
 fi
 debian_server_manifest=/usr/lib/remote-ops-workspace/servers/servers-runtime.json
 if [[ -f "$debian_server_manifest" ]]; then

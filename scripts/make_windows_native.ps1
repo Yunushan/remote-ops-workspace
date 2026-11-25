@@ -173,9 +173,6 @@ Name: "{group}\$ProductName GUI"; Filename: "{app}\bin\row-gui.exe"
 Name: "{autodesktop}\$ProductName GUI"; Filename: "{app}\bin\row-gui.exe"; Tasks: desktopicon
 "@
   }
-  $StageEscaped = $Stage.Replace("\", "\\")
-  $OutEscaped = $OutDir.Replace("\", "\\")
-  $IconEscaped = $IconPath.Replace("\", "\\")
   $CompilerArgs = @()
   $SigningDirectives = ""
   if ($env:ROW_REQUIRE_RELEASE_SIGNING -eq "1") {
@@ -196,9 +193,9 @@ AppPublisher=$($Branding.publisher)
 DefaultDirName={autopf}\$($Branding.directory)
 DefaultGroupName=$($Branding.directory)
 DisableProgramGroupPage=yes
-OutputDir=$OutEscaped
+OutputDir=$OutDir
 OutputBaseFilename=$OutputBase
-SetupIconFile=$IconEscaped
+SetupIconFile=$IconPath
 $WelcomeDirective
 Compression=lzma2
 SolidCompression=yes
@@ -206,7 +203,7 @@ $ArchitectureDirectives
 $SigningDirectives
 
 [Files]
-Source: "$StageEscaped\\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "$Stage\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 $GuiIconEntries

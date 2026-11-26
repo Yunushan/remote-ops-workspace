@@ -212,7 +212,7 @@ class MRemoteNgWorkspace:
         if self.current_design_id() != "mremoteng":
             return False
         source = f"profile:{name}"
-        candidates = []
+        candidates: list[tuple[int, TerminalPane]] = []
         for index in range(self.tabs.count()):
             widget = self.tabs.widget(index)
             if widget is not None:

@@ -123,6 +123,7 @@ class ProfileTree:
 
     _remmina_search: _RemminaSearchTree | None = None
     _profile_tree_search_active = False
+    _profile_tree_filter_query = ""
 
     if TYPE_CHECKING:
         _profile_icons: dict[tuple[str, bool, int, float], QIcon]
@@ -176,6 +177,7 @@ class ProfileTree:
         )
         self._remmina_search = None
         self._profile_tree_search_active = False
+        self._profile_tree_filter_query = ""
         self.profile_list.clear()
         preview = bool(cast("QWidget", self).property("guiPreviewSamples"))
         self._saved_profile_names = {profile.name for profile in profiles}
@@ -972,8 +974,11 @@ class ProfileTree:
 
     def filter_profile_tree(self, text: str) -> None:
         needle = text.strip().casefold()
+        previous = self._profile_tree_filter_query
+        narrow = bool(previous) and needle.startswith(previous)
         if self.current_design_id() == "remmina" and not cast("QWidget", self).property("guiPreviewSamples"):
-            self._filter_remmina_saved_profiles(needle)
+            self._filter_remmina_saved_profiles(needle, narrow=narrow)
+            self._profile_tree_filter_query = needle
             self.update_profile_action_states()
             return
         selected_ancestors: list[QTreeWidgetItem] = []
@@ -986,6 +991,9 @@ class ProfileTree:
         self._profile_tree_search_active = bool(needle)
 
         def apply_filter(item) -> bool:
+            # Extending an existing substring query cannot match a previously hidden subtree.
+            if narrow and item.isHidden():
+                return False
             own_text = item.data(0, TREE_SEARCH_TEXT_ROLE) or item.text(0).casefold()
             child_match = False
             for child_index in range(item.childCount()):
@@ -1002,13 +1010,14 @@ class ProfileTree:
 
         for index in range(self.profile_list.topLevelItemCount()):
             apply_filter(self.profile_list.topLevelItem(index))
+        self._profile_tree_filter_query = needle
         current = self.profile_list.currentItem()
         if current is not None and not self.profile_tree_item_is_visible(current):
             self.profile_list.setCurrentItem(None)
             self.profile_list.clearSelection()
         self.update_profile_action_states()
 
-    def _filter_remmina_saved_profiles(self, needle: str) -> None:
+    def _filter_remmina_saved_profiles(self, needle: str, *, narrow: bool) -> None:
         tree = self.profile_list
         state = self._remmina_search
         if not needle and state is None:
@@ -1037,7 +1046,8 @@ class ProfileTree:
                 tree.setRootIsDecorated(False)
             if needle:
                 for item, _, _ in state.rows:
-                    item.setHidden(needle not in item.data(0, TREE_SEARCH_TEXT_ROLE))
+                    if not narrow or not item.isHidden():
+                        item.setHidden(needle not in item.data(0, TREE_SEARCH_TEXT_ROLE))
                 if current is not None and current.isHidden():
                     current = None
             else:
@@ -1057,6 +1067,8 @@ class ProfileTree:
 
     def filter_profile_tree_names(self, allowed_names: set[str] | None) -> None:
         """Show all profile rows, or only an explicit Moba rail name set."""
+
+        self._profile_tree_filter_query = ""
 
         def apply_filter(item) -> bool:
             child_match = False

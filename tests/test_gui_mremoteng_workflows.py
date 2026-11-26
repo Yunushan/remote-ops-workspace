@@ -354,7 +354,8 @@ def test_pending_config_refresh_ends_with_window(config_cells):
 
 
 def test_config_inline_protocol_validation_and_rename(config_cells):
-    from PyQt6.QtCore import Qt
+    from PyQt6.QtCore import QEvent, QPointF, Qt
+    from PyQt6.QtGui import QMouseEvent
     from PyQt6.QtTest import QSignalSpy, QTest
     from PyQt6.QtWidgets import QApplication, QComboBox
 
@@ -377,11 +378,21 @@ def test_config_inline_protocol_validation_and_rename(config_cells):
     choice = protocol.model().index(protocol.findText("SSH"), 0)
     options.scrollTo(choice)
     QApplication.processEvents()
-    QTest.mouseMove(options.viewport(), options.visualRect(choice).center())
-    QTest.mouseClick(
-        options.viewport(), Qt.MouseButton.LeftButton, pos=options.visualRect(choice).center(),
-        delay=QApplication.doubleClickInterval() + 50,
-    )
+    viewport = options.viewport()
+    point = options.visualRect(choice).center()
+    global_point = viewport.mapToGlobal(point)
+    left, none = Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton
+    # Deliver mouse input to the popup without moving the desktop cursor.
+    QTest.qWait(QApplication.doubleClickInterval() + 50)
+    for kind, button, held in (
+        (QEvent.Type.MouseMove, none, none),
+        (QEvent.Type.MouseButtonPress, left, left),
+        (QEvent.Type.MouseButtonRelease, left, none),
+    ):
+        QApplication.sendEvent(viewport, QMouseEvent(
+            kind, QPointF(point), QPointF(global_point), button, held,
+            Qt.KeyboardModifier.NoModifier,
+        ))
     QApplication.processEvents()
     QApplication.processEvents()
     assert len(activated) == 1

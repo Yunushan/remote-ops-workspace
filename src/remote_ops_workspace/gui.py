@@ -440,6 +440,7 @@ def create_main_window(
                 lambda: self.connect_from_product_host(self.mremoteng_connect_input.text())
             )
             self.profile_list.itemActivated.connect(self.activate_profile_item)
+            self.profile_list.itemClicked.connect(self.handle_mremoteng_tree_item_clicked)
             self.profile_list.itemSelectionChanged.connect(self.update_profile_action_states)
             self.profile_list.customContextMenuRequested.connect(
                 self.show_profile_context_menu

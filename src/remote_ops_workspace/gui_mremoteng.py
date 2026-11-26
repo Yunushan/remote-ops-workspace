@@ -49,7 +49,7 @@ if TYPE_CHECKING:
 
     from PyQt6.QtCore import QAbstractItemModel, QLocale, QModelIndex
     from PyQt6.QtGui import QKeyEvent, QPainter
-    from PyQt6.QtWidgets import QStatusBar, QStyleOptionViewItem, QTextEdit, QWidget
+    from PyQt6.QtWidgets import QStatusBar, QStyleOptionViewItem, QTabWidget, QTextEdit, QWidget
 
     from .gui_terminal import TerminalPane
     from .storage import ProfileStore
@@ -136,6 +136,7 @@ class MRemoteNgWorkspace:
     if TYPE_CHECKING:
         log: QTextEdit
         profile_list: QTreeWidget
+        tabs: QTabWidget
         mremoteng_left_property_grid_panel: QFrame
         mremoteng_protocol_label: QLabel
         store: ProfileStore
@@ -143,6 +144,8 @@ class MRemoteNgWorkspace:
         def active_terminal_pane(self) -> TerminalPane | None: ...
         def property(self, name: str) -> object: ...
         def all_terminal_panes(self) -> list[TerminalPane]: ...
+        def terminal_panes_in(self, widget: QWidget) -> list[TerminalPane]: ...
+        def set_workspace_tab_index(self, index: int) -> None: ...
         def selected_profile_name(self) -> str | None: ...
         def create_profile(self) -> None: ...
         def edit_selected_profile(self) -> None: ...
@@ -162,12 +165,19 @@ class MRemoteNgWorkspace:
     def add_mremoteng_tab_options(self, tools: QMenu) -> None:
         options = QMenu("Options", tools)
         tools.addMenu(options)
-        action = QAction("Double click on tab closes it", options)
-        action.setCheckable(True)
-        options.addAction(action)
-        self.mremoteng_double_click_close = action
+        self.mremoteng_double_click_close = self._add_mremoteng_boolean_option(
+            options, "Double click on tab closes it", "mremoteng-double-click-closes-tab.json", default=True,
+        )
+        self.mremoteng_switch_on_tree_click = self._add_mremoteng_boolean_option(
+            options, "Switch to open connection on click", "mremoteng-switch-on-tree-click.json", default=False,
+        )
 
-        path = data_dir() / "mremoteng-double-click-closes-tab.json"
+    def _add_mremoteng_boolean_option(self, menu: QMenu, label: str, filename: str, *, default: bool) -> QAction:
+        action = QAction(label, menu)
+        action.setCheckable(True)
+        menu.addAction(action)
+
+        path = data_dir() / filename
         try:
             info = path.lstat()
             if not stat.S_ISREG(info.st_mode) or info.st_size > 64:
@@ -177,10 +187,10 @@ class MRemoteNgWorkspace:
                 raise ValueError("expected true or false")
             enabled = value == b"true"
         except FileNotFoundError:
-            enabled = True
+            enabled = default
         except (OSError, ValueError) as exc:
             enabled = False
-            self.statusBar().showMessage(f"Cannot read the mRemoteNG tab option: {exc}", 8000)
+            self.statusBar().showMessage(f"Cannot read the mRemoteNG option: {exc}", 8000)
         action.setChecked(enabled)
 
         def save(checked: bool) -> None:
@@ -188,9 +198,41 @@ class MRemoteNgWorkspace:
                 write_json_atomic(path, checked, private=True)
             except OSError as exc:
                 action.setChecked(not checked)
-                self.statusBar().showMessage(f"Cannot save the mRemoteNG tab option: {exc}", 8000)
+                self.statusBar().showMessage(f"Cannot save the mRemoteNG option: {exc}", 8000)
 
         action.triggered.connect(save)
+        return action
+
+    def handle_mremoteng_tree_item_clicked(self, item: QTreeWidgetItem, _column: int = 0) -> None:
+        name = item.data(0, Qt.ItemDataRole.UserRole)
+        if name and self.mremoteng_switch_on_tree_click.isChecked():
+            self.switch_to_mremoteng_open_connection(str(name))
+
+    def switch_to_mremoteng_open_connection(self, name: str) -> bool:
+        if self.current_design_id() != "mremoteng":
+            return False
+        source = f"profile:{name}"
+        candidates = []
+        for index in range(self.tabs.count()):
+            widget = self.tabs.widget(index)
+            if widget is not None:
+                candidates.extend(
+                    (index, pane) for pane in self.terminal_panes_in(widget)
+                    if pane.plan.source == source and pane.is_running()
+                )
+        if not candidates:
+            return False
+        try:
+            profile = self.profile_by_name(name)
+        except (OSError, ValueError):
+            return False
+        if profile is None:
+            return False
+        for index, pane in candidates:
+            if pane.profile == profile:
+                self.set_workspace_tab_index(index)
+                return True
+        return False
 
     def save_mremoteng_property(self, name: str, field: str, original: str, value: str) -> str:
         def update(profiles: list[Profile], defaults: dict[str, dict[str, object]]) -> list[Profile]:

@@ -535,6 +535,76 @@ def test_reconnect_restarts_only_the_selected_open_document(workspace, tmp_path)
     assert window.all_terminal_panes() == [pane]
 
 
+def test_connections_tree_switches_to_matching_live_tab(workspace, monkeypatch):
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+
+    app, window = workspace
+    tab = window.tabs
+    tree = window.profile_list
+    profile = window.store.get("Beta")
+    plan = TerminalPanePlan("Beta", [sys.executable, "-c", "import sys; sys.stdin.read(1)"], "profile:Beta")
+    window.open_terminal_tab(plan, profile=profile)
+    pane = window.active_terminal_pane()
+    deadline = time.monotonic() + 10
+    while not pane.is_running() and time.monotonic() < deadline:
+        QTest.qWait(10)
+    assert pane.is_running()
+    monkeypatch.setattr(window, "confirm_stop_processes", lambda *_args: True)
+
+    launched = []
+    monkeypatch.setattr(window, "connect_selected", lambda _dry_run: launched.append(window.selected_profile_name()))
+    home = window.find_tab_by_role("home")
+    window.select_profile("Beta")
+    item = tree.currentItem()
+    tab.setCurrentIndex(home)
+    tree.itemActivated.emit(item, 0)
+    assert tab.currentWidget() is pane and not launched
+
+    tab.setCurrentIndex(home)
+    def click():
+        QTest.mouseClick(tree.viewport(), Qt.MouseButton.LeftButton, pos=tree.visualItemRect(item).center())
+
+    click()
+    assert tab.currentIndex() == home
+    window.mremoteng_switch_on_tree_click.trigger()
+    click()
+    app.processEvents()
+    assert tab.currentWidget() is pane and not launched
+    assert pane.is_running() and window.all_terminal_panes() == [pane]
+    widget_at = tab.widget
+    with monkeypatch.context() as patches:
+        patches.setattr(tab, "widget", lambda index: None if index == home else widget_at(index))
+        assert window.switch_to_mremoteng_open_connection("Beta")
+
+    def unavailable(_name):
+        raise OSError("profile store unavailable")
+
+    with monkeypatch.context() as patches:
+        patches.setattr(window, "profile_by_name", unavailable)
+        assert not window.switch_to_mremoteng_open_connection("Beta")
+    window.store.remove("Beta")
+    assert not window.switch_to_mremoteng_open_connection("Beta")
+    window.store.add(profile)
+
+    tab.setCurrentIndex(home)
+    window.store.replace_named("Beta", replace(profile, host="new-beta.example.invalid"))
+    window.refresh_profiles()
+    window.select_profile("Beta")
+    item = tree.currentItem()
+    click()
+    assert tab.currentIndex() == home and not launched
+    window.activate_profile_item(item)
+    assert launched == ["Beta"]
+
+    window.store.replace_named("Beta", profile)
+    window.refresh_profiles()
+    window.set_design_preset("native")
+    window.select_profile("Beta")
+    window.activate_profile_item(tree.currentItem())
+    assert launched == ["Beta", "Beta"]
+
+
 def test_mremoteng_double_click_closes_only_the_clicked_connection(workspace):
     from PyQt6.QtCore import Qt, QTimer
     from PyQt6.QtTest import QTest
@@ -609,7 +679,11 @@ def test_mremoteng_double_click_closes_only_the_clicked_connection(workspace):
         window.confirm_stop_processes = lambda *_args: True
 
 
-def test_mremoteng_tools_option_persists_between_windows(workspace):
+@pytest.mark.parametrize(("label", "default"), [
+    ("Double click on tab closes it", True),
+    ("Switch to open connection on click", False),
+])
+def test_mremoteng_tools_option_persists_between_windows(workspace, label, default):
     from PyQt6.QtCore import QPoint, Qt
     from PyQt6.QtTest import QTest
 
@@ -621,18 +695,18 @@ def test_mremoteng_tools_option_persists_between_windows(workspace):
         tools = next(menu for menu in owner.mremoteng_top_menus if menu.title() == "Tools")
         assert tools.actions()[0].text() == "External Tools"
         options = next(action.menu() for action in tools.actions() if action.text() == "Options")
-        action = next(action for action in options.actions() if action.text() == "Double click on tab closes it")
+        action = next(action for action in options.actions() if action.text() == label)
         assert action.isCheckable() and action.isChecked() is expected
         options.popup(owner.mapToGlobal(QPoint(80, 80)))
         app.processEvents()
         QTest.mouseClick(options, Qt.MouseButton.LeftButton, pos=options.actionGeometry(action).center())
         assert action.isChecked() is not expected
 
-    click_option(window, True)
+    click_option(window, default)
     _, second = create_main_window(["mremoteng-option-reopen"], show=True)
     try:
         second.set_design_preset("mremoteng")
-        click_option(second, False)
+        click_option(second, not default)
     finally:
         second.close()
 

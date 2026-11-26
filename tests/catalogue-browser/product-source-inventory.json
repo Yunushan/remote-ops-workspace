@@ -118,8 +118,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui.py",
-      "sha256": "8686e5fd1ec6f08cfdb817c51a5c9af63a0b2ea0f1b170f85fb88099b4f5ac2d",
-      "size": 50794
+      "sha256": "b4c56e469e99df27308dc16fa3c114c94569cac7ca58d932f8d16d9d961c8bdd",
+      "size": 50885
     },
     {
       "path": "src/remote_ops_workspace/gui_connected.py",
@@ -193,8 +193,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_mremoteng.py",
-      "sha256": "7b5108095339c11e7eee897685f7962c43803307df1169e66a24e636b0286fb9",
-      "size": 51264
+      "sha256": "6dd89305599afb7cbed25ff8f338e1499ad1a3d89860c577f7fb51d9ae7cb118",
+      "size": 53135
     },
     {
       "path": "src/remote_ops_workspace/gui_operator_workflows.py",
@@ -243,13 +243,13 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_profile_actions.py",
-      "sha256": "a985ef9ed9677e591e46075e9ea4996452415a781d97323c04d11124002ce283",
-      "size": 16904
+      "sha256": "cdea1930324c061d576e1d6f35084a5d62c996900e929f206bb61d92cd27755d",
+      "size": 17062
     },
     {
       "path": "src/remote_ops_workspace/gui_profile_tree.py",
-      "sha256": "85008f29099fd24e2c406f94dc2f97b7587a9b00fb37ba2182154de5487c734f",
-      "size": 60000
+      "sha256": "82b2fcd7a4f99d2c2f8fc7189b1d12524d5ee97a89daf31ed7d3fe01aaed4b6e",
+      "size": 60431
     },
     {
       "path": "src/remote_ops_workspace/gui_quick_connect.py",
@@ -468,8 +468,8 @@
     },
     {
       "path": "src/remote_ops_workspace/profile_importers.py",
-      "sha256": "1d605a7acd7380d2f37e15dd112e6e1939808522f5e630613f5fb83302ccfd93",
-      "size": 25226
+      "sha256": "bac6bdb2a66c8e8c8664cee0976ea758964aae5152f20f505584335720ebcb5d",
+      "size": 25844
     },
     {
       "path": "src/remote_ops_workspace/profile_sharing.py",

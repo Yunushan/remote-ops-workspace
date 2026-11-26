@@ -8,6 +8,7 @@ import json
 import re
 import struct
 import sys
+import zipfile
 from pathlib import Path, PurePosixPath
 
 if __package__:
@@ -122,6 +123,16 @@ def stage_distribution_metadata(datas: list, directory: Path) -> list:
     staged = []
     for name, source, kind in datas:
         member = PurePosixPath(name)
+        if member == PurePosixPath("base_library.zip"):
+            copy = directory / member
+            copy.parent.mkdir(parents=True, exist_ok=True)
+            # PyInstaller's module traversal can vary the order of this ZIP.
+            with zipfile.ZipFile(source) as original, zipfile.ZipFile(copy, "w") as output:
+                output.comment = original.comment
+                for entry in sorted(original.infolist(), key=lambda item: item.filename):
+                    output.writestr(entry, original.read(entry))
+            staged.append((name, str(copy), kind))
+            continue
         if not re.fullmatch(r"remote_ops_workspace-[^/]+\.dist-info", member.parent.as_posix()):
             staged.append((name, source, kind))
             continue

@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -78,6 +79,38 @@ def test_only_known_pyinstaller_spec_is_adjusted(tmp_path):
     path.write_text("unknown format", encoding="utf-8")
     with pytest.raises(ValueError, match="Unrecognized"):
         prepare_spec(path)
+
+
+def test_frozen_base_library_is_independent_of_module_order(tmp_path):
+    names = ["encodings/__init__.pyc", "types.pyc"]
+    staged_archives = []
+    for build, order in enumerate((names, names[::-1])):
+        root = tmp_path / str(build)
+        root.mkdir()
+        archive = root / "base_library.zip"
+        with zipfile.ZipFile(archive, "w") as original:
+            original.comment = b"standard library"
+            for name in order:
+                entry = zipfile.ZipInfo(name, date_time=(2020, 1, 2, 3, 4, 6))
+                entry.external_attr = 0o644 << 16
+                entry.compress_type = zipfile.ZIP_DEFLATED
+                original.writestr(entry, name.encode())
+        source_bytes = archive.read_bytes()
+        name, staged, kind = stage_distribution_metadata(
+            [("base_library.zip", str(archive), "DATA")], root / "stage"
+        )[0]
+        assert name == "base_library.zip" and kind == "DATA"
+        staged_archives.append(Path(staged).read_bytes())
+        assert archive.read_bytes() == source_bytes
+        with zipfile.ZipFile(staged) as output:
+            assert output.namelist() == names
+            assert output.comment == b"standard library"
+            for entry in output.infolist():
+                assert output.read(entry) == entry.filename.encode()
+                assert entry.date_time == (2020, 1, 2, 3, 4, 6)
+                assert entry.external_attr == 0o644 << 16
+                assert entry.compress_type == zipfile.ZIP_DEFLATED
+    assert staged_archives[0] == staged_archives[1]
 
 
 def test_frozen_metadata_is_independent_of_install_checkout(tmp_path):

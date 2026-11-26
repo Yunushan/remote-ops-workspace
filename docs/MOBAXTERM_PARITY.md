@@ -138,8 +138,21 @@ reviews, and the downloaded release assets. See the
   through `row ssh-browser`. The connected PyQt Moba SFTP dock consumes those
   persisted preferences for browser visibility, location metadata, overwrite
   confirmation mode and live table column widths.
-  The folder-follow control currently keeps the browser on its selected remote
-  path; it does not observe the interactive shell's working directory.
+  With **Follow terminal folder** enabled, a saved SSH tab updates its SFTP
+  listing when its shell reports a working directory using OSC 7. The report
+  must name the host configured in that profile and an absolute, literal
+  directory path. UTF-8 names and percent-encoded spaces are supported.
+  Reports with quotes, backslashes or SFTP glob characters are ignored.
+  Shells that do not report a directory, or report a different
+  hostname such as the resolved name of an SSH alias, retain manual browsing.
+  Turning follow off preserves the selected path and lets its listing finish.
+  Turning it back on uses the most recent valid report from that tab's current
+  connection.
+  Mobatek describes the original's follow feature as experimental. In a
+  local MobaXterm Home 26.4 test under Wine, the browser stayed at its selected
+  location after plain shell directory changes and after matching OSC 7 reports.
+  This observation applies to that Wine and OpenSSH fixture.
+  [Mobatek SSH settings](https://mobaxterm.mobatek.net/documentation.html)
   Background SFTP and monitoring also start separate OpenSSH processes. Key or
   agent authentication works automatically; password-only profiles can use the
   explicit **Authenticate background tools** action with either a local encrypted
@@ -196,8 +209,10 @@ reviews, and the downloaded release assets. See the
   directly on the transcript surface, expose Copy/Paste/Select/Clear/Restart/
   Stop through a terminal context menu and close through a non-blocking
   terminate-then-kill lifecycle. Moba rail icon and rotated-label hit areas now
-  dispatch the same action; Sessions/Favorites switch the visible profile tree
-  without destroying a connected SFTP dock, and SFTP returns to that dock. The
+  dispatch the same action. The gold star opens the full User sessions tree,
+  as observed in MobaXterm Home 26.4. ROW also offers a Favorites filter in
+  the sidebar context menu. Refreshing that view reapplies the saved tags.
+  Switching between the tree and SFTP preserves the connected SFTP dock. The
   connected SFTP toolbar now routes path/parent navigation, download/upload
   transfer queues, remote folder creation, reconnect, Tools and terminal focus
   to live GUI workflows. Uploads and downloads preserve selected filenames
@@ -280,7 +295,35 @@ reviews, and the downloaded release assets. See the
    inventory, display collision checks, lifecycle supervision, smoke evidence
    capture, a packaged-runtime bundle writer and a release-evidence verifier
    for real X11-forwarded GUI applications. Status reports the managed
-   process only for the display it serves. Full parity still needs
+   process only for the display it serves. On Debian amd64, pass
+   `--installed-runtime` with `--release-deb` to have the collector require
+   that the DEB owns Xvfb and its manifest. The collector starts ROW,
+   Xvfb, and the forwarding SSH client as an ordinary desktop user. The
+   receipt binds the running executable, process user and capabilities to
+   the package and forwarded window. To include Debian's Xvfb in an
+   opt-in DEB build, set `ROW_RELEASE_XVFB_DEB` to the exact architecture's
+   reviewed Debian Xvfb archive and `ROW_RELEASE_XVFB_SHA256` to its hash.
+   The build retains Debian's copyright notice and minimum dependencies.
+   Run **Prepare Debian amd64 Xvfb input** on main with the target tag and
+   exact Debian package version. Review the downloaded archive, package
+   index record, dependency list, runtime manifest and notice in the
+   resulting artifact. Use the selection from its workflow summary to set
+   the release environment variable `ROW_DEBIAN_AMD64_XVFB` to
+   `vX.Y.Z RUN_ID ARTIFACT_ID SHA256`.
+   Before sealing an opted-in candidate, the release workflow independently
+   downloads the frozen archive and compares the packaged executable,
+   manifest, copyright notice and version with it. The sealed inventory
+   records the input archive SHA-256 alongside the candidate DEB digest.
+   The managed Debian drill also checks the installed Xvfb executable and
+   manifest. It alters the executable in a disposable guest, verifies that
+   rollback is refused, and confirms that rollback restores the previous
+   Xvfb files after the original bytes are put back.
+   The tagged X11 evidence workflow uses the installed runtime and requires
+   proof that it ran as an unprivileged user.
+   Candidate review requires the sealed archive and rollback receipt. Both
+   candidate and published audits compare the reviewed runtime and manifest
+   with the actual Debian package payload.
+   Full parity still needs
    production-grade X server binaries attached to release targets and accepted
    passing evidence bundles from those targets.
 2. MobApt and embedded Unix environment parity: ROW now has a MobApt-style
@@ -291,7 +334,32 @@ reviews, and the downloaded release assets. See the
    tools from the selected runtime. On Debian,
    `row mobapt install <name> --offline` plans an install from the selected cache. Add `--execute` to
    verify the staged archive's SHA-256, Debian package name and version before
-   installing it with package repositories disabled. Full parity still needs
+   installing it with package repositories disabled. The Debian release
+   collector records this install through the installed release CLI and
+   verifies the chosen cache archive and the terminal output. When the
+   collector runs without `--bundle`, it requires the tested DEB to own the
+   cache and verifies that the launcher discovers it without an override.
+   Candidate and published audits compare the reviewed runtime executable,
+   manifest, index and package archives with the actual Debian payload.
+   The candidate audit also checks the frozen review manifest SHA-256.
+   The tagged MobApt workflow uses that mode. An external cache remains
+   available for local rehearsals with `--bundle`.
+   To stage an approved cache in the Debian build, set
+   `ROW_RELEASE_MOBAPT_BUNDLE` to its assembly directory and
+   `ROW_RELEASE_MOBAPT_REVIEW_SHA256` to the digest of its
+   `mobapt-debian-review.json`. The review manifest's `assembly_sha256`
+   pins `mobapt-cache-evidence.json`. Its `notices` object maps each
+   `<component>.copyright` filename under `notices/` to its SHA-256.
+   Run **Prepare Debian amd64 MobApt cache** on main with the target tag and
+   exact Debian Bash and tree versions to create the candidate cache. Review
+   its input digests and notices before using the selection printed in the
+   workflow summary. Set the release
+   environment variable `ROW_DEBIAN_AMD64_MOBAPT_BUNDLE` to
+   `vX.Y.Z RUN_ID ARTIFACT_ID REVIEW_MANIFEST_SHA256`. Preflight and the
+   amd64 builder use the same frozen selection, and preflight checks the tag
+   recorded in the review manifest. Candidate sealing records that manifest's
+   hash after checking the actual DEB and its managed rollback receipt.
+   Full parity still needs
    production-grade Unix command binaries, real package archives attached to
    releases and accepted passing release evidence proving newly installed Unix
    tools are usable inside the terminal.
@@ -311,8 +379,16 @@ reviews, and the downloaded release assets. See the
    to stopping after 360 seconds, as observed in the 26.4 Home frontend.
    ROW's timer can be disabled or set to
    1–65,535 seconds. Closing the desktop stops services it started. The
-   existing release evidence schema continues to cover the original eight
-   protocol checks.
+   native Linux installer smoke runs a scheduled job through the installed
+   amd64 and arm64 Debian launchers. Its receipt binds the launcher and
+   package hashes and verifies that stopping revokes the active job
+   generation and leaves the following minute quiet. The release evidence
+   schema covers the original eight protocol checks.
+   A reviewed Debian server bundle can also include `iperf2` at
+   `linux/iperf/bin/iperf` with its distro copyright notice. Staging checks
+   the binary's architecture and digest, adds its native dependencies to
+   the package, and carries the approved binary and notice into the sealed
+   inventory. Bundles without Iperf keep the host adapter behavior.
    Full parity still needs production-grade daemon binaries for every
    embedded service attached to releases and accepted passing evidence proving
    each daemon serves real clients on supported targets.
@@ -421,8 +497,8 @@ reviews, and the downloaded release assets. See the
    erasure and colored output. The alternate screen also keeps wide characters
    intact when wrapping or clipping at the right edge. When the viewport
    resizes, the visible alternate screen updates even if the remote
-   application is quiet. DEC and CSI save/restore sequences share a cursor
-   position on each screen, including the primary screen. The 26.4 Home
+   application is quiet. DEC and CSI save/restore sequences and xterm private
+   mode 1048 share a saved cursor position on each screen. The 26.4 Home
    reference moved from row 3, column 4 to row 8, column 12 and restored
    row 3, column 4. ROW reproduced those coordinates over OpenSSH on Windows
    ConPTY and Linux PTY. Pipe-backed terminal tabs keep ordinary command

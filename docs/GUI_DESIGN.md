@@ -505,6 +505,11 @@ same source.
 The mRemoteNG-style Config dock beneath the connection tree shows the selected
 profile's effective protocol, host, port, username and group. Edit opens the
 saved profile. Fields supplied by group defaults stay inherited after an edit.
+With a saved connection selected in the tree, press F2 to edit its name.
+Enter saves it and Escape cancels. Double-click opens the connection or
+selects a live tab with the same saved settings. **Tools → Options →
+Switch to open connection on click** also lets a single click select a
+matching live tab. The option starts off and is saved for the workspace.
 Filtering out the selection clears the inspector. The Start Page's Dock View
 button controls the same dock across preset switches.
 
@@ -679,9 +684,13 @@ parent row and the generated SFTP list command to one `mobaSftpTerminalFolder*`
 property set. Static preview rendering validates the route against the same
 state, and the live checker records `expected_moba_sftp_terminal_folder_route`
 so terminal/output, checkbox, path strip and table cannot drift apart.
-Here, "terminal folder" is the operator-selected remote path carried by the
-connected-session route. The current runtime does not observe the interactive
-shell's working directory or OSC 7 updates.
+The route carries the active browser path, which can come from manual
+navigation or from a same-host OSC 7 directory report by the attached SSH
+terminal. With **Follow terminal folder** enabled, a valid report refreshes
+the SFTP listing. Turning follow off preserves the current browser path and
+lets its listing finish. Turning it back on follows the most recent valid
+report from the same connection. Manual navigation remains available for
+shells that emit no matching report. See [SFTP folder-follow behavior](MOBAXTERM_PARITY.md#implemented-or-adapter-backed-families).
 MobaXterm-style SFTP routed file rows are tracked as a separate row-level
 contract. `GuiMobaSftpRoutedFileRows` ties the visible file-list rows to the
 follow-folder route key, active remote path, selected parent row and stable row

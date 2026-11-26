@@ -124,6 +124,75 @@ def test_sidebar_resize_memory_toggle_and_profile_label_edges(
     assert window.profile_tab_label(sftp) == sftp.name
 
 
+def test_moba_favorites_track_saved_tags_through_a_tree_refresh(gui_window) -> None:
+    from PyQt6.QtCore import Qt
+
+    _app, window = gui_window
+    window.set_design_preset("mobaxterm")
+    previous = Profile(name="previous", protocol="ssh", host="previous.invalid", tags=["Starred"])
+    current = Profile(name="current", protocol="ssh", host="current.invalid")
+    other = Profile(name="other", protocol="ssh", host="other.invalid")
+    window.store.save([previous, current, other])
+    window.refresh_profiles()
+    buttons = {button.property("mobaRailRole"): button for button in window.moba_rail_buttons}
+
+    def visible_profiles():
+        return {
+            item.data(0, Qt.ItemDataRole.UserRole)
+            for item in window.iter_profile_tree_items()
+            if item.data(0, Qt.ItemDataRole.UserRole) and window.profile_tree_item_is_visible(item)
+        }
+
+    def refresh_from_menu():
+        menu = window.build_profile_context_menu(window.profile_list.currentItem())
+        next(action for action in menu.actions() if action.text() == "Refresh profiles").trigger()
+
+    def favorites_menu_action():
+        menu = window.build_moba_rail_context_menu()
+        return next(action for action in menu.actions() if action.text() == "Favorites")
+
+    star = buttons["favorites"]
+    star.click()
+    assert visible_profiles() == {"previous", "current", "other"}
+    assert star.isChecked()
+    assert not favorites_menu_action().isChecked()
+    favorites_menu_action().trigger()
+    assert visible_profiles() == {"previous"}
+    assert window.selected_profile_name() == "previous"
+    previous.tags = []
+    current.tags = ["Favorites"]
+    window.store.save([previous, current, other])
+    refresh_from_menu()
+    assert visible_profiles() == {"current"}
+    assert window.selected_profile_name() is None
+    assert favorites_menu_action().isChecked()
+
+    window.set_design_preset("mremoteng")
+    assert visible_profiles() == {"previous", "current", "other"}
+    window.set_design_preset("mobaxterm")
+    assert visible_profiles() == {"current"}
+    assert favorites_menu_action().isChecked()
+
+    window.select_profile("current")
+    refresh_from_menu()
+    assert window.selected_profile_name() == "current"
+    current.tags = []
+    window.store.save([previous, current, other])
+    refresh_from_menu()
+    assert visible_profiles() == set()
+    assert window.selected_profile_name() is None
+
+    favorites_menu_action().trigger()
+    assert visible_profiles() == {"previous", "current", "other"}
+    assert not favorites_menu_action().isChecked()
+    assert buttons["sessions"].isChecked()
+    favorites_menu_action().trigger()
+    star.click()
+    assert visible_profiles() == {"previous", "current", "other"}
+    assert not favorites_menu_action().isChecked()
+    assert star.isChecked()
+
+
 def test_moba_workflow_and_sftp_rail_routing_edges(
     gui_window,
     monkeypatch,

@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import json
 import shlex
+import shutil
 import struct
 import subprocess
 import sys
@@ -53,6 +54,11 @@ def test_debian_parity_capture_prepares_the_verified_asset_dependencies(
     assert fixture.index("sha256sum --check --strict") < fixture.index("apt-get update")
     assert 'satisfy -- "$depends"' in fixture
     assert "FROM mobapt AS x11" in fixture
+    if target == "mobapt":
+        assert "apt-get download" not in source and "--bundle" not in source[offline_capture:]
+    if target == "x11":
+        assert "--installed-runtime" in source[offline_capture:]
+        assert " xvfb " not in fixture.split("FROM mobapt AS x11", 1)[1]
 
 
 def test_mobaxterm_parity_evidence_empty_registry_is_valid_but_not_complete() -> None:
@@ -156,8 +162,20 @@ def test_registry_binds_native_debian_evidence_to_asset_and_source(article, vali
         "run_attempt": source["run_attempt"], "source_head_sha": source["head_sha"],
         "tested_release_asset": {"name": name, "sha256": "a" * 64},
     }
-    assert checker.check_record(record) == [f"{article} validation summary {missing_receipt}"]
+    expected = [f"{article} validation summary {missing_receipt}"]
+    if article == "mobapt-unix-runtime":
+        expected.append(f"{article} validation summary must record the verified Debian package-owned cache")
+    elif article == "embedded-x-server":
+        expected.append(f"{article} validation summary must record the package-owned and unprivileged runtime")
+    assert checker.check_record(record) == expected
     summary[flag] = True
+    if article == "mobapt-unix-runtime":
+        assert checker.check_record(record) == expected[1:]
+        summary["installed_cache_verified"] = True
+    elif article == "embedded-x-server":
+        summary["installed_runtime_verified"] = True
+        assert checker.check_record(record) == expected[1:]
+        summary["unprivileged_runtime_verified"] = True
     assert checker.check_record(record) == []
     summary["tested_release_asset"]["sha256"] = "b" * 64
     assert checker.check_record(record) == [f"{article} tested release asset must match the record artifact name and SHA-256"]
@@ -284,6 +302,7 @@ def test_server_candidate_and_release_audit_validate_the_same_client_evidence(em
 
 @pytest.mark.parametrize(("change", "reason"), [
     (None, None),
+    ("iperf", None),
     ("package", "capture index must bind the supplied Debian asset"),
     ("receipt", "must bind a successful protocol client"),
     ("attempt", "capture index must bind the current Actions workflow attempt"),
@@ -295,8 +314,30 @@ def test_assemble_debian_server_review_inputs(embedded_server_bundle, tmp_path, 
     captures, package, evidence, attachment = embedded_server_bundle
     installed = tmp_path / "installed"
     runtime_root = installed / assembly.PAYLOAD
-    runtime_root.parent.mkdir(parents=True)
-    (captures / "runtimes").rename(runtime_root)
+    shutil.copytree(captures / "runtimes", runtime_root)
+    if change == "iperf":
+        manifest_path = runtime_root / assembly.MANIFEST
+        manifest = json.loads(manifest_path.read_bytes())
+        relative = "linux/iperf/bin/iperf"
+        daemon = runtime_root / relative
+        daemon.parent.mkdir(parents=True)
+        launcher = runtime_root / "linux/http/bin/python"
+        daemon.write_bytes(launcher.read_bytes() + b"iperf")
+        manifest["services"].append({"service": "iperf", "runtime": {
+            "source": "packaged", "bundled": True, "placeholder": False, "key": "iperf2",
+            "executable": relative, "sha256": hashlib.sha256(daemon.read_bytes()).hexdigest(),
+        }})
+        manifest["debian_notices"] = {}
+        for component, services in (("server-suite", ["tftp", "ssh", "sftp", "telnet", "vnc", "nfs"]), ("iperf", ["iperf"])):
+            path = installed / assembly.notice_path(component)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            raw = component.encode()
+            path.write_bytes(raw)
+            manifest["debian_notices"][component] = {
+                "version": "1:2.3-1", "services": services, "size_bytes": len(raw),
+                "sha256": hashlib.sha256(raw).hexdigest(),
+            }
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     authoring_index = {key: evidence[key] for key in ("source", "release_asset")}
     source = evidence["source"]
     for key, value in {
@@ -350,6 +391,9 @@ def test_assemble_debian_server_review_inputs(embedded_server_bundle, tmp_path, 
     evidence_path = assembly.assemble(package, evidence["release_target"], installed, captures, output)
     result = server_evidence.validate_live_server_release_evidence(evidence_path)
     assert result.passed and result.summary["live_client_proof_count"] == 8
+    if change == "iperf":
+        assert (output / assembly.RUNTIME_DIR / relative).read_bytes() == daemon.read_bytes()
+        assert (output / assembly.RUNTIME_DIR / "notices/iperf.copyright").read_bytes() == b"iperf"
     assert audited == [evidence["release_target"]]
     assert not (output / assembly.CAPTURES_INDEX).exists()
 
@@ -816,11 +860,14 @@ def reviewed_release(tmp_path, monkeypatch):
         if article == "mobapt-unix-runtime":
             record["validation_summary"]["summary"].update(
                 offline_execution_receipts_verified=True,
+                installed_cache_verified=True,
                 tested_release_asset={"name": debian_asset.name, "sha256": debian_digest},
             )
         if article == "embedded-x-server":
             record["validation_summary"]["summary"].update(
                 live_forwarding_receipt_verified=True,
+                installed_runtime_verified=True,
+                unprivileged_runtime_verified=True,
                 tested_release_asset={"name": debian_asset.name, "sha256": debian_digest},
             )
         if article == "embedded-server-suite":
@@ -1026,6 +1073,17 @@ def reviewed_release(tmp_path, monkeypatch):
         release_parity, "verify_packaged_debian_server_evidence",
         lambda *values: server_payload_calls.append(values),
     )
+    mobapt_payload_calls = []
+    monkeypatch.setattr(
+        release_parity, "verify_packaged_mobapt_review",
+        lambda package, tag, digest, *, capture_root: mobapt_payload_calls.append((package, tag, digest, capture_root)),
+    )
+    x11_payload_calls = []
+
+    def verify_x11_payload(package, root, target, *, expected_xvfb_sha256):
+        x11_payload_calls.append((package, root, target, expected_xvfb_sha256))
+
+    monkeypatch.setattr(release_parity, "verify_packaged_debian_x11_evidence", verify_x11_payload)
     delivery_calls = []
 
     def verify_delivery(evidence, **requirements):
@@ -1054,7 +1112,8 @@ def reviewed_release(tmp_path, monkeypatch):
         hosted_archives=hosted_archives,
         review=review, validator_calls=validator_calls,
         delivery_calls=delivery_calls,
-        server_payload_calls=server_payload_calls,
+        server_payload_calls=server_payload_calls, x11_payload_calls=x11_payload_calls,
+        mobapt_payload_calls=mobapt_payload_calls,
     )
 
 
@@ -1124,6 +1183,9 @@ def make_staged_parity_archives(assets_dir: Path, tag: str, fault: str) -> list[
 @pytest.mark.parametrize(("fault", "detail"), [
     ("none", ""),
     ("current-valid-indexes", ""),
+    ("current-frozen-xvfb", ""),
+    ("current-missing-xvfb", "missing the frozen Xvfb archive and its rollback qualification"),
+    ("current-missing-mobapt", "missing the frozen MobApt review and its rollback qualification"),
     ("current-swapped-checksums", "foreign, repeated or mismatched checksum"),
     ("current-missing-index", "missing sealed archive indexes"),
     ("missing-review", "must index all eight"),
@@ -1212,6 +1274,13 @@ def test_parity_preflight_uses_staged_bytes_original_archives_and_live_reviews(
         assert directory.is_dir() and pointer.run_id == 31 and pointer.artifact_id == 32
         assert pointer.archive_digest == "sha256:" + "7" * 64
         seen.append(pointer)
+        if fault in {"current-frozen-xvfb", "current-missing-xvfb", "current-missing-mobapt"}:
+            inventory = {"schema_version": candidate_parity.MIN_XVFB_INVENTORY_SCHEMA}
+            if fault != "current-missing-xvfb":
+                inventory["debian_xvfb_sha256"] = "f" * 64
+            if fault != "current-missing-mobapt":
+                inventory["debian_mobapt_review_sha256"] = "e" * 64
+            return make_staged_parity_archives(args["assets_dir"], tag, fault), inventory
         if fault.startswith("current-"):
             return make_staged_parity_archives(args["assets_dir"], tag, fault), {
                 "schema_version": candidate_inventory.ARCHIVE_FILE_SCOPE_SCHEMA_VERSION,
@@ -1238,6 +1307,11 @@ def test_parity_preflight_uses_staged_bytes_original_archives_and_live_reviews(
         assert status == 0 and "8/8 reviewed candidates verified" in output.out and not output.err
         assert len(seen) == 1 and set(reviewed_release.validator_calls) == set(release_parity.ARTICLE_SPECS)
         assert len(reviewed_release.delivery_calls) == 1 and reviewed_release.delivery_calls[0][1]["published"] is True
+    if not detail:
+        assert len(reviewed_release.x11_payload_calls) == 1
+        assert reviewed_release.x11_payload_calls[0][-1] == ("f" * 64 if fault == "current-frozen-xvfb" else None)
+        assert len(reviewed_release.mobapt_payload_calls) == 1
+        assert reviewed_release.mobapt_payload_calls[0][2] == ("e" * 64 if fault == "current-frozen-xvfb" else None)
     if retain:
         assert downloaded == {artifact_id: data for artifact_id, (_, data) in archives.items()}
         assert not list((root / "workflow-artifacts").glob(".row-parity-artifact-*"))
@@ -1378,6 +1452,20 @@ def test_linux_server_certification_requires_the_reviewed_payload_in_the_release
     ]
 
 
+def test_x11_certification_refuses_a_different_runtime_in_the_published_package(reviewed_release, monkeypatch):
+    def reject_payload(*args, **requirements):
+        package, root, target = args
+        assert package.name == "remote-ops-workspace-v1.0.2-linux-amd64.deb"
+        assert root.name == "embedded-x-server" and target == "linux-x86_64"
+        assert requirements == {"expected_xvfb_sha256": None}
+        raise ValueError("reviewed X11 runtime differs from the Debian package payload")
+
+    monkeypatch.setattr(release_parity, "verify_packaged_debian_x11_evidence", reject_payload)
+    assert release_parity.audit_release(**reviewed_release.args) == [
+        "embedded-x-server reviewed X11 runtime differs from the Debian package payload"
+    ]
+
+
 def test_hosted_delivery_failure_blocks_certification(reviewed_release, monkeypatch) -> None:
     def stale_delivery(*_args, **_kwargs):
         raise ValueError("signed manifest HTTPS delivery SHA-256 differs from the reviewed bytes")
@@ -1398,6 +1486,18 @@ def test_mobapt_certification_refuses_successful_attempt_from_the_wrong_workflow
 
     assert release_parity.audit_release(**reviewed_release.args) == [
         "mobapt-unix-runtime MobApt evidence must come from its dedicated workflow dispatched at the release tag"
+    ]
+
+
+def test_mobapt_certification_refuses_bytes_not_shipped_in_the_published_package(reviewed_release, monkeypatch):
+    def reject_payload(package, tag, digest, *, capture_root):
+        assert package.name == "remote-ops-workspace-v1.0.2-linux-amd64.deb" and tag == "v1.0.2"
+        assert digest is None and capture_root.name == "mobapt-unix-runtime"
+        raise ValueError("reviewed MobApt cache differs from the Debian package payload")
+
+    monkeypatch.setattr(release_parity, "verify_packaged_mobapt_review", reject_payload)
+    assert release_parity.audit_release(**reviewed_release.args) == [
+        "mobapt-unix-runtime reviewed MobApt cache differs from the Debian package payload"
     ]
 
 

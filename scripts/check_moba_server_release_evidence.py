@@ -30,7 +30,9 @@ from scripts.check_release_license_compliance import (  # noqa: E402
     secure_regular_file,
 )
 from scripts.debian_release_fixture import release_deb_version  # noqa: E402
+from scripts.debian_server_notices import optional_external_services  # noqa: E402
 from scripts.moba_debian_server_payload import (  # noqa: E402
+    server_payload,
     verify_debian_notice_inputs,
     verify_debian_payload,
 )
@@ -247,11 +249,18 @@ def validate_live_server_release_evidence(
         ):
             raise ValueError("runtime manifest must match the release target and native platform")
         entries = service_inventory(evidence.get("services"), "release evidence")
-        runtimes = service_inventory(manifest.get("services"), "runtime manifest")
+        services = manifest.get("services")
+        if system == "linux" and optional_external_services(services):
+            checked, _ = server_payload(manifest_path.parent, target)
+            if checked != manifest:
+                raise ValueError("Debian server manifest changed during payload verification")
+            runtimes = {row["service"]: row for row in checked["services"]}
+        else:
+            runtimes = service_inventory(services, "runtime manifest")
         if "debian_notices" in manifest:
             if system != "linux":
                 raise ValueError("Debian server notice evidence requires a Linux target")
-            verify_debian_notice_inputs(manifest_path.parent, manifest["debian_notices"])
+            verify_debian_notice_inputs(manifest_path.parent, manifest)
         if "openssh_helpers" in manifest:
             if system != "linux":
                 raise ValueError("package-owned OpenSSH helper evidence requires a Linux target")

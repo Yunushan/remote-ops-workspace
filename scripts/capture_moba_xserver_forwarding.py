@@ -8,6 +8,7 @@ import os
 import re
 import select
 import shlex
+import shutil
 import socket
 import subprocess
 import sys
@@ -25,6 +26,7 @@ from remote_ops_workspace.launcher import build_launch_plan  # noqa: E402
 from remote_ops_workspace.models import Profile  # noqa: E402
 from scripts.check_moba_xserver_release_evidence import (  # noqa: E402
     FORWARDING_SCHEMA,
+    INSTALLED_XSERVER,
     NATIVE_PROBE_ARGV,
     NATIVE_PROBE_PATH,
     NATIVE_PROBE_SCHEMA,
@@ -32,8 +34,9 @@ from scripts.check_moba_xserver_release_evidence import (  # noqa: E402
     validate_moba_x_server_live_release_evidence,
     validate_moba_x_server_release_asset_evidence,
 )
-from scripts.check_release_license_compliance import sha256_file  # noqa: E402
+from scripts.check_release_license_compliance import secure_regular_file, sha256_file  # noqa: E402
 from scripts.debian_release_fixture import (  # noqa: E402
+    PRODUCT_PACKAGE,
     ROW_EXECUTABLE,
     capture_native_debian_probe,
     install_release_deb,
@@ -43,6 +46,7 @@ from scripts.isolated_linux_fixture import require_offline_container  # noqa: E4
 DISPLAY = ":16"
 PORT = 22222
 USER = "row-x11-proof"
+DESKTOP_USER = "row-x11-desktop"
 TITLE = "Remote Ops Workspace forwarded X11 clock"
 TARGET = "linux-x86_64"
 APP = ["/usr/bin/xclock", "-title", TITLE, "-geometry", "280x280+40+45"]
@@ -106,7 +110,9 @@ def wait_for_sshd(process: subprocess.Popen) -> None:
     raise ValueError("isolated SSH daemon did not listen on loopback")
 
 
-def forward_window(scratch: Path, root: Path, env: dict[str, str]) -> dict[str, Any]:
+def forward_window(
+    scratch: Path, root: Path, env: dict[str, str], *, client_prefix: tuple[str, ...] = (),
+) -> dict[str, Any]:
     profile = Profile("Isolated X11", "ssh", host="127.0.0.1", port=PORT, username=USER,
                       identity_file=str(scratch / "identity"), options={"x11": "trusted"})
     plan = build_launch_plan(profile)
@@ -116,13 +122,13 @@ def forward_window(scratch: Path, root: Path, env: dict[str, str]) -> dict[str, 
            "-o", "StrictHostKeyChecking=yes", "-o", "GlobalKnownHostsFile=/dev/null",
            "-o", f"UserKnownHostsFile={scratch / 'known_hosts'}", *plan.command[1:]]
     control = ["-x" if argument == "-Y" else argument for argument in ssh] + [REMOTE_DISPLAY_PROBE]
-    control_stdout = run(control, env=env).stdout
+    control_stdout = run([*client_prefix, *control], env=env).stdout
     if control_stdout != "remote_display=\n":
         raise ValueError("control session unexpectedly received a remote X11 display")
     command = shlex.join(APP)
     argv = [*ssh, f"{REMOTE_DISPLAY_PROBE}; exec {command}"]
     with (scratch / "ssh-stderr.log").open("w", encoding="utf-8") as stderr:
-        process = subprocess.Popen(argv, env=env, text=True, stdin=subprocess.DEVNULL,
+        process = subprocess.Popen([*client_prefix, *argv], env=env, text=True, stdin=subprocess.DEVNULL,
                                    stdout=subprocess.PIPE, stderr=stderr)
         try:
             assert process.stdout is not None
@@ -160,8 +166,60 @@ def wait_for_window(process: subprocess.Popen, env: dict[str, str]) -> str:
     raise ValueError("no forwarded X11 clock appeared on the managed display")
 
 
-def capture(row: Path, output: Path, *, release_deb: Path | None = None) -> None:
+def copy_installed_runtime(bundle: Path) -> Path:
+    installed = Path(INSTALLED_XSERVER)
+    manifest, error = secure_regular_file(installed, "xserver-runtime.json", "installed X server manifest")
+    if manifest is None:
+        raise ValueError(error)
+    document = json.loads(manifest.read_bytes())
+    runtime = document.get("runtime") if isinstance(document, dict) else None
+    if not isinstance(runtime, dict):
+        raise ValueError("the installed X server manifest lacks runtime metadata")
+    executable, error = secure_regular_file(installed, runtime.get("executable"), "installed X server executable")
+    if executable is None:
+        raise ValueError(error)
+    files = set(run(["dpkg-query", "--listfiles", "--", PRODUCT_PACKAGE]).stdout.splitlines())
+    if not {str(manifest), str(executable)} <= files:
+        raise ValueError("the tested Debian package must own the X server manifest and executable")
+    if sha256_file(executable) != runtime.get("sha256"):
+        raise ValueError("the installed X server differs from its package manifest")
+    snapshot = bundle / executable.relative_to(installed)
+    snapshot.parent.mkdir(parents=True)
+    shutil.copy2(manifest, bundle / manifest.name)
+    shutil.copy2(executable, snapshot)
+    return executable
+
+
+def prepare_desktop_client(scratch: Path, env: dict[str, str]) -> tuple[Path, int, tuple[str, ...]]:
+    import pwd
+
+    run(["useradd", "--create-home", "--shell", "/bin/sh", DESKTOP_USER])
+    account = pwd.getpwnam(DESKTOP_USER)
+    home = Path(account.pw_dir)
+    home.chmod(0o700)
+    for filename in ("identity", "known_hosts"):
+        target = home / filename
+        shutil.copyfile(scratch / filename, target)
+        target.chmod(0o600)
+        os.chown(target, account.pw_uid, account.pw_gid)
+    socket_dir = Path("/tmp/.X11-unix")
+    if not socket_dir.exists():
+        socket_dir.mkdir()
+        socket_dir.chmod(0o1777)
+    env.update(HOME=str(home), USER=DESKTOP_USER, LOGNAME=DESKTOP_USER,
+               ROW_HOME=str(home / "row"), XAUTHORITY=str(home / "Xauthority"))
+    return home, account.pw_uid, (
+        "/usr/bin/setpriv", "--reuid", str(account.pw_uid), "--regid", str(account.pw_gid),
+        "--clear-groups", "--inh-caps=-all", "--ambient-caps=-all", "--no-new-privs", "--",
+    )
+
+
+def capture(
+    row: Path, output: Path, *, release_deb: Path | None = None, installed_runtime: bool = False,
+) -> None:
     require_offline_container()
+    if installed_runtime and release_deb is None:
+        raise ValueError("installed X server capture requires the tested Debian package")
     if os.uname().machine != "x86_64":
         raise ValueError("this qualification uses a Linux x86_64 Xvfb runtime")
     if output.exists() or output.is_symlink():
@@ -182,27 +240,37 @@ def capture(row: Path, output: Path, *, release_deb: Path | None = None) -> None
         bundle = root / "bundle"
         env = {**os.environ, "LC_ALL": "C", "DISPLAY": DISPLAY, "ROW_HOME": str(scratch / "row"),
                "XAUTHORITY": str(scratch / "Xauthority"), "ROW_XSERVER_RUNTIME_DIR": str(bundle)}
-        run([str(row), "x11", "bundle-runtime", "--out", str(bundle), "--runtime", "xvfb",
-             "--source", "/usr/bin/Xvfb", "--system", "linux", "--release-target", TARGET], env=env)
+        packaged = None
+        if installed_runtime:
+            env.pop("ROW_XSERVER_RUNTIME_DIR")
+            packaged = copy_installed_runtime(bundle)
+        else:
+            run([str(row), "x11", "bundle-runtime", "--out", str(bundle), "--runtime", "xvfb",
+                 "--source", "/usr/bin/Xvfb", "--system", "linux", "--release-target", TARGET], env=env)
         config = prepare_sshd(scratch)
+        client, uid, prefix = (
+            prepare_desktop_client(scratch, env) if packaged is not None else (scratch, None, ())
+        )
         daemon_log = scratch / "sshd.log"
         with daemon_log.open("w", encoding="utf-8") as log:
             daemon = subprocess.Popen(["/usr/sbin/sshd", "-D", "-e", "-f", str(config)], stderr=log)
             try:
                 wait_for_sshd(daemon)
                 try:
-                    # Xvfb can inherit the CLI's descriptors and outlive its process.
-                    with ((root / "start.json").open("w", encoding="utf-8") as stdout,
-                          (scratch / "xserver.log").open("w", encoding="utf-8") as stderr):
-                        subprocess.run(
-                            [str(row), "x11", "start", "--display", DISPLAY,
-                             "--authority-file", env["XAUTHORITY"], "--json"],
-                            env=env, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, timeout=20, check=True,
-                        )
-                    capture_smoke(row, root, env)
-                    receipt = forward_window(scratch, root, env)
+                    # Read to EOF before probing the display. A daemon that
+                    # inherits the command's pipes will hit the startup timeout.
+                    startup = run(
+                        [*prefix, str(row), "x11", "start", "--display", DISPLAY,
+                         "--authority-file", env["XAUTHORITY"], "--json"], env=env,
+                    )
+                    json.loads(startup.stdout)
+                    (root / "start.json").write_text(startup.stdout, encoding="utf-8")
+                    capture_smoke(row, root, env, client_prefix=prefix, scratch=client)
+                    if packaged is not None:
+                        capture_installed_runtime(root, packaged, uid, prefix)
+                    receipt = forward_window(client, root, env, client_prefix=prefix)
                 finally:
-                    run([str(row), "x11", "stop"], env=env)
+                    run([*prefix, str(row), "x11", "stop"], env=env)
             except subprocess.CalledProcessError as exc:
                 raise ValueError(f"{exc}\n{exc.stderr or ''}{daemon_log.read_text(encoding='utf-8')}") from exc
             finally:
@@ -219,11 +287,35 @@ def capture(row: Path, output: Path, *, release_deb: Path | None = None) -> None
         root.rename(output)
 
 
-def capture_smoke(row: Path, root: Path, env: dict[str, str]) -> None:
+def capture_installed_runtime(root: Path, packaged: Path, uid: int | None, prefix: tuple[str, ...]) -> None:
+    start = json.loads((root / "start.json").read_bytes())
+    pid = start["lifecycle"]["pid"]
+    proc = Path("/proc") / str(pid)
+    executable = proc / "exe"
+    observed = run([*prefix, "readlink", "--", str(executable)]).stdout.strip()
+    if observed != str(packaged) or start["command"][0] != str(packaged):
+        raise ValueError("the managed X server did not launch from the tested Debian package")
+    status = dict(line.split(":", 1) for line in (proc / "status").read_text().splitlines() if ":" in line)
+    uids = [int(value) for value in status["Uid"].split()]
+    if uid is None or uid <= 0 or uids != [uid] * 4 or int(status["CapEff"], 16) != 0:
+        raise ValueError("the package-owned X server must run as the ordinary desktop user without effective capabilities")
+    digest = run([*prefix, "sha256sum", "--", str(executable)]).stdout.split()[0]
+    write_json(root / "installed-xserver.json", {
+        "executable": str(packaged), "pid": pid, "sha256": digest, "owner": PRODUCT_PACKAGE,
+        "uids": uids, "effective_capabilities": 0,
+    })
+
+
+def capture_smoke(
+    row: Path, root: Path, env: dict[str, str], *, client_prefix: tuple[str, ...] = (), scratch: Path | None = None,
+) -> None:
     deadline = time.monotonic() + 8
     while time.monotonic() < deadline:
-        if run(["xdpyinfo", "-display", DISPLAY], env=env, check=False).returncode == 0:
-            run([str(row), "x11", "smoke", "--display", DISPLAY, "--out", str(root / "smoke.json")], env=env)
+        if run([*client_prefix, "xdpyinfo", "-display", DISPLAY], env=env, check=False).returncode == 0:
+            output = (scratch if client_prefix and scratch is not None else root) / "smoke.json"
+            run([*client_prefix, str(row), "x11", "smoke", "--display", DISPLAY, "--out", str(output)], env=env)
+            if output.parent != root:
+                shutil.copyfile(output, root / output.name)
             return
         time.sleep(0.1)
     raise ValueError("packaged Xvfb did not accept the authenticated display probe")
@@ -237,6 +329,9 @@ def finish_evidence(root: Path, receipt: dict[str, Any], release: dict[str, Any]
     runtime = {key: bundled[key] for key in ("key", "sha256", "source", "bundled")}
     runtime.update(executable=f"bundle/{bundled['executable']}", manifest=manifest_name,
                    manifest_sha256=sha256_file(manifest_path), start="start.json", start_sha256=sha256_file(root / "start.json"))
+    installed = root / "installed-xserver.json"
+    if installed.is_file():
+        runtime.update(installed_runtime=installed.name, installed_runtime_sha256=sha256_file(installed))
     smoke_sha256 = sha256_file(root / "smoke.json")
     receipt.update(runtime_sha256=runtime["sha256"], start_sha256=runtime["start_sha256"], smoke_sha256=smoke_sha256)
     write_json(root / "forwarding.json", receipt)
@@ -258,10 +353,12 @@ def main() -> int:
     native = parser.add_mutually_exclusive_group()
     native.add_argument("--row", type=Path, help="preinstalled ROW executable for local capture")
     native.add_argument("--release-deb", type=Path, help="install and qualify the exact Debian release asset")
+    parser.add_argument("--installed-runtime", action="store_true", help="require Xvfb owned by the tested Debian package")
     parser.add_argument("--out", required=True, type=Path)
     args = parser.parse_args()
     try:
-        capture(args.row or Path(ROW_EXECUTABLE), args.out, release_deb=args.release_deb)
+        capture(args.row or Path(ROW_EXECUTABLE), args.out, release_deb=args.release_deb,
+                installed_runtime=args.installed_runtime)
     except subprocess.CalledProcessError as exc:
         print(f"X11 capture: {exc}\n{exc.stderr or ''}", file=sys.stderr)
         return 1

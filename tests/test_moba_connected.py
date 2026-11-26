@@ -26,6 +26,7 @@ from remote_ops_workspace.moba_connected import (
     normalise_remote_path,
     parse_remote_monitoring_output,
     parse_sftp_ls_output,
+    terminal_directory_path,
 )
 from remote_ops_workspace.models import Profile
 
@@ -462,6 +463,23 @@ def test_remote_monitoring_script_samples_network_throughput_without_fabricating
     assert "net_up_mbps=; net_down_mbps=;" in REMOTE_MONITORING_SCRIPT
 
 
+def test_terminal_directory_file_uri_accepts_only_same_host_literal_paths() -> None:
+    assert terminal_directory_path("file://DEMO/", "demo") == "/"
+    assert terminal_directory_path("file://demo/caf%C3%A9%20logs/", "demo") == "/café logs"
+    assert terminal_directory_path("file://[::1]/var", "::1") == "/var"
+    assert terminal_directory_path("file://[::1]/var", "[::1]") == "/var"
+    for bad in [
+        "https://demo/var", "file:///var", "file://other/var", "file://demo:22/var",
+        "file://me@demo/var", "file://demo/var?query", "file://demo/var#fragment",
+        "file://demo//double", "file://demo/%2e%2e/up", "file://demo/./logs",
+        "file://demo/log%2Fwild", "file://demo/%", "file://demo/%zz", "file://demo/%ff",
+        "file://demo/%00x", "file://demo/%0Ax", "file://demo/%5cpath", "file://demo/*",
+        "file://demo/%5b12%5d", "file://demo/%27quote", "file://demo/%22quote",
+        "file://demo/invalid\ufffd", "file://demo/two words",
+    ]:
+        assert terminal_directory_path(bad, "demo") is None, bad
+
+
 def test_follow_terminal_folder_plan_normalises_remote_paths() -> None:
     plan = build_follow_terminal_folder_plan(ssh_profile(), "var/www")
 
@@ -514,6 +532,19 @@ def test_sftp_listing_parser_extracts_file_table_rows() -> None:
         directory="/home/rowedit/",
     )
     assert [row.name for row in live_rows] == ["document copy.txt"]
+
+
+def test_sftp_listing_keeps_spaces_that_are_part_of_filenames() -> None:
+    names = ["report.txt", "report.txt ", " report.txt", "   ", ".. "]
+    metadata = "-rw-r--r--    ? operator operator 16 Nov 18 03:20"
+    for directory, prefix in [(None, ""), ("/home/operator", "/home/operator/")]:
+        listing = "\r\n".join([
+            "total invalid listing footer with eight fields here",
+            metadata,
+            *(f"{metadata} {prefix}{name}" for name in [".", "..", *names]),
+        ])
+        rows = parse_sftp_ls_output(listing, directory=directory)
+        assert [row.name for row in rows] == names
 
 
 def test_remote_monitoring_parser_uses_users_as_connection_count() -> None:

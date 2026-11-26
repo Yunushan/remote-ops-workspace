@@ -4,9 +4,12 @@ import argparse
 import json
 import re
 import struct
+import subprocess
 import sys
+import tarfile
 import zlib
 from pathlib import Path, PurePosixPath
+from tempfile import TemporaryDirectory
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +20,7 @@ for location in (ROOT, SRC):
 
 from remote_ops_workspace.x11 import (  # noqa: E402
     XSERVER_RUNTIME_BUNDLE_SCHEMA,
+    XSERVER_RUNTIME_MANIFEST_NAME,
     XServerReleaseEvidenceValidation,
     validate_moba_x_server_release_evidence,
 )
@@ -26,10 +30,14 @@ from scripts.check_release_license_compliance import (  # noqa: E402
     bound_evidence_file,
     read_json_object,
     secure_regular_file,
+    sha256_file,
 )
 from scripts.debian_release_fixture import (  # noqa: E402
+    DEBIAN_TARGETS,
+    PRODUCT_PACKAGE,
     ROW_EXECUTABLE,
     release_deb_version,
+    unpack_deb_inputs,
     validate_native_debian_probe,
 )
 
@@ -38,9 +46,41 @@ REMOTE_DISPLAY_PROBE = 'printf "remote_display=%s\\n" "$DISPLAY"'
 NATIVE_PROBE_SCHEMA = "row.x11.native-evidence-verify.v1"
 NATIVE_PROBE_PATH = "row-native-evidence-verify.json"
 NATIVE_PROBE_ARGV = [ROW_EXECUTABLE, "x11", "evidence-verify", "--evidence", "evidence.json", "--assets-dir", ".", "--json"]
+INSTALLED_XSERVER = PurePosixPath("/usr/lib/remote-ops-workspace/xserver")
 
 
-def check_packaged_runtime(root: Path, evidence: dict[str, Any]) -> None:
+def verify_packaged_debian_x11_evidence(
+    package: Path, root: Path, target: str, *, expected_xvfb_sha256: str | None = None,
+) -> None:
+    _, evidence = read_json_object(root / "evidence.json", "reviewed X11 release evidence")
+    runtime = evidence["runtime"]
+    version = release_deb_version(package.name, target)
+    architecture = next(arch for arch, release_target in DEBIAN_TARGETS.items() if release_target == target)
+    prefix = INSTALLED_XSERVER.relative_to("/")
+    with TemporaryDirectory(prefix="row-verify-x11-package-") as temporary:
+        manifest, executable = (Path(temporary) / filename for filename in (XSERVER_RUNTIME_MANIFEST_NAME, "Xvfb"))
+        members = {
+            str(prefix / manifest.name): manifest,
+            str(prefix / "linux/bin" / executable.name): executable,
+        }
+        try:
+            identity = unpack_deb_inputs(package, PRODUCT_PACKAGE, architecture, members)
+        except (OSError, subprocess.SubprocessError, tarfile.TarError) as exc:
+            raise ValueError("could not read the reviewed Debian X11 payload") from exc
+        if identity["version"] != version:
+            raise ValueError("reviewed Debian X11 package version differs from the release asset name")
+        if evidence.get("release_asset") != {"name": package.name, "sha256": identity["sha256"]}:
+            raise ValueError("reviewed X11 release asset differs from the Debian package")
+        if sha256_file(manifest) != runtime["manifest_sha256"] or sha256_file(executable) != runtime["sha256"]:
+            raise ValueError("reviewed X11 runtime differs from the Debian package payload")
+        if expected_xvfb_sha256 is not None:
+            _, document = read_json_object(manifest, "Debian X11 runtime manifest")
+            source = document.get("debian_source")
+            if not isinstance(source, dict) or source.get("sha256") != expected_xvfb_sha256:
+                raise ValueError("reviewed X11 runtime differs from the frozen Xvfb archive")
+
+
+def check_packaged_runtime(root: Path, evidence: dict[str, Any]) -> tuple[bool, bool]:
     runtime = evidence["runtime"]
     path = bound_evidence_file(
         root, runtime.get("manifest"), runtime.get("manifest_sha256"), "runtime manifest"
@@ -74,14 +114,44 @@ def check_packaged_runtime(root: Path, evidence: dict[str, Any]) -> None:
         start.get("lifecycle"),
         start.get("command"),
     )
+    from_package = "installed_runtime" in runtime
+    unprivileged = False
+    if from_package:
+        observed_path = INSTALLED_XSERVER / packaged["executable"]
+        receipt_path = bound_evidence_file(
+            root, runtime["installed_runtime"], runtime.get("installed_runtime_sha256"), "installed X server receipt",
+        )
+        _, receipt = read_json_object(receipt_path, "installed X server receipt")
+        if (
+            "release_asset" not in evidence or not isinstance(lifecycle, dict)
+            or type(receipt.get("pid")) is not int or receipt["pid"] <= 1 or receipt["pid"] != lifecycle.get("pid")
+            or receipt.get("executable") != str(observed_path)
+            or receipt.get("owner") != PRODUCT_PACKAGE
+            or receipt.get("sha256") != runtime["sha256"]
+        ):
+            raise ValueError("installed X server receipt must bind the package-owned executable to the live process")
+        if "uids" in receipt or "effective_capabilities" in receipt:
+            uids = receipt.get("uids")
+            capabilities = receipt.get("effective_capabilities")
+            if (
+                not isinstance(uids, list) or len(uids) != 4
+                or not all(type(uid) is int and uid > 0 for uid in uids) or len(set(uids)) != 1
+                or type(capabilities) is not int or capabilities != 0
+            ):
+                raise ValueError("installed X server receipt must show an unprivileged desktop process")
+            unprivileged = True
+        selected_path_matches = executable_name(command) and command[0] == str(observed_path)
+    else:
+        selected_path_matches = executable_name(command) and command[0].replace("\\", "/").endswith(
+            "/" + runtime["executable"],
+        )
     if (
         start.get("display") != evidence["display"]
         or not isinstance(selected, dict)
         or selected.get("bundled") is not True
         or selected.get("key") != runtime["key"]
-        or not executable_name(command)
+        or not selected_path_matches
         or command[0] != selected.get("executable")
-        or not command[0].replace("\\", "/").endswith("/" + runtime["executable"])
         or not isinstance(lifecycle, dict)
         or lifecycle.get("command") != command
         or lifecycle.get("runtime_key") != runtime["key"]
@@ -93,6 +163,7 @@ def check_packaged_runtime(root: Path, evidence: dict[str, Any]) -> None:
         raise ValueError(
             "managed X server start must record the live bundled runtime on the evidenced display"
         )
+    return from_package, unprivileged
 
 
 def executable_name(argv: Any) -> str:
@@ -221,7 +292,7 @@ def validate_forwarding_capture(
         result = validate_moba_x_server_release_evidence(evidence_file, assets_dir=root)
         if not result.passed:
             return result
-        check_packaged_runtime(root, evidence)
+        from_package, unprivileged = check_packaged_runtime(root, evidence)
         check_display_probe(probe, evidence)
         check_forwarded_window(root, evidence, image)
         if "release_asset" in evidence:
@@ -233,10 +304,16 @@ def validate_forwarding_capture(
             if "tested_release_asset" not in result.summary:
                 raise ValueError("strict X11 evidence requires a native Debian release asset probe")
             identity = capture_release_identity(evidence, "X11 release evidence")
+            if not (from_package and unprivileged):
+                raise ValueError("strict X11 evidence requires the package-owned runtime and an unprivileged desktop process")
             version = release_deb_version(identity["tested_release_asset"]["name"], evidence["release_target"])
             if identity["release_tag"] != f"v{version}":
                 raise ValueError("tested Debian package version must match the exact X11 release tag")
             result.summary.update(identity)
+        if from_package:
+            result.summary["installed_runtime_verified"] = True
+        if unprivileged:
+            result.summary["unprivileged_runtime_verified"] = True
     except (KeyError, OSError, ValueError, struct.error, zlib.error) as exc:
         return XServerReleaseEvidenceValidation(
             str(evidence_path), str(root), False, [str(exc)], [], {}

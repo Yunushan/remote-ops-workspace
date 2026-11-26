@@ -402,10 +402,8 @@ class WindowMenus:
         self.run_operator_action(callback)
 
     def populate_view_design_menu(self) -> None:
-        design_menu = _required_gui_value(
-            self.view_menu.addMenu("Design preset"),
-            "design preset menu",
-        )
+        design_menu = QMenu("Design preset", self.view_menu)
+        self.view_menu.addMenu(design_menu)
         for preset in GUI_DESIGN_PRESETS:
             design_menu.addAction(
                 preset.label,

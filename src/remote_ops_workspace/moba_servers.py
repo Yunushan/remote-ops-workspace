@@ -696,17 +696,14 @@ def moba_server_runtime_roots(roots: Iterable[Path] | None = None) -> tuple[Path
     if env_value:
         raw_roots.extend(Path(part) for part in env_value.split(os.pathsep) if part)
     executable_dir = Path(sys.executable).resolve().parent
-    if sys.platform == "linux" and getattr(sys, "frozen", False):
+    frozen = getattr(sys, "frozen", False)
+    if sys.platform == "linux" and frozen:
         installed_root = executable_dir.parent / "lib" / "remote-ops-workspace" / "servers"
         if (installed_root / SERVER_RUNTIME_MANIFEST_NAME).is_file():
             raw_roots.append(installed_root)
-    raw_roots.extend(
-        [
-            executable_dir / "servers",
-            executable_dir / "runtimes" / "servers",
-            Path(__file__).resolve().parents[2] / "vendor" / "servers",
-        ]
-    )
+    raw_roots.extend((executable_dir / "servers", executable_dir / "runtimes" / "servers"))
+    if not frozen:
+        raw_roots.append(Path(__file__).resolve().parents[2] / "vendor" / "servers")
     seen: set[str] = set()
     resolved: list[Path] = []
     for root in raw_roots:
@@ -1108,13 +1105,26 @@ def _start_moba_server_locked(
     identity_factory: Callable[[Any], dict[str, Any]] | None,
 ) -> MobaEmbeddedServerLifecycleRecord:
     factory = popen_hidden if popen_factory is None else popen_factory
-    environment = {**os.environ, **plan.environment}
-    if getattr(sys, "frozen", False) and plan.runtime.key in {"python-http", "pyftpdlib", "row-cron"}:
+    environment = dict(os.environ)
+    frozen = getattr(sys, "frozen", False)
+    if frozen and sys.platform.startswith("linux"):
+        # PyInstaller prepends its extraction directory. Restore the caller's
+        # search path before a daemon bootloader or host binary enters glibc.
+        original = environment.pop("LD_LIBRARY_PATH_ORIG", None)
+        if original is None:
+            environment.pop("LD_LIBRARY_PATH", None)
+        else:
+            environment["LD_LIBRARY_PATH"] = original
+    environment.update(plan.environment)
+    if frozen and plan.runtime.key in {"python-http", "pyftpdlib", "row-cron"}:
         # The server outlives the CLI that starts it. A one-file PyInstaller
         # child needs its own extraction directory after that CLI exits.
         environment["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
-    # Never leave a CLI caller's capture pipe open in the scheduler or Iperf.
-    streams = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) if plan.service in {"cron", "iperf"} else {}
+    # Managed daemons outlive the CLI. Keep the caller's capture pipes out
+    # of the process while preserving the injected factory's existing API.
+    streams = {}
+    if popen_factory is None or plan.service in {"cron", "iperf"}:
+        streams = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     generation = uuid4().hex if plan.service == "cron" else ""
     control = target_state_path.with_suffix(".control")
     if generation:

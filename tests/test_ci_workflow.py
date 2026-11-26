@@ -84,6 +84,21 @@ def test_ci_policy_requires_minimum_pyqt_typecheck_runtime() -> None:
         assert any("hash-pinned minimum PyQt policy runtime" in error for error in errors)
 
 
+def test_ci_policy_typechecks_release_pinned_pyqt_before_switching_to_minimum() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    step = (
+        "      - name: Type-check with release-pinned PyQt6\n"
+        "        run: python scripts/check_non_gui_types.py\n"
+    )
+    without_release_check = source.replace(step, "", 1)
+    assert any("type gate with release-pinned PyQt6" in error for error in checker.check_ci_workflow(without_release_check))
+
+    marker = "      - name: Cross-platform GUI type safety\n"
+    too_late = without_release_check.replace(marker, step + marker, 1)
+    assert any("before installing minimum PyQt6" in error for error in checker.check_ci_workflow(too_late))
+
+
 def test_ci_workflow_scopes_pushes_to_main_and_cancels_superseded_runs() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")

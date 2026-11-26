@@ -53,7 +53,7 @@ GLIBC_LIBRARIES = {
     "libresolv.so.2", "librt.so.1", "libutil.so.1",
 }
 PACKAGE_NAME = r"[a-z0-9][a-z0-9+.-]+"
-RELATIONSHIP = re.compile(rf"{PACKAGE_NAME}(?: \(>= [0-9]+(?:\.[0-9]+)+\))?")
+RELATIONSHIP = re.compile(rf"({PACKAGE_NAME})(?: \(>= ((?:[0-9]+:)?[0-9][A-Za-z0-9.+~\-]*)\))?")
 
 
 def elf_requirements(path: Path) -> tuple[set[str], set[tuple[int, ...]]]:
@@ -124,11 +124,35 @@ def dependency_field(dependencies: object) -> str:
     return ", ".join(dependencies)
 
 
+def merge_debian_dependencies(dependencies: list[str], extra: str) -> list[str]:
+    if not extra:
+        return dependencies
+    merged: dict[str, str | None] = {}
+    for relationship in [*dependencies, *(part.strip() for part in extra.split(","))]:
+        match = RELATIONSHIP.fullmatch(relationship)
+        if match is None:
+            raise ValueError(f"unsupported Debian minimum-version relationship: {relationship!r}")
+        name, version = match.groups()
+        previous = merged.get(name)
+        if previous is None:
+            merged[name] = version
+        elif version is not None and version != previous:
+            comparison = subprocess.run(["dpkg", "--compare-versions", version, "gt", previous], check=False, timeout=30)
+            if comparison.returncode == 0:
+                merged[name] = version
+            elif comparison.returncode != 1:
+                comparison.check_returncode()
+    return [f"{name} (>= {version})" if version is not None else name for name, version in sorted(merged.items())]
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Print the Debian Depends field for a frozen CLI.")
     parser.add_argument("launcher", type=Path)
+    parser.add_argument("executables", type=Path, nargs="*")
+    parser.add_argument("--extra-relationships", default="")
     args = parser.parse_args(argv)
-    print(dependency_field(debian_dependencies(args.launcher, ())))
+    native = debian_dependencies(args.launcher, args.executables)
+    print(dependency_field(merge_debian_dependencies(native, args.extra_relationships)))
 
 
 if __name__ == "__main__":

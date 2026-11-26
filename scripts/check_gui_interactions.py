@@ -325,11 +325,11 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
     try:
         from PyQt6.QtCore import (
             PYQT_VERSION_STR,
-            QT_VERSION_STR,
             QEventLoop,
             QPoint,
             Qt,
             QTimer,
+            qVersion,
         )
         from PyQt6.QtGui import QPalette
         from PyQt6.QtTest import QSignalSpy, QTest
@@ -446,7 +446,7 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
             "os": platform.platform(),
             "qt_platform_plugin": QApplication.platformName(),
             "qt_platform_env": os.environ.get("QT_QPA_PLATFORM", "native"),
-            "qt_version": QT_VERSION_STR,
+            "qt_version": qVersion(),
             "pyqt_version": PYQT_VERSION_STR,
             "font_render_evidence": font_render_payload,
             "screen": {
@@ -4199,7 +4199,7 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         "os": platform.platform(),
         "qt_platform_plugin": QApplication.platformName(),
         "qt_platform_env": os.environ.get("QT_QPA_PLATFORM", "native"),
-        "qt_version": QT_VERSION_STR,
+        "qt_version": qVersion(),
         "pyqt_version": PYQT_VERSION_STR,
         "font_render_evidence": font_render_payload,
         "screen": {

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
 
+from remote_ops_workspace import x11
 from remote_ops_workspace.cli import build_parser
 from remote_ops_workspace.x11 import (
     build_moba_x_server_package_status,
@@ -142,6 +144,29 @@ def test_x11_status_cli_command_is_registered() -> None:
     args = build_parser().parse_args(["x11", "status", "--display", ":9", "--json"])
 
     assert args.func.__name__ == "cmd_x11_status"
+
+
+def test_managed_x_server_does_not_keep_the_callers_streams_open(tmp_path, monkeypatch):
+    plan = build_moba_x_server_plan(
+        display=":10", system="linux", display_probe=lambda _: False,
+        which=lambda name: "/usr/bin/Xvfb" if name == "Xvfb" else None,
+        packaged_roots=[], authority_path=tmp_path / "Xauthority",
+    )
+    launched = []
+
+    def spawn(command, *, env, stdin, stdout, stderr):
+        assert env["DISPLAY"] == ":10"
+        assert (stdin, stdout, stderr) == (subprocess.DEVNULL,) * 3
+        launched.append(command)
+        return _FakeProcess(pid=4242)
+
+    monkeypatch.setattr(x11, "popen_hidden", spawn)
+    started = start_moba_x_server(
+        plan, state_path=tmp_path / "xserver-state.json",
+        identity_factory=lambda process: {"pid": process.pid, "kind": "test"},
+    )
+    assert launched == [plan.command]
+    assert started.running and started.pid == 4242
 
 
 def test_moba_x_server_lifecycle_writes_and_stops_state(tmp_path: Path) -> None:

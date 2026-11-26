@@ -42,6 +42,13 @@ PREVIOUS_PACKAGE = "rollback.deb"
 CANDIDATE_PACKAGE = "candidate.deb"
 LAUNCHER = PurePosixPath("usr/bin/row")
 SERVER_ROOT = PurePosixPath("usr/lib/remote-ops-workspace/servers")
+MOBAPT_ROOT = PurePosixPath("usr/lib/remote-ops-workspace/mobapt")
+RUNTIME_ROOTS = (SERVER_ROOT, MOBAPT_ROOT)
+XVFB_ROOT = PurePosixPath("usr/lib/remote-ops-workspace/xserver")
+XVFB_EXECUTABLE = XVFB_ROOT / "linux/bin/Xvfb"
+# Debian installations can exclude documentation via dpkg path filters.
+# The candidate inventory verifies the notices in the archive before release.
+XVFB_MEMBERS = (XVFB_EXECUTABLE, XVFB_ROOT / "xserver-runtime.json")
 SYSTEM_LOCK_ROOT = Path("/var/lib/remote-ops-workspace-managed-update")
 APT_GET = "/usr/bin/apt-get"
 DPKG = "/usr/bin/dpkg"
@@ -151,7 +158,8 @@ def deb_runtime_digests(path: Path) -> dict[PurePosixPath, str]:
             for entry in archive:
                 name = entry.name.removeprefix("./")
                 relative = PurePosixPath(name.lstrip("/"))
-                if relative != LAUNCHER and not relative.is_relative_to(SERVER_ROOT):
+                if (relative != LAUNCHER and relative not in XVFB_MEMBERS
+                        and not any(relative.is_relative_to(root) for root in RUNTIME_ROOTS)):
                     continue
                 require(
                     name == relative.as_posix() and ".." not in relative.parts
@@ -159,17 +167,19 @@ def deb_runtime_digests(path: Path) -> dict[PurePosixPath, str]:
                     and entry.uid == 0 and entry.gid == 0 and not entry.mode & 0o7022,
                     "deb-runtime-payload-refused",
                 )
-                if entry.isdir() and relative != LAUNCHER:
+                if entry.isdir() and relative != LAUNCHER and relative not in XVFB_MEMBERS:
                     directories.add(relative)
                     continue
                 require(
-                    relative != SERVER_ROOT and entry.isfile() and entry.sparse is None
+                    relative not in RUNTIME_ROOTS and entry.isfile() and entry.sparse is None
                     and 0 < entry.size <= MAX_ARTIFACT_BYTES,
                     "deb-runtime-payload-refused",
                 )
                 with archive.extractfile(entry) as stream:
                     digests[relative] = stream_sha256(stream)
         require(LAUNCHER in digests, "deb-launcher-payload-refused")
+        xvfb_members = sum(member in digests for member in XVFB_MEMBERS)
+        require(xvfb_members in (0, len(XVFB_MEMBERS)), "deb-runtime-payload-refused")
         return digests
 
 
@@ -178,8 +188,22 @@ def installed_launcher_sha256() -> str:
         return stream_sha256(stream)
 
 
-def verify_installed_servers(digests: dict[PurePosixPath, str], root: Path = Path("/") / SERVER_ROOT) -> None:
-    expected = {Path(path.relative_to(SERVER_ROOT)): sha for path, sha in digests.items() if path != LAUNCHER}
+def verify_installed_runtime(digests: dict[PurePosixPath, str], install_root: Path = Path("/")) -> None:
+    for runtime_root in RUNTIME_ROOTS:
+        expected = {
+            Path(path.relative_to(runtime_root)): sha
+            for path, sha in digests.items()
+            if path.is_relative_to(runtime_root)
+        }
+        verify_installed_runtime_tree(expected, install_root / runtime_root)
+    # Older releases may have a separately installed X server in the same
+    # directory. Verify only the Xvfb files owned by the selected archive.
+    for path in XVFB_MEMBERS:
+        if path in digests:
+            verify_installed_runtime_file(install_root / path, digests[path])
+
+
+def verify_installed_runtime_tree(expected: dict[Path, str], root: Path) -> None:
     try:
         if not expected and not root.exists() and not root.is_symlink():
             return
@@ -192,13 +216,20 @@ def verify_installed_servers(digests: dict[PurePosixPath, str], root: Path = Pat
                     continue
                 digest = expected.pop(path.relative_to(root), None)
                 require(digest is not None, "installed-runtime-payload-refused")
-                with trusted_path(path).open("rb") as stream:
-                    require(
-                        0 < os.fstat(stream.fileno()).st_size <= MAX_ARTIFACT_BYTES
-                        and stream_sha256(stream) == digest,
-                        "installed-runtime-payload-refused",
-                    )
+                verify_installed_runtime_file(path, digest)
         require(not expected, "installed-runtime-payload-refused")
+    except OSError as error:
+        raise UpdateError("installed-runtime-payload-refused") from error
+
+
+def verify_installed_runtime_file(path: Path, digest: str) -> None:
+    try:
+        with trusted_path(path).open("rb") as stream:
+            require(
+                0 < os.fstat(stream.fileno()).st_size <= MAX_ARTIFACT_BYTES
+                and stream_sha256(stream) == digest,
+                "installed-runtime-payload-refused",
+            )
     except OSError as error:
         raise UpdateError("installed-runtime-payload-refused") from error
 
@@ -304,7 +335,7 @@ def read_journal(path: Path, architecture: str) -> dict:
 def verify_installation(architecture: str, version: str, digests: dict[PurePosixPath, str]) -> None:
     require(installed_package(architecture) == ("installed", version), "installed-package-identity-refused")
     require(installed_launcher_sha256() == digests[LAUNCHER], "installed-launcher-digest-refused")
-    verify_installed_servers(digests)
+    verify_installed_runtime(digests)
 
 
 def verify_transition_plan(

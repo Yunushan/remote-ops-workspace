@@ -100,6 +100,11 @@ class MobaConnectedSessions:
         self.moba_left_stack.addWidget(self.moba_connected_dock)
         self.moba_left_stack.setCurrentWidget(self.moba_connected_dock)
         self.moba_connected_dock.initialize_background_state()
+        if owner is not None:
+            owner.terminal_pane.remoteDirectoryChanged.connect(
+                self.moba_connected_dock.follow_reported_terminal_directory
+            )
+            self.moba_connected_dock.follow_reported_terminal_directory()
         self.set_moba_quick_connect_connected_idle()
         self.set_moba_rail_active("sftp")
         title = moba_connected_window_title(state)
@@ -224,6 +229,8 @@ class MobaConnectedSessions:
             self.new_terminal_pane(plan, profile=profile, autostart=False),
         )
         panel.moba_connected_state = state
+        if profile.protocol == "ssh" and plan.source == f"profile:{profile.name}":
+            panel.terminal_pane.directory_report_host = profile.host
         self.remember_terminal_plan(plan, profile=profile)
         title = tab_title or moba_connected_tab_label(state)
         index = self.add_workspace_tab(panel, title, role="terminal")

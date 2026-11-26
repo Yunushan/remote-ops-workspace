@@ -12,7 +12,7 @@ and selecting output never exposes escape sequences.
 
 from bisect import bisect_right
 from collections import deque
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 from unicodedata import category, east_asian_width
@@ -152,6 +152,7 @@ class AnsiTerminalTranscript:
     _normal_cursor_row: int = 0
     _normal_saved_cursor: tuple[int, int] | None = None
     _escape: str | None = None
+    _observe_escape: bool = False
     _style: AnsiTextStyle = ANSI_DEFAULT_STYLE
     _screen_columns: int = 80
     _screen_rows: int = 24
@@ -374,7 +375,7 @@ class AnsiTerminalTranscript:
             self._full_redraw_hint = True
             self._resize_alternate_screen(columns_changed=columns_changed)
 
-    def feed(self, text: str) -> str:
+    def feed(self, text: str, *, directory_report: Callable[[str], None] | None = None) -> str:
         """Apply a stream chunk and return the current transcript text.
 
         Supported SGR styling is retained separately for the Qt renderer.
@@ -384,12 +385,15 @@ class AnsiTerminalTranscript:
 
         self._invalidate_render_cache()
         self._full_redraw_hint = False
+        if directory_report is None:
+            self._observe_escape = False
         for char in text:
             if self._escape is not None:
-                self._feed_escape(char)
+                self._feed_escape(char, directory_report if self._observe_escape else None)
                 continue
             if char == "\x1b":
                 self._escape = ""
+                self._observe_escape = directory_report is not None
             elif char == "\r":
                 self._full_redraw_hint = True
                 self._set_cursor_column(0)
@@ -748,9 +752,17 @@ class AnsiTerminalTranscript:
             )
         ]
 
-    def _feed_escape(self, char: str) -> None:
+    def _feed_escape(self, char: str, directory_report: Callable[[str], None] | None = None) -> None:
         if self._escape is None:
             raise RuntimeError("escape parser entered without an active sequence")
+        # While observing OSC 7, an oversized string must not expose its tail as
+        # a second, apparently independent directory report. Retain only ST state.
+        if self._escape.startswith("\0"):
+            if char == "\a" or (self._escape == "\0\x1b" and char == "\\"):
+                self._escape = None
+            else:
+                self._escape = "\0\x1b" if char == "\x1b" else "\0"
+            return
         sequence = self._escape + char
         if sequence in {"[", "]", "P", "^", "_"}:
             self._escape = sequence
@@ -770,8 +782,12 @@ class AnsiTerminalTranscript:
             if sequence == "P$q q\x1b\\":
                 style = _CURSOR_STYLE_REPORTS[self._cursor_style]
                 self._pending_responses.append(f"\x1bP1$r{style} q\x1b\\".encode("ascii"))
-            if char == "\a" or sequence.endswith("\x1b\\") or len(sequence) > 4096:
+            if char == "\a" or sequence.endswith("\x1b\\"):
                 self._escape = None
+                if directory_report is not None and sequence.startswith("]7;"):
+                    directory_report(sequence[3:-1] if char == "\a" else sequence[3:-2])
+            elif len(sequence) > 4096:
+                self._escape = "\0" if directory_report is not None else None
             else:
                 self._escape = sequence
             return
@@ -844,6 +860,8 @@ class AnsiTerminalTranscript:
                         )
                 elif mode == 7:
                     self._auto_wrap = enabled
+                elif mode == 1048:
+                    self._save_or_restore_cursor_position(save=enabled)
                 elif mode in {47, 1047, 1049}:
                     if enabled:
                         self._enter_alternate_screen()

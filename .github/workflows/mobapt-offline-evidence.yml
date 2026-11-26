@@ -42,7 +42,7 @@ jobs:
           ROW_QUALIFICATION_CANDIDATE_INVENTORY: ${{ inputs.candidate_inventory }}
         run: |
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          mkdir -p "$MOBAPT_WORK/release" "$MOBAPT_WORK/input" "$MOBAPT_WORK/review"
+          mkdir -p "$MOBAPT_WORK/release" "$MOBAPT_WORK/review"
           python3 -I scripts/fetch_qualification_release_asset.py --kind debian-amd64 --directory "$MOBAPT_WORK/release" \
             --repository "$GITHUB_REPOSITORY" --tag "$GITHUB_REF_NAME" --sha "$GITHUB_SHA"
       - name: Prepare dependencies of the verified Debian asset
@@ -53,24 +53,6 @@ jobs:
           docker build --platform linux/amd64 --pull --target mobapt \
             --build-arg "ROW_DEB=$asset" --build-arg "ROW_DEB_SHA256=${digest%% *}" \
             --file docker/Dockerfile.debian-parity-evidence --tag "$MOBAPT_IMAGE" "$MOBAPT_WORK/release"
-      - name: Prepare the offline cache from signed Debian package metadata
-        shell: bash
-        run: |
-          docker run --rm --pull never --platform linux/amd64 \
-            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/src,readonly" \
-            --mount "type=bind,source=$MOBAPT_WORK/input,target=/input" \
-            --env PYTHONPATH=/src/src --env PYTHONDONTWRITEBYTECODE=1 \
-            --workdir /tmp "$MOBAPT_IMAGE" bash -euo pipefail -c '
-              apt-get update
-              apt-get download tree
-              archives=(tree_*_amd64.deb)
-              [[ "${#archives[@]}" = 1 && -f "${archives[0]}" ]]
-              version="$(dpkg-deb --field "${archives[0]}" Version)"
-              python -m remote_ops_workspace mobapt bundle-runtime \
-                --out /input/assembly --release-target linux-x86_64 \
-                --tool bash --tool-source bash=/usr/bin/bash \
-                --package "tree=$version" --package-source "tree=$version=/tmp/${archives[0]}"
-            '
       - name: Capture and validate exact release evidence offline
         shell: bash
         run: |
@@ -79,13 +61,12 @@ jobs:
             --cap-drop NET_ADMIN --cap-drop NET_RAW --cap-drop SYS_ADMIN \
             --security-opt no-new-privileges \
             --mount "type=bind,source=$GITHUB_WORKSPACE,target=/src,readonly" \
-            --mount "type=bind,source=$MOBAPT_WORK/input/assembly,target=/bundle,readonly" \
             --mount "type=bind,source=$MOBAPT_WORK/release,target=/release,readonly" \
             --mount "type=bind,source=$MOBAPT_WORK/review,target=/proof" \
             --env GITHUB_ACTIONS --env GITHUB_REF --env GITHUB_SHA --env GITHUB_REPOSITORY \
             --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT --env PYTHONDONTWRITEBYTECODE=1 \
             "$MOBAPT_IMAGE" python /src/scripts/capture_mobapt_offline_evidence.py \
-            --bundle /bundle --out /proof/mobapt-unix-runtime --release-deb "/release/$asset" \
+            --out /proof/mobapt-unix-runtime --release-deb "/release/$asset" \
             --probe-package tree --probe-executable /usr/bin/tree --probe-arg=--version
           evidence="$MOBAPT_WORK/review/mobapt-unix-runtime"
           python3 scripts/make_mobaxterm_parity_evidence_record.py \

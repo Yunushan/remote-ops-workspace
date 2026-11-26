@@ -98,6 +98,84 @@ def bundle_archive(tmp_path: Path, approved_bundle: Path) -> Path:
     return archive
 
 
+@pytest.fixture
+def bundle_with_iperf(approved_bundle: Path) -> Path:
+    manifest = approved_bundle / payload.MANIFEST
+    document = json.loads(manifest.read_bytes())
+    relative = "linux/iperf/bin/iperf"
+    daemon = approved_bundle / relative
+    daemon.parent.mkdir(parents=True)
+    daemon.write_bytes(make_elf(b"iperf 2"))
+    document["services"].append({
+        "service": "iperf",
+        "runtime": {
+            "source": "packaged", "bundled": True, "placeholder": False, "key": "iperf2",
+            "executable": relative, "sha256": payload.sha256_file(daemon),
+        },
+    })
+    notice = approved_bundle / "notices/iperf.copyright"
+    notice.write_bytes(b"Iperf license notice\n")
+    document["debian_notices"]["iperf"] = {
+        "version": "2.2.1+dfsg-1", "services": ["iperf"],
+        "sha256": payload.sha256_file(notice), "size_bytes": notice.stat().st_size,
+    }
+    manifest.write_text(json.dumps(document), encoding="utf-8")
+    return approved_bundle
+
+
+def test_reviewed_iperf_reaches_candidate_payload_and_depends(
+    bundle_with_iperf: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    archive = tmp_path / staging.ARCHIVE_NAME
+    archive.write_bytes(gzip.compress(make_tar(bundle_with_iperf)))
+    reviewed = tmp_path / "reviewed"
+    staging.stage_bundle(archive, payload.sha256_file(archive), TARGET, reviewed)
+    expected = payload.reviewed_runtime_sha256(json.loads((reviewed / payload.MANIFEST).read_bytes()))
+    package_root = tmp_path / "debian"
+    launcher = package_root / payload.LAUNCHER
+    launcher.parent.mkdir(parents=True)
+    launcher.write_bytes(make_elf(b"ROW"))
+    dependencies = Mock(return_value=["libstdc++6"])
+    monkeypatch.setattr(payload, "debian_dependencies", dependencies)
+    assert payload.stage_payload(reviewed, package_root, TARGET) == "libstdc++6"
+    daemon = package_root / payload.PAYLOAD / "linux/iperf/bin/iperf"
+    assert daemon in dependencies.call_args.args[1]
+    assert daemon.read_bytes() == (reviewed / "linux/iperf/bin/iperf").read_bytes()
+
+    tar = make_tar(package_root)
+    monkeypatch.setattr(payload.subprocess, "run", lambda *_, stdout, **__: stdout.write(tar))
+    package = tmp_path / "remote-ops-workspace-v1.0.28-linux-amd64.deb"
+    records = read_verified_debian_notices(package, target=TARGET, expected_runtime_sha256=expected)
+    assert records["iperf"]["sha256"] == payload.sha256_file(reviewed / "notices/iperf.copyright")
+
+    manifest = package_root / payload.PAYLOAD / payload.MANIFEST
+    document = json.loads(manifest.read_bytes())
+    daemon.write_bytes(make_elf(b"unreviewed iperf 2"))
+    iperf_runtime = next(row["runtime"] for row in document["services"] if row["service"] == "iperf")
+    iperf_runtime["sha256"] = payload.sha256_file(daemon)
+    manifest.write_text(json.dumps(document), encoding="utf-8")
+    tar = make_tar(package_root)
+    with pytest.raises(ValueError, match="server payload differs from the reviewed archive"):
+        read_verified_debian_notices(package, target=TARGET, expected_runtime_sha256=expected)
+
+
+@pytest.mark.parametrize(("defect", "error"), [
+    ("wrong-version", "must use the Iperf 2 executable"),
+    ("no-notice", "notices are missing services: iperf"),
+])
+def test_iperf_bundle_requires_the_iperf2_runtime_and_notice(
+    bundle_with_iperf: Path, defect: str, error: str,
+) -> None:
+    manifest = bundle_with_iperf / payload.MANIFEST
+    document = json.loads(manifest.read_bytes())
+    if defect == "wrong-version":
+        document["services"][-1]["runtime"]["key"] = "iperf3"
+    else:
+        del document["debian_notices"]["iperf"]
+    with pytest.raises(ValueError, match=error):
+        payload.server_manifest(json.dumps(document).encode(), TARGET, payload.EXTERNAL_SERVICES)
+
+
 def test_portable_bundle_stages_only_the_reviewed_bytes(
     approved_bundle: Path, bundle_archive: Path, tmp_path: Path,
 ) -> None:

@@ -241,6 +241,61 @@ def test_release_workflow_qualifies_and_uploads_the_amd64_deb_before_inventory_s
     assert "needs.linux-native.result == 'success'" in sealer
 
 
+def test_release_workflow_reuses_preflight_mobapt_selection_for_amd64() -> None:
+    source = (ROOT / candidate.BUILD_WORKFLOW).read_text(encoding="utf-8")
+    preflight = source.split("- name: Freeze the reviewed Debian amd64 MobApt cache selection", 1)[1]
+    preflight = preflight.split("- name: Run release preflight verifier", 1)[0]
+    assert "vars.ROW_DEBIAN_AMD64_MOBAPT_BUNDLE" in preflight
+    assert '"${BASH_REMATCH[1]}" != "$RELEASE_TAG"' in preflight
+    assert "steps.debian-amd64-mobapt.outputs.run_id" in preflight
+    assert "steps.debian-amd64-mobapt.outputs.artifact_id" in preflight
+    assert "steps.debian-amd64-mobapt.outputs.review_sha256" in preflight
+    assert "scripts/stage_debian_mobapt_cache.py" in preflight and "digest-mismatch: error" in preflight
+    assert '--tag "$RELEASE_TAG"' in preflight
+    linux = source.split("  linux-native:\n", 1)[1].split("  seal-release-candidate:\n", 1)[0]
+    download = linux.split("- name: Download the frozen MobApt cache selection", 1)[1]
+    download = download.split("- name:", 1)[0]
+    assert "if: ${{ matrix.arch == 'x86_64' }}" in download and "digest-mismatch: error" in download
+    for field in ("run_id", "artifact_id"):
+        assert f"needs.release-preflight.outputs.debian_amd64_mobapt_{field}" in download
+    assert "ROW_RELEASE_MOBAPT_BUNDLE: ${{ steps.debian-amd64-mobapt.outputs.download-path }}" in linux
+    assert "matrix.arch == 'x86_64' && needs.release-preflight.outputs.debian_amd64_mobapt_review_sha256" in linux
+    preparation = (ROOT / ".github/workflows/prepare-debian-mobapt-cache.yml").read_text(encoding="utf-8")
+    assert 'apt-get download "bash=$BASH_PACKAGE_VERSION" "tree=$TREE_PACKAGE_VERSION"' in preparation
+    assert 'prepare_debian_mobapt_cache.py --tag "$RELEASE_TAG"' in preparation
+    assert '"$RELEASE_TAG" "$GITHUB_RUN_ID" "$ARTIFACT_ID"' in preparation
+    sealing = source.split("  seal-release-candidate:\n", 1)[1]
+    assert '--mobapt-review-sha256 "$MOBAPT_REVIEW_SHA256"' in sealing
+    assert "MOBAPT_REVIEW_SHA256: ${{ needs.release-preflight.outputs.debian_amd64_mobapt_review_sha256 }}" in sealing
+
+
+def test_release_workflow_enables_packaged_xvfb_only_for_the_reviewed_amd64_selection() -> None:
+    source = (ROOT / candidate.BUILD_WORKFLOW).read_text(encoding="utf-8")
+    freeze = source.split("- name: Freeze the optional reviewed Debian amd64 Xvfb selection", 1)[1]
+    freeze = freeze.split("- name: Run release preflight verifier", 1)[0]
+    assert "vars.ROW_DEBIAN_AMD64_XVFB != ''" in freeze
+    assert '"${BASH_REMATCH[1]}" != "$RELEASE_TAG"' in freeze
+    assert "scripts/stage_debian_xvfb.py" in freeze and "digest-mismatch: error" in freeze
+    build = source.split("- name: Download the frozen Xvfb selection", 1)[1]
+    build = build.split("- name: Run Linux native installer smoke tests", 1)[0]
+    assert "matrix.arch == 'x86_64' && needs.release-preflight.outputs.debian_amd64_xvfb_artifact_id != ''" in build
+    assert "ROW_RELEASE_XVFB_DEB:" in build
+    sealing = source.split("  seal-release-candidate:\n", 1)[1]
+    download = sealing.split("- name: Download the frozen Xvfb input for candidate sealing", 1)[1].split("- name:", 1)[0]
+    assert "digest-mismatch: error" in download
+    for field in ("run_id", "artifact_id"):
+        assert f"needs.release-preflight.outputs.debian_amd64_xvfb_{field}" in download
+    assert "ROW_RELEASE_XVFB_INPUT_DIR: ${{ steps.frozen-xvfb-input.outputs.download-path }}" in sealing
+    assert "ROW_RELEASE_XVFB_SHA256: ${{ needs.release-preflight.outputs.debian_amd64_xvfb_sha256 }}" in sealing
+    assert "matrix.arch == 'x86_64' && needs.release-preflight.outputs.debian_amd64_xvfb_sha256" in build
+    preparation = (ROOT / ".github/workflows/prepare-debian-xvfb.yml").read_text(encoding="utf-8")
+    assert 'test "$RELEASE_TAG" = "v$project_version"' in preparation
+    assert 'apt-get download "xvfb=$XVFB_PACKAGE_VERSION"' in preparation
+    assert 'grep -Fx -- "SHA256: $digest" /out/debian-package-index.txt' in preparation
+    assert 'install -m 0644 -- "$archive" /out/xvfb.deb' in preparation
+    assert '"$RELEASE_TAG" "$GITHUB_RUN_ID" "$ARTIFACT_ID"' in preparation
+
+
 def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
     source = (ROOT / candidate.BUILD_WORKFLOW).read_text(encoding="utf-8")
     job = source.split("  linux-native:\n", 1)[1].split("  seal-release-candidate:\n", 1)[0]
@@ -258,6 +313,7 @@ def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
         assert "matrix.arch" in marker
     assert "scripts/candidate_native_proof.py finish" in verify
     assert candidate.LINUX_SMOKE_PROOF_FILE in retained and candidate.NATIVE_BYTE_BINDING_FILE in retained
+    assert candidate.LINUX_CRON_PROOF_FILE in retained and candidate.LINUX_DEB_LOADER_FILE in retained
     assert "python -m scripts.qualify_rpm_candidate" in step
     assert "path: build/release-rpm-evidence/" in job
     assert all(name in step for name in (*candidate.RPM_SMOKE_FILES, candidate.RPM_REPORT_NAME))
@@ -272,6 +328,14 @@ def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
         ("missing-linux-smoke", "missing=.*release-linux-native-smoke-aarch64"),
         ("wrong-linux-proof", "native proof does not bind the completed exact-run installer smoke receipt"),
         ("wrong-linux-package", "smoke receipt differs from the candidate installer"),
+        ("missing-linux-cron", "archive must contain one root frozen-cron.json"),
+        ("wrong-linux-cron-run", "loader receipt differs from the exact release build"),
+        ("wrong-linux-cron-loader", "Cron receipt must bind one scheduled job"),
+        ("wrong-linux-cron-observation", "requires the installed DEB launcher observation"),
+        ("linux-cron-ran-after-stop", "Cron receipt must bind one scheduled job"),
+        ("missing-linux-loader-workload", "must include version, platform and vault workloads"),
+        ("foreign-linux-loader-path", "invalid host observations"),
+        ("missing-linux-vault-library", "Vault workload did not load"),
         ("swapped-native-manifests", "files differ from its release matrix assignment"),
         ("unexpected-source-file", "files differ from its release matrix assignment"),
         ("foreign-checksum-reference", "foreign, repeated or mismatched checksum"),
@@ -432,11 +496,15 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     if bundled:
         steps["changed-server-manifest-rollback"] = {"phase": "refused", "exit_code": 1,
                                                     "refusal": "installed-runtime-payload-refused"}
+    if condition == "complete-bundled":
+        steps["changed-xvfb-rollback"] = {"phase": "refused", "exit_code": 1,
+                                          "refusal": "installed-runtime-payload-refused"}
     depends = "libc6 (>= 2.38), libvncserver1" if bundled else "libc6 (>= 2.38), zlib1g"
     managed_report = candidate.qualification_receipt_bytes({
         "schema": managed_debian_qualification.UPGRADE_PLAN_SCHEMA if condition == "old-managed-schema" else
                   managed_debian_qualification.SCHEMA, "status": "passed", "target": "linux-x86_64",
         "production_acceptance": False, "candidate_has_server_bundle": bundled,
+        "candidate_has_xvfb": condition == "complete-bundled",
         "previous_sha256": previous, "candidate_sha256": deb_sha,
         "controller_sha256": (
             "c" * 64 if condition == "wrong-managed-controller" else
@@ -639,8 +707,50 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                 changed = name == "release-linux-native-smoke-aarch64"
                 if changed and condition == "wrong-linux-package":
                     digests[next(iter(digests))] = "b" * 64
+                launcher = "c" * 64
+                deb, = (asset for asset in digests if asset.endswith(".deb"))
+                probes = {
+                    name: {
+                        "host_files": {"/lib/libc.so.6": "a" * 64, "/lib/libz.so.1": "b" * 64},
+                        "archive_members": {"libpython3.14.so.1.0": "c" * 64, "libz.so.1": "d" * 64},
+                        "attempted_paths": {"host": ["/lib/libc.so.6"], "extraction": ["libz.so.1"]},
+                    }
+                    for name in ("version", "platforms", "vault-init")
+                }
+                if not (changed and condition == "missing-linux-vault-library"):
+                    probes["vault-init"]["archive_members"]["cryptography/_rust.abi3.so"] = "e" * 64
+                if changed and condition == "missing-linux-loader-workload":
+                    del probes["platforms"]
+                if changed and condition == "foreign-linux-loader-path":
+                    probes["version"]["attempted_paths"]["host"].append("/build/runner/lib/libz.so.1")
+                loader = candidate.qualification_receipt_bytes({
+                    "schema_version": 1, "target": target, "kernel_machine": target.removeprefix("linux-"),
+                    "deb": deb, "deb_sha256": digests[deb], "launcher_sha256": launcher,
+                    "source_sha": sha,
+                    "github_run_id": "99" if changed and condition == "wrong-linux-cron-run" else "123",
+                    "github_run_attempt": "1", "staged_runpath_changes": {}, "probes": probes,
+                })
+                cron = {
+                    "schema": "row.native-frozen-cron.v1", "target": target,
+                    "deb": deb, "deb_sha256": digests[deb], "row_sha256": launcher, "source_sha": sha,
+                    "deb_loader_report_sha256": "d" * 64 if changed and condition == "wrong-linux-cron-loader"
+                    else hashlib.sha256(loader).hexdigest(),
+                    "real_minute_job_count": 1, "stopped_pid_exited": True,
+                    "next_minute_quiet": not (changed and condition == "linux-cron-ran-after-stop"),
+                    "linux_process_identity_verified": True, "onefile_extraction_released": True,
+                    "public_status_and_generation_verified": True,
+                }
+                archive.writestr(candidate.LINUX_DEB_LOADER_FILE, loader)
+                if not (changed and condition == "missing-linux-cron"):
+                    archive.writestr(candidate.LINUX_CRON_PROOF_FILE, candidate.qualification_receipt_bytes(cron))
                 raw_binding = candidate.qualification_receipt_bytes({
                     "target": target, "status": "bound", "smoke_complete": True, "installer_sha256": digests,
+                    "expected_executables": [{"role": "cli", "sha256": launcher}],
+                    "observations": [{
+                        "path": "deb/usr/bin/row", "phase": "install", "probe": "version", "role": "cli",
+                        "matched": True, "expected_sha256": launcher,
+                        "observed_sha256": "d" * 64 if changed and condition == "wrong-linux-cron-observation" else launcher,
+                    }],
                 })
                 proof_sha = "b" * 40 if changed and condition == "wrong-linux-proof" else sha
                 archive.writestr(candidate.NATIVE_BYTE_BINDING_FILE, raw_binding)
@@ -739,6 +849,19 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
         )
 
     monkeypatch.setattr(candidate, "read_candidate_deb_metadata", deb_metadata)
+    xvfb_input = {}
+    xvfb_reads = []
+    if condition == "complete-bundled":
+        from scripts import stage_debian_xvfb
+
+        xvfb_input = {"xvfb_deb": tmp_path / "xvfb.deb", "xvfb_sha256": "e" * 64}
+
+        def verify_xvfb(package, source, digest, architecture):
+            assert package.name == deb_name and package.read_bytes() == deb_bytes
+            assert (source, digest, architecture) == (xvfb_input["xvfb_deb"], xvfb_input["xvfb_sha256"], "amd64")
+            xvfb_reads.append((output.exists(), root.exists()))
+
+        monkeypatch.setattr(stage_debian_xvfb, "verify_packaged_xvfb", verify_xvfb)
 
     def seal() -> None:
         candidate.stage(
@@ -751,6 +874,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
             output=output,
             server_bundle_artifact_id=reviewed_bundle["artifact_id"],
             server_bundle_sha256=reviewed_bundle["archive_sha256"],
+            **xvfb_input,
         )
 
     if error:
@@ -780,7 +904,11 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
             "missing-gui-module", "unverified-gui-module", "wrong-gui-path",
         }:
             assert len(downloads) == len(runtime) + 3
-        elif condition == "wrong-linux-proof":
+        elif condition in {
+            "wrong-linux-proof", "missing-linux-cron", "wrong-linux-cron-run",
+            "wrong-linux-cron-loader", "wrong-linux-cron-observation", "linux-cron-ran-after-stop",
+            "missing-linux-loader-workload", "foreign-linux-loader-path", "missing-linux-vault-library",
+        }:
             assert len(downloads) == len(runtime) + 2 + len(smoke) + len(linux_smoke)
         else:
             assert len(downloads) == (1 if condition in {"bad-runtime-report", "nonregular-runtime-report"} else 0)
@@ -791,6 +919,16 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     seal()
     assert metadata_reads == [(False, False)]
     inventory = json.loads(output.read_text(encoding="utf-8"))
+    if xvfb_input:
+        assert xvfb_reads == [(False, False)]
+        assert inventory["debian_xvfb_sha256"] == xvfb_input["xvfb_sha256"]
+        with pytest.raises(ValueError, match="bind the frozen Debian Xvfb archive SHA-256"):
+            candidate.validate_inventory(
+                {**inventory, "debian_xvfb_sha256": True}, repository="example/project",
+                release_tag=tag, release_sha=sha, run_id=123, run_attempt=1,
+            )
+    else:
+        assert not xvfb_reads and "debian_xvfb_sha256" not in inventory
     records = candidate.validate_inventory(
         inventory, repository="example/project", release_tag=tag, release_sha=sha,
         run_id=123, run_attempt=1,
@@ -838,6 +976,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                 "size_bytes": len(encoded)}
 
     historic = json.loads(output.read_bytes())
+    historic.pop("debian_xvfb_sha256", None)
     historic["schema_version"] = candidate.ARCHIVE_FILE_SCOPE_SCHEMA_VERSION
     with pytest.raises(ValueError, match="pinned Fedora qualification image"):
         candidate.validate_inventory(historic, **coordinates)
@@ -859,6 +998,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     x64[x64.index(x64_manifest)], x86[x86.index(x86_manifest)] = x86_manifest, x64_manifest
     with pytest.raises(ValueError, match="files differ from its release matrix assignment"):
         candidate.validate_inventory(swapped, **coordinates)
+    swapped.pop("debian_xvfb_sha256", None)
     swapped["schema_version"] = candidate.GUI_MODULE_PROOF_SCHEMA_VERSION
     swapped["rpm_recovery"] = old_rpm
     candidate.validate_inventory(swapped, **coordinates)
@@ -870,6 +1010,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     inventory.pop("rpm_smoke")
     inventory.pop("gui_smoke")
     inventory.pop("linux_smoke")
+    inventory.pop("debian_xvfb_sha256", None)
     inventory["schema_version"] = candidate.LEGACY_SCHEMA_VERSION
     candidate.validate_inventory(inventory, **coordinates)
     with pytest.raises(ValueError, match="requires the current sealed candidate inventory"):
@@ -1053,6 +1194,16 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     gui_archive.write_bytes(gui_bytes)
     arm_archive = retained / f"{linux_smoke[1]}.zip"
     arm_bytes = arm_archive.read_bytes()
+    with zipfile.ZipFile(io.BytesIO(arm_bytes)) as original, zipfile.ZipFile(arm_archive, "w") as legacy:
+        for filename in (candidate.LINUX_SMOKE_PROOF_FILE, candidate.NATIVE_BYTE_BINDING_FILE):
+            legacy.writestr(filename, original.read(filename))
+    legacy_arm = arm_archive.read_bytes()
+    assert candidate.check_smoke_archive(
+        io.BytesIO(legacy_arm), linux_smoke[1], {}, 123, sha, candidate.FEDORA_RELEASE_IMAGE_SCHEMA_VERSION,
+    ) == linux_archives[linux_smoke[1]]["installer_sha256"]
+    with pytest.raises(ValueError, match="one root frozen-cron.json"):
+        candidate.check_smoke_archive(io.BytesIO(legacy_arm), linux_smoke[1], {}, 123, sha, candidate.SCHEMA_VERSION)
+    arm_archive.write_bytes(arm_bytes)
     arm_archive.unlink()
     with pytest.raises(ValueError, match="missing or invalid retained.*aarch64"):
         candidate.verify_retained_qualification_archives(retained, inventory)

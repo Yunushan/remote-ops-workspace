@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import ctypes
 import os
+import re
 import shlex
 from collections.abc import Iterable
 from ctypes import wintypes
 from typing import Any
 from urllib.parse import urlparse
+
+_CONTROL_CHARACTERS = re.compile(r"[\x00-\x1f\x7f]")
+_WHITESPACE = re.compile(r"\s")
 
 
 class CommandSafetyError(ValueError):
@@ -21,7 +25,7 @@ def clean_text(value: str | None, label: str, *, allow_empty: bool = False) -> s
     text = str(value)
     if not text and not allow_empty:
         raise CommandSafetyError(f"{label} is required")
-    if any(ord(char) < 32 or ord(char) == 127 for char in text):
+    if _CONTROL_CHARACTERS.search(text):
         raise CommandSafetyError(f"{label} contains control characters")
     return text
 
@@ -30,7 +34,7 @@ def host(value: str | None, label: str = "host") -> str:
     text = clean_text(value, label)
     if text.startswith("-"):
         raise CommandSafetyError(f"{label} must not start with '-'")
-    if any(char.isspace() for char in text):
+    if _WHITESPACE.search(text):
         raise CommandSafetyError(f"{label} must not contain whitespace")
     return text
 
@@ -56,7 +60,7 @@ def port(value: int | None, label: str = "port") -> int:
 
 def url(value: str, allowed_schemes: Iterable[str] = ("http", "https")) -> str:
     text = clean_text(value, "url")
-    if any(char.isspace() for char in text):
+    if _WHITESPACE.search(text):
         raise CommandSafetyError("url must not contain whitespace")
     parsed = urlparse(text)
     schemes = {scheme.lower() for scheme in allowed_schemes}

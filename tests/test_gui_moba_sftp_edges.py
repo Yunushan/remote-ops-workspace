@@ -28,6 +28,7 @@ class _FakeProcess:
             else QProcess.ProcessState.NotRunning
         )
         self.output = output
+        self.error_output = b""
         self.write_result = write_result
         self.program = ""
         self.arguments: list[str] = []
@@ -74,6 +75,10 @@ class _FakeProcess:
 
     def readAllStandardOutput(self) -> bytes:  # noqa: N802
         payload, self.output = self.output, b""
+        return payload
+
+    def readAllStandardError(self) -> bytes:  # noqa: N802
+        payload, self.error_output = self.error_output, b""
         return payload
 
 
@@ -324,6 +329,122 @@ def test_monitoring_stale_completion_and_absent_sftp_status_widgets(
     label.mouseReleaseEvent(event)
 
 
+def test_ssh_directory_reports_follow_only_their_own_tab(connected_workspace, monkeypatch):
+    from PyQt6.QtCore import QProcess
+
+    from remote_ops_workspace.terminal import terminal_plan_for_profile
+
+    app, window, generic_panel, original_dock, template = connected_workspace
+    assert generic_panel.terminal_pane.directory_report_host is None
+    # Build genuine saved-profile terminal plans; the test supplies receiver bytes
+    # and captures the read-only SFTP subprocess without opening a network socket.
+    monkeypatch.setattr(window, "start_terminal_pane_when_active", lambda *_: None)
+    dock_type = type(original_dock)
+    monkeypatch.setattr(dock_type, "initialize_background_state", lambda self: None)
+    monkeypatch.setattr(dock_type, "_waiting_for_shared_ssh", lambda self: False)
+    monkeypatch.setattr(dock_type, "ensure_background_authentication_for_request", lambda self: True)
+    first = replace(template, host="127.0.0.1", name="folder-one")
+    second = replace(template, host="localhost", name="folder-two")
+    window.store.add(first)
+    window.store.add(second)
+    one = window.open_moba_connected_session_tab(first, terminal_plan_for_profile(first))
+    pane = one.terminal_pane
+    dock = window.moba_connected_dock
+    process = _FakeProcess()
+    dock.sftp_refresh_process = process
+    dock.background_state_activation_timer.stop()
+    monkeypatch.setattr(dock, "background_ssh_auth_capability", lambda _profile: (True, "test auth"))
+    monkeypatch.setattr(dock, "activate_initial_monitoring_state", lambda: None)
+    with monkeypatch.context() as running:
+        running.setattr(pane.process, "state", lambda: QProcess.ProcessState.Running)
+        pane.append_decoded_process_output(b"\x1b]7;file://127.0.0.1/first\x1b")
+        assert process.start_calls == 0
+        pane.append_decoded_process_output(b"\\")
+        assert dock.path.text() == "/first"
+        assert dock.sftp_refresh_plan.batch_input() == "ls -la /first\n"
+        assert process.start_calls == 1
+        pane.append_decoded_process_output(b"\x1b]7;file://127.0.0.1/first\a\x1b]7;file://localhost/other\a")
+        assert process.start_calls == 1 and dock.sftp_refresh_pending is None
+        pane.append_decoded_process_output(b"\x1b]7;file://127.0.0.1/intermediate\a\x1b]7;file://127.0.0.1/latest\a")
+        dock.activate_initial_background_state()
+        assert dock.sftp_refresh_pending == ("/latest", "terminal-folder")
+        assert not dock.sftp_refresh_request_is_current()
+        toggle = dock.monitoring_control_widgets["follow-terminal-folder"]
+        toggle.setChecked(False)
+        assert not one.state.follow_terminal_folder
+        assert dock.sftp_refresh_pending == ("/latest", "terminal-folder")
+        assert process.kill_calls == 0
+        pane.append_decoded_process_output(b"\x1b]7;file://127.0.0.1/disabled\a")
+        assert dock.path.text() == "/latest"
+        process.process_state = QProcess.ProcessState.NotRunning
+        dock.handle_sftp_refresh_finished(0, QProcess.ExitStatus.NormalExit)
+        app.processEvents()
+        assert dock.sftp_refresh_plan.batch_input() == "ls -la /latest\n"
+        # Deferred auth setup can run after the queued folder listing has started.
+        dock.activate_initial_background_state()
+        process.output = b"-rw-r--r-- 1 row row 4 Nov 23 08:00 retained.txt\n"
+        process.process_state = QProcess.ProcessState.NotRunning
+        dock.handle_sftp_refresh_finished(0, QProcess.ExitStatus.NormalExit)
+        assert [entry.name for entry in one.state.file_entries] == ["retained.txt"]
+        assert process.start_calls == 2 and dock.sftp_refresh_pending is None
+        toggle.setChecked(True)
+        assert dock.path.text() == "/disabled"
+        toggle.setChecked(False)
+        dock.path.setText("/manual")
+        dock.handle_moba_sftp_path_entered()
+        assert dock.path.text() == "/manual" and one.state.remote_path == "/manual"
+
+    two = window.open_moba_connected_session_tab(second, terminal_plan_for_profile(second), remote_path="/two")
+    other = window.moba_connected_dock
+    receiver = _FakeProcess()
+    other.sftp_refresh_process = receiver
+    with monkeypatch.context() as running:
+        running.setattr(pane.process, "state", lambda: QProcess.ProcessState.Running)
+        running.setattr(two.terminal_pane.process, "state", lambda: QProcess.ProcessState.Running)
+        pane.append_decoded_process_output(b"\x1b]7;file://127.0.0.1/inactive\a")
+        assert other.path.text() == "/two" and receiver.start_calls == 0
+        two.terminal_pane.append_decoded_process_output(b"\x1b]7;file://localhost/second\a")
+        assert other.path.text() == "/second"
+        assert receiver.start_calls == 1
+        window.tabs.setCurrentWidget(one)
+        app.processEvents()
+        restored = window.moba_connected_dock
+        assert restored.session_panel is one
+        restored.sftp_refresh_process = _FakeProcess()
+        assert not restored.monitoring_control_widgets["follow-terminal-folder"].isChecked()
+        assert restored.path.text() == "/manual"
+        restored.monitoring_control_widgets["follow-terminal-folder"].setChecked(True)
+        assert restored.path.text() == "/inactive"
+        assert restored.sftp_refresh_plan.batch_input() == "ls -la /inactive\n"
+    pane.remote_directory = "/offline"
+    assert not restored.follow_reported_terminal_directory()
+    pane.reset_process_output_pipeline()
+    assert pane.remote_directory is None
+    app.processEvents()
+
+
+def test_selected_folder_list_finishes_on_disable_and_edited_identity_is_ignored(connected_workspace, monkeypatch):
+    from PyQt6.QtCore import QProcess
+
+    app, _window, panel, dock, profile = connected_workspace
+    requests = []
+    monkeypatch.setattr(dock, "request_sftp_refresh", lambda *, reason: requests.append(reason))
+    dock.sftp_refresh_pending = (dock.active_remote_path, "terminal-folder")
+    dock.schedule_pending_sftp_refresh()
+    dock.monitoring_control_widgets["follow-terminal-folder"].setChecked(False)
+    app.processEvents()
+    assert requests == ["terminal-folder"]
+    dock.monitoring_control_widgets["follow-terminal-folder"].setChecked(True)
+    pane = panel.terminal_pane
+    pane.remote_directory = "/changed"
+    before = dock.path.text()
+    with monkeypatch.context() as running:
+        running.setattr(pane.process, "state", lambda: QProcess.ProcessState.Running)
+        running.setattr(dock, "profile_for_sftp_action", lambda: replace(profile, host="other.invalid"))
+        assert not dock.follow_reported_terminal_directory()
+    assert dock.path.text() == before
+
+
 def test_manual_sftp_browsing_preserves_each_tabs_listing_without_follow(connected_workspace, monkeypatch):
     from remote_ops_workspace.file_transfer import build_sftp_list_plan
     from remote_ops_workspace.moba_connected import RemoteFileEntry
@@ -358,12 +479,65 @@ def test_manual_sftp_browsing_preserves_each_tabs_listing_without_follow(connect
     assert restored.file_table.topLevelItem(1).text(0) == "system.log"
     standalone = type(restored)(second_panel.state)
     try:
+        standalone.handle_moba_follow_terminal_folder_toggled(False)
+        assert not standalone.state.follow_terminal_folder and second_panel.state.follow_terminal_folder
         standalone.apply_live_sftp_entries(entries, request_path="/other", plan=build_sftp_list_plan(profile, "/other"))
         assert standalone.file_table.topLevelItem(1).text(0) == "original.txt"
         assert second_panel.state.file_entries == ()
     finally:
         standalone.shutdown_runtime()
         standalone.deleteLater()
+
+
+def test_live_sftp_listing_inserts_one_batch_and_reuses_row_icons(connected_workspace, monkeypatch):
+    from PyQt6.QtCore import Qt
+
+    from remote_ops_workspace.file_transfer import build_sftp_list_plan
+    from remote_ops_workspace.gui_sftp_editor import SFTP_ROW_INDEX_ROLE, SFTP_ROW_SOURCE_PATH_ROLE
+    from remote_ops_workspace.moba_connected import RemoteFileEntry
+
+    _app, _window, panel, dock, profile = connected_workspace
+    entries = (
+        RemoteFileEntry("logs", "dir", 0, ""),
+        RemoteFileEntry("first.txt", "file", 1, ""),
+        RemoteFileEntry("second.txt", "file", 2, ""),
+    )
+    insertions = []
+    dock.file_table.model().rowsInserted.connect(lambda _parent, first, last: insertions.append((first, last)))
+    renders = []
+    render = dock.sftp_file_row_icon
+    metadata_rows = []
+    apply_metadata = dock.apply_sftp_routed_file_row_metadata
+
+    def record_icon(key, *, size):
+        renders.append(key)
+        return render(key, size=size)
+
+    def record_metadata(item, rows, **fields):
+        metadata_rows.append(fields["row_index"])
+        apply_metadata(item, rows, **fields)
+
+    monkeypatch.setattr(dock, "sftp_file_row_icon", record_icon)
+    monkeypatch.setattr(dock, "apply_sftp_routed_file_row_metadata", record_metadata)
+    monkeypatch.setattr(dock, "request_sftp_refresh", lambda **_kwargs: None)
+    assert dock.navigate_moba_sftp_path("/home")
+    dock.apply_live_sftp_entries(entries, request_path="/home", plan=build_sftp_list_plan(profile, "/home"))
+
+    table = dock.file_table
+    assert insertions == [(0, 3)]
+    assert renders == ["folder-up", "folder", "file"]
+    assert metadata_rows == [0]
+    assert [table.topLevelItem(index).text(0) for index in range(table.topLevelItemCount())] == [
+        "..", "logs", "first.txt", "second.txt",
+    ]
+    assert table.currentItem() is table.topLevelItem(0)
+    assert [table.topLevelItem(i).data(0, SFTP_ROW_INDEX_ROLE) for i in range(4)] == list(range(4))
+    assert [table.topLevelItem(i).data(0, SFTP_ROW_SOURCE_PATH_ROLE) for i in range(4)] == ["/home"] * 4
+    assert [table.topLevelItem(i).data(0, Qt.ItemDataRole.UserRole) for i in range(4)] == [
+        "parent-dir", "dir", "file", "file",
+    ]
+    assert panel.state.file_entries == entries
+    assert dock.sftp_remote_path_for_item(table.topLevelItem(2)) == "/home/first.txt"
 
 
 def test_live_monitoring_rebuilds_the_bottom_bar_for_extended_metrics(
@@ -1382,6 +1556,41 @@ def test_connected_dock_remaining_auth_monitoring_and_sftp_routes(
     app.processEvents()
 
 
+def test_newer_sftp_refresh_wins_over_deferred_same_path_refresh(
+    connected_workspace, monkeypatch,
+) -> None:
+    from PyQt6.QtCore import QProcess
+
+    app, _window, _panel, dock, profile = connected_workspace
+    process = _FakeProcess()
+    monkeypatch.setattr(dock, "sftp_refresh_process", process)
+    monkeypatch.setattr(dock, "ensure_background_authentication_for_request", lambda: True)
+    monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: profile)
+    monkeypatch.setattr(dock, "shared_ssh_control_path", lambda: "")
+
+    dock.request_sftp_refresh(reason="in-flight")
+    dock.request_sftp_refresh(reason="older-queued")
+    assert dock.sftp_refresh_pending == (dock.active_remote_path, "older-queued")
+    process.process_state = QProcess.ProcessState.NotRunning
+    dock.handle_sftp_refresh_finished(0, QProcess.ExitStatus.NormalExit)
+
+    dock.request_sftp_refresh(reason="newest")
+    current_generation = dock.sftp_refresh_active_generation
+    app.processEvents()
+    assert process.start_calls == 2
+    assert dock.sftp_refresh_pending is None
+    assert dock.sftp_refresh_generation == current_generation
+    assert dock.property("mobaSftpRefreshLastReason") == "newest"
+
+    process.process_state = QProcess.ProcessState.NotRunning
+    process.output = b"-rw-r--r-- 1 operator operator 23 Jan 15 12:00 newest.txt\n"
+    dock.handle_sftp_refresh_finished(0, QProcess.ExitStatus.NormalExit)
+    assert dock.property("mobaSftpRefreshLastError") == ""
+    assert [entry.name for entry in dock.state.file_entries] == ["newest.txt"]
+    app.processEvents()
+    assert process.start_calls == 2
+
+
 def test_sftp_refresh_and_transfer_workflow_edges(
     connected_workspace,
     monkeypatch,
@@ -1483,13 +1692,23 @@ def test_sftp_refresh_and_transfer_workflow_edges(
     dock.handle_sftp_refresh_finished(1, QProcess.ExitStatus.CrashExit)
     assert dock.property("mobaSftpRefreshLastError") == "permission denied"
     dock.shared_ssh_control_path = lambda: "control-path"
-    process.output = b"host key failed"
+    process.output = b"sftp> ls"
+    process.error_output = b"host key failed"
+    dock.read_sftp_refresh_error()
     dock.sftp_refresh_output_buffer.clear()
     dock.handle_sftp_refresh_finished(1, QProcess.ExitStatus.CrashExit)
     assert "Waiting for terminal SSH authentication" in window.statusBar().currentMessage()
+    assert dock.property("mobaSftpRefreshLastError") == "host key failed"
 
     applied: list[tuple[list[object], str]] = []
-    monkeypatch.setattr(gui_connected, "parse_sftp_ls_output", lambda _output, *, directory: [])
+    parsed: list[str] = []
+
+    def parse_listing(output, *, directory):
+        assert directory == dock.sftp_refresh_request_path
+        parsed.append(output)
+        return []
+
+    monkeypatch.setattr(gui_connected, "parse_sftp_ls_output", parse_listing)
     dock.filtered_sftp_entries = lambda entries: list(entries)
     dock.apply_live_sftp_entries = (
         lambda entries, *, request_path, plan: applied.append(
@@ -1497,8 +1716,10 @@ def test_sftp_refresh_and_transfer_workflow_edges(
         )
     )
     process.output = b"listing"
+    process.error_output = b"SSH diagnostic"
     dock.sftp_refresh_output_buffer.clear()
     dock.handle_sftp_refresh_finished(0, QProcess.ExitStatus.NormalExit)
+    assert parsed == ["listing"]
     assert applied == [([], dock.sftp_refresh_request_path)]
     assert dock.property("mobaSftpRefreshLastError") == ""
     assert pending_calls
@@ -1549,6 +1770,11 @@ def test_sftp_refresh_and_transfer_workflow_edges(
         ]
     )
     window.create_transfer_queue_dialog = lambda _profile, **_kwargs: next(dialogs)
+    with monkeypatch.context() as windows:
+        windows.setattr(gui_connected, "os", SimpleNamespace(name="nt"))
+        dock.selected_sftp_item = lambda: ("report.txt ", "file")
+        assert dock.open_moba_sftp_transfer_workflow("download") is False
+        assert "without a trailing space" in window.statusBar().currentMessage()
     dock.selected_sftp_item = lambda: ("report.txt", "file")
     assert dock.open_moba_sftp_transfer_workflow("download") is True
     dock.selected_sftp_item = lambda: ("archive", "dir")
@@ -2151,6 +2377,19 @@ def test_sftp_navigation_context_dispatch_and_timeout_edges(
     assert dock.sftp_remote_path_for_item(parent) == "/"
     assert dock.sftp_remote_path_for_item(remote_file) == "/report.txt"
 
+    spaced_file = QTreeWidgetItem([" report.txt "])
+    spaced_file.setData(0, role_kind, "file")
+    dock.file_table.addTopLevelItem(spaced_file)
+    dock.file_table.setCurrentItem(spaced_file)
+    assert dock.selected_sftp_item() == (" report.txt ", "file")
+    assert dock.sftp_remote_path_for_item(spaced_file) == "/ report.txt "
+    assert dock.text_editor_remote_path_for_item(spaced_file) == "/ report.txt "
+    with monkeypatch.context() as connected:
+        connected.setattr(dock, "profile_for_sftp_action", lambda: _profile)
+        dock.update_sftp_action_states()
+        assert dock.sftp_action_buttons["download"].isEnabled()
+    dock.file_table.setCurrentItem(remote_file)
+
     navigated: list[str] = []
     edited: list[str] = []
     monkeypatch.setattr(
@@ -2269,7 +2508,7 @@ def test_connected_context_menus_and_workspace_dispatch_edges(
     assert terminal_menu.deleted is True
 
 
-def test_follow_folder_cancel_rail_keyboard_and_populated_dock_edges(
+def test_follow_folder_toggle_rail_keyboard_and_populated_dock_edges(
     connected_workspace,
     monkeypatch,
 ) -> None:
@@ -2295,10 +2534,14 @@ def test_follow_folder_cancel_rail_keyboard_and_populated_dock_edges(
     )
     dock.handle_moba_follow_terminal_folder_toggled(True)
     assert refreshes == ["follow-enabled"]
+    dock.sftp_refresh_active_generation = 1
+    dock.sftp_refresh_pending = (dock.active_remote_path, "manual")
     dock.handle_moba_follow_terminal_folder_toggled(False)
-    assert process.kill_calls == 1
-    assert dock.sftp_refresh_active_generation == 0
-    assert dock.sftp_refresh_pending is None
+    assert process.kill_calls == 0
+    assert dock.sftp_refresh_active_generation == 1
+    assert dock.sftp_refresh_pending == (dock.active_remote_path, "manual")
+    dock.sftp_refresh_active_generation = 0
+    dock.sftp_refresh_pending = None
     dock.browser = original_browser
     dock.remote_monitoring_panel = original_monitoring_panel
     dock.sftp_refresh_process = original_process

@@ -37,6 +37,30 @@ def gui_window(monkeypatch, tmp_path):
     app.processEvents()
 
 
+@pytest.mark.parametrize("preset", ["mremoteng", "remmina"])
+def test_profile_refresh_inserts_the_saved_tree_as_one_batch(gui_window, preset):
+    app, window = gui_window
+    window.set_design_preset(preset)
+    window.store.save([
+        Profile(name="desktop", protocol="rdp", host="desktop.invalid", group="Lab/Desktops"),
+        Profile(name="server", protocol="ssh", host="server.invalid", group="Lab/Servers"),
+        Profile(name="backup", protocol="ssh", host="backup.invalid", group="Backups"),
+    ])
+    window.refresh_profiles()
+    window.select_profile("server")
+    inserted = []
+    window.profile_list.model().rowsInserted.connect(lambda *_args: inserted.append(True))
+
+    window.refresh_profiles()
+    app.processEvents()
+
+    assert inserted == [True]
+    assert window.selected_profile_name() == "server"
+    window.filter_profile_tree("desktop")
+    window.select_profile("desktop")
+    assert window.selected_profile_name() == "desktop"
+
+
 def test_tools_opens_live_inventory_for_default_and_configured_provider(gui_window, monkeypatch):
     _app, window = gui_window
     dialogs = []
@@ -1429,6 +1453,63 @@ def test_navigation_dialog_search_and_connected_chrome_edges(
     rebuild(rebuild_owner, select=False)
     assert removed == [2]
     assert added[-1] is False
+
+
+def test_narrowing_profile_search_skips_hidden_subtrees_and_reevaluates_after_visibility_change(gui_window):
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import QTreeWidgetItem
+
+    from remote_ops_workspace.gui_profile_tree import TREE_SEARCH_TEXT_ROLE
+
+    _app, window = gui_window
+    window.set_design_preset("mremoteng")
+    search = window.mremoteng_document_filter
+    search_reads = []
+
+    class ProfileRow(QTreeWidgetItem):
+        def data(self, column, role):
+            if role == TREE_SEARCH_TEXT_ROLE:
+                search_reads.append(self.text(0))
+            return super().data(column, role)
+
+    rows = []
+    for label in ("East lab", "West lab"):
+        group = QTreeWidgetItem(["Datacenter"])
+        item = ProfileRow([label])
+        item.setData(0, Qt.ItemDataRole.UserRole, label)
+        item.setData(0, TREE_SEARCH_TEXT_ROLE, label.casefold())
+        group.addChild(item)
+        window.profile_list.addTopLevelItem(group)
+        rows.append(item)
+    east, west = rows
+
+    search.setText("east")
+    assert search_reads == ["East lab", "West lab"]
+    assert not east.isHidden() and west.isHidden()
+    search_reads.clear()
+    search.setText("East lab")
+    assert search_reads == ["East lab"]
+    search.setText("west")
+    assert east.isHidden() and not west.isHidden()
+    search.setText("wes")
+    assert not west.isHidden()
+    window.filter_profile_tree_names(set())
+    assert west.isHidden()
+    search.setText("west lab")
+    assert not west.isHidden()
+    search.clear()
+    assert not east.isHidden() and not west.isHidden()
+
+    search.setText("west lab")
+    added = Profile("West lab new", "ssh", "west.example.invalid")
+    window.store.add(added)
+    window.refresh_profiles()
+    search.setText("west lab new")
+    visible_names = [
+        item.data(0, Qt.ItemDataRole.UserRole) for item in window.iter_profile_tree_items()
+        if item.data(0, Qt.ItemDataRole.UserRole) and window.profile_tree_item_is_visible(item)
+    ]
+    assert visible_names == [added.name]
 
 
 def test_profile_filter_adjacent_tab_and_missing_dock_edges(

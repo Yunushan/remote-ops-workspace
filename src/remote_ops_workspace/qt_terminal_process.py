@@ -52,11 +52,12 @@ def _take_buffer_prefix(buffer: bytearray, max_bytes: int) -> bytes:
 class _QtPtyProcess(QObject):
     """Expose a native pseudoterminal through the Qt process interface."""
 
-    readyReadStandardOutput = pyqtSignal()
-    readyReadStandardError = pyqtSignal()
-    started = pyqtSignal()
-    errorOccurred = pyqtSignal(object)
-    finished = pyqtSignal(int, object)
+    # PyQt6 6.12.1's stub incorrectly requires the optional arguments keyword.
+    readyReadStandardOutput = pyqtSignal()  # type: ignore[call-arg]
+    readyReadStandardError = pyqtSignal()  # type: ignore[call-arg]
+    started = pyqtSignal()  # type: ignore[call-arg]
+    errorOccurred = pyqtSignal(object)  # type: ignore[call-arg]
+    finished = pyqtSignal(int, object)  # type: ignore[call-arg]
 
     is_pty = True
     transport_backend = "windows-conpty"
@@ -731,11 +732,11 @@ class QtHiddenProcess(QObject):
     flags and off-thread pipe readers.
     """
 
-    readyReadStandardOutput = pyqtSignal()
-    readyReadStandardError = pyqtSignal()
-    started = pyqtSignal()
-    errorOccurred = pyqtSignal(object)
-    finished = pyqtSignal(int, object)
+    readyReadStandardOutput = pyqtSignal()  # type: ignore[call-arg]
+    readyReadStandardError = pyqtSignal()  # type: ignore[call-arg]
+    started = pyqtSignal()  # type: ignore[call-arg]
+    errorOccurred = pyqtSignal(object)  # type: ignore[call-arg]
+    finished = pyqtSignal(int, object)  # type: ignore[call-arg]
 
     is_pty = False
 

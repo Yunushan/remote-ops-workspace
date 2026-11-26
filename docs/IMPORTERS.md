@@ -26,6 +26,11 @@ Use `--replace` when imported profile names should overwrite existing local
 profiles. Without `--replace`, duplicate names are rejected by the profile store.
 Duplicate names inside one import are made unique with numeric suffixes.
 
+For mRemoteNG files, the importer resolves explicit folder inheritance for
+protocol, port, username, RDP domain and description, including through nested
+folders. The import saves the effective values on each connection profile.
+Future folder changes in mRemoteNG require a fresh import to update those values.
+
 Secrets are not imported. Password, passphrase and secret-like fields are skipped
 and reported as warnings, because storing or printing vendor-exported secrets
 would weaken the local vault boundary. Recreate credentials with:

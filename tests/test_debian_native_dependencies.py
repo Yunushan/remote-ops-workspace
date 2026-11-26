@@ -89,3 +89,22 @@ def test_cli_derives_the_plain_deb_field_from_the_launcher_and_archive(monkeypat
 def test_dependency_field_rejects_ambiguous_control_values(value):
     with pytest.raises(ValueError, match="sorted list of unique library dependencies"):
         dependencies.dependency_field(value)
+
+
+def test_merge_debian_dependencies_keeps_the_stronger_minimum(monkeypatch):
+    def compare(argv, *, check, timeout):
+        assert argv == ["dpkg", "--compare-versions", "2:1.0-1", "gt", "9.0"]
+        assert check is False and timeout == 30
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(dependencies.subprocess, "run", compare)
+    merged = dependencies.merge_debian_dependencies(
+        ["libc6 (>= 2.38)", "xserver-common (>= 9.0)"],
+        "xauth, libc6, xserver-common (>= 2:1.0-1)",
+    )
+    assert dependencies.dependency_field(merged) == "libc6 (>= 2.38), xauth, xserver-common (>= 2:1.0-1)"
+
+
+def test_merge_debian_dependencies_rejects_unreviewed_constraint_types():
+    with pytest.raises(ValueError, match="unsupported Debian minimum-version relationship"):
+        dependencies.merge_debian_dependencies(["libc6"], "xdmcp | xauth")

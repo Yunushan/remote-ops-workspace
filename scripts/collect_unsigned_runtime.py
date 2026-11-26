@@ -8,6 +8,7 @@ Opaque formats remain explicit gaps. See docs/UNSIGNED_RUNTIME_OBSERVATIONS.md.
 from __future__ import annotations
 
 import argparse
+import base64
 import bz2
 import csv
 import email.parser
@@ -26,6 +27,7 @@ import sysconfig
 import tarfile
 import zipfile
 import zlib
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlsplit
@@ -293,11 +295,22 @@ def native_kind(raw: bytes) -> str | None:
 
 
 class Observations:
-    def __init__(self, limits: Limits, *, target: str | None = None):
+    def __init__(
+        self, limits: Limits, *, target: str | None = None, builder_library: dict | None = None
+    ):
+        self.builder_library = builder_library
+        self.windows_names = bool(target and target.startswith("windows-"))
+        if self.windows_names:
+            self.cpython_match_field = "embedded_builder_cpython_dll_sha256"
+            self.cpython_matches_field = "embedded_builder_cpython_dll_matches"
+        else:
+            self.cpython_match_field = "embedded_builder_cpython_library_sha256"
+            self.cpython_matches_field = "embedded_builder_cpython_library_matches"
         self.limits = limits
         self.target = target
         self.blobs: dict[str, bytes] = {}
         self.files: list[dict] = []
+        self.bundle_links: list[dict] = []
         self.licenses: dict[str, list[dict]] = {}
         self.gaps: list[dict] = []
         self.expanded = 0
@@ -313,7 +326,9 @@ class Observations:
             raise Refusal("global-gap-count-bound")
         self.gaps.append({"code": code, "reference": reference})
 
-    def observe(self, name: str, raw: bytes, reference: str, *, package: str | None = None) -> dict:
+    def observe(
+        self, name: str, raw: bytes, reference: str, *, package: str | None = None, retain_license: bool = True,
+    ) -> dict:
         name = relative(name)
         if len(self.files) >= self.limits.members or len(raw) > self.limits.member_bytes:
             raise Refusal("member-bound")
@@ -327,7 +342,7 @@ class Observations:
             row["component_identity"] = "unknown"
             row["exact_component_version"] = None
         self.files.append(row)
-        if license_name(name):
+        if retain_license and license_name(name):
             if not raw:
                 self.gap("empty-license-material", reference)
             elif len(raw) > self.limits.license_bytes:
@@ -372,6 +387,10 @@ def scan_carchive(raw: bytes, label: str, observations: Observations, depth: int
         raise Refusal("carchive-cookie-invalid")
     cursor, seen = toc_start, set()
     runtime_options = []
+    library_name = library.split(b"\0", 1)[0].decode("utf-8", errors="replace")
+    builder_library = observations.builder_library
+    library_key = library_name.casefold() if observations.windows_names else library_name
+    matching_library_digest = None
     while cursor < toc_start + toc_len:
         observations.node()
         if cursor + 18 > toc_start + toc_len:
@@ -420,19 +439,29 @@ def scan_carchive(raw: bytes, label: str, observations: Observations, depth: int
         data = decompressed(payload, "zlib", size) if compression else payload
         if len(data) != size:
             raise Refusal("carchive-member-size-mismatch")
-        observations.observe(
+        member = observations.observe(
             f"carchive/{name}", data, f"{label}::{name}", package=label.split("::", 1)[0]
         )
+        if (
+            builder_library is not None
+            and kind == b"b"
+            and (name.casefold() if observations.windows_names else name) == library_key == builder_library["name"]
+            and python_code == builder_library["python_code"]
+            and member["size_bytes"] == builder_library["size_bytes"]
+            and member["sha256"] == builder_library["sha256"]
+        ):
+            matching_library_digest = member["sha256"]
         if kind in (b"z", b"Z"):
             observations.gap("pyz-module-ownership-unclassified", f"{label}::{name}")
     observations.gap("bootloader-version-and-runtime-closure-unverified", label)
-    return {
+    hints = {
         "runtime_options_observed": runtime_options,
         "python_cookie_code_observed": python_code,
-        "python_library_name_observed": library.split(b"\0", 1)[0].decode(
-            "utf-8", errors="replace"
-        ),
+        "python_library_name_observed": library_name,
     }
+    if matching_library_digest is not None:
+        hints[observations.cpython_match_field] = matching_library_digest
+    return hints
 
 
 def checked_members(entries, observations: Observations):
@@ -829,14 +858,19 @@ def scan_package(raw: bytes, name: str, observations: Observations):
         observations.gap("opaque-package-format-unobserved", name)
         return {"backend": None, "all_regular_payload_files_observed": False, "license_records": []}
     start = len(observations.files)
+    library_matches = []
     for member, data in entries:
         row = observations.observe(member, data, f"{name}::{member}", package=name)
         if native_kind(data):
             hints = scan_carchive(data, row["reference"], observations)
             if hints:
                 row["runtime_options_observed"] = hints["runtime_options_observed"]
+                match = hints.get(observations.cpython_match_field)
+                if match is not None:
+                    library_matches.append({"executable": member, "sha256": match})
     return {
         "backend": backend,
+        **({observations.cpython_matches_field: library_matches} if library_matches else {}),
         "all_regular_payload_files_observed": True,
         "observed_file_count": len(observations.files) - start,
         "license_records": observations.licenses.get(name, []),
@@ -1040,6 +1074,55 @@ def validate_direct_url(value: object, source_root: Path | None):
         raise Refusal("pip-direct-url-source-root-mismatch")
 
 
+def observe_bundle_link(root: Path, link: Path, observations: Observations) -> None:
+    """Resolve metadata within one app bundle without traversing linked directories."""
+    name = relative(link.relative_to(root).as_posix())
+    bundle_name, *parts = name.split("/")
+    if not bundle_name.endswith(".app") or not parts:
+        raise Refusal("stage-link-outside-app-bundle")
+    bundle = root / bundle_name
+    plain(bundle, directory=True)
+    pending = deque(parts)
+    within_bundle: list[str] = []
+    followed = 0
+    while pending:
+        observations.node()
+        part = pending.popleft()
+        if part == "..":
+            if not within_bundle:
+                raise Refusal("stage-link-outside-app-bundle")
+            within_bundle.pop()
+            continue
+        relative(part)
+        candidate = bundle.joinpath(*within_bundle, part)
+        info = candidate.lstat()
+        if stat.S_ISLNK(info.st_mode):
+            followed += 1
+            if followed > 32:
+                raise Refusal("stage-link-chain-bound")
+            target = os.readlink(candidate)
+            if not target or len(target) > 1024 or PurePosixPath(target).is_absolute():
+                raise Refusal("stage-link-target-invalid")
+            destination = target.split("/")
+            if len(destination) + len(pending) > 64:
+                raise Refusal("stage-link-chain-bound")
+            pending.extendleft(reversed(destination))
+        elif getattr(info, "st_file_attributes", 0) & 0x400:
+            raise Refusal("stage-link-reparse-target")
+        elif stat.S_ISDIR(info.st_mode) or (stat.S_ISREG(info.st_mode) and not pending):
+            within_bundle.append(part)
+        else:
+            raise Refusal("stage-link-target-invalid")
+    resolved = bundle.joinpath(*within_bundle)
+    kind = "directory" if stat.S_ISDIR(resolved.lstat().st_mode) else "file"
+    plain(resolved, directory=kind == "directory")
+    observations.bundle_links.append({
+        "path": name,
+        "resolved_target": relative(resolved.relative_to(root).as_posix()),
+        "target_kind": kind,
+    })
+
+
 def walk_files(root: Path, observations: Observations, reference: str, *, permit_gaps: bool):
     """Stream directory entries; no os.walk list allocation or silent onerror."""
     pending = [root]
@@ -1053,6 +1136,13 @@ def walk_files(root: Path, observations: Observations, reference: str, *, permit
                     info = entry.stat(follow_symlinks=False)
                     if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
                         if permit_gaps:
+                            if observations.target in {"macos-x64", "macos-arm64"} and stat.S_ISLNK(info.st_mode):
+                                try:
+                                    observe_bundle_link(root, Path(entry.path), observations)
+                                    continue
+                                except (OSError, Refusal) as exc:
+                                    if isinstance(exc, Refusal) and str(exc) in GLOBAL_BOUNDS:
+                                        raise
                             observations.gap("stage-reparse-unobserved", reference)
                             continue
                         raise Refusal("metadata-reparse-unobserved")
@@ -1097,8 +1187,17 @@ def installed_identities(site_roots: list[Path], observations: Observations) -> 
     return identities
 
 
-def scan_metadata(components: list[dict], site_roots: list[Path], observations: Observations):
+def scan_metadata(
+    components: list[dict], site_roots: list[Path], observations: Observations, *, scripts_root: Path | None = None,
+):
     roots = [root.resolve() for root in site_roots]
+    if scripts_root is not None:
+        plain(scripts_root, directory=True)
+        scripts_root = scripts_root.resolve()
+        if scripts_root.name not in {"bin", "Scripts"} or any(
+            not root.is_relative_to(scripts_root.parent) or root == scripts_root.parent for root in roots
+        ):
+            raise Refusal("distribution-scripts-scheme-invalid")
     if installed_identities(site_roots, observations) != {
         item["normalized_name"]: item["version"] for item in components
     }:
@@ -1138,13 +1237,34 @@ def scan_metadata(components: list[dict], site_roots: list[Path], observations: 
             component["license_files"] = observations.licenses.get(ref, [])
             record = child(location, "RECORD")
             record_raw = read(record, observations.limits.metadata_bytes)
-            known, native_records, count = set(), [], 0
+            known, native_records, script_records, count = set(), [], [], 0
+            # Wheel entry points in a virtual environment are sibling files, not
+            # children of site-packages. Admit only the actual scripts scheme.
+            script_prefix = Path(os.path.relpath(scripts_root, root)).as_posix() + "/" if scripts_root else ""
             for fields in csv.reader(io.StringIO(record_raw.decode("utf-8"))):
                 observations.node()
                 count += 1
                 if len(fields) != 3 or fields[0] in known:
                     raise Refusal("distribution-record-invalid")
                 known.add(fields[0])
+                if scripts_root is not None and script_prefix and fields[0].startswith(script_prefix):
+                    try:
+                        name = relative(fields[0].removeprefix(script_prefix))
+                        if "/" in name:
+                            raise Refusal("distribution-script-path-invalid")
+                        data = read(child(scripts_root, name), observations.limits.member_bytes)
+                    except (Refusal, OSError) as exc:
+                        if isinstance(exc, Refusal) and str(exc) in GLOBAL_BOUNDS:
+                            raise
+                        observations.gap("distribution-script-path-unobserved", ref)
+                        continue
+                    encoded = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode("ascii")
+                    if fields[1] != f"sha256={encoded}" or fields[2] != str(len(data)):
+                        observations.gap("distribution-script-record-mismatch", ref)
+                        continue
+                    row = observations.observe(f"{scripts_root.name}/{name}", data, ref, retain_license=False)
+                    script_records.append(row)
+                    continue
                 try:
                     name = relative(fields[0])
                     path = child(root, name)
@@ -1167,6 +1287,7 @@ def scan_metadata(components: list[dict], site_roots: list[Path], observations: 
                     )
             component["license_files"] = observations.licenses.get(ref, [])
             component["installed_native_observations"] = native_records
+            component["installed_script_observations"] = script_records
             component["record_sha256"] = digest(record_raw)
             component["record_entry_count"] = count
             component["installed_files_all_hashed"] = False
@@ -1219,6 +1340,7 @@ def collect(
     limits: Limits = DEFAULT_LIMITS,
     runtime_root: Path | None = None,
     repository: str | None = None,
+    scripts_root: Path | None = None,
 ):
     if target not in TARGETS or not SHA.fullmatch(sha):
         raise Refusal("candidate-identity-invalid")
@@ -1289,9 +1411,34 @@ def collect(
     archives = load(raw_archives, array=True)
     if not 1 <= len(archives) <= 32:
         raise Refusal("carchive-receipt-shape-invalid")
-    observations = Observations(limits, target=target)
+    builder_library = None
+    for target_prefix, key in (
+        ("windows-", "windows_cpython_dll"),
+        ("linux-", "linux_cpython_library"),
+    ):
+        if key not in runtime:
+            continue
+        library = runtime[key]
+        abi = re.match(r"([0-9]{1,2})\.([0-9]{1,2})\.", version)
+        if (
+            not target.startswith(target_prefix)
+            or abi is None
+            or not isinstance(library, dict)
+            or set(library) != {"sha256", "size_bytes"}
+            or not isinstance(library["sha256"], str)
+            or not HEX.fullmatch(library["sha256"])
+            or not integer(library["size_bytes"], 1)
+            or library["size_bytes"] > limits.member_bytes
+        ):
+            reason = "dll" if target_prefix == "windows-" else "library"
+            raise Refusal(f"builder-cpython-{reason}-observation-invalid")
+        major, minor = map(int, abi.groups())
+        name = f"python{major}{minor}.dll" if target_prefix == "windows-" else f"libpython{major}.{minor}.so.1.0"
+        builder_library = {**library, "python_code": 100 * major + minor, "name": name}
+        public_runtime[key] = builder_library
+    observations = Observations(limits, target=target, builder_library=builder_library)
     components = inspect_distributions(raw_inspect, limits, root)
-    scan_metadata(components, site_roots, observations)
+    scan_metadata(components, site_roots, observations, scripts_root=scripts_root)
     runtime_component = {
         "name": "CPython",
         "version": runtime.get("version"),
@@ -1481,6 +1628,7 @@ def collect(
         "components": components,
         "assets": assets,
         "observed_files": observations.files,
+        "observed_bundle_links": sorted(observations.bundle_links, key=lambda row: row["path"]),
         "artifact_license_files": {
             name: value["license_records"] for name, value in assets.items()
         },
@@ -1519,6 +1667,63 @@ def write_new_bundle(output: Path, record: dict, blobs: dict[str, bytes]):
         raise
 
 
+def windows_cpython_dll_observation(maximum: int) -> dict:
+    """Hash the standard CPython DLL loaded in this Windows builder process."""
+    import ctypes
+    from ctypes import wintypes
+
+    name = f"python{sys.version_info.major}{sys.version_info.minor}.dll"
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    module_filename = kernel.GetModuleFileNameW
+    module_filename.argtypes = (wintypes.HMODULE, wintypes.LPWSTR, wintypes.DWORD)
+    module_filename.restype = wintypes.DWORD
+    buffer = ctypes.create_unicode_buffer(32768)
+    handle = getattr(sys, "dllhandle", 0)
+    if not handle or not 0 < module_filename(handle, buffer, len(buffer)) < len(buffer):
+        raise Refusal("builder-cpython-dll-not-loaded")
+    path = Path(buffer.value)
+    if path.name.casefold() != name or not path.samefile(Path(sys.base_prefix) / name):
+        raise Refusal("builder-cpython-dll-not-in-runtime")
+    payload = read(path, maximum)
+    if not payload.startswith(b"MZ"):
+        raise Refusal("builder-cpython-dll-invalid-format")
+    return {"sha256": digest(payload), "size_bytes": len(payload)}
+
+
+def linux_cpython_library_observation(maximum: int) -> dict:
+    """Hash the backing file of the loaded libpython mapping."""
+    import ctypes
+
+    address = ctypes.cast(ctypes.pythonapi.Py_GetVersion, ctypes.c_void_p).value
+    directory = sysconfig.get_config_var("LIBDIR")
+    if address is None or not directory:
+        raise Refusal("builder-cpython-library-not-loaded")
+    name = f"libpython{sys.version_info.major}.{sys.version_info.minor}.so.1.0"
+    path = (Path(directory) / name).resolve(strict=True)
+    info = plain(path)
+    # Match the symbol's mapped device and inode so a replaced pathname
+    # cannot be mistaken for the library that the builder has loaded.
+    with Path("/proc/self/maps").open(encoding="ascii", errors="surrogateescape") as mappings:
+        for line in mappings:
+            span, _access, _offset, device, inode, *_name = line.split(maxsplit=5)
+            start, end = (int(value, 16) for value in span.split("-"))
+            if not start <= address < end:
+                continue
+            major, minor = (int(value, 16) for value in device.split(":"))
+            if (os.makedev(major, minor), int(inode)) != (info.st_dev, info.st_ino):
+                raise Refusal("builder-cpython-library-not-in-runtime")
+            break
+        else:
+            raise Refusal("builder-cpython-library-not-loaded")
+    payload = read(path, maximum)
+    current = plain(path)
+    if (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino):
+        raise Refusal("input-changed")
+    if not payload.startswith(b"\x7fELF"):
+        raise Refusal("builder-cpython-library-invalid-format")
+    return {"sha256": digest(payload), "size_bytes": len(payload)}
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", required=True, choices=sorted(TARGETS))
@@ -1544,6 +1749,18 @@ def main(argv=None) -> int:
             "executable_sha256": digest(read(executable, Limits().input_bytes)),
             "running_interpreter_path_resolved": True,
         }
+        if sys.platform == "win32" and args.target.startswith("windows-"):
+            try:
+                runtime["windows_cpython_dll"] = windows_cpython_dll_observation(Limits().member_bytes)
+            except (OSError, Refusal):
+                # Keep the existing unresolved runtime result when the active DLL cannot be read.
+                pass
+        elif sys.platform == "linux" and args.target.startswith("linux-"):
+            try:
+                runtime["linux_cpython_library"] = linux_cpython_library_observation(Limits().member_bytes)
+            except (AttributeError, OSError, Refusal):
+                # A static or unreadable interpreter leaves the same explicit runtime gap.
+                pass
         roots = sorted({Path(sysconfig.get_path(value)) for value in ("purelib", "platlib")})
         output = root.joinpath(*relative(args.output).split("/"))
         record, blobs = collect(
@@ -1556,6 +1773,7 @@ def main(argv=None) -> int:
             runtime,
             runtime_root=Path(sys.base_prefix),
             repository=os.environ.get("GITHUB_REPOSITORY"),
+            scripts_root=Path(sysconfig.get_path("scripts")) if sys.prefix != sys.base_prefix else None,
         )
         if (
             record["run_id"] != os.environ["GITHUB_RUN_ID"]

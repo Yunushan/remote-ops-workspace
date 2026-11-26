@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -57,6 +58,53 @@ def test_pyqt6_runtime_accepts_current_minimum_and_defers_target() -> None:
         (6, 12, 0),
         require_target=False,
     ) == []
+
+
+def test_probe_validates_the_loaded_qt_patch_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    checker = _load_checker()
+    versions = {"PyQt6": "6.12.1", "PyQt6-Qt6": "6.12.1", "PyQt6-sip": "13.13.1"}
+    monkeypatch.setattr(checker, "distribution_version", versions.get)
+    monkeypatch.setitem(
+        sys.modules,
+        "PyQt6.QtCore",
+        SimpleNamespace(PYQT_VERSION_STR="6.12.1", QT_VERSION_STR="6.12.0", qVersion=lambda: "6.12.1"),
+    )
+
+    runtime = checker.probe_runtime()
+
+    assert runtime.qt_version == "6.12.1"
+    assert checker.validate_runtime(
+        runtime,
+        checker.load_policy(),
+        (6, 12, 1),
+        require_target=True,
+    ) == []
+
+
+@pytest.mark.parametrize(
+    ("qt_distribution", "qt_runtime", "expected"),
+    [
+        ("6.12.0", "6.12.0", []),
+        ("6.12.1", "6.12.0", ["PyQt6-Qt6 distribution 6.12.1 differs from release source pin 6.12.0"]),
+        ("6.12.0", "6.12.1", ["Qt runtime 6.12.1 differs from release source pin 6.12.0"]),
+    ],
+)
+def test_release_source_pins_require_exact_qt_patch(
+    monkeypatch: pytest.MonkeyPatch,
+    qt_distribution: str,
+    qt_runtime: str,
+    expected: list[str],
+) -> None:
+    checker = _load_checker()
+    runtime = checker.PyQt6Runtime("6.12.1", "6.12.1", qt_distribution, qt_runtime, "13.13.1")
+    monkeypatch.setattr(checker, "probe_runtime", lambda: runtime)
+
+    errors, _ = checker.check_runtime(
+        checker.load_policy(), target_version=(6, 12, 0), require_pyqt6=True, require_target=False,
+        run_widget_smoke=False, require_release_pins=True,
+    )
+
+    assert errors == expected
 
 
 def test_pyqt6_runtime_rejects_mismatched_binding_and_qt() -> None:
@@ -293,7 +341,7 @@ def test_pyqt6_check_runtime_reports_platform_loader_errors(monkeypatch) -> None
 
 def _load_checker():
     path = Path("scripts/check_pyqt6_compatibility.py")
-    spec = importlib.util.spec_from_file_location("check_pyqt6_compatibility_script", path)
+    spec = importlib.util.spec_from_file_location("scripts.check_pyqt6_compatibility_script", path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     sys.modules[spec.name] = module

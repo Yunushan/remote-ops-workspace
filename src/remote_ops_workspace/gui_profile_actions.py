@@ -41,6 +41,8 @@ class ProfileActions:
         def select_profile(self, name: str) -> None: ...
         def refresh_profiles(self) -> None: ...
         def current_design_id(self) -> str: ...
+        def duplicate_mremoteng_connection(self) -> None: ...
+        def switch_to_mremoteng_open_connection(self, name: str) -> bool: ...
         def set_toolbar_widget_enabled(self, widget: QWidget, enabled: bool) -> None: ...
         def set_interaction_state(self, widget: QToolButton, state: str) -> None: ...
         def toolbar_interaction_state(self, key: str, state: GuiInteractionState) -> str: ...
@@ -110,6 +112,12 @@ class ProfileActions:
             "profile context remove action",
         )
         edit_action.setEnabled(has_profile)
+        if self.current_design_id() == "mremoteng":
+            duplicate = _required_gui_value(
+                menu.addAction("Duplicate connection", self.duplicate_mremoteng_connection),
+                "duplicate connection action",
+            )
+            duplicate.setEnabled(has_profile)
         remove_action.setEnabled(has_profile)
         menu.addSeparator()
         menu.addAction("New profile", self.create_profile)
@@ -133,7 +141,8 @@ class ProfileActions:
         if not profile_name:
             return
         self.profile_list.setCurrentItem(item)
-        self.connect_selected(False)
+        if not self.switch_to_mremoteng_open_connection(str(profile_name)):
+            self.connect_selected(False)
 
     def update_profile_action_states(self) -> None:
         has_profile = bool(self.selected_profile_name())

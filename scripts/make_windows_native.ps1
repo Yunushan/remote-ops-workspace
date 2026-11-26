@@ -173,9 +173,6 @@ Name: "{group}\$ProductName GUI"; Filename: "{app}\bin\row-gui.exe"
 Name: "{autodesktop}\$ProductName GUI"; Filename: "{app}\bin\row-gui.exe"; Tasks: desktopicon
 "@
   }
-  $StageEscaped = $Stage.Replace("\", "\\")
-  $OutEscaped = $OutDir.Replace("\", "\\")
-  $IconEscaped = $IconPath.Replace("\", "\\")
   $CompilerArgs = @()
   $SigningDirectives = ""
   if ($env:ROW_REQUIRE_RELEASE_SIGNING -eq "1") {
@@ -191,13 +188,14 @@ Name: "{autodesktop}\$ProductName GUI"; Filename: "{app}\bin\row-gui.exe"; Tasks
 AppId={{$($Branding.inno_id)}
 AppName=$ProductName
 AppVersion=$Version
+VersionInfoVersion=$Version
 AppPublisher=$($Branding.publisher)
 DefaultDirName={autopf}\$($Branding.directory)
 DefaultGroupName=$($Branding.directory)
 DisableProgramGroupPage=yes
-OutputDir=$OutEscaped
+OutputDir=$OutDir
 OutputBaseFilename=$OutputBase
-SetupIconFile=$IconEscaped
+SetupIconFile=$IconPath
 $WelcomeDirective
 Compression=lzma2
 SolidCompression=yes
@@ -205,7 +203,7 @@ $ArchitectureDirectives
 $SigningDirectives
 
 [Files]
-Source: "$StageEscaped\\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "$Stage\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 $GuiIconEntries
@@ -271,6 +269,7 @@ function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir, [string
   $NoticeSource = XmlEscape (Join-Path $Stage "docs\NOTICE")
   $ThirdPartyNoticesSource = XmlEscape (Join-Path $Stage "docs\THIRD_PARTY_NOTICES.md")
   $ReadmeSource = XmlEscape (Join-Path $Stage "docs\README.md")
+  $TurkishReadmeSource = XmlEscape (Join-Path $Stage "docs\README.tr.md")
   $TargetSource = XmlEscape (Join-Path $Stage "RELEASE_TARGET.md")
   $PyQtLicenseSource = XmlEscape (Join-Path $Stage "docs\licenses\PyQt6-GPL-3.0.txt")
   $QtLicenseSource = XmlEscape (Join-Path $Stage "docs\licenses\Qt-LGPL-3.0.txt")
@@ -325,6 +324,9 @@ $RowGuiComponent
           <Component Id="ReadmeComponent" Guid="0184E6B4-1D6F-4F2A-855A-F13BF37B1C9E">
             <File Id="ReadmeFile" Source="$ReadmeSource" KeyPath="yes" />
           </Component>
+          <Component Id="TurkishReadmeComponent" Guid="*">
+            <File Id="TurkishReadmeFile" Source="$TurkishReadmeSource" KeyPath="yes" />
+          </Component>
           <Component Id="TargetReadmeComponent" Guid="2A3A7D0E-1FF2-437E-88C4-8A432DB29D1B">
             <File Id="TargetReadmeFile" Source="$TargetSource" KeyPath="yes" />
           </Component>
@@ -351,6 +353,7 @@ $RowGuiReference
       <ComponentRef Id="NoticeComponent" />
       <ComponentRef Id="ThirdPartyNoticesComponent" />
       <ComponentRef Id="ReadmeComponent" />
+      <ComponentRef Id="TurkishReadmeComponent" />
       <ComponentRef Id="TargetReadmeComponent" />
       <ComponentRef Id="PyQtLicenseComponent" />
       <ComponentRef Id="QtLicenseComponent" />
@@ -439,6 +442,12 @@ $BuildGuiLauncher = $Arch -ne "x86"
 if ($BuildGuiLauncher -and !(Test-PythonModule -Python $Python -Module "PyQt6")) {
   throw "PyQt6 is required to build the Windows $Arch GUI launcher. Install the desktop extra before running this script."
 }
+if ($BuildGuiLauncher -and $env:ROW_REQUIRE_RELEASE_SIGNING -eq "1") {
+  & $Python (Join-Path $PSScriptRoot "check_pyqt6_compatibility.py") --require-release-pins
+  if ($LASTEXITCODE -ne 0) {
+    throw "Windows signing requires the pinned PyQt6 and Qt source versions"
+  }
+}
 
 $Destination = Join-Path $Root $Dist
 $BuildDir = Join-Path $Root "build\native\windows"
@@ -458,6 +467,7 @@ $PyDist = Join-Path $BuildDir "pyinstaller-dist"
 $PyWork = Join-Path $BuildDir "pyinstaller-work"
 $Launcher = Join-Path $BuildDir "row_launcher.py"
 $GuiLauncher = Join-Path $BuildDir "row_gui_launcher.py"
+$VersionFile = Join-Path $BuildDir "row_version_info.txt"
 $IconSvg = Join-Path $Root "src\remote_ops_workspace\assets\remote_ops_workspace.svg"
 $IconIco = Join-Path $Root "src\remote_ops_workspace\assets\remote_ops_workspace.ico"
 $GuiManifest = Join-Path $Root "src\remote_ops_workspace\assets\remote_ops_workspace_gui.manifest"
@@ -484,6 +494,12 @@ if (Test-Path -LiteralPath $BuildDir) {
   Remove-Item -LiteralPath $ResolvedBuildDir -Recurse -Force
 }
 New-Item -ItemType Directory -Force $Stage, $PyDist, $PyWork | Out-Null
+
+& $Python -I (Join-Path $PSScriptRoot "make_windows_version_info.py") --output $VersionFile `
+  "--version=$Version" "--product-name=$($Branding.name)" "--publisher=$($Branding.publisher)"
+if ($LASTEXITCODE -ne 0) {
+  throw "Failed to generate Windows executable version metadata"
+}
 
 @"
 from remote_ops_workspace.cli import main
@@ -512,6 +528,7 @@ Invoke-WindowsPyInstaller -Python $Python -Build {
     --name row `
     --console `
     --icon $IconIco `
+    --version-file $VersionFile `
     --distpath $PyDist `
     --workpath $PyWork `
     --specpath $BuildDir `
@@ -543,6 +560,7 @@ if ($BuildGuiLauncher) {
       --name row-gui `
       --windowed `
       --icon $IconIco `
+      --version-file $VersionFile `
       --manifest $GuiManifest `
       --add-data "$IconSvg;remote_ops_workspace/assets" `
       --distpath $PyDist `
@@ -566,6 +584,14 @@ if (!(Test-Path $RowExe)) {
   throw "PyInstaller did not create $RowExe"
 }
 $RowGuiExe = Join-Path $PyDist "row-gui.exe"
+$Launchers = @($RowExe)
+if ($BuildGuiLauncher) { $Launchers += $RowGuiExe }
+foreach ($Executable in $Launchers) {
+  $Info = [Diagnostics.FileVersionInfo]::GetVersionInfo($Executable)
+  if ($Info.ProductName -cne $Branding.name -or $Info.ProductVersion -cne $Version) {
+    throw "Windows executable $([IO.Path]::GetFileName($Executable)) has missing or incorrect product metadata"
+  }
+}
 if ($BuildGuiLauncher -and !(Test-Path $RowGuiExe)) {
   throw "PyInstaller did not create $RowGuiExe"
 }

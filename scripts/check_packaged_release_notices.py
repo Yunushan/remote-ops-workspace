@@ -35,6 +35,7 @@ from check_release_license_compliance import path_is_reparse, safe_relative_path
 from package_license_review_inputs import manifest_review_inputs
 from packaged_desktop_licenses import read_desktop_component_licenses
 from packaged_linux_licenses import read_linux_component_licenses
+from release_evidence_file import retry_evidence_operation
 
 PROTECTED_LINUX_PACKAGE = re.compile(
     r"remote-ops-workspace-v\d+\.\d+\.\d+-linux-(?:i386|i686|armhf|armv7hl)"
@@ -120,7 +121,7 @@ def publish_notice_capture(
         if review is not None:
             (staged / "review-inputs.json").write_bytes((json.dumps(review, indent=2) + "\n").encode("utf-8"))
         if os.name == "nt":
-            staged.rename(destination)
+            retry_evidence_operation(lambda: staged.rename(destination))
         else:
             # Reserve the output name before rename, which can replace empty directories on POSIX.
             destination.mkdir(mode=0o700)

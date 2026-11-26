@@ -368,9 +368,12 @@ def test_explicit_rollback_refuses_a_changed_completed_installation(
 
 
 @pytest.mark.parametrize("change", [None, "changed", "missing", "untracked"])
-def test_installed_servers_must_match_the_signers_runtime_inventory(tmp_path, monkeypatch, change):
-    relative = updater.SERVER_ROOT / "linux/ssh/bin/sshd"
-    daemon = tmp_path / relative.relative_to(updater.SERVER_ROOT)
+@pytest.mark.parametrize("relative", [
+    updater.SERVER_ROOT / "linux/ssh/bin/sshd",
+    updater.MOBAPT_ROOT / "packages/tree-2.2.1-1.deb",
+])
+def test_installed_files_must_match_the_signers_runtime_inventory(tmp_path, monkeypatch, change, relative):
+    daemon = tmp_path / relative
     daemon.parent.mkdir(parents=True)
     daemon.write_bytes(b"digest-pinned daemon")
     digests = {updater.LAUNCHER: "d" * 64, relative: hashlib.sha256(daemon.read_bytes()).hexdigest()}
@@ -383,10 +386,25 @@ def test_installed_servers_must_match_the_signers_runtime_inventory(tmp_path, mo
     elif change == "untracked":
         (daemon.parent / "extra").write_bytes(b"untracked")
     if change is None:
-        updater.verify_installed_servers(digests, tmp_path)
+        updater.verify_installed_runtime(digests, tmp_path)
     else:
         with pytest.raises(updater.UpdateError, match="installed-runtime-payload-refused"):
-            updater.verify_installed_servers(digests, tmp_path)
+            updater.verify_installed_runtime(digests, tmp_path)
+
+
+def test_verify_installed_xvfb_checks_only_package_owned_files(tmp_path, monkeypatch):
+    runtime = {updater.LAUNCHER: "d" * 64}
+    executable = tmp_path / updater.XVFB_EXECUTABLE
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"independent companion")
+    monkeypatch.setattr(updater, "trusted_path", lambda path, **_kwargs: path)
+    updater.verify_installed_runtime(runtime, tmp_path)
+
+    runtime[updater.XVFB_EXECUTABLE] = hashlib.sha256(b"candidate Xvfb").hexdigest()
+    with pytest.raises(updater.UpdateError, match="installed-runtime-payload-refused"):
+        updater.verify_installed_runtime(runtime, tmp_path)
+    executable.write_bytes(b"candidate Xvfb")
+    updater.verify_installed_runtime(runtime, tmp_path)
 
 
 def test_rollback_refuses_changed_candidate_runtime_before_changing_state(tmp_path, monkeypatch):
@@ -404,7 +422,7 @@ def test_rollback_refuses_changed_candidate_runtime_before_changing_state(tmp_pa
     monkeypatch.setattr(updater, "retained_runtime", retained)
     monkeypatch.setattr(updater, "installed_package", lambda _arch: ("installed", "1.0.28"))
     monkeypatch.setattr(updater, "installed_launcher_sha256", lambda: "d" * 64)
-    monkeypatch.setattr(updater, "verify_installed_servers", changed_runtime)
+    monkeypatch.setattr(updater, "verify_installed_runtime", changed_runtime)
     monkeypatch.setattr(updater, "journal_write", lambda *_a: pytest.fail("journal advanced"))
     monkeypatch.setattr(updater, "install_deb", lambda *_a: pytest.fail("installation attempted"))
 

@@ -29,7 +29,9 @@ from scripts.check_release_mobaxterm_parity import audit_reviewed_records  # noq
 from scripts.finalize_mobaxterm_parity_evidence_record import release_source  # noqa: E402
 from scripts.release_candidate_inventory import (  # noqa: E402
     ARCHIVE_FILE_SCOPE_SCHEMA_VERSION,
+    FEDORA_RELEASE_IMAGE_SCHEMA_VERSION,
     MAX_JSON_BYTES,
+    MIN_XVFB_INVENTORY_SCHEMA,
     GitHubClient,
     normalize_repository,
     normalize_sha,
@@ -126,12 +128,20 @@ def main(argv: list[str] | None = None) -> int:
         client = GitHubClient(repository, token, api_url="https://api.github.com")
         with TemporaryDirectory(prefix="row-parity-candidate-") as directory:
             records, inventory = read_attested_inventory(client, repository, Path(directory), tag, sha, pointer)
+        xvfb_sha256 = inventory.get("debian_xvfb_sha256")
+        if inventory["schema_version"] >= MIN_XVFB_INVENTORY_SCHEMA and xvfb_sha256 is None:
+            raise ValueError("sealed candidate is missing the frozen Xvfb archive and its rollback qualification")
+        mobapt_review_sha256 = inventory.get("debian_mobapt_review_sha256")
+        if inventory["schema_version"] >= FEDORA_RELEASE_IMAGE_SCHEMA_VERSION and mobapt_review_sha256 is None:
+            raise ValueError("sealed candidate is missing the frozen MobApt review and its rollback qualification")
         errors = audit_reviewed_records(
             candidates, repository=repository, tag=tag, release_sha=sha, assets_dir=args.assets_dir, evidence_root=root,
             professional_update_origins=(args.professional_update_origin or
                                          os.environ.get("RELEASE_PROFESSIONAL_UPDATE_ORIGINS", "").split()),
             sealed_assets=sealed_asset_hashes(records),
             sealed_archives=records if inventory["schema_version"] >= ARCHIVE_FILE_SCOPE_SCHEMA_VERSION else None,
+            sealed_xvfb_sha256=xvfb_sha256,
+            sealed_mobapt_review_sha256=mobapt_review_sha256,
             retain_workflow_artifacts=args.retain_workflow_artifacts,
         )
     except (OSError, RuntimeError, ValueError, zipfile.BadZipFile) as exc:

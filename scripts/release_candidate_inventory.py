@@ -57,12 +57,15 @@ from scripts.managed_debian_qualification import (  # noqa: E402
     REPORT_NAME,
     validate_receipt,
 )
-from scripts.release_evidence_file import retry_evidence_operation, stream_sha256  # noqa: E402
+from scripts.qualify_deb_loader import validate_probe_inventory  # noqa: E402
+from scripts.release_evidence_file import publish_evidence_directory, stream_sha256  # noqa: E402
 
 GUI_MODULE_PROOF_SCHEMA_VERSION = 12
 ARCHIVE_FILE_SCOPE_SCHEMA_VERSION = 13
 FEDORA_RELEASE_IMAGE_SCHEMA_VERSION = 14
-SCHEMA_VERSION = FEDORA_RELEASE_IMAGE_SCHEMA_VERSION
+LINUX_CRON_PROOF_SCHEMA_VERSION = 15
+SCHEMA_VERSION = LINUX_CRON_PROOF_SCHEMA_VERSION
+MIN_XVFB_INVENTORY_SCHEMA = 14
 REVIEWED_SERVER_BUNDLE_SCHEMA_VERSION = 11
 SERVER_BUNDLE_SCHEMA_VERSION = 10
 LINUX_INSTALLER_SCHEMA_VERSION = 9
@@ -125,6 +128,8 @@ MAX_MEMBERS = 20_000
 MAX_JSON_BYTES = 10 * 1024 * 1024
 MAX_SMOKE_ARCHIVE_BYTES = 64 * 1024 * 1024
 LINUX_SMOKE_PROOF_FILE = "finish.json"
+LINUX_CRON_PROOF_FILE = "frozen-cron.json"
+LINUX_DEB_LOADER_FILE = "deb-loader-selection.json"
 GUI_ARCHIVE_PROOF_FILE = "gui-archive-proof.json"
 NATIVE_BYTE_BINDING_FILE = "candidate-runtime-byte-binding.json"
 
@@ -171,6 +176,9 @@ def main(argv: list[str] | None = None) -> int:
                 output=args.output,
                 server_bundle_artifact_id=positive_int(args.server_bundle_artifact_id, "Debian server bundle artifact id"),
                 server_bundle_sha256=args.server_bundle_sha256,
+                mobapt_review_sha256=args.mobapt_review_sha256,
+                xvfb_deb=args.xvfb_deb,
+                xvfb_sha256=args.xvfb_sha256,
             )
         else:
             inventory_artifact_id = positive_int(
@@ -214,6 +222,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             child.add_argument("--output", required=True, type=Path)
             child.add_argument("--server-bundle-artifact-id", required=True)
             child.add_argument("--server-bundle-sha256", required=True)
+            child.add_argument("--mobapt-review-sha256", required=True)
+            xvfb_dir = os.environ.get("ROW_RELEASE_XVFB_INPUT_DIR")
+            child.add_argument("--xvfb-deb", type=Path, default=Path(xvfb_dir) / "xvfb.deb" if xvfb_dir else None)
+            child.add_argument("--xvfb-sha256", default=os.environ.get("ROW_RELEASE_XVFB_SHA256") or None)
         else:
             child.add_argument("--inventory-artifact-id", required=True)
             child.add_argument("--inventory-archive-digest", required=True)
@@ -327,7 +339,15 @@ def stage(
     output: Path,
     server_bundle_artifact_id: int,
     server_bundle_sha256: str,
+    mobapt_review_sha256: str | None = None,
+    xvfb_deb: Path | None = None,
+    xvfb_sha256: str | None = None,
 ) -> None:
+    if mobapt_review_sha256 is not None and HASH.fullmatch(mobapt_review_sha256) is None:
+        raise ValueError("MobApt review SHA-256 must be 64 lowercase hexadecimal characters")
+    if (xvfb_deb is None) != (xvfb_sha256 is None) or (xvfb_sha256 is not None and HASH.fullmatch(xvfb_sha256) is None):
+        raise ValueError("Xvfb sealing requires both the frozen archive and its lowercase SHA-256")
+    xvfb_input = (xvfb_deb, xvfb_sha256) if xvfb_deb is not None and xvfb_sha256 is not None else None
     run = client.json(f"actions/runs/{run_id}")
     check_build_run(
         run,
@@ -415,6 +435,8 @@ def stage(
         expected_archive_files=expected_candidate_archive_files(release_tag),
         managed_deb=(release_tag, managed["receipt"]),
         expected_runtime_sha256=server_bundle["runtime_sha256"],
+        expected_mobapt_review_sha256=mobapt_review_sha256,
+        xvfb_input=xvfb_input,
         release_rpm=(release_tag, rpm_sha),
         smoked_installers=(release_tag, smoke),
     )
@@ -436,6 +458,10 @@ def stage(
         "gui_smoke": {name: smoke[name] for name in GUI_SMOKE_ARTIFACT_NAMES},
         "linux_smoke": {name: smoke[name] for name in LINUX_SMOKE_ARTIFACT_NAMES},
     }
+    if mobapt_review_sha256 is not None:
+        inventory["debian_mobapt_review_sha256"] = mobapt_review_sha256
+    if xvfb_sha256 is not None:
+        inventory["debian_xvfb_sha256"] = xvfb_sha256
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(canonical_json(inventory), encoding="utf-8")
 
@@ -808,8 +834,69 @@ def validate_gui_smoke_archive(path: Path | io.BytesIO, name: str, *, require_mo
     return binding.get("installer_sha256")
 
 
-def validate_linux_smoke_archive(path: Path | io.BytesIO, name: str, run_id: int, release_sha: str) -> Any:
-    reports = read_archive_reports(path, name, (LINUX_SMOKE_PROOF_FILE, NATIVE_BYTE_BINDING_FILE))
+def validate_linux_cron_reports(
+    reports: dict[str, bytes], binding: dict[str, Any], target: str, run_id: int, release_sha: str,
+) -> None:
+    raw_loader = reports[LINUX_DEB_LOADER_FILE]
+    loader = json.loads(raw_loader)
+    cron = json.loads(reports[LINUX_CRON_PROOF_FILE])
+    machine, suffix = {"linux-x86_64": ("x86_64", "-linux-amd64.deb"),
+                       "linux-aarch64": ("aarch64", "-linux-arm64.deb")}[target]
+    installers = binding.get("installer_sha256")
+    executables = binding.get("expected_executables")
+    if not isinstance(installers, dict) or not isinstance(executables, list):
+        raise ValueError("Linux Cron qualification requires the installed DEB and frozen launcher bindings")
+    packages = [(name, digest) for name, digest in installers.items() if name.endswith(suffix)]
+    launchers = [row.get("sha256") for row in executables if isinstance(row, dict) and row.get("role") == "cli"]
+    if len(packages) != 1 or len(launchers) != 1 or not isinstance(loader, dict) or not isinstance(cron, dict):
+        raise ValueError("Linux Cron qualification requires the installed DEB and frozen launcher bindings")
+    deb, deb_sha = packages[0]
+    launcher_sha = launchers[0]
+    for digest in (deb_sha, launcher_sha):
+        if not isinstance(digest, str) or DIGEST_RE.fullmatch(f"sha256:{digest}") is None:
+            raise ValueError("Linux Cron qualification requires canonical installer and launcher digests")
+    observations = binding.get("observations")
+    if not isinstance(observations, list):
+        raise ValueError("Linux Cron qualification requires the installed DEB launcher observation")
+    installed = [
+        row for row in observations if isinstance(row, dict)
+        and (row.get("path"), row.get("phase"), row.get("probe")) == ("deb/usr/bin/row", "install", "version")
+    ]
+    if (
+        len(installed) != 1 or installed[0].get("matched") is not True or installed[0].get("role") != "cli"
+        or installed[0].get("expected_sha256") != launcher_sha or installed[0].get("observed_sha256") != launcher_sha
+    ):
+        raise ValueError("Linux Cron qualification requires the installed DEB launcher observation")
+    if (
+        type(loader.get("schema_version")) is not int or loader["schema_version"] != 1
+        or loader.get("target") != target or loader.get("kernel_machine") != machine
+        or loader.get("deb") != deb or loader.get("deb_sha256") != deb_sha or loader.get("launcher_sha256") != launcher_sha
+        or loader.get("source_sha") != release_sha or loader.get("github_run_id") != str(run_id)
+        or loader.get("github_run_attempt") != "1" or not isinstance(loader.get("staged_runpath_changes"), dict)
+    ):
+        raise ValueError("Linux Cron loader receipt differs from the exact release build and installed DEB")
+    validate_probe_inventory(loader.get("probes"))
+    if (
+        cron.get("schema") != "row.native-frozen-cron.v1" or cron.get("target") != target
+        or cron.get("source_sha") != release_sha or cron.get("deb") != deb or cron.get("deb_sha256") != deb_sha
+        or cron.get("row_sha256") != launcher_sha
+        or cron.get("deb_loader_report_sha256") != hashlib.sha256(raw_loader).hexdigest()
+        or type(cron.get("real_minute_job_count")) is not int or cron["real_minute_job_count"] != 1
+        or any(cron.get(key) is not True for key in (
+            "stopped_pid_exited", "next_minute_quiet", "linux_process_identity_verified",
+            "onefile_extraction_released", "public_status_and_generation_verified",
+        ))
+    ):
+        raise ValueError("Linux Cron receipt must bind one scheduled job, clean stop and a quiet next minute to the exact launcher")
+
+
+def validate_linux_smoke_archive(
+    path: Path | io.BytesIO, name: str, run_id: int, release_sha: str, *, require_cron: bool,
+) -> Any:
+    filenames = (LINUX_SMOKE_PROOF_FILE, NATIVE_BYTE_BINDING_FILE)
+    if require_cron:
+        filenames += (LINUX_CRON_PROOF_FILE, LINUX_DEB_LOADER_FILE)
+    reports = read_archive_reports(path, name, filenames)
     proof = json.loads(reports[LINUX_SMOKE_PROOF_FILE])
     raw = reports[NATIVE_BYTE_BINDING_FILE]
     binding = json.loads(raw)
@@ -829,6 +916,8 @@ def validate_linux_smoke_archive(path: Path | io.BytesIO, name: str, run_id: int
         or binding.get("status") != "bound" or binding.get("smoke_complete") is not True
     ):
         raise ValueError(f"{name} native proof does not bind the completed exact-run installer smoke receipt")
+    if require_cron:
+        validate_linux_cron_reports(reports, binding, target, run_id, release_sha)
     return binding.get("installer_sha256")
 
 
@@ -866,7 +955,9 @@ def check_smoke_archive(
     archive: Path | io.BytesIO, name: str, record: dict[str, Any], run_id: int, release_sha: str, inventory_schema: int,
 ) -> Any:
     observed = (
-        validate_linux_smoke_archive(archive, name, run_id, release_sha)
+        validate_linux_smoke_archive(
+            archive, name, run_id, release_sha, require_cron=inventory_schema >= LINUX_CRON_PROOF_SCHEMA_VERSION,
+        )
         if name in LINUX_SMOKE_ARTIFACT_NAMES
         else validate_gui_smoke_archive(archive, name, require_modules=inventory_schema >= GUI_MODULE_PROOF_SCHEMA_VERSION)
     )
@@ -981,6 +1072,16 @@ def verify_candidate_deb_metadata(
         raise ValueError("managed Debian receipt server bundle claim differs from the candidate DEB")
 
 
+def verify_candidate_mobapt(
+    package: Path, receipt: dict[str, Any], release_tag: str, review_sha256: str,
+) -> None:
+    from scripts.stage_debian_mobapt_cache import verify_packaged_review
+
+    if receipt.get("candidate_has_mobapt_cache") is not True:
+        raise ValueError("managed Debian receipt must qualify the packaged MobApt cache")
+    verify_packaged_review(package, release_tag, review_sha256)
+
+
 def require_release_rpm(records: list[dict[str, Any]], release_tag: str, sha256: str) -> None:
     name = rpm_qualification.rpm_name(release_tag.removeprefix("v"))
     require_linux_installer(records, name, sha256, "RPM recovery")
@@ -1011,6 +1112,11 @@ def validate_managed_release_qualification(
             deb_package, inventory["managed_debian_update"]["receipt"],
             expected_runtime_sha256=inventory.get("debian_server_bundle", {}).get("runtime_sha256"),
         )
+        if "debian_mobapt_review_sha256" in inventory:
+            verify_candidate_mobapt(
+                deb_package, inventory["managed_debian_update"]["receipt"], release_tag,
+                inventory["debian_mobapt_review_sha256"],
+            )
     return records
 
 
@@ -1161,6 +1267,7 @@ def materialize_sealed_records(
             if inventory["schema_version"] >= ARCHIVE_FILE_SCOPE_SCHEMA_VERSION else None
         ),
         expected_runtime_sha256=inventory.get("debian_server_bundle", {}).get("runtime_sha256"),
+        expected_mobapt_review_sha256=inventory.get("debian_mobapt_review_sha256"),
     )
 
 
@@ -1231,6 +1338,8 @@ def materialize_records(
     expected_archive_files: dict[str, set[str]] | None = None,
     managed_deb: tuple[str, dict[str, Any]] | None = None,
     expected_runtime_sha256: str | None = None,
+    expected_mobapt_review_sha256: str | None = None,
+    xvfb_input: tuple[Path, str] | None = None,
     release_rpm: tuple[str, str] | None = None,
     smoked_installers: tuple[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
@@ -1259,6 +1368,14 @@ def materialize_records(
             require_managed_deb(records, release_tag, receipt["candidate_sha256"])
             package = staged_root / f"remote-ops-workspace-{release_tag}-linux-amd64.deb"
             verify_candidate_deb_metadata(package, receipt, expected_runtime_sha256=expected_runtime_sha256)
+            if expected_mobapt_review_sha256 is not None:
+                verify_candidate_mobapt(package, receipt, release_tag, expected_mobapt_review_sha256)
+            if xvfb_input is not None:
+                if receipt.get("candidate_has_xvfb") is not True:
+                    raise ValueError("managed Debian receipt must qualify the packaged Xvfb runtime")
+                from scripts.stage_debian_xvfb import verify_packaged_xvfb
+
+                verify_packaged_xvfb(package, *xvfb_input, "amd64")
         if release_rpm is not None:
             require_release_rpm(records, *release_rpm)
         if smoked_installers is not None:
@@ -1272,21 +1389,7 @@ def materialize_records(
 
 
 def publish_candidate_directory(staged_root: Path, assets_root: Path) -> None:
-    expected = staged_root.lstat()
-
-    def publish() -> None:
-        current = staged_root.lstat()
-        if (
-            not stat.S_ISDIR(current.st_mode)
-            or getattr(current, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
-            or (current.st_dev, current.st_ino) != (expected.st_dev, expected.st_ino)
-        ):
-            raise ValueError("verified candidate staging directory changed before publication")
-        if assets_root.is_symlink() or assets_root.exists():
-            raise ValueError("candidate assets root appeared before publication")
-        staged_root.rename(assets_root)
-
-    retry_evidence_operation(publish)
+    publish_evidence_directory(staged_root, assets_root, label="candidate assets root")
 
 
 def materialize_candidate_files(
@@ -1426,6 +1529,18 @@ def validate_inventory(
                    for key in ("archive_sha256", "runtime_sha256"))
         ):
             raise ValueError("approved candidate inventory is missing verified Debian server archive coordinates")
+    if "debian_mobapt_review_sha256" in value:
+        review = value["debian_mobapt_review_sha256"]
+        if (schema < FEDORA_RELEASE_IMAGE_SCHEMA_VERSION or not isinstance(review, str)
+                or HASH.fullmatch(review) is None
+                or value["managed_debian_update"]["receipt"].get("candidate_has_mobapt_cache") is not True):
+            raise ValueError("candidate inventory must bind the reviewed MobApt cache and its rollback receipt")
+    if "debian_xvfb_sha256" in value:
+        digest = value["debian_xvfb_sha256"]
+        if (schema < MIN_XVFB_INVENTORY_SCHEMA or not isinstance(digest, str)
+                or HASH.fullmatch(digest) is None
+                or value["managed_debian_update"]["receipt"].get("candidate_has_xvfb") is not True):
+            raise ValueError("candidate inventory must bind the frozen Debian Xvfb archive SHA-256")
     if schema >= RPM_SCHEMA_VERSION or "rpm_recovery" in value or "rpm_smoke" in value:
         artifact_id, rpm_sha = validate_rpm_report(
             value.get("rpm_recovery"), repository, release_tag, release_sha, run_id, run_attempt,

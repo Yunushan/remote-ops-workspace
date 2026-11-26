@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import re
 import stat
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from PyQt6.QtCore import QSize, Qt, QTimer
-from PyQt6.QtGui import QAction, QIcon
+from PyQt6.QtGui import QAction, QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -48,7 +49,7 @@ if TYPE_CHECKING:
 
     from PyQt6.QtCore import QAbstractItemModel, QLocale, QModelIndex
     from PyQt6.QtGui import QKeyEvent, QPainter
-    from PyQt6.QtWidgets import QStatusBar, QStyleOptionViewItem, QTextEdit, QWidget
+    from PyQt6.QtWidgets import QStatusBar, QStyleOptionViewItem, QTabWidget, QTextEdit, QWidget
 
     from .gui_terminal import TerminalPane
     from .storage import ProfileStore
@@ -110,12 +111,32 @@ class _ConfigValueDelegate(QStyledItemDelegate):
             self.save_value(name, field, original, value)
 
 
+class _ConnectionNameDelegate(QStyledItemDelegate):
+    def __init__(self, tree: QTreeWidget, save_value: Callable[[str, str, str, str], None]) -> None:
+        super().__init__(tree)
+        self.save_value = save_value
+
+    def setEditorData(self, editor: QWidget | None, index: QModelIndex) -> None:  # noqa: N802
+        field = cast("QLineEdit", editor)
+        field.setText(index.data(Qt.ItemDataRole.UserRole))
+        field.selectAll()
+
+    def setModelData(  # noqa: N802
+        self, editor: QWidget | None, model: QAbstractItemModel | None, index: QModelIndex,
+    ) -> None:
+        name = index.data(Qt.ItemDataRole.UserRole)
+        value = cast("QLineEdit", editor).text().strip()
+        if value != name:
+            self.save_value(name, "name", name, value)
+
+
 class MRemoteNgWorkspace:
     """Build the mRemoteNG document panes, controls and property grid."""
 
     if TYPE_CHECKING:
         log: QTextEdit
         profile_list: QTreeWidget
+        tabs: QTabWidget
         mremoteng_left_property_grid_panel: QFrame
         mremoteng_protocol_label: QLabel
         store: ProfileStore
@@ -123,9 +144,12 @@ class MRemoteNgWorkspace:
         def active_terminal_pane(self) -> TerminalPane | None: ...
         def property(self, name: str) -> object: ...
         def all_terminal_panes(self) -> list[TerminalPane]: ...
+        def terminal_panes_in(self, widget: QWidget) -> list[TerminalPane]: ...
+        def set_workspace_tab_index(self, index: int) -> None: ...
         def selected_profile_name(self) -> str | None: ...
         def create_profile(self) -> None: ...
         def edit_selected_profile(self) -> None: ...
+        def current_design_id(self) -> str: ...
         def refresh_profiles(self) -> None: ...
         def select_profile(self, name: str) -> None: ...
         def filter_profile_tree(self, text: str) -> None: ...
@@ -141,12 +165,19 @@ class MRemoteNgWorkspace:
     def add_mremoteng_tab_options(self, tools: QMenu) -> None:
         options = QMenu("Options", tools)
         tools.addMenu(options)
-        action = QAction("Double click on tab closes it", options)
-        action.setCheckable(True)
-        options.addAction(action)
-        self.mremoteng_double_click_close = action
+        self.mremoteng_double_click_close = self._add_mremoteng_boolean_option(
+            options, "Double click on tab closes it", "mremoteng-double-click-closes-tab.json", default=True,
+        )
+        self.mremoteng_switch_on_tree_click = self._add_mremoteng_boolean_option(
+            options, "Switch to open connection on click", "mremoteng-switch-on-tree-click.json", default=False,
+        )
 
-        path = data_dir() / "mremoteng-double-click-closes-tab.json"
+    def _add_mremoteng_boolean_option(self, menu: QMenu, label: str, filename: str, *, default: bool) -> QAction:
+        action = QAction(label, menu)
+        action.setCheckable(True)
+        menu.addAction(action)
+
+        path = data_dir() / filename
         try:
             info = path.lstat()
             if not stat.S_ISREG(info.st_mode) or info.st_size > 64:
@@ -156,10 +187,10 @@ class MRemoteNgWorkspace:
                 raise ValueError("expected true or false")
             enabled = value == b"true"
         except FileNotFoundError:
-            enabled = True
+            enabled = default
         except (OSError, ValueError) as exc:
             enabled = False
-            self.statusBar().showMessage(f"Cannot read the mRemoteNG tab option: {exc}", 8000)
+            self.statusBar().showMessage(f"Cannot read the mRemoteNG option: {exc}", 8000)
         action.setChecked(enabled)
 
         def save(checked: bool) -> None:
@@ -167,9 +198,41 @@ class MRemoteNgWorkspace:
                 write_json_atomic(path, checked, private=True)
             except OSError as exc:
                 action.setChecked(not checked)
-                self.statusBar().showMessage(f"Cannot save the mRemoteNG tab option: {exc}", 8000)
+                self.statusBar().showMessage(f"Cannot save the mRemoteNG option: {exc}", 8000)
 
         action.triggered.connect(save)
+        return action
+
+    def handle_mremoteng_tree_item_clicked(self, item: QTreeWidgetItem, _column: int = 0) -> None:
+        name = item.data(0, Qt.ItemDataRole.UserRole)
+        if name and self.mremoteng_switch_on_tree_click.isChecked():
+            self.switch_to_mremoteng_open_connection(str(name))
+
+    def switch_to_mremoteng_open_connection(self, name: str) -> bool:
+        if self.current_design_id() != "mremoteng":
+            return False
+        source = f"profile:{name}"
+        candidates: list[tuple[int, TerminalPane]] = []
+        for index in range(self.tabs.count()):
+            widget = self.tabs.widget(index)
+            if widget is not None:
+                candidates.extend(
+                    (index, pane) for pane in self.terminal_panes_in(widget)
+                    if pane.plan.source == source and pane.is_running()
+                )
+        if not candidates:
+            return False
+        try:
+            profile = self.profile_by_name(name)
+        except (OSError, ValueError):
+            return False
+        if profile is None:
+            return False
+        for index, pane in candidates:
+            if pane.profile == profile:
+                self.set_workspace_tab_index(index)
+                return True
+        return False
 
     def save_mremoteng_property(self, name: str, field: str, original: str, value: str) -> str:
         def update(profiles: list[Profile], defaults: dict[str, dict[str, object]]) -> list[Profile]:
@@ -192,6 +255,30 @@ class MRemoteNgWorkspace:
             self.statusBar().showMessage(f"Cannot save {field}: {exc}", 8000)
             return name
         return value if field == "name" else name
+
+    def duplicate_mremoteng_connection(self) -> None:
+        name = self.selected_profile_name()
+        if not name or self.current_design_id() != "mremoteng" or self.property("guiPreviewSamples"):
+            return
+        copied_name = f"{name} (copy)"
+
+        def duplicate(profiles: list[Profile], _defaults: dict[str, dict[str, object]]) -> list[Profile]:
+            nonlocal copied_name
+            existing = {profile.name: profile for profile in profiles}
+            number = 2
+            while copied_name in existing:
+                copied_name = f"{name} (copy {number})"
+                number += 1
+            return [*profiles, replace(existing[name], name=copied_name)]
+
+        try:
+            self.store.update_profiles(duplicate, surface="profile-editor", action="add")
+        except (KeyError, OSError, ValueError) as exc:
+            self.statusBar().showMessage(f"Cannot duplicate connection: {exc}", 8000)
+            return
+        self.refresh_profiles()
+        self.select_profile(copied_name)
+        self.statusBar().showMessage(f"Duplicated connection as {copied_name}", 8000)
 
     def build_mremoteng_config_dock(self) -> QFrame:
         panel = QFrame()
@@ -245,6 +332,16 @@ class MRemoteNgWorkspace:
         grid.setItemDelegateForColumn(1, delegate)
         grid.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
 
+        tree = self.profile_list
+        tree.setItemDelegateForColumn(0, _ConnectionNameDelegate(tree, save_value))
+        tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        rename = QShortcut(QKeySequence(Qt.Key.Key_F2), tree)
+        rename.setContext(Qt.ShortcutContext.WidgetShortcut)
+        rename.activated.connect(lambda: tree.editItem(tree.currentItem(), 0))
+        duplicate = QShortcut(QKeySequence("Ctrl+D"), tree)
+        duplicate.setContext(Qt.ShortcutContext.WidgetShortcut)
+        duplicate.activated.connect(self.duplicate_mremoteng_connection)
+
         grid.itemClicked.connect(lambda row, column: grid.editItem(row, 1) if column == 1 else None)
         grid.setMaximumHeight(145)
         layout.addWidget(grid)
@@ -259,6 +356,8 @@ class MRemoteNgWorkspace:
             if refreshing:
                 return
             values = current.data(0, MREMOTENG_CONFIG_ROLE) if current is not None else None
+            rename.setEnabled(bool(values) and not preview)
+            duplicate.setEnabled(bool(values) and not preview)
             active = grid.indexWidget(grid.currentIndex())
             if active is not None:
                 name, field, original = active.property("configProperty")

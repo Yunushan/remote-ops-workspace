@@ -4,7 +4,8 @@ import argparse
 import json
 import shlex
 import sys
-from pathlib import Path
+from collections.abc import Callable
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +26,7 @@ from scripts.check_release_license_compliance import (  # noqa: E402
     secure_regular_file,
 )
 from scripts.debian_release_fixture import (  # noqa: E402
+    ROW_EXECUTABLE,
     release_deb_version,
     validate_native_debian_probe,
 )
@@ -32,6 +34,7 @@ from scripts.debian_release_fixture import (  # noqa: E402
 EXECUTION_SCHEMA = "row.mobapt.offline-execution.v1"
 NATIVE_PROBE_SCHEMA = "row.mobapt.native-cache-verify.v1"
 NATIVE_PROBE_PATH = "evidence/row-native-cache-verify.json"
+INSTALLED_CACHE = "/usr/lib/remote-ops-workspace/mobapt"
 NATIVE_PROBE_ARGV = [
     "/usr/bin/row", "mobapt", "cache-verify", "--evidence", "evidence.json", "--assets-dir", ".", "--json",
 ]
@@ -43,6 +46,16 @@ def check_runtime_and_cache(root: Path, data: dict[str, Any]) -> tuple[set[str],
     index = bound_evidence_file(root, cache["index"], cache["index_sha256"], "package index")
     _, manifest_data = read_json_object(manifest, "runtime manifest")
     _, index_data = read_json_object(index, "package index")
+    return check_runtime_and_cache_members(
+        data, manifest_data, index_data, lambda name, digest, label: bound_evidence_file(root, name, digest, label),
+    )
+
+
+def check_runtime_and_cache_members(
+    data: dict[str, Any], manifest_data: dict[str, Any], index_data: dict[str, Any],
+    verify_member: Callable[[str, str, str], object],
+) -> tuple[set[str], dict[str, dict[str, Any]]]:
+    cache = data["package_cache"]
     rows = cache["packages"]
     if (index_data.get("schema") != "row.mobapt.package-index.v1"
             or manifest_data.get("packages") != rows or index_data.get("packages") != rows):
@@ -56,7 +69,7 @@ def check_runtime_and_cache(root: Path, data: dict[str, Any]) -> tuple[set[str],
     for row in rows:
         if row.get("synthetic") is not False or row.get("source") != "supplied":
             raise ValueError("release evidence requires real supplied package archives")
-        bound_evidence_file(root, row["archive"], row["sha256"], "offline package archive")
+        verify_member(row["archive"], row["sha256"], "offline package archive")
 
     runtime_info = manifest_data.get("runtime")
     binaries = runtime_info.get("binaries") if isinstance(runtime_info, dict) else None
@@ -68,14 +81,44 @@ def check_runtime_and_cache(root: Path, data: dict[str, Any]) -> tuple[set[str],
                 or binary.get("source") not in ("supplied", "host-path")):
             raise ValueError("release evidence requires real runtime binaries without shims")
         path = binary.get("path")
-        bound_evidence_file(root, path, binary.get("sha256"), "bundled runtime executable")
+        verify_member(path, binary.get("sha256"), "bundled runtime executable")
         paths.add(path)
     if len(paths) != len(binaries):
         raise ValueError("bundled runtime executable paths must be unique")
     return paths, packages
 
 
-def execution_argv(root: Path, test: dict[str, Any], kind: str, runtime_sha: str, archive_sha: str) -> list[str]:
+def native_install_argv(package: str) -> list[str]:
+    return [ROW_EXECUTABLE, "mobapt", "install", package, "--offline", "--execute", "--json"]
+
+
+def check_native_install_output(stdout: str, package: dict[str, Any], *, installed_cache: bool = False) -> None:
+    try:
+        result = json.loads(stdout)
+        plan = result["plan"]
+        command = plan["command"]
+        archive = PurePosixPath(command[-1])
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
+        raise ValueError("native MobApt install receipt requires a JSON execution result") from exc
+    relative = PurePosixPath(package["archive"])
+    if (
+        result.get("executed") is not True or result.get("ok") is not True
+        or type(result.get("returncode")) is not int or result["returncode"] != 0
+        or plan.get("action") != "install" or plan.get("package") != package["name"]
+        or plan.get("cached_package_version") != package["version"]
+        or plan.get("cached_archive_sha256") != package["sha256"]
+        or command[:-1] != [
+            "/usr/bin/apt", "-o", "Dir::Etc::sourcelist=", "-o", "Dir::Etc::sourceparts=", "install", "--",
+        ]
+        or not archive.is_absolute() or archive.parts[-len(relative.parts):] != relative.parts
+        or (installed_cache and archive != PurePosixPath(INSTALLED_CACHE) / relative)
+    ):
+        raise ValueError("native MobApt install receipt must show an executed offline install of the verified package")
+
+
+def execution_receipt(
+    root: Path, test: dict[str, Any], kind: str, runtime_sha: str, archive_sha: str,
+) -> dict[str, Any]:
     proof = bound_evidence_file(root, test["evidence_file"], test["evidence_sha256"], f"{kind} receipt")
     try:
         _, receipt = read_json_object(proof, f"{kind} receipt")
@@ -97,7 +140,7 @@ def execution_argv(root: Path, test: dict[str, Any], kind: str, runtime_sha: str
     stdout, stderr = receipt.get("stdout"), receipt.get("stderr")
     if not isinstance(stdout, str) or not isinstance(stderr, str) or (kind == "terminal-probe" and not stdout.strip()):
         raise ValueError(f"{kind} receipt requires captured output")
-    return arguments
+    return receipt
 
 
 def validate_mobapt_cache_execution(
@@ -114,20 +157,28 @@ def validate_mobapt_cache_execution(
             return result
         _, data = read_json_object(evidence_file, "release cache evidence")
         paths, packages = check_runtime_and_cache(root, data)
+        installed_cache = data.get("installed_cache", False)
+        if type(installed_cache) is not bool or (installed_cache and "release_asset" not in data):
+            raise ValueError("installed MobApt cache evidence requires the Debian release asset")
         runtime_sha = data["runtime"]["manifest_sha256"]
         installs = {record["package"]: record for record in data["install_tests"]}
         if installs.keys() != packages.keys() or len(installs) != len(data["install_tests"]):
             raise ValueError("each cached package requires one offline installation receipt")
         for name, record in installs.items():
             package = packages[name]
-            if package["archive"] not in execution_argv(root, record, "offline-install", runtime_sha, package["sha256"]):
+            receipt = execution_receipt(root, record, "offline-install", runtime_sha, package["sha256"])
+            if receipt["argv"] == native_install_argv(name):
+                check_native_install_output(receipt["stdout"], package, installed_cache=installed_cache)
+            elif "release_asset" in data:
+                raise ValueError("native Debian evidence requires installation through the installed row command")
+            elif package["archive"] not in receipt["argv"]:
                 raise ValueError("offline install receipt argv must name the verified package archive")
         terminal = data["terminal_probe"]
         name = terminal.get("package")
         if not isinstance(name, str) or name not in packages:
             raise ValueError("terminal probe must name a verified installed package")
-        arguments = execution_argv(root, terminal, "terminal-probe", runtime_sha, packages[name]["sha256"])
-        if arguments[0] not in paths:
+        receipt = execution_receipt(root, terminal, "terminal-probe", runtime_sha, packages[name]["sha256"])
+        if receipt["argv"][0] not in paths:
             raise ValueError("terminal probe must invoke a verified bundled runtime executable")
         if "release_asset" in data:
             result.summary["tested_release_asset"] = validate_native_debian_probe(
@@ -141,10 +192,14 @@ def validate_mobapt_cache_execution(
             version = release_deb_version(identity["tested_release_asset"]["name"], data["release_target"])
             if identity["release_tag"] != f"v{version}":
                 raise ValueError("tested Debian package version must match the exact MobApt release tag")
+            if not installed_cache:
+                raise ValueError("strict MobApt evidence requires a cache owned by the tested Debian package")
             result.summary.update(identity)
     except (KeyError, OSError, ValueError) as exc:
         return MobAptCacheEvidenceValidation(str(evidence_path), str(root), False, [str(exc)], [], {})
     result.summary["offline_execution_receipts_verified"] = True
+    if installed_cache:
+        result.summary["installed_cache_verified"] = True
     return result
 
 

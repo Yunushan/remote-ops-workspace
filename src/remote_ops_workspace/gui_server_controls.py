@@ -117,6 +117,7 @@ class ServerRowControls(QWidget):
         self.row = row
         self.manager = manager
         self.dialog = dialog
+        self._lifecycle_error = ""
         actions = QHBoxLayout(self)
         actions.setContentsMargins(0, 0, 0, 0)
         actions.setSpacing(3)
@@ -155,6 +156,9 @@ class ServerRowControls(QWidget):
     def update_state(self, service: str, state: str, detail: str) -> None:
         if self.service != service:
             return
+        previous_state = self.row.text(1)
+        if state != previous_state:
+            self._lifecycle_error = detail if previous_state in {"starting", "stopping"} else ""
         self.row.setText(1, state)
         self.start_button.setEnabled(state == "stopped")
         self.stop_button.setEnabled(state == "running")
@@ -170,9 +174,10 @@ class ServerRowControls(QWidget):
         else:
             self.row.setText(2, "127.0.0.1:5001" if self.entry.runtime_available else "Iperf 2 required")
             description = "Local Iperf 2 client: iperf -c 127.0.0.1"
-        self.row.setData(2, Qt.ItemDataRole.UserRole, description)
+        error = detail or self._lifecycle_error
+        message = f"{self.row.text(0)}\n{error}" if error else _row_detail(self.entry, description)
+        self.row.setData(2, Qt.ItemDataRole.UserRole, message)
         if self.dialog.rows.currentItem() is self.row:
-            message = f"{self.row.text(0)}\n{detail}" if detail else _row_detail(self.entry, description)
             if self.dialog.detail.toPlainText() != message:
                 self.dialog.detail.setPlainText(message)
 
@@ -207,8 +212,8 @@ def add_server_controls(
         if current is None:
             return
         selected = surface.rows[tree.indexOfTopLevelItem(current)]
-        description = current.data(2, Qt.ItemDataRole.UserRole) or current.text(2)
-        dialog.detail.setPlainText(_row_detail(selected, description))
+        message = current.data(2, Qt.ItemDataRole.UserRole) or _row_detail(selected, current.text(2))
+        dialog.detail.setPlainText(message)
 
     tree.currentItemChanged.connect(show_selection)
     timer = QTimer(dialog)

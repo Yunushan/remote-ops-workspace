@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 import stat
 import struct
 import tarfile
@@ -51,6 +52,92 @@ def test_native_package_inventory_matches_real_release_matrix() -> None:
         "linux-x86_64": 6,
         "linux-aarch64": 6,
     }
+
+
+def test_packaged_linux_system_notice_requires_approved_distro_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    import check_packaged_release_notices as notices
+    from check_release_license_compliance import ApprovedPackageNotices, check_packaged_notice_scans
+    from packaged_linux_licenses import APPLICATION_LICENSE_PATH, LICENSE_ROOT
+
+    package = tmp_path / "remote-ops-workspace-v2.3.4-linux-x86_64-native.tar.gz"
+    component = "system-libfoo"
+    copyright_path = (LICENSE_ROOT / component / "copyright").as_posix()
+    files = {
+        APPLICATION_LICENSE_PATH.as_posix(): (ROOT / "LICENSE").read_bytes().replace(b"\r\n", b"\n"),
+        "usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md": (
+            ROOT / "redistribution-evidence/THIRD_PARTY_NOTICES.md"
+        ).read_bytes(),
+        **{(LICENSE_ROOT / path).as_posix(): data for path, data in runtime_license_fixture("linux").items()},
+        copyright_path: b"Exact distro copyright text.\n",
+    }
+
+    def write_package() -> None:
+        with tarfile.open(package, "w:gz") as archive:
+            for path, data in files.items():
+                member = tarfile.TarInfo(path)
+                member.size = len(data)
+                archive.addfile(member, io.BytesIO(data))
+
+    write_package()
+    with pytest.raises(ValueError, match="missing a valid bundled Debian notice and version"):
+        list(notices.observe_notices(tmp_path, {package.name}))
+
+    version_path = (LICENSE_ROOT / component / "package-version.txt").as_posix()
+    files[version_path] = b"1:3.1.4-2+deb13u1\n"
+    write_package()
+    [observed] = notices.observe_notices(tmp_path, {package.name})
+    approved_components = {}
+    scans = []
+    for member in observed.files:
+        record = {
+            "path": member.path,
+            "sha256": hashlib.sha256(member.data).hexdigest(),
+            "size_bytes": len(member.data),
+        }
+        scans.append(record)
+        if name := getattr(member, "component", None):
+            item = approved_components.setdefault(name, {
+                "name": name, "scope": "bundled", "license_files": [],
+            })
+            item["license_files"].append(record)
+            if member.version is not None:
+                item.update(version=member.version, origin="native-component")
+
+    approved = {package.name: ApprovedPackageNotices(
+        observed._asdict(), scans, list(approved_components.values()),
+    )}
+    assert approved_components[component]["version"] == "1:3.1.4-2+deb13u1"
+    assert check_packaged_notice_scans(tmp_path, set(approved), approved) == []
+    approved_components[component]["version"] = "1:3.1.4-2"
+    assert check_packaged_notice_scans(tmp_path, set(approved), approved) == [
+        f"{package.name} signed bundled component {component} must match packaged version '1:3.1.4-2+deb13u1'",
+    ]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows rename sharing errors")
+def test_notice_capture_retries_transient_windows_rename_denial(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    import check_packaged_release_notices as notices
+
+    destination = tmp_path / "packaged-notices"
+    native_rename = type(destination).rename
+    attempts = []
+
+    def rename(path, target):
+        attempts.append(target)
+        if len(attempts) == 1:
+            error = PermissionError("briefly locked")
+            error.winerror = 5
+            raise error
+        return native_rename(path, target)
+
+    monkeypatch.setattr(type(destination), "rename", rename)
+    notices.publish_notice_capture(destination, "v1.0.28", {}, {})
+    assert attempts == [destination, destination]
+    assert (destination / "notice-extraction.json").is_file()
 
 
 def test_production_notices_cover_protected_linux_and_require_exact_bytes(

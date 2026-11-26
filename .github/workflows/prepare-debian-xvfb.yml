@@ -1,0 +1,89 @@
+name: Prepare Debian amd64 Xvfb input
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Target production release tag (vX.Y.Z)
+        required: true
+        type: string
+      xvfb_version:
+        description: Exact Debian binary package version of xvfb
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  prepare-xvfb:
+    if: github.repository == 'Yunushan/remote-ops-workspace' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      XVFB_PACKAGE_VERSION: ${{ inputs.xvfb_version }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Prepare Xvfb from authenticated Debian package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          version_pattern='^([0-9]+:)?[0-9][A-Za-z0-9.+~-]*$'
+          [[ "$XVFB_PACKAGE_VERSION" =~ $version_pattern ]]
+          output="$RUNNER_TEMP/debian-xvfb-input"
+          mkdir "$output"
+          docker run --rm --platform linux/amd64 \
+            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/src,readonly" \
+            --mount "type=bind,source=$output,target=/out" \
+            --env RELEASE_TAG --env XVFB_PACKAGE_VERSION --env PYTHONDONTWRITEBYTECODE=1 \
+            docker.io/library/python:3.14.10-slim-trixie@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f \
+            bash -euo pipefail -c '
+              project_version="$(python -c "import tomllib; print(tomllib.load(open(\"/src/pyproject.toml\", \"rb\"))[\"project\"][\"version\"])")"
+              test "$RELEASE_TAG" = "v$project_version"
+              apt-get update --error-on=any
+              work="$(mktemp -d)"
+              chown _apt "$work"
+              cd "$work"
+              apt-get download "xvfb=$XVFB_PACKAGE_VERSION"
+              archives=(xvfb_*_amd64.deb)
+              [[ "${#archives[@]}" = 1 && -f "${archives[0]}" ]]
+              archive="${archives[0]}"
+              test "$(dpkg-deb --field "$archive" Version)" = "$XVFB_PACKAGE_VERSION"
+              checksum="$(sha256sum -- "$archive")"
+              digest="${checksum%% *}"
+              apt-cache show "xvfb=$XVFB_PACKAGE_VERSION" > /out/debian-package-index.txt
+              grep -Fx -- "SHA256: $digest" /out/debian-package-index.txt
+              stage="$(mktemp -d)"
+              python -B /src/scripts/stage_debian_xvfb.py --xvfb-deb "$archive" \
+                --sha256 "$digest" --architecture amd64 --debian-root "$stage" > /out/debian-depends.txt
+              install -m 0644 -- "$archive" /out/xvfb.deb
+              install -m 0644 -- "$stage/usr/lib/remote-ops-workspace/xserver/xserver-runtime.json" /out/xserver-runtime.json
+              install -m 0644 -- "$stage/usr/share/doc/remote-ops-workspace/licenses/system-xvfb/copyright" /out/copyright
+            '
+      - name: Retain the Xvfb candidate for review
+        id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: debian-amd64-xvfb-${{ inputs.release_tag }}
+          path: ${{ runner.temp }}/debian-xvfb-input/
+          if-no-files-found: error
+          retention-days: 90
+      - name: Report the candidate release selection
+        shell: bash
+        env:
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          set -euo pipefail
+          [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          checksum="$(sha256sum "$RUNNER_TEMP/debian-xvfb-input/xvfb.deb")"
+          printf 'Xvfb candidate for review before setting `ROW_DEBIAN_AMD64_XVFB`\n\n`%s %s %s %s`\n' \
+            "$RELEASE_TAG" "$GITHUB_RUN_ID" "$ARTIFACT_ID" "${checksum%% *}" >> "$GITHUB_STEP_SUMMARY"

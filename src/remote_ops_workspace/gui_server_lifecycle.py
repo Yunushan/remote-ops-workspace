@@ -51,14 +51,17 @@ _Observation = tuple[MobaEmbeddedServerLifecycleRecord | None, _OwnedRun | None,
 
 
 class ServerLifecycleManager(QObject):
-    changed = pyqtSignal(str, str, str)
+    changed = pyqtSignal(str, str, str)  # type: ignore[call-arg]
 
     def __init__(self, parent: QObject) -> None:
         super().__init__(parent)
         self._path = data_dir() / "server-preferences.json"
-        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="row-servers")
-        # Only the serialized worker reads or mutates ownership. It also drains
-        # shutdown work after an in-flight start even if Qt has already exited.
+        self._executors = {
+            service: ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"row-server-{service}")
+            for service in _SERVICES
+        }
+        # Each worker owns one service and drains its shutdown work even after
+        # Qt exits. A slow operation on one service cannot delay the other.
         self._worker_owned: dict[str, _OwnedRun] = {}
         self._pending: dict[str, tuple[str, Future[_Observation]]] = {}
         self._observed_owned: dict[str, _OwnedRun | None] = {}
@@ -154,7 +157,7 @@ class ServerLifecycleManager(QObject):
         pending = self._pending.get(service)
         if pending and (operation == "refresh" or operation == pending[0]):
             return
-        future = self._executor.submit(self._operate, service, operation, expected)
+        future = self._executors[service].submit(self._operate, service, operation, expected)
         self._pending[service] = (operation, future)
         self._poll.start()
         if operation != "refresh":
@@ -229,15 +232,17 @@ class ServerLifecycleManager(QObject):
         self._poll.stop()
         for timer in self._timers.values():
             timer.stop()
-        if self._pending or any(self._observed_owned.values()):
-            self._executor.submit(self._stop_owned)
+        for service, executor in self._executors.items():
+            if service in self._pending or self._observed_owned.get(service) is not None:
+                executor.submit(self._stop_owned, service)
+            executor.shutdown(wait=False)
         self._pending.clear()
-        self._executor.shutdown(wait=False)
 
-    def _stop_owned(self) -> None:
-        for service, owned in self._worker_owned.items():
-            try:
-                stop_moba_server(service, expected_record=owned.record)
-            except _LIFECYCLE_ERRORS as error:
-                logging.getLogger(__name__).warning("Could not stop %s on application exit: %s", service, error)
-        self._worker_owned.clear()
+    def _stop_owned(self, service: str) -> None:
+        owned = self._worker_owned.pop(service, None)
+        if owned is None:
+            return
+        try:
+            stop_moba_server(service, expected_record=owned.record)
+        except _LIFECYCLE_ERRORS as error:
+            logging.getLogger(__name__).warning("Could not stop %s on application exit: %s", service, error)

@@ -1425,6 +1425,14 @@ def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, mo
     assert len(mounts) == 4 and all(mount.endswith(",readonly") for mount in mounts)
 
 
+def test_managed_drill_accepts_the_reviewed_debian_xvfb_dependencies(module):
+    module.validate_library_dependencies(
+        "libaudit1 (>= 1:2.2.1), libc6 (>= 2.38), libgl1, libnettle8t64, libpixman-1-0 (>= 0.30.0), "
+        "libselinux1 (>= 3.1~), libsystemd0, libunwind8, libxau6 (>= 1:1.0.11), libxdmcp6, "
+        "libxfont2 (>= 1:2.0.1), xauth, xserver-common (>= 2:21.1.16-1.3+deb13u4)"
+    )
+
+
 @pytest.mark.parametrize("depends", ["curl", "libssl3t64, libc6", "libc6, libc6"])
 def test_managed_drill_image_requires_audited_package_relationships(module, tmp_path, depends):
     commands = SimpleNamespace(capture=lambda *_args, **_kwargs: pytest.fail("Docker started"))

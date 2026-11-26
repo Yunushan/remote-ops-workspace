@@ -134,6 +134,53 @@ def test_saved_group_navigation_and_search(clean_gui_window, preset, prefix) -> 
     assert json.loads(window.store.path.read_text(encoding="utf-8"))["profiles"] == profiles
 
 
+@pytest.mark.parametrize(("design", "search_name"), [
+    ("mremoteng", "mRemoteNgDocumentFilter"),
+    ("securecrt", "secureCrtSessionFilter"),
+    ("termius", "termiusHostSearch"),
+])
+def test_saved_search_restores_collapsed_folders(clean_gui_window, design, search_name):
+    from PyQt6.QtWidgets import QLineEdit
+
+    from remote_ops_workspace.models import Profile
+
+    _app, window = clean_gui_window
+    window.store.save([
+        Profile("Primary server", "ssh", "primary.example.invalid", group="Ops/Primary"),
+        Profile("Standby server", "ssh", "standby.example.invalid", group="Ops/Standby"),
+    ])
+    window.set_design_preset(design)
+    tree = window.profile_list
+    search = window.findChild(QLineEdit, search_name)
+    assert search is not None
+
+    def folders():
+        ops = tree.topLevelItem(0).child(0)
+        return ops.child(0), ops.child(1)
+
+    primary, standby = folders()
+    primary.setExpanded(False)
+    standby.setExpanded(False)
+    search.setText("Primary server")
+    assert primary.isExpanded()
+    assert standby.isHidden() and not standby.isExpanded()
+    search.setText("Standby server")
+    assert primary.isHidden() and standby.isExpanded()
+    search.clear()
+    assert all(not folder.isHidden() and not folder.isExpanded() for folder in folders())
+    search.setText("Primary server")
+    window.refresh_profiles()
+    primary, standby = folders()
+    assert primary.isExpanded() and standby.isHidden()
+    search.clear()
+    assert all(not folder.isHidden() and not folder.isExpanded() for folder in folders())
+    search.setText("Primary server")
+    window.select_profile("Primary server")
+    search.clear()
+    assert primary.isExpanded() and not standby.isExpanded()
+    assert window.selected_profile_name() == "Primary server"
+
+
 def test_remmina_search_switches_between_folder_tree_and_flat_results(clean_gui_window, monkeypatch):
     from unittest.mock import Mock
 
@@ -148,10 +195,13 @@ def test_remmina_search_switches_between_folder_tree_and_flat_results(clean_gui_
         Profile("North database", "rdp", "north.example.invalid", group="Field/Primary", tags=["alpha"]),
         Profile("Night desk", "rdp", "standby.example.invalid", group="Field/Standby", tags=["beta"]),
         Profile("Home desk", "vnc", "home.example.invalid", group="Home"),
+        Profile("Z Field overview", "ssh", "overview.example.invalid", group="Field"),
     ])
     window.set_design_preset("remmina")
     tree = window.profile_list
     search = window.remmina_profile_filter
+    rows_removed = Mock()
+    tree.model().rowsRemoved.connect(rows_removed)
 
     def top_rows():
         items = (tree.topLevelItem(i) for i in range(tree.topLevelItemCount()))
@@ -165,15 +215,19 @@ def test_remmina_search_switches_between_folder_tree_and_flat_results(clean_gui_
     load_profiles = Mock(wraps=window.store.load)
     monkeypatch.setattr(window.store, "load", load_profiles)
     for query, expected in [
-        ("Field", ["Night desk", "North database"]), ("FIELD/STANDBY", ["Night desk"]),
+        ("Field", ["Night desk", "North database", "Z Field overview"]), ("FIELD/STANDBY", ["Night desk"]),
         ("vnc", ["Home desk"]), ("north.example.invalid", ["North database"]), ("beta", ["Night desk"]), ("absent", []),
     ]:
         search.setText(query)
         assert top_rows() == expected
+        assert tree.topLevelItemCount() == 4  # The flat model contains profile rows only.
+        assert rows_removed.call_count == 1
     load_profiles.assert_not_called()
     assert window.selected_profile_name() is None
     window.refresh_profiles()
+    rows_removed.reset_mock()
     search.clear()
+    assert rows_removed.call_count == 1
     assert top_rows() == ["Field", "Home"]
     assert not tree.topLevelItem(1).isExpanded()
     assert window.selected_profile_name() == "North database"
@@ -199,8 +253,19 @@ def test_remmina_search_switches_between_folder_tree_and_flat_results(clean_gui_
     QTest.keyClick(tree, Qt.Key.Key_Return)
     assert opened == ["Night desk", "Night desk"]
     assert [item.text(0) for item in window.iter_profile_tree_items()] == [
-        "Field", "Primary", "North database", "Standby", "Night desk", "Home", "Home desk",
+        "Field", "Z Field overview", "Primary", "North database", "Standby", "Night desk", "Home", "Home desk",
     ]
+    folder = tree.topLevelItem(0)
+    tree.setCurrentItem(folder)
+    search.setText("north")
+    assert tree.currentItem() is None and folder.treeWidget() is None
+    search.clear()
+    assert tree.currentItem() is folder and tree.topLevelItem(0) is folder
+    search.setText("north")
+    window.refresh_profiles()
+    search.clear()
+    assert tree.currentItem() is tree.topLevelItem(0)
+    assert tree.currentItem().text(0) == "Field"
     window.set_design_preset("native")
     window.select_profile("Night desk")
     key = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier)

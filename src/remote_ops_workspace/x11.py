@@ -614,8 +614,16 @@ def _start_moba_x_server_locked(
     identity_factory: Callable[[Any], dict[str, Any]] | None,
 ) -> XServerLifecycleRecord:
     _prepare_x_server_authority(plan.command, plan.environment, plan.display)
-    factory = popen_hidden if popen_factory is None else popen_factory
-    process = factory(plan.command, env={**os.environ, **plan.environment})
+    env = {**os.environ, **plan.environment}
+    if popen_factory is None:
+        # The daemon outlives the command. Inheriting its pipes keeps callers
+        # waiting for EOF even after the CLI emits its result and exits.
+        process = popen_hidden(
+            plan.command, env=env, stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    else:
+        process = popen_factory(plan.command, env=env)
     try:
         identity = (identity_factory or register_process)(process)
         if process.poll() is not None:
@@ -1001,13 +1009,14 @@ def x_server_packaged_runtime_roots(roots: Iterable[Path] | None = None) -> tupl
     if env_value:
         raw_roots.extend(Path(part) for part in env_value.split(os.pathsep) if part)
     executable_dir = Path(sys.executable).resolve().parent
-    raw_roots.extend(
-        [
-            executable_dir / "xserver",
-            executable_dir / "runtimes" / "xserver",
-            Path(__file__).resolve().parents[2] / "vendor" / "xserver",
-        ]
-    )
+    frozen = getattr(sys, "frozen", False)
+    if sys.platform == "linux" and frozen:
+        installed_root = executable_dir.parent / "lib" / "remote-ops-workspace" / "xserver"
+        if (installed_root / XSERVER_RUNTIME_MANIFEST_NAME).is_file():
+            raw_roots.append(installed_root)
+    raw_roots.extend((executable_dir / "xserver", executable_dir / "runtimes" / "xserver"))
+    if not frozen:
+        raw_roots.append(Path(__file__).resolve().parents[2] / "vendor" / "xserver")
     seen: set[str] = set()
     resolved: list[Path] = []
     for root in raw_roots:

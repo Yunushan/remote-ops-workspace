@@ -382,10 +382,8 @@ def create_connected_terminal_class(services: ConnectedGuiServices) -> type[Conn
 
             dock = self.active_moba_sftp_dock()
             if dock is not None:
-                monitoring_menu = _required_gui_value(
-                    menu.addMenu("Monitoring"),
-                    "terminal monitoring menu",
-                )
+                monitoring_menu = QMenu("Monitoring", menu)
+                menu.addMenu(monitoring_menu)
                 monitoring_menu.setObjectName("mobaMonitoringContextMenu")
                 monitoring_control = dock.monitoring_control_widgets.get(
                     "remote-monitoring"
@@ -419,10 +417,8 @@ def create_connected_terminal_class(services: ConnectedGuiServices) -> type[Conn
                 if follow_control is not None:
                     follow_action.toggled.connect(follow_control.setChecked)
 
-            tools_menu = _required_gui_value(
-                menu.addMenu("Session tools"),
-                "terminal session tools menu",
-            )
+            tools_menu = QMenu("Session tools", menu)
+            menu.addMenu(tools_menu)
             session_route = gui_design_moba_session_edge_action_route()
             session_handlers = dict(
                 zip(

@@ -75,13 +75,29 @@ smoke hashes the Windows ZIP, EXE, and MSI and the macOS DMG and PKG before
 and after installer testing. Both Linux jobs do the same for the DEB, RPM,
 and AppImage. Sealing compares those digests with the candidate assets,
 and the final audit compares the approved candidate assets with the
-published bytes. Inventory schema 10 requires a bundled Debian amd64
+published bytes. Starting with inventory schema 15, both Linux smoke ZIPs
+must include the Cron and Debian loader receipts for the same workflow run,
+source commit, installed package and launcher. They record that Cron ran
+one scheduled job, stopped cleanly and stayed quiet through the next minute.
+The loader receipt lists glibc's attempted library paths alongside initialized
+libraries for the version, platform, and vault probes. An attempted path can
+be absent. The smoke check rejects lookups outside the system library roots
+and the launcher's temporary extraction tree. Sealing and later audits
+require these observations for all three workloads, including the packaged
+cryptography extension used by the vault.
+Inventory schema 10 requires a bundled Debian amd64
 installer. Sealing, review, promotion, and the published audit open the
 installer to verify its `Depends` field and distro notices. They compare
 the packaged daemons, OpenSSH helpers, and HTTP and FTP launchers with
 the hashes in the server manifest. The review command checks the Linux
 qualification files and controller digests against the sealed inventory
 and tagged checkout.
+When the Debian installer includes the MobApt cache, the review records the
+bundled tools and cached packages with their reviewed Debian versions and
+copyright files. Compliance requires these notice records for the exact DEB
+that contains the cache. Sealing checks the packaged notices, runtime
+manifest, package index, executables and cached archives against the frozen
+MobApt review before the candidate is offered for approval.
 `review-materials.json` lists the retained qualification archive paths, hashes,
 and source references. The command copies the sealed inventory, report
 payloads, and matching tagged resolver locks into `bundle/` and verifies the
@@ -142,6 +158,13 @@ retains each distro copyright file and records its package name, version, and
 `native-component` origin. Use these rows for the corresponding components and
 the Debian artifact scan. Keep their recorded paths. The signed audit scopes
 these files to the Debian packages that actually ship them.
+
+Linux packages built on Debian-family hosts also carry notices for distro
+libraries bundled by PyInstaller. The directories under
+`/usr/share/doc/remote-ops-workspace/licenses/system-<package>/` carry the
+distro copyright file and the exact version in `package-version.txt`.
+Use the extracted `system-<package>` component and version for those rows.
+The signed audit checks both the notice bytes and the packaged version.
 
 Windows packages ship their frozen runtime license files under
 `docs/licenses/runtime/`. Native smoke checks compare the installed bytes
@@ -479,41 +502,18 @@ Once the reviewer has approved the exact tagged candidate and bundle, save
 the approved JSON as `release-evidence.json`. In the tagged checkout, use a
 Linux x64 Python environment with
 `python -m pip install --require-hashes --requirement requirements-locks/release-verifier-linux-x86_64.txt`.
-The example signs the existing bytes and verifies the signature against the
-enrolled public key. Set the three shell variables to the reviewed JSON, the
-enrolled key ID and the path to the reviewer's local Ed25519 PEM.
+The signer checks the release identity, policy digest and review window before
+signing the existing bytes. It verifies the signature against the enrolled
+public key and creates `release-evidence.sig.json` beside the approval. Set
+the shell variables to the exact release, reviewed JSON, enrolled key ID and
+the reviewer's local Ed25519 PKCS#8 PEM. For an encrypted PEM, run the command
+in an interactive terminal to enter the passphrase without echo.
 
 ```bash
-python - "$approval_json" "$review_key_id" "$review_private_key" <<'PY'
-import base64
-import json
-import sys
-from pathlib import Path
-
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.serialization import load_pem_private_key
-from scripts.check_release_license_compliance import verify_evidence_signature
-
-approval, key_id, private_key = sys.argv[1:]
-approval_path = Path(approval)
-if approval_path.name != "release-evidence.json":
-    raise SystemExit("expected release-evidence.json")
-payload = approval_path.read_bytes()
-key = load_pem_private_key(Path(private_key).read_bytes(), password=None)
-if not isinstance(key, Ed25519PrivateKey):
-    raise SystemExit("the review key must be Ed25519")
-signature = {
-    "schema_version": 1,
-    "algorithm": "ed25519",
-    "key_id": key_id,
-    "signature": base64.b64encode(key.sign(payload)).decode("ascii"),
-}
-policy = json.loads(Path("configs/release_compliance_policy.json").read_bytes())
-verify_evidence_signature(payload, signature, policy)
-with approval_path.with_name("release-evidence.sig.json").open("x", encoding="utf-8") as output:
-    json.dump(signature, output, indent=2)
-    output.write("\n")
-PY
+python scripts/sign_release_redistribution_approval.py \
+  --repository "$release_repository" --tag "$release_tag" --sha "$release_sha" \
+  --policy configs/release_compliance_policy.json --approval "$approval_json" \
+  --key-id "$review_key_id" --private-key "$review_private_key"
 ```
 
 Run the exact-byte audit from the tagged checkout with the same sealed
@@ -587,13 +587,18 @@ python scripts/capture_release_tag_governance.py \
 The command reads the exact tag and its policy from GitHub, checks active tag
 rulesets for update and deletion protection with no bypass actors, and checks
 the tag again before signing. Keep the private key on the auditor's system.
+For an encrypted PKCS#8 PEM, run the command in an interactive terminal. It
+prompts without echo before starting the live checks.
 Wait for the promotion job to print the proof ref. From a separate auditor
 checkout, put `tag-governance-attestation.json` and its detached
 `tag-governance-attestation.sig.json` at the root of one data-only commit.
 Push that commit to the exact ref printed by the command and the workflow.
-The workflow reads both files from the same commit. It waits up to 15 minutes
-for the ref to appear and then checks the signature and the short validity
-window. The workflow also revalidates the signed redistribution approval and
+The workflow waits up to 15 minutes for the ref and both proof files. If a file
+is temporarily unavailable, it rereads the ref and retrieves both files from
+one commit. It then checks the signature and the short validity window.
+If the signed proof expired while the workflow was waiting, the auditor can
+push a new commit to the same proof ref before the 15-minute deadline.
+The workflow also revalidates the signed redistribution approval and
 its expiry immediately before creating the draft and before publishing it.
 
 After upload and draft verification, capture a second proof with

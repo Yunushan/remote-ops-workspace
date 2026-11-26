@@ -146,6 +146,11 @@ foreach ($Path in $References) {
   }
 }
 
+$VersionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($HostExe)
+if ($VersionInfo.ProductName -cne "Remote Ops Workspace" -or $VersionInfo.ProductVersion -cne $Version) {
+  throw "The XP legacy host executable has missing or incorrect product metadata."
+}
+
 $Signed = $env:ROW_XP_REQUIRE_SIGNING -eq "1"
 if ($Signed) {
   Sign-XpExecutable $HostExe

@@ -56,6 +56,7 @@ from .gui_lifecycle import ProcessStopPolicy, ProcessStopResult, stop_process
 from .gui_processes import _terminal_process_backend
 from .gui_ssh_connection import SharedSshConnection, SharedSshConnectionState
 from .gui_values import _required_gui_value, _safe_tooltip_html
+from .moba_connected import terminal_directory_path
 from .moba_macros import (
     MOBA_MACRO_TERMINAL_CAPTURE_SCHEMA,
     MOBA_MACRO_TERMINAL_REPLAY_SCHEMA,
@@ -305,7 +306,8 @@ class TerminalTextEdit(QTextEdit):
 
 
 class TerminalPane(QWidget):
-    macroRecordingChanged = pyqtSignal()
+    macroRecordingChanged = pyqtSignal()  # type: ignore[call-arg]
+    remoteDirectoryChanged = pyqtSignal()  # type: ignore[call-arg]
     STOP_POLICY = ProcessStopPolicy()
     OUTPUT_RENDER_BATCH_BYTES = 16 * 1024
     OUTPUT_RENDER_TURN_BUDGET_BYTES = 256 * 1024
@@ -339,6 +341,8 @@ class TerminalPane(QWidget):
         # normalization at the live terminal boundary as at plan build.
         plan = harden_terminal_pane_plan_for_native_windows(plan)
         self.profile = profile
+        self.directory_report_host: str | None = None
+        self.remote_directory: str | None = None
         self.ssh_control_path = ""
         self.ssh_connection_key = ""
         if profile is not None:
@@ -1484,10 +1488,8 @@ class TerminalPane(QWidget):
         if bool(menu.property("terminalMousePasteMenuAdded")):
             return
         menu.setProperty("terminalMousePasteMenuAdded", True)
-        mouse_menu = _required_gui_value(
-            menu.addMenu("Mouse paste behavior (this terminal)"),
-            "terminal mouse paste menu",
-        )
+        mouse_menu = QMenu("Mouse paste behavior (this terminal)", menu)
+        menu.addMenu(mouse_menu)
         mouse_menu.setObjectName("terminalMousePasteMenu")
         right_click_action = _required_gui_value(
             mouse_menu.addAction("Right-click pastes automatically"),
@@ -2056,6 +2058,7 @@ class TerminalPane(QWidget):
     def reset_process_output_pipeline(self) -> None:
         """Reset one completed stream without leaving transport readers paused."""
 
+        self.remote_directory = None
         self._process_output_timer.stop()
         self._process_output_flush_scheduled = False
         self._process_output_buffer.clear()
@@ -2369,12 +2372,24 @@ class TerminalPane(QWidget):
         self._pty_startup_probe = ""
         self.output.setProperty("terminalInitialPtyClearRecoveryArmed", False)
 
+    def remember_remote_directory(self, uri: str) -> None:
+        assert self.directory_report_host is not None
+        path = terminal_directory_path(uri, self.directory_report_host)
+        if path is not None:
+            self.remote_directory = path
+
     def append_process_text(self, text: str) -> None:
         """Render process output and normalize only ConPTY's first screen clear."""
 
         if not text:
             return
-        transcript = self.terminal_emulator.feed(text)
+        if self.directory_report_host is None:
+            transcript = self.terminal_emulator.feed(text)
+        else:
+            previous = self.remote_directory
+            transcript = self.terminal_emulator.feed(text, directory_report=self.remember_remote_directory)
+            if self.remote_directory != previous:
+                self.remoteDirectoryChanged.emit()
         alternate_screen_active = self.terminal_emulator.alternate_screen_active
         if alternate_screen_active:
             # Keep the entire negotiated screen height in the document;

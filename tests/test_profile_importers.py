@@ -92,6 +92,51 @@ def test_mremoteng_importer_preserves_ssh1_protocol(tmp_path: Path) -> None:
     assert any("allow_legacy_crypto=true" in warning for warning in result.warnings)
 
 
+def test_mremoteng_importer_resolves_explicit_folder_inheritance(tmp_path: Path) -> None:
+    source = tmp_path / "confCons.xml"
+    source.write_text(
+        """<Connections>
+  <Node Name="Production" Type="Container" Protocol="RDP" Port="3397" User="admin" Domain="LAB"
+        Descr="Folder description" Password="fixture-folder-secret" Hostname="ignored.example">
+    <Node Name="Windows" Type="Container" Protocol="SSH2" Port="3399"
+          InheritProtocol="True" InheritUsername="True" InheritDomain="True" InheritDescription="True">
+      <Node Name="Inherited" Type="Connection" Hostname="desktop.example" Protocol="SSH2"
+            Port="22" Username="old-user" Domain="OLD" Descr="Old description"
+            InheritProtocol="True" InheritPort="True" InheritUsername="True" InheritDomain="True"
+            InheritDescription="True" InheritHostname="True" InheritPassword="True" />
+      <Node Name="Override" Type="Connection" Hostname="override.example" Port="3394" Username="local"
+            Protocol="RDP" Domain="LOCAL" Description="Local description"
+            InheritProtocol="False" InheritPort="False" InheritUsername="False" InheritDomain="False" />
+    </Node>
+    <Node Name="Blank credentials" Type="Container" Username="" Domain="">
+      <Node Name="Blank" Type="Connection" Hostname="blank.example" Protocol="RDP" Username="stale"
+            Domain="OLD" InheritUsername="True" InheritDomain="True" InheritPort="True" />
+    </Node>
+  </Node>
+  <Node Name="Top level" Type="Connection" Hostname="top.example" Protocol="SSH2" InheritProtocol="True" />
+</Connections>""",
+        encoding="utf-8",
+    )
+
+    result = import_profiles(source, source_format="mremoteng")
+    inherited, override, blank, top = result.profiles
+
+    assert inherited.group == "Production/Windows"
+    assert (inherited.protocol, inherited.host, inherited.port, inherited.username) == (
+        "rdp", "desktop.example", 3399, "admin",
+    )
+    assert inherited.description == "Folder description"
+    assert inherited.options == {"domain": "LAB"}
+    assert (override.protocol, override.port, override.username, override.description) == (
+        "rdp", 3394, "local", "Local description",
+    )
+    assert override.options == {"domain": "LOCAL"}
+    assert blank.username is None and blank.port is None and blank.options == {}
+    assert top.host == "top.example" and top.protocol == "ssh"
+    assert result.warnings == ["mRemoteNG folder: password/passphrase fields were not imported"]
+    assert "fixture-folder-secret" not in str(result)
+
+
 def test_row_importer_never_silently_enables_cleartext_profiles(tmp_path: Path) -> None:
     source = tmp_path / "profiles.json"
     source.write_text(

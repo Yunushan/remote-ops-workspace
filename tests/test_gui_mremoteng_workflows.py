@@ -35,6 +35,66 @@ def workspace(monkeypatch, tmp_path):
     app.processEvents()
 
 
+def test_duplicate_saved_connection_from_menu_and_tree_shortcut(workspace):
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+
+    app, window = workspace
+    tree = window.profile_list
+    window.select_profile("Alpha")
+    original = window.store.get("Alpha", resolve=False)
+    menu = window.build_profile_context_menu(tree.currentItem())
+    action = next(action for action in menu.actions() if action.text() == "Duplicate connection")
+    assert action.isEnabled()
+    action.trigger()
+    assert window.selected_profile_name() == "Alpha (copy)"
+    clone = window.store.get("Alpha (copy)", resolve=False)
+    assert clone.to_dict() == replace(original, name="Alpha (copy)").to_dict()
+    assert window.store.get("Alpha (copy)").username == "inherited"
+
+    window.select_profile("Alpha")
+    window.activateWindow()
+    tree.setFocus()
+    app.processEvents()
+    QTest.keyClick(tree, Qt.Key.Key_D, Qt.KeyboardModifier.ControlModifier)
+    assert window.selected_profile_name() == "Alpha (copy 2)"
+    window.store.set_group_defaults("Ops", {"username": "new-default"})
+    assert window.store.get("Alpha (copy 2)").username == "new-default"
+    assert window.store.get("Alpha", resolve=False) == original
+
+    tree.setCurrentItem(tree.currentItem().parent())
+    folder_menu = window.build_profile_context_menu(tree.currentItem())
+    assert not next(action for action in folder_menu.actions() if action.text() == "Duplicate connection").isEnabled()
+    window.duplicate_mremoteng_connection()
+    assert len(window.store.load()) == 4
+    window.set_design_preset("native")
+    window.select_profile("Alpha")
+    assert "Duplicate connection" not in {action.text() for action in window.build_profile_context_menu().actions()}
+    tree.setFocus()
+    QTest.keyClick(tree, Qt.Key.Key_D, Qt.KeyboardModifier.ControlModifier)
+    assert window.selected_profile_name() == "Alpha"
+    assert len(window.store.load()) == 4
+    window.set_design_preset("mremoteng")
+    window.select_profile("Alpha")
+    tree.setFocus()
+    app.processEvents()
+    QTest.keyClick(tree, Qt.Key.Key_D, Qt.KeyboardModifier.ControlModifier)
+    assert window.selected_profile_name() == "Alpha (copy 3)"
+    assert len(window.store.load()) == 5
+
+
+def test_duplicate_connection_handles_profile_removed_by_another_writer(workspace):
+    _, window = workspace
+    window.select_profile("Alpha")
+    menu = window.build_profile_context_menu(window.profile_list.currentItem())
+    action = next(action for action in menu.actions() if action.text() == "Duplicate connection")
+    assert action.isEnabled()
+    window.store.remove("Alpha")
+    action.trigger()
+    assert "Cannot duplicate connection" in window.statusBar().currentMessage()
+    assert [row.name for row in window.store.load()] == ["Beta"]
+
+
 def test_tree_config_edit_preserves_inheritance_and_dock_choice(workspace):
     from PyQt6.QtCore import Qt, QTimer
     from PyQt6.QtTest import QTest
@@ -89,6 +149,65 @@ def test_tree_config_edit_preserves_inheritance_and_dock_choice(workspace):
     button.click()
     assert dock.isVisible()
     assert select("Alpha")["Hostname"] == "alpha.example.invalid"
+
+
+def test_connections_tree_f2_renames_raw_profile_and_updates_config(workspace, monkeypatch):
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+    from PyQt6.QtWidgets import QLineEdit, QTreeWidget
+
+    app, window = workspace
+    tree = window.profile_list
+    grid = window.mremoteng_left_property_grid_panel.findChild(QTreeWidget, "mRemoteNgConnectionProperties")
+    connections = []
+    monkeypatch.setattr(window, "connect_selected", lambda _dry_run: connections.append(window.selected_profile_name()))
+    window.select_profile("Beta")
+    tree.setFocus()
+    app.processEvents()
+    original = window.store.get("Beta", resolve=False)
+
+    def edit(value, key=Qt.Key.Key_Return):
+        QTest.keyClick(tree, Qt.Key.Key_F2)
+        cell = tree.indexWidget(tree.currentIndex())
+        assert isinstance(cell, QLineEdit) and cell.selectedText() == "Beta"
+        if value is not None:
+            QTest.keyClicks(cell, value)
+        QTest.keyClick(cell, key)
+        app.processEvents()
+        app.processEvents()
+
+    edit("Cancelled", Qt.Key.Key_Escape)
+    assert window.store.get("Beta", resolve=False) == original
+    assert tree.currentItem().text(0) == grid.topLevelItem(0).text(1) == "Beta"
+    edit(None)
+    assert tree.currentItem().text(0) == "Beta"
+    edit("Alpha")
+    assert "already exists" in window.statusBar().currentMessage()
+    assert tree.currentItem().text(0) == "Beta"
+    window.statusBar().clearMessage()
+    edit(" ")
+    assert "Cannot save name" in window.statusBar().currentMessage()
+    assert window.store.get("Beta", resolve=False) == original
+    edit("Desk Renamed")
+    assert tree.currentItem().text(0) == grid.topLevelItem(0).text(1) == "Desk Renamed"
+    assert window.selected_profile_name() == "Desk Renamed"
+    assert window.store.get("Desk Renamed", resolve=False) == replace(original, name="Desk Renamed")
+    assert window.store.get("Desk Renamed").username == "inherited"
+    assert [p.name for p in window.store.load()] == ["Alpha", "Desk Renamed"]
+    assert connections == []
+    position = tree.visualItemRect(tree.currentItem()).center()
+    QTest.mouseClick(tree.viewport(), Qt.MouseButton.LeftButton, pos=position)
+    QTest.mouseDClick(tree.viewport(), Qt.MouseButton.LeftButton, pos=position)
+    app.processEvents()
+    assert connections == ["Desk Renamed"] and tree.indexWidget(tree.currentIndex()) is None
+
+    tree.setCurrentItem(tree.currentItem().parent())
+    QTest.keyClick(tree, Qt.Key.Key_F2)
+    assert tree.indexWidget(tree.currentIndex()) is None
+    window.set_design_preset("native")
+    window.select_profile("Desk Renamed")
+    QTest.keyClick(tree, Qt.Key.Key_F2)
+    assert tree.indexWidget(tree.currentIndex()) is None
 
 
 @pytest.fixture
@@ -235,7 +354,8 @@ def test_pending_config_refresh_ends_with_window(config_cells):
 
 
 def test_config_inline_protocol_validation_and_rename(config_cells):
-    from PyQt6.QtCore import Qt
+    from PyQt6.QtCore import QEvent, QPointF, Qt
+    from PyQt6.QtGui import QMouseEvent
     from PyQt6.QtTest import QSignalSpy, QTest
     from PyQt6.QtWidgets import QApplication, QComboBox
 
@@ -258,11 +378,21 @@ def test_config_inline_protocol_validation_and_rename(config_cells):
     choice = protocol.model().index(protocol.findText("SSH"), 0)
     options.scrollTo(choice)
     QApplication.processEvents()
-    QTest.mouseMove(options.viewport(), options.visualRect(choice).center())
-    QTest.mouseClick(
-        options.viewport(), Qt.MouseButton.LeftButton, pos=options.visualRect(choice).center(),
-        delay=QApplication.doubleClickInterval() + 50,
-    )
+    viewport = options.viewport()
+    point = options.visualRect(choice).center()
+    global_point = viewport.mapToGlobal(point)
+    left, none = Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton
+    # Deliver mouse input to the popup without moving the desktop cursor.
+    QTest.qWait(QApplication.doubleClickInterval() + 50)
+    for kind, button, held in (
+        (QEvent.Type.MouseMove, none, none),
+        (QEvent.Type.MouseButtonPress, left, left),
+        (QEvent.Type.MouseButtonRelease, left, none),
+    ):
+        QApplication.sendEvent(viewport, QMouseEvent(
+            kind, QPointF(point), QPointF(global_point), button, held,
+            Qt.KeyboardModifier.NoModifier,
+        ))
     QApplication.processEvents()
     QApplication.processEvents()
     assert len(activated) == 1
@@ -416,6 +546,76 @@ def test_reconnect_restarts_only_the_selected_open_document(workspace, tmp_path)
     assert window.all_terminal_panes() == [pane]
 
 
+def test_connections_tree_switches_to_matching_live_tab(workspace, monkeypatch):
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+
+    app, window = workspace
+    tab = window.tabs
+    tree = window.profile_list
+    profile = window.store.get("Beta")
+    plan = TerminalPanePlan("Beta", [sys.executable, "-c", "import sys; sys.stdin.read(1)"], "profile:Beta")
+    window.open_terminal_tab(plan, profile=profile)
+    pane = window.active_terminal_pane()
+    deadline = time.monotonic() + 10
+    while not pane.is_running() and time.monotonic() < deadline:
+        QTest.qWait(10)
+    assert pane.is_running()
+    monkeypatch.setattr(window, "confirm_stop_processes", lambda *_args: True)
+
+    launched = []
+    monkeypatch.setattr(window, "connect_selected", lambda _dry_run: launched.append(window.selected_profile_name()))
+    home = window.find_tab_by_role("home")
+    window.select_profile("Beta")
+    item = tree.currentItem()
+    tab.setCurrentIndex(home)
+    tree.itemActivated.emit(item, 0)
+    assert tab.currentWidget() is pane and not launched
+
+    tab.setCurrentIndex(home)
+    def click():
+        QTest.mouseClick(tree.viewport(), Qt.MouseButton.LeftButton, pos=tree.visualItemRect(item).center())
+
+    click()
+    assert tab.currentIndex() == home
+    window.mremoteng_switch_on_tree_click.trigger()
+    click()
+    app.processEvents()
+    assert tab.currentWidget() is pane and not launched
+    assert pane.is_running() and window.all_terminal_panes() == [pane]
+    widget_at = tab.widget
+    with monkeypatch.context() as patches:
+        patches.setattr(tab, "widget", lambda index: None if index == home else widget_at(index))
+        assert window.switch_to_mremoteng_open_connection("Beta")
+
+    def unavailable(_name):
+        raise OSError("profile store unavailable")
+
+    with monkeypatch.context() as patches:
+        patches.setattr(window, "profile_by_name", unavailable)
+        assert not window.switch_to_mremoteng_open_connection("Beta")
+    window.store.remove("Beta")
+    assert not window.switch_to_mremoteng_open_connection("Beta")
+    window.store.add(profile)
+
+    tab.setCurrentIndex(home)
+    window.store.replace_named("Beta", replace(profile, host="new-beta.example.invalid"))
+    window.refresh_profiles()
+    window.select_profile("Beta")
+    item = tree.currentItem()
+    click()
+    assert tab.currentIndex() == home and not launched
+    window.activate_profile_item(item)
+    assert launched == ["Beta"]
+
+    window.store.replace_named("Beta", profile)
+    window.refresh_profiles()
+    window.set_design_preset("native")
+    window.select_profile("Beta")
+    window.activate_profile_item(tree.currentItem())
+    assert launched == ["Beta", "Beta"]
+
+
 def test_mremoteng_double_click_closes_only_the_clicked_connection(workspace):
     from PyQt6.QtCore import Qt, QTimer
     from PyQt6.QtTest import QTest
@@ -490,7 +690,11 @@ def test_mremoteng_double_click_closes_only_the_clicked_connection(workspace):
         window.confirm_stop_processes = lambda *_args: True
 
 
-def test_mremoteng_tools_option_persists_between_windows(workspace):
+@pytest.mark.parametrize(("label", "default"), [
+    ("Double click on tab closes it", True),
+    ("Switch to open connection on click", False),
+])
+def test_mremoteng_tools_option_persists_between_windows(workspace, label, default):
     from PyQt6.QtCore import QPoint, Qt
     from PyQt6.QtTest import QTest
 
@@ -502,18 +706,18 @@ def test_mremoteng_tools_option_persists_between_windows(workspace):
         tools = next(menu for menu in owner.mremoteng_top_menus if menu.title() == "Tools")
         assert tools.actions()[0].text() == "External Tools"
         options = next(action.menu() for action in tools.actions() if action.text() == "Options")
-        action = next(action for action in options.actions() if action.text() == "Double click on tab closes it")
+        action = next(action for action in options.actions() if action.text() == label)
         assert action.isCheckable() and action.isChecked() is expected
         options.popup(owner.mapToGlobal(QPoint(80, 80)))
         app.processEvents()
         QTest.mouseClick(options, Qt.MouseButton.LeftButton, pos=options.actionGeometry(action).center())
         assert action.isChecked() is not expected
 
-    click_option(window, True)
+    click_option(window, default)
     _, second = create_main_window(["mremoteng-option-reopen"], show=True)
     try:
         second.set_design_preset("mremoteng")
-        click_option(second, False)
+        click_option(second, not default)
     finally:
         second.close()
 

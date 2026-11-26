@@ -16,10 +16,13 @@ if str(ROOT) not in sys.path:
 
 from scripts.check_mobapt_cache_evidence import (  # noqa: E402
     EXECUTION_SCHEMA,
+    INSTALLED_CACHE,
     NATIVE_PROBE_ARGV,
     NATIVE_PROBE_PATH,
     NATIVE_PROBE_SCHEMA,
+    check_native_install_output,
     check_runtime_and_cache,
+    native_install_argv,
     validate_mobapt_cache_evidence,
     validate_mobapt_offline_execution,
     validate_mobapt_release_cache_evidence,
@@ -31,6 +34,8 @@ from scripts.check_release_license_compliance import (  # noqa: E402
 )
 from scripts.debian_release_fixture import (  # noqa: E402
     DEBIAN_TARGETS,
+    PROCESS_ENV,
+    PRODUCT_PACKAGE,
     capture_native_debian_probe,
     install_release_deb,
 )
@@ -48,7 +53,9 @@ def package_status(root: Path, name: str) -> str | None:
     return result.stdout
 
 
-def install_packages(root: Path, packages: dict[str, dict[str, Any]]) -> subprocess.CompletedProcess[str]:
+def install_packages(
+    root: Path, packages: dict[str, dict[str, Any]], *, native: bool, installed_cache: bool,
+) -> dict[str, subprocess.CompletedProcess[str]]:
     archives = []
     for name, package in packages.items():
         archive = package["archive"]
@@ -61,11 +68,22 @@ def install_packages(root: Path, packages: dict[str, dict[str, Any]]) -> subproc
             raise ValueError(f"{name} package name or version differs from the cache manifest")
         archives.append(archive)
 
-    result = run(["dpkg", "--install", "--", *archives], root)
+    if native:
+        results = {}
+        env = dict(PROCESS_ENV)
+        if not installed_cache:
+            env["ROW_MOBAPT_RUNTIME_DIR"] = str(root.resolve())
+        for name, package in packages.items():
+            result = run(native_install_argv(name), root, env=env)
+            check_native_install_output(result.stdout, package, installed_cache=installed_cache)
+            results[name] = result
+    else:
+        result = run(["dpkg", "--install", "--", *archives], root)
+        results = dict.fromkeys(packages, result)
     for name, package in packages.items():
         if package_status(root, name) != f"install ok installed\n{package['version']}":
             raise ValueError(f"{name} did not install at the cached version")
-    return result
+    return results
 
 
 def terminal_probe(root: Path, package: str, executable: str, arguments: list[str]) -> subprocess.CompletedProcess[str]:
@@ -105,61 +123,82 @@ def write_receipt(
     }
 
 
-def capture_native_probe(root: Path, data: dict[str, Any], installer: Path) -> bool:
-    target = data["release_target"]
-    asset, source = install_release_deb(root, installer, target)
-    data["release_asset"] = asset
-    if source is not None:
-        data["source"] = source
-    write_json(root / "evidence.json", data)
-    capture_native_debian_probe(root, asset, target, schema=NATIVE_PROBE_SCHEMA,
-                                receipt_path=NATIVE_PROBE_PATH, argv=NATIVE_PROBE_ARGV)
-    return source is not None
-
-
 def capture(
-    bundle: Path, output: Path, package: str, executable: str, arguments: list[str], *, release_deb: Path | None = None,
+    bundle: Path | None, output: Path, package: str, executable: str, arguments: list[str], *,
+    release_deb: Path | None = None,
 ) -> None:
     require_offline_container()
-    evidence, error = secure_regular_file(bundle, "mobapt-cache-evidence.json", "MobApt assembly evidence")
+    installed_cache = bundle is None
+    if installed_cache and release_deb is None:
+        raise ValueError("a Debian release asset is required when no external MobApt bundle is supplied")
+    assembly = Path(INSTALLED_CACHE) if bundle is None else bundle
+    if output.exists() or output.is_symlink() or output.resolve().is_relative_to(assembly.resolve()):
+        raise ValueError("output must be a new directory outside the assembly bundle")
+
+    cwd = output.parent.resolve(strict=True)
+    architecture = run(["dpkg", "--print-architecture"], cwd).stdout.strip()
+    target = DEBIAN_TARGETS.get(architecture)
+    if target is None:
+        raise ValueError(f"unsupported Debian architecture {architecture}")
+    native_release = None
+    if installed_cache and release_deb is not None:
+        native_release = install_release_deb(cwd, release_deb, target)
+
+    evidence, error = secure_regular_file(assembly, "mobapt-cache-evidence.json", "MobApt assembly evidence")
     if evidence is None:
         raise ValueError(error)
-    validated = validate_mobapt_cache_evidence(evidence, assets_dir=bundle)
+    validated = validate_mobapt_cache_evidence(evidence, assets_dir=assembly)
     if not validated.passed:
         raise ValueError(f"invalid MobApt assembly: {validated.errors}")
     _, data = read_json_object(evidence, "MobApt assembly evidence")
-    paths, packages = check_runtime_and_cache(bundle, data)
+    paths, packages = check_runtime_and_cache(assembly, data)
     if RUNTIME not in paths or package not in packages:
         raise ValueError("assembly must include bundled Bash and the selected probe package")
-    architecture = run(["dpkg", "--print-architecture"], bundle).stdout.strip()
-    if DEBIAN_TARGETS.get(architecture) != data["release_target"]:
+    if target != data["release_target"]:
         raise ValueError(f"assembly release target does not match Debian architecture {architecture}")
-    if output.exists() or output.is_symlink() or output.resolve().is_relative_to(bundle.resolve()):
-        raise ValueError("output must be a new directory outside the assembly bundle")
+    files = paths | {item["archive"] for item in packages.values()}
+    files.update({data["runtime"]["manifest"], data["package_cache"]["index"]})
+    if installed_cache:
+        owned = set(run(["dpkg-query", "--listfiles", "--", PRODUCT_PACKAGE], cwd).stdout.splitlines())
+        required = {str(assembly / name) for name in files} | {str(evidence)}
+        if not required <= owned:
+            raise ValueError("the tested Debian package must own every MobApt cache input")
+        data["installed_cache"] = True
 
     with TemporaryDirectory(prefix=".mobapt-capture-", dir=output.parent) as staging:
         root = Path(staging) / "capture"
         (root / "evidence").mkdir(parents=True)
-        files = paths | {item["archive"] for item in packages.values()}
-        files.update({data["runtime"]["manifest"], data["package_cache"]["index"]})
         for relative in sorted(files):
-            target = root / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(bundle / relative, target)
+            destination = root / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(assembly / relative, destination)
         check_runtime_and_cache(root, data)
 
-        installation = install_packages(root, packages)
+        if release_deb is not None:
+            if native_release is None:
+                native_release = install_release_deb(root, release_deb, target)
+            asset, source = native_release
+            data["release_asset"] = asset
+            if source is not None:
+                data["source"] = source
+
+        installations = install_packages(
+            root, packages, native=release_deb is not None, installed_cache=installed_cache,
+        )
         terminal = terminal_probe(root, package, executable, arguments)
         manifest_sha = data["runtime"]["manifest_sha256"]
         data["install_tests"] = [
-            write_receipt(root, "offline-install", row, manifest_sha, installation) for row in packages.values()
+            write_receipt(root, "offline-install", row, manifest_sha, installations[name])
+            for name, row in packages.items()
         ]
         data["terminal_probe"] = write_receipt(root, "terminal-probe", packages[package], manifest_sha, terminal)
         validate = validate_mobapt_offline_execution
-        if release_deb is None:
-            write_json(root / "evidence.json", data)
-        elif capture_native_probe(root, data, release_deb):
-            validate = validate_mobapt_release_cache_evidence
+        write_json(root / "evidence.json", data)
+        if release_deb is not None:
+            capture_native_debian_probe(root, asset, target, schema=NATIVE_PROBE_SCHEMA,
+                                        receipt_path=NATIVE_PROBE_PATH, argv=NATIVE_PROBE_ARGV)
+            if source is not None:
+                validate = validate_mobapt_release_cache_evidence
         result = validate(root / "evidence.json", assets_dir=root)
         if not result.passed:
             raise ValueError(f"offline execution evidence failed validation: {result.errors}")
@@ -168,7 +207,7 @@ def capture(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Capture real offline MobApt package installation and terminal evidence.")
-    parser.add_argument("--bundle", required=True, type=Path)
+    parser.add_argument("--bundle", type=Path, help="external assembly for rehearsal; omit to use the installed cache")
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--release-deb", type=Path, help="install and smoke-test the exact Debian release candidate")
     parser.add_argument("--probe-package", required=True)

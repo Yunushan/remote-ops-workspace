@@ -1,4 +1,4 @@
-"""Bind distro notices to the exact Debian asset that ships the server suite."""
+"""Bind bundled distro notices to the exact Debian asset that ships them."""
 
 from __future__ import annotations
 
@@ -15,7 +15,12 @@ PAYLOAD = PurePosixPath("usr/lib/remote-ops-workspace/servers")
 MANIFEST = "servers-runtime.json"
 SCHEMA = "row.moba-servers.runtime-bundle.v1"
 NOTICE_DIR = PurePosixPath("usr/share/doc/remote-ops-workspace/server-notices")
+MOBAPT_NOTICE_DIR = PurePosixPath("usr/share/doc/remote-ops-workspace/mobapt-notices")
+MOBAPT_CACHE_DIR = PurePosixPath("usr/lib/remote-ops-workspace/mobapt")
+MOBAPT_REVIEW = "mobapt-debian-review.json"
+MOBAPT_ASSEMBLY = "mobapt-cache-evidence.json"
 EXTERNAL_SERVICES = frozenset({"tftp", "ssh", "sftp", "telnet", "vnc", "nfs"})
+OPTIONAL_EXTERNAL_SERVICES = frozenset({"iperf"})
 NOTICE_MAX_BYTES = 1024 * 1024
 PACKAGE_RE = re.compile(r"[a-z0-9][a-z0-9+.-]+")
 VERSION_RE = re.compile(r"(?:[0-9]+:)?[0-9][A-Za-z0-9.+~-]*")
@@ -27,11 +32,85 @@ class DebianNotice(NamedTuple):
     data: bytes
 
 
-def notice_records(value: Any) -> dict[str, dict[str, Any]]:
+def observe_mobapt_notices(archive: tarfile.TarFile, release_tag: str) -> dict[str, DebianNotice]:
+    members = [(PurePosixPath(entry.name), entry) for entry in archive.getmembers()]
+    notice_members = [(path, entry) for path, entry in members if path.is_relative_to(MOBAPT_NOTICE_DIR)]
+    if not notice_members and not any(path.is_relative_to(MOBAPT_CACHE_DIR) for path, _ in members):
+        return {}
+
+    def read_member(path: PurePosixPath) -> bytes:
+        matches = [entry for name, entry in members if name == path]
+        if len(matches) != 1:
+            raise ValueError(f"Debian MobApt requires one packaged file at {path}")
+        entry = matches[0]
+        if (not entry.isfile() or entry.sparse is not None or entry.uid or entry.gid
+                or entry.mode & 0o7133 or not 0 < entry.size <= NOTICE_MAX_BYTES):
+            raise ValueError(f"invalid Debian MobApt file: {path}")
+        stream = archive.extractfile(entry)
+        if stream is None:
+            raise ValueError(f"unreadable Debian MobApt file: {path}")
+        with stream:
+            return stream.read()
+
+    review_path = MOBAPT_NOTICE_DIR / MOBAPT_REVIEW
+    review = json.loads(read_member(review_path))
+    assembly = read_member(MOBAPT_CACHE_DIR / MOBAPT_ASSEMBLY)
+    if (
+        not isinstance(review, dict) or review.get("release_tag") != release_tag
+        or review.get("assembly_sha256") != hashlib.sha256(assembly).hexdigest()
+        or not isinstance(inputs := review.get("debian_inputs"), dict) or not inputs
+        or not isinstance(notice_digests := review.get("notices"), dict)
+        or notice_digests.keys() != {f"{name}.copyright" for name in inputs}
+    ):
+        raise ValueError("invalid packaged MobApt Debian review or assembly binding")
+
+    notices = {}
+    allowed_directories = {MOBAPT_NOTICE_DIR}
+    allowed_files = {review_path}
+    for name, row in inputs.items():
+        if (
+            PACKAGE_RE.fullmatch(name) is None or not isinstance(row, dict)
+            or not isinstance(version := row.get("version"), str) or VERSION_RE.fullmatch(version) is None
+        ):
+            raise ValueError("invalid packaged MobApt Debian component or version")
+        directory = MOBAPT_NOTICE_DIR / name
+        path = directory / "copyright"
+        data = read_member(path)
+        digest = hashlib.sha256(data).hexdigest()
+        if digest != notice_digests[f"{name}.copyright"]:
+            raise ValueError(f"packaged MobApt notice differs from its review: {name}")
+        notices[name] = DebianNotice(
+            {"path": path.as_posix(), "version": version, "sha256": digest, "size_bytes": len(data)}, data,
+        )
+        allowed_directories.add(directory)
+        allowed_files.add(path)
+    seen = set()
+    for path, entry in notice_members:
+        if path in seen or (
+            path not in allowed_files
+            and (path not in allowed_directories or not entry.isdir() or entry.uid or entry.gid or entry.mode & 0o7022)
+        ):
+            raise ValueError(f"unexpected Debian MobApt notice member: {path}")
+        seen.add(path)
+    return notices
+
+
+def optional_external_services(services: object) -> frozenset[str]:
+    if not isinstance(services, list):
+        return frozenset()
+    return frozenset(
+        row["service"] for row in services
+        if isinstance(row, dict) and isinstance(row.get("service"), str)
+        and row["service"] in OPTIONAL_EXTERNAL_SERVICES
+    )
+
+
+def notice_records(manifest: dict) -> dict[str, dict[str, Any]]:
     """Validate the component records and cover each external daemon once."""
-    if not isinstance(value, dict) or not value or len(value) > len(EXTERNAL_SERVICES):
+    remaining = set(EXTERNAL_SERVICES | optional_external_services(manifest.get("services")))
+    value = manifest.get("debian_notices")
+    if not isinstance(value, dict) or not value or len(value) > len(remaining):
         raise ValueError("Debian server bundle requires a distro notice inventory")
-    remaining = set(EXTERNAL_SERVICES)
     for name, row in value.items():
         if (
             not isinstance(name, str) or PACKAGE_RE.fullmatch(name) is None
@@ -140,13 +219,14 @@ def observe_debian_notices(
             or document.get("system") != "linux" or document.get("release_target") != target
         ):
             raise ValueError("invalid Debian embedded server manifest")
-    records = notice_records(document.get("debian_notices"))
+    records = notice_records(document)
     contents = verify_notice_members(archive, records)
     return {name: DebianNotice(row, contents[notice_path(name)]) for name, row in records.items()}
 
 
 def read_verified_debian_notices(
     package: Path, *, target: str, verify_runtime: bool = False, expected_runtime_sha256: str | None = None,
+    mobapt_release_tag: str | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Verify notices and optionally the recorded server runtime in a Debian asset."""
     try:
@@ -160,6 +240,11 @@ def read_verified_debian_notices(
                 notices = observe_debian_notices(
                     archive, target=target, verify_runtime=verify_runtime, expected_runtime_sha256=expected_runtime_sha256,
                 )
+                if mobapt_release_tag is not None:
+                    mobapt = observe_mobapt_notices(archive, mobapt_release_tag)
+                    if notices.keys() & mobapt.keys():
+                        raise ValueError("Debian server and MobApt notice component names overlap")
+                    notices.update(mobapt)
                 return {name: notice.record for name, notice in notices.items()}
     except (OSError, subprocess.SubprocessError, tarfile.TarError) as exc:
-        raise ValueError("could not read Debian server notices from the package") from exc
+        raise ValueError("could not read Debian notices from the package") from exc

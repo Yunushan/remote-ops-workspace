@@ -51,6 +51,11 @@ metadata. Actual license bytes are copied and content-deduplicated. The existing
 compliance checker can verify those copied bytes and exact pip-inspect digest;
 it still rejects the collector's incomplete/unapproved inventory.
 
+The collector checks generated command scripts listed in wheel `RECORD` files
+against the active virtual environment's `bin` or `Scripts` directory. An entry
+must name a directly installed regular file and match its recorded size and
+SHA-256. The output records script paths, byte counts and hashes.
+
 Every bound source/input/asset is rechecked after parsing. This is a local
 receipt/byte check, not an independent hosted attestation or hostile race
 guarantee. Windows receipt separators normalize only typed asset/CArchive
@@ -59,7 +64,11 @@ explicit target context, including CArchives inside ZIP/TAR companions. This
 matches the [pinned PyInstaller writer](https://github.com/pyinstaller/pyinstaller/blob/v6.22.3/PyInstaller/archive/writers.py).
 Strict traversal, device, casefold duplicate, link and alias checks remain.
 ZIP/TAR member, source and output names retain their strict separator rules.
-Dependency and link descriptors remain unresolved. For a valid, payload-free
+The macOS staging scan records resolved targets for relative symbolic links
+that stay within one application bundle. It walks regular directories and
+records each linked file or directory as a separate relationship. Escaping,
+broken or cyclic links remain unresolved. Archive links and dependency closure
+have separate checks. For a valid, payload-free
 CArchive option named `pyi-contents-directory _internal`, the collector records
 the descriptor in `runtime_options_observed` on the packaged executable and in
 the staged executable's CArchive hints. PyInstaller uses this setting for the
@@ -80,9 +89,15 @@ marker without exposing their text. [PyInstaller bootloader](https://github.com/
 - MSI, Inno EXE, DMG, PKG and AppImage are explicitly opaque. RPM zstd, archive
   links, PAX metadata and unsupported codecs remain explicit gaps. Observing a
   companion ZIP/TAR cannot establish the opaque package's contents.
-- CPython facts describe the builder; the packaged interpreter identity/version
-  remains unverified. CArchive facts do not prove bootloader version, PYZ
-  ownership or complete external host dependencies.
+- CPython facts describe the builder. On Windows, the collector can hash
+  the DLL loaded by the builder. On Linux it can identify the loaded
+  libpython by locating `Py_GetVersion` in the process mappings. For an inspected
+  CArchive, the cookie ABI,
+  member name, size and SHA-256 must agree. Parsed package records name
+  each matching launcher. Repackaging that changes libpython bytes leaves it
+  unresolved. Opaque installer coverage, installed runtime execution,
+  licensing and macOS interpreter identities remain unverified. CArchive facts do not prove
+  bootloader version, PYZ ownership or complete external host dependencies.
 - Native PE/ELF/Mach-O files retain content hashes with unknown identities,
   versions, license expressions and bundled/build-only classifications.
 

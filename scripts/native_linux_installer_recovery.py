@@ -1070,7 +1070,11 @@ def validate_library_dependencies(depends: str) -> None:
         canonical = dependency_field(rows)
     except ValueError as error:
         raise EvidenceError(refusal) from error
-    if canonical != depends or {row.split()[0] for row in rows} - {"libc6", *LIBRARY_PACKAGES.values()}:
+    xvfb_dependencies = {
+        "libaudit1", "libgl1", "libnettle8t64", "libpixman-1-0", "libselinux1", "libsystemd0",
+        "libunwind8", "libxau6", "libxdmcp6", "libxfont2", "xauth", "xserver-common",
+    }
+    if canonical != depends or {row.split()[0] for row in rows} - {"libc6", *LIBRARY_PACKAGES.values(), *xvfb_dependencies}:
         raise EvidenceError(refusal)
 
 

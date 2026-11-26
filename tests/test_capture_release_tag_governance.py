@@ -4,17 +4,26 @@ import base64
 import importlib
 import json
 from datetime import datetime, timedelta, timezone
+from functools import partial
 from pathlib import Path
+from types import SimpleNamespace
+from urllib.error import HTTPError
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
+from cryptography.hazmat.primitives.serialization import (
+    BestAvailableEncryption,
+    Encoding,
+    NoEncryption,
+    PrivateFormat,
+)
 
 from scripts.check_release_license_compliance import verify_tag_governance_signature
 
 
 @pytest.mark.parametrize("scenario", [
-    "approved", "hidden-bypass", "tag-moved", "untrusted-key", "wrong-draft-run",
+    "approved", "approved-encrypted", "encrypted-without-terminal", "encrypted-wrong-passphrase",
+    "hidden-bypass", "tag-moved", "untrusted-key", "wrong-draft-run",
     "wrong-repository", "wrong-head-repository",
 ])
 def test_capture_signs_only_live_protected_tag(
@@ -26,7 +35,8 @@ def test_capture_signs_only_live_protected_tag(
     key = Ed25519PrivateKey.generate()
     enrolled = Ed25519PrivateKey.generate() if scenario == "untrusted-key" else key
     private_key = tmp_path / "auditor.pem"
-    private_key.write_bytes(key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()))
+    encryption = BestAvailableEncryption(b"disposable password") if "encrypted" in scenario else NoEncryption()
+    private_key.write_bytes(key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, encryption))
     output = tmp_path / "proof"
     policy = {
         "tag_governance_attestation": {
@@ -39,6 +49,14 @@ def test_capture_signs_only_live_protected_tag(
         },
     }
     tag_reads = 0
+    key_loader = importlib.import_module("release_review_key")
+    monkeypatch.setattr(key_loader.sys.stdin, "isatty", lambda: scenario != "encrypted-without-terminal")
+
+    def passphrase(prompt):
+        assert prompt == "Auditor key passphrase: " and tag_reads == 0
+        return "incorrect" if scenario == "encrypted-wrong-passphrase" else "disposable password"
+
+    monkeypatch.setattr(key_loader.getpass, "getpass", passphrase)
 
     def gh(args: list[str], _label: str, _timeout: int) -> dict:
         nonlocal tag_reads
@@ -88,9 +106,11 @@ def test_capture_signs_only_live_protected_tag(
         "--private-key", str(private_key), "--out-dir", str(output),
         "--operation", "publish", "--run-id", "123", "--run-attempt", "1", "--draft-id", "77",
     ]
-    if scenario != "approved":
+    if scenario not in {"approved", "approved-encrypted"}:
         assert capture.main(args) == 1
         assert not output.exists()
+        if scenario.startswith("encrypted-"):
+            assert tag_reads == 0
         return
 
     assert capture.main(args) == 0
@@ -105,6 +125,36 @@ def test_capture_signs_only_live_protected_tag(
         "operation": "publish", "run_id": 123, "run_attempt": 1, "draft_release_id": 77,
     }
     assert tag_reads == 2
+
+
+def test_governance_proof_can_retry_after_signature_write_failure(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
+    fetch = importlib.import_module("fetch_release_tag_governance")
+    destination = tmp_path / "proof"
+    write_bytes = Path.write_bytes
+
+    def fail_signature(path, contents):
+        if path.name == fetch.SIGNATURE:
+            assert (path.parent / fetch.ATTESTATION).read_bytes() == b"reviewed attestation"
+            assert not destination.exists()
+            raise OSError("signature write failed")
+        return write_bytes(path, contents)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "write_bytes", fail_signature)
+        with pytest.raises(OSError, match="signature write failed"):
+            fetch.publish_proof(destination, b"reviewed attestation", b"detached signature")
+    assert not list(tmp_path.iterdir())
+
+    fetch.publish_proof(destination, b"reviewed attestation", b"detached signature")
+    assert {item.name for item in destination.iterdir()} == {fetch.ATTESTATION, fetch.SIGNATURE}
+    assert (destination / fetch.ATTESTATION).read_bytes() == b"reviewed attestation"
+    assert (destination / fetch.SIGNATURE).read_bytes() == b"detached signature"
+    with pytest.raises(ValueError, match="proof directory appeared"):
+        fetch.publish_proof(destination, b"other attestation", b"other signature")
+    assert (destination / fetch.ATTESTATION).read_bytes() == b"reviewed attestation"
+    assert (destination / fetch.SIGNATURE).read_bytes() == b"detached signature"
+    assert list(tmp_path.iterdir()) == [destination]
 
 
 def test_fetch_pins_both_files_to_the_same_git_commit(monkeypatch) -> None:
@@ -168,3 +218,116 @@ def test_fetch_requires_exact_transaction_even_with_valid_auditor_signature(monk
     fetch.verify_proof(proof, signature, policy, repository, tag, sha, transaction)
     with pytest.raises(ValueError, match="exact promotion transaction"):
         fetch.verify_proof(proof, signature, policy, repository, tag, sha, {**transaction, "draft_release_id": 78})
+
+
+def test_fetch_retries_a_missing_signature_without_mixing_proof_commits(monkeypatch):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
+    fetch = importlib.import_module("fetch_release_tag_governance")
+    ref = fetch.proof_ref(fetch.promotion_transaction(123, 1, "create-draft", None))
+    pinned = iter(("a" * 40, "b" * 40))
+    reads = []
+    waits = []
+
+    def github(url, _token, *, api_version):
+        if "/git/ref/" in url:
+            return {"ref": ref, "object": {"type": "commit", "sha": next(pinned)}}, {}
+        name, commit = url.split("/contents/")[1].split("?ref=")
+        reads.append((name, commit))
+        if name == fetch.SIGNATURE and commit == "a" * 40:
+            raise RuntimeError("content unavailable") from HTTPError(url, 404, "Not Found", {}, None)
+        data = (name + commit).encode()
+        return {
+            "type": "file", "path": name, "encoding": "base64", "size": len(data),
+            "content": base64.b64encode(data).decode(),
+        }, {}
+
+    monkeypatch.setattr(fetch, "time", SimpleNamespace(monotonic=lambda: 0, sleep=waits.append))
+    monkeypatch.setattr(fetch, "get_json", github)
+    assert fetch.fetch_proof("example/project", ref, "fixture-token") == (
+        (fetch.ATTESTATION + "b" * 40).encode(), (fetch.SIGNATURE + "b" * 40).encode(),
+    )
+    assert reads == [(name, "a" * 40) for name in (fetch.ATTESTATION, fetch.SIGNATURE)] + [
+        (name, "b" * 40) for name in (fetch.ATTESTATION, fetch.SIGNATURE)
+    ]
+    assert waits == [10]
+
+
+@pytest.mark.parametrize("status", [403, 404])
+def test_fetch_keeps_the_proof_deadline_and_propagates_forbidden_reads(monkeypatch, status):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
+    fetch = importlib.import_module("fetch_release_tag_governance")
+    ref = fetch.proof_ref(fetch.promotion_transaction(123, 1, "create-draft", None))
+    observations = iter((0, 897, 900))
+    waits = []
+
+    def github(url, _token, *, api_version):
+        if "/git/ref/" in url:
+            return {"ref": ref, "object": {"type": "commit", "sha": "a" * 40}}, {}
+        raise RuntimeError("content request failed") from HTTPError(url, status, "fixture error", {}, None)
+
+    monkeypatch.setattr(fetch, "time", SimpleNamespace(monotonic=lambda: next(observations), sleep=waits.append))
+    monkeypatch.setattr(fetch, "get_json", github)
+    message = "did not arrive within 15 minutes" if status == 404 else "content request failed"
+    with pytest.raises(RuntimeError, match=message):
+        fetch.fetch_proof("example/project", ref, "fixture-token")
+    assert waits == ([3] if status == 404 else [])
+
+
+@pytest.mark.parametrize("foreign_transaction", [False, True])
+def test_promotion_waits_for_replacement_only_when_a_trusted_proof_expired(monkeypatch, capsys, foreign_transaction):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
+    fetch = importlib.import_module("fetch_release_tag_governance")
+    key = Ed25519PrivateKey.generate()
+    policy = {"tag_governance_attestation": {
+        "max_validity_seconds": 300, "trusted_ed25519_keys": [{
+            "key_id": "auditor", "public_key": base64.b64encode(key.public_key().public_bytes_raw()).decode(),
+        }],
+    }}
+    repo, tag, sha = "example/project", "v1.2.3", "1" * 40
+    transaction = fetch.promotion_transaction(123, 1, "publish", 77)
+    ref = fetch.proof_ref(transaction)
+    now = datetime.now(timezone.utc)
+
+    def proof(observed, *, mismatched=False):
+        raw = json.dumps({
+            "schema_version": 1, "decision": "approved", "source": "github-rulesets-api",
+            "repository": repo, "release_tag": tag, "release_sha": sha,
+            "tag_update_blocked": True, "tag_deletion_blocked": True, "bypass_actors": [],
+            "ruleset_ids": [42], "auditor": {"kind": "github-app", "identity": "fixture"},
+            "observed_at": observed.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "expires_at": (observed + timedelta(minutes=4)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "promotion_transaction": {**transaction, "draft_release_id": 78} if mismatched else transaction,
+        }).encode()
+        signature = json.dumps({
+            "schema_version": 1, "algorithm": "ed25519", "key_id": "auditor",
+            "signature": base64.b64encode(key.sign(raw)).decode(),
+        }).encode()
+        return raw, signature
+
+    old = proof(now - timedelta(minutes=5), mismatched=foreign_transaction)
+    fresh = proof(now - timedelta(seconds=10))
+    commits = iter(("a" * 40, "a" * 40, "b" * 40))
+    reads, waits = [], []
+
+    def github(url, _token, *, api_version):
+        if "/git/ref/" in url:
+            return {"ref": ref, "object": {"type": "commit", "sha": next(commits)}}, {}
+        name, commit = url.split("/contents/")[1].split("?ref=")
+        reads.append(commit)
+        attestation, signature = old if commit == "a" * 40 else fresh
+        data = attestation if name == fetch.ATTESTATION else signature
+        return {"type": "file", "path": name, "encoding": "base64", "size": len(data),
+                "content": base64.b64encode(data).decode()}, {}
+
+    monkeypatch.setattr(fetch, "time", SimpleNamespace(monotonic=lambda: 0, sleep=waits.append))
+    monkeypatch.setattr(fetch, "get_json", github)
+    verify = partial(fetch.verify_proof, policy=policy, repository=repo, tag=tag, sha=sha,
+                     expected_transaction=transaction)
+    if foreign_transaction:
+        with pytest.raises(ValueError, match="exact promotion transaction"):
+            fetch.fetch_proof(repo, ref, "fixture-token", verify=verify)
+        assert waits == [] and reads == ["a" * 40] * 2
+    else:
+        assert fetch.fetch_proof(repo, ref, "fixture-token", verify=verify) == fresh
+        assert waits == [10, 10] and reads == ["a" * 40] * 2 + ["b" * 40] * 2
+        assert capsys.readouterr().out.count("Publish a fresh proof") == 1

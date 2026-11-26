@@ -1640,7 +1640,7 @@
         },
         {
           "id": "moba.sftp-follow-folder-route",
-          "description": "Moba-style SFTP folder-follow workflow ties the checked control, operator-selected remote path, SFTP list plan and file table state through shared static/live route metadata; it does not claim automatic shell-CWD observation.",
+          "description": "Moba-style SFTP folder-follow ties the checked control, active remote path, SFTP list plan and file table state through shared static and live route metadata. The live browser can follow a same-host OSC 7 directory report from the attached SSH terminal, and supports manual navigation when the shell emits no matching report.",
           "source_tokens": {
             "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSftpFollowFolderRoute",

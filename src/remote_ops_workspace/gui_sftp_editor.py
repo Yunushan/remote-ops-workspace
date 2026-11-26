@@ -603,7 +603,7 @@ class SftpTextEditor(QFrame):
 
     def text_editor_remote_path_for_item(self, item: QTreeWidgetItem) -> str:
         kind = str(item.data(0, SFTP_ROW_KIND_ROLE) or "")
-        name = item.text(0).strip()
+        name = item.text(0)
         if kind != "file" or not name:
             return ""
         base = str(

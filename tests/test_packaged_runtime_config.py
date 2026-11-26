@@ -3,7 +3,27 @@ from pathlib import Path
 
 import pytest
 
-from remote_ops_workspace import paths
+from remote_ops_workspace import moba_mobapt, moba_servers, paths, x11
+
+
+@pytest.mark.parametrize("frozen", [True, False], ids=["frozen", "source"])
+@pytest.mark.parametrize(("resolver", "env_var", "runtime"), [
+    (x11.x_server_packaged_runtime_roots, x11.XSERVER_RUNTIME_DIR_ENV, "xserver"),
+    (moba_servers.moba_server_runtime_roots, moba_servers.SERVER_RUNTIME_DIR_ENV, "servers"),
+    (moba_mobapt.mobapt_runtime_roots, moba_mobapt.MOBAPT_RUNTIME_DIR_ENV, "mobapt"),
+])
+def test_vendor_runtime_roots_are_source_only(resolver, env_var, runtime, frozen, monkeypatch, tmp_path):
+    explicit = tmp_path / "explicit"
+    configured = tmp_path / "configured"
+    install_bin = tmp_path / "install" / "bin"
+    monkeypatch.setenv(env_var, str(configured))
+    monkeypatch.setattr(sys, "executable", str(install_bin / "row"))
+    monkeypatch.setattr(sys, "frozen", frozen, raising=False)
+
+    expected = [explicit, configured, install_bin / runtime, install_bin / "runtimes" / runtime]
+    if not frozen:
+        expected.append(paths.repo_root() / "vendor" / runtime)
+    assert resolver([explicit]) == tuple(expected)
 
 
 def test_runtime_config_path_uses_packaged_resource_outside_repository(

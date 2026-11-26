@@ -201,16 +201,13 @@ class Recorder:
 @contextlib.contextmanager
 def managed(recorder: Recorder, service: str, *args: str):
     port = MANAGED_PORTS[service]
-    output = recorder.work / "start.json"
     command = [ROW_EXECUTABLE, "servers", "start", service, "--host", HOST, "--port", str(port), "--json", *args]
     started = False
     try:
-        with output.open("wb") as log:
-            subprocess.run(command, env=recorder.env, stdout=log, stderr=subprocess.DEVNULL,
-                           stdin=subprocess.DEVNULL, timeout=15, check=True)
+        # The client must receive a complete response while the daemon is running.
+        startup = recorder.command(*command, timeout=15)
         started = True
-        text = output.read_text(encoding="utf-8")
-        record, _ = json.JSONDecoder().raw_decode(text[text.index("{"):])
+        record = json.loads(startup.stdout)
         runtime = recorder.runtime[service]
         installed = Path("/") / PAYLOAD / runtime["executable"]
         if (not record["runtime"]["bundled"] or Path(record["runtime"]["executable"]) != installed

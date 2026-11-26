@@ -168,15 +168,23 @@ def _load_mremoteng(path: Path) -> ProfileImportResult:
     profiles: list[Profile] = []
     warnings: list[str] = []
 
-    def walk(element: ET.Element, groups: list[str]) -> None:
+    def walk(element: ET.Element, groups: list[str], parent: dict[str, str]) -> None:
         attrs = _attrs(element)
         if _local_name(element.tag).lower() == "node":
+            for field, alias in (("username", "user"), ("description", "descr")):
+                if not attrs.get(field) and alias in attrs:
+                    attrs[field] = attrs[alias]
+            for field in ("protocol", "port", "username", "domain", "description"):
+                if field in parent and _truthy(attrs.get(f"inherit{field}")):
+                    attrs[field] = parent[field]
             node_type = attrs.get("type", "").lower()
             name = attrs.get("name") or attrs.get("displayname") or "imported"
+            secret_attrs = {key: value for key, value in attrs.items() if not key.startswith("inherit")}
             if node_type in {"container", "folder"}:
+                _warn_if_secret_fields(secret_attrs, warnings, "mRemoteNG folder")
                 next_groups = [*groups, name]
                 for child in element:
-                    walk(child, next_groups)
+                    walk(child, next_groups, attrs)
                 return
             protocol_raw = attrs.get("protocol")
             host = attrs.get("hostname") or attrs.get("host") or attrs.get("address")
@@ -192,19 +200,19 @@ def _load_mremoteng(path: Path) -> ProfileImportResult:
                     protocol=protocol,
                     host=host,
                     port=port,
-                    username=attrs.get("username") or attrs.get("user"),
+                    username=attrs.get("username"),
                     group="/".join(groups) if groups else "imported/mremoteng",
                     description=attrs.get("description") or "Imported from mRemoteNG.",
                     options=options,
                     tags=["imported", "mremoteng"],
                 )
                 profiles.append(profile)
-                _warn_if_secret_fields(attrs, warnings, f"mRemoteNG profile {profile.name}")
+                _warn_if_secret_fields(secret_attrs, warnings, f"mRemoteNG profile {profile.name}")
                 return
         for child in element:
-            walk(child, groups)
+            walk(child, groups, parent)
 
-    walk(root, [])
+    walk(root, [], {})
     return ProfileImportResult(source_format="mremoteng", profiles=_dedupe_profiles(profiles), warnings=warnings)
 
 

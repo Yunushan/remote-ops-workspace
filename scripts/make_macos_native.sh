@@ -89,6 +89,10 @@ create_macos_dmg() {
   return "$status"
 }
 
+if [[ "${ROW_REQUIRE_RELEASE_SIGNING:-0}" == "1" ]]; then
+  "$PYTHON_BIN" scripts/check_pyqt6_compatibility.py --require-release-pins
+fi
+
 rm -rf "$BUILD_DIR"
 mkdir -p "$OUT_DIR" "$PY_DIST" "$PY_WORK"
 

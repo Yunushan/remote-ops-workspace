@@ -307,6 +307,14 @@ def test_windows_inno_setup_discovery_skips_unset_search_roots() -> None:
     assert "foreach ($Candidate in $Candidates)" in script
 
 
+def test_windows_inno_setup_uses_literal_path_separators() -> None:
+    script = Path("scripts/make_windows_native.ps1").read_text(encoding="utf-8")
+
+    assert "OutputDir=$OutDir" in script
+    assert "SetupIconFile=$IconPath" in script
+    assert r'Source: "$Stage\*"' in script
+
+
 def test_windows_native_package_builds_double_click_gui_launcher() -> None:
     script = Path("scripts/make_windows_native.ps1").read_text(encoding="utf-8")
     cli = Path("src/remote_ops_workspace/cli.py").read_text(encoding="utf-8")
@@ -458,7 +466,7 @@ def test_windows_native_package_embeds_product_icon_everywhere() -> None:
 
     assert checker.check_windows_application_icon() == []
     assert "--icon $IconIco" in script
-    assert "SetupIconFile=$IconEscaped" in script
+    assert "SetupIconFile=$IconPath" in script
     assert 'RemoteOpsWorkspaceIcon' in script
     assert "app.setWindowIcon(icon)" in gui
     assert "SetCurrentProcessExplicitAppUserModelID" in gui

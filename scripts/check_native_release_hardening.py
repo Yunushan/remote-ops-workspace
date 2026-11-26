@@ -230,7 +230,7 @@ def check_windows_application_icon() -> list[str]:
         "$IconIco": "Windows ICO asset",
         "--icon $IconIco": "PyInstaller executable icon",
         '--add-data "$IconSvg;remote_ops_workspace/assets"': "frozen GUI icon data",
-        "SetupIconFile=$IconEscaped": "Inno Setup icon",
+        "SetupIconFile=$IconPath": "Inno Setup icon",
         '<Icon Id="RemoteOpsWorkspaceIcon" SourceFile="$IconSource" />': "WiX product icon",
     }.items():
         if snippet not in script:

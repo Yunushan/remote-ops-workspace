@@ -3,7 +3,12 @@ using System.Drawing;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Windows.Forms;
+
+[assembly: AssemblyProduct("Remote Ops Workspace")]
+[assembly: AssemblyFileVersion("@VERSION@")]
+[assembly: AssemblyInformationalVersion("@VERSION@")]
 
 namespace RemoteOpsWorkspace.XpHost
 {

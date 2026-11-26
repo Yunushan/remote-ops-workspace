@@ -860,6 +860,8 @@ class AnsiTerminalTranscript:
                         )
                 elif mode == 7:
                     self._auto_wrap = enabled
+                elif mode == 1048:
+                    self._save_or_restore_cursor_position(save=enabled)
                 elif mode in {47, 1047, 1049}:
                     if enabled:
                         self._enter_alternate_screen()

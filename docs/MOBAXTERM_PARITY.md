@@ -497,8 +497,8 @@ reviews, and the downloaded release assets. See the
    erasure and colored output. The alternate screen also keeps wide characters
    intact when wrapping or clipping at the right edge. When the viewport
    resizes, the visible alternate screen updates even if the remote
-   application is quiet. DEC and CSI save/restore sequences share a cursor
-   position on each screen, including the primary screen. The 26.4 Home
+   application is quiet. DEC and CSI save/restore sequences and xterm private
+   mode 1048 share a saved cursor position on each screen. The 26.4 Home
    reference moved from row 3, column 4 to row 8, column 12 and restored
    row 3, column 4. ROW reproduced those coordinates over OpenSSH on Windows
    ConPTY and Linux PTY. Pipe-backed terminal tabs keep ordinary command

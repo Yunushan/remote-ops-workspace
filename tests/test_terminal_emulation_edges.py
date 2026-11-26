@@ -393,7 +393,10 @@ def test_alternate_screen_resize_preserves_bounded_content() -> None:
     assert transcript.cursor_column == 19
 
 
-@pytest.mark.parametrize(("save", "restore"), [("\x1b7", "\x1b8"), ("\x1b[s", "\x1b[u")])
+@pytest.mark.parametrize(
+    ("save", "restore"),
+    [("\x1b7", "\x1b8"), ("\x1b[s", "\x1b[u"), ("\x1b[?1048h", "\x1b[?1048l")],
+)
 def test_alternate_saved_cursor_is_clamped_to_the_resized_screen(save: str, restore: str) -> None:
     transcript = terminal.AnsiTerminalTranscript()
     transcript.set_screen_size(30, 7)

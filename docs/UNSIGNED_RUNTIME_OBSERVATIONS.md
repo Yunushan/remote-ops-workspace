@@ -89,9 +89,13 @@ marker without exposing their text. [PyInstaller bootloader](https://github.com/
 - MSI, Inno EXE, DMG, PKG and AppImage are explicitly opaque. RPM zstd, archive
   links, PAX metadata and unsupported codecs remain explicit gaps. Observing a
   companion ZIP/TAR cannot establish the opaque package's contents.
-- CPython facts describe the builder; the packaged interpreter identity/version
-  remains unverified. CArchive facts do not prove bootloader version, PYZ
-  ownership or complete external host dependencies.
+- CPython facts describe the builder. On Windows, the collector can hash
+  the DLL loaded by the builder and report a byte match for the declared
+  CPython DLL member of an inspected CArchive. The cookie ABI, member name,
+  size and SHA-256 must agree. Portable ZIP matches identify each launcher.
+  Installer coverage, executed runtime, licensing and other platform
+  interpreter identities remain unverified. CArchive facts do not prove
+  bootloader version, PYZ ownership or complete external host dependencies.
 - Native PE/ELF/Mach-O files retain content hashes with unknown identities,
   versions, license expressions and bundled/build-only classifications.
 

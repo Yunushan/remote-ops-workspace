@@ -295,7 +295,10 @@ def native_kind(raw: bytes) -> str | None:
 
 
 class Observations:
-    def __init__(self, limits: Limits, *, target: str | None = None):
+    def __init__(
+        self, limits: Limits, *, target: str | None = None, builder_dll: dict | None = None
+    ):
+        self.builder_dll = builder_dll
         self.limits = limits
         self.target = target
         self.blobs: dict[str, bytes] = {}
@@ -377,6 +380,9 @@ def scan_carchive(raw: bytes, label: str, observations: Observations, depth: int
         raise Refusal("carchive-cookie-invalid")
     cursor, seen = toc_start, set()
     runtime_options = []
+    library_name = library.split(b"\0", 1)[0].decode("utf-8", errors="replace")
+    builder_dll = observations.builder_dll
+    matching_dll_digest = None
     while cursor < toc_start + toc_len:
         observations.node()
         if cursor + 18 > toc_start + toc_len:
@@ -425,19 +431,29 @@ def scan_carchive(raw: bytes, label: str, observations: Observations, depth: int
         data = decompressed(payload, "zlib", size) if compression else payload
         if len(data) != size:
             raise Refusal("carchive-member-size-mismatch")
-        observations.observe(
+        member = observations.observe(
             f"carchive/{name}", data, f"{label}::{name}", package=label.split("::", 1)[0]
         )
+        if (
+            builder_dll is not None
+            and kind == b"b"
+            and name.casefold() == library_name.casefold() == builder_dll["name"]
+            and python_code == builder_dll["python_code"]
+            and member["size_bytes"] == builder_dll["size_bytes"]
+            and member["sha256"] == builder_dll["sha256"]
+        ):
+            matching_dll_digest = member["sha256"]
         if kind in (b"z", b"Z"):
             observations.gap("pyz-module-ownership-unclassified", f"{label}::{name}")
     observations.gap("bootloader-version-and-runtime-closure-unverified", label)
-    return {
+    hints = {
         "runtime_options_observed": runtime_options,
         "python_cookie_code_observed": python_code,
-        "python_library_name_observed": library.split(b"\0", 1)[0].decode(
-            "utf-8", errors="replace"
-        ),
+        "python_library_name_observed": library_name,
     }
+    if matching_dll_digest is not None:
+        hints["embedded_builder_cpython_dll_sha256"] = matching_dll_digest
+    return hints
 
 
 def checked_members(entries, observations: Observations):
@@ -834,14 +850,19 @@ def scan_package(raw: bytes, name: str, observations: Observations):
         observations.gap("opaque-package-format-unobserved", name)
         return {"backend": None, "all_regular_payload_files_observed": False, "license_records": []}
     start = len(observations.files)
+    dll_matches = []
     for member, data in entries:
         row = observations.observe(member, data, f"{name}::{member}", package=name)
         if native_kind(data):
             hints = scan_carchive(data, row["reference"], observations)
             if hints:
                 row["runtime_options_observed"] = hints["runtime_options_observed"]
+                match = hints.get("embedded_builder_cpython_dll_sha256")
+                if match is not None:
+                    dll_matches.append({"executable": member, "sha256": match})
     return {
         "backend": backend,
+        **({"embedded_builder_cpython_dll_matches": dll_matches} if dll_matches else {}),
         "all_regular_payload_files_observed": True,
         "observed_file_count": len(observations.files) - start,
         "license_records": observations.licenses.get(name, []),
@@ -1382,7 +1403,25 @@ def collect(
     archives = load(raw_archives, array=True)
     if not 1 <= len(archives) <= 32:
         raise Refusal("carchive-receipt-shape-invalid")
-    observations = Observations(limits, target=target)
+    builder_dll = None
+    if "windows_cpython_dll" in runtime:
+        dll = runtime["windows_cpython_dll"]
+        abi = re.match(r"([0-9]{1,2})\.([0-9]{1,2})\.", version)
+        if (
+            not target.startswith("windows-")
+            or abi is None
+            or not isinstance(dll, dict)
+            or set(dll) != {"sha256", "size_bytes"}
+            or not isinstance(dll["sha256"], str)
+            or not HEX.fullmatch(dll["sha256"])
+            or not integer(dll["size_bytes"], 1)
+            or dll["size_bytes"] > limits.member_bytes
+        ):
+            raise Refusal("builder-cpython-dll-observation-invalid")
+        major, minor = map(int, abi.groups())
+        builder_dll = {**dll, "python_code": 100 * major + minor, "name": f"python{major}{minor}.dll"}
+        public_runtime["windows_cpython_dll"] = builder_dll
+    observations = Observations(limits, target=target, builder_dll=builder_dll)
     components = inspect_distributions(raw_inspect, limits, root)
     scan_metadata(components, site_roots, observations, scripts_root=scripts_root)
     runtime_component = {
@@ -1613,6 +1652,29 @@ def write_new_bundle(output: Path, record: dict, blobs: dict[str, bytes]):
         raise
 
 
+def windows_cpython_dll_observation(maximum: int) -> dict:
+    """Hash the standard CPython DLL loaded in this Windows builder process."""
+    import ctypes
+    from ctypes import wintypes
+
+    name = f"python{sys.version_info.major}{sys.version_info.minor}.dll"
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    module_filename = kernel.GetModuleFileNameW
+    module_filename.argtypes = (wintypes.HMODULE, wintypes.LPWSTR, wintypes.DWORD)
+    module_filename.restype = wintypes.DWORD
+    buffer = ctypes.create_unicode_buffer(32768)
+    handle = getattr(sys, "dllhandle", 0)
+    if not handle or not 0 < module_filename(handle, buffer, len(buffer)) < len(buffer):
+        raise Refusal("builder-cpython-dll-not-loaded")
+    path = Path(buffer.value)
+    if path.name.casefold() != name or not path.samefile(Path(sys.base_prefix) / name):
+        raise Refusal("builder-cpython-dll-not-in-runtime")
+    payload = read(path, maximum)
+    if not payload.startswith(b"MZ"):
+        raise Refusal("builder-cpython-dll-invalid-format")
+    return {"sha256": digest(payload), "size_bytes": len(payload)}
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", required=True, choices=sorted(TARGETS))
@@ -1638,6 +1700,12 @@ def main(argv=None) -> int:
             "executable_sha256": digest(read(executable, Limits().input_bytes)),
             "running_interpreter_path_resolved": True,
         }
+        if sys.platform == "win32" and args.target.startswith("windows-"):
+            try:
+                runtime["windows_cpython_dll"] = windows_cpython_dll_observation(Limits().member_bytes)
+            except (OSError, Refusal):
+                # Keep the existing unresolved runtime result when the active DLL cannot be read.
+                pass
         roots = sorted({Path(sysconfig.get_path(value)) for value in ("purelib", "platlib")})
         output = root.joinpath(*relative(args.output).split("/"))
         record, blobs = collect(

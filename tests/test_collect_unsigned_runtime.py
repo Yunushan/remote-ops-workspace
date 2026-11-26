@@ -70,12 +70,13 @@ def ar_bytes(items):
     return raw
 
 
-def carchive(files, *, options=()):
+def carchive(files, *, options=(), binary_members=(), abi=314, library=b"python314.dll"):
     payload, toc = b"", b""
     for name, data in files:
         encoded = name.encode() + b"\0"
+        kind = b"b" if name in binary_members else b"x"
         toc += (
-            struct.pack("!iIIIBc", 18 + len(encoded), len(payload), len(data), len(data), 0, b"x")
+            struct.pack("!iIIIBc", 18 + len(encoded), len(payload), len(data), len(data), 0, kind)
             + encoded
         )
         payload += data
@@ -88,8 +89,8 @@ def carchive(files, *, options=()):
         len(payload) + len(toc) + 88,
         len(payload),
         len(toc),
-        314,
-        b"python314.dll",
+        abi,
+        library,
     )
     return b"MZharmless-data-only" + payload + toc + cookie
 
@@ -209,7 +210,7 @@ class RuntimeObservationCollectorTests(unittest.TestCase):
         with mock.patch.object(c, "plain", side_effect=[before, changed]):
             self.refuses("input-changed", c.read, path, c.DEFAULT_LIMITS.input_bytes)
 
-    def fixture(self):
+    def fixture(self, *, runtime_dll=None):
         for name in ("proof", "stage", "site/example-1.2.dist-info", "assets"):
             (self.root / name).mkdir(parents=True)
         metadata = self.root / "site/example-1.2.dist-info"
@@ -234,8 +235,10 @@ class RuntimeObservationCollectorTests(unittest.TestCase):
             [
                 ("LICENSE", b"Actual packaged synthetic terms\n"),
                 ("libnative.dll", b"MZharmless-native-data"),
+                *([("python314.dll", runtime_dll)] if runtime_dll is not None else []),
             ],
             options=("pyi-contents-directory _internal",),
+            binary_members=("python314.dll",),
         )
         (self.root / "stage/row.exe").write_bytes(executable)
         archive_receipt = [
@@ -288,7 +291,7 @@ class RuntimeObservationCollectorTests(unittest.TestCase):
         )
         return finish
 
-    def collect(self):
+    def collect(self, **runtime_observations):
         return c.collect(
             self.root,
             "windows-x64",
@@ -296,7 +299,7 @@ class RuntimeObservationCollectorTests(unittest.TestCase):
             "proof",
             "stage",
             [self.root / "site"],
-            {"version": "3.14.7", "implementation": "CPython", "pointer_bits": 64},
+            {"version": "3.14.7", "implementation": "CPython", "pointer_bits": 64, **runtime_observations},
             self.limits,
         )
 
@@ -324,6 +327,48 @@ class RuntimeObservationCollectorTests(unittest.TestCase):
             self.assertEqual(row["runtime_options_observed"], ["pyi-contents-directory _internal"])
         self.assertNotIn("carchive-runtime-option-unclassified", [row["code"] for row in record["unresolved"]])
         self.assertEqual(record["inputs"]["carchive_report_sha256"], c.digest(archive_raw))
+
+    def test_windows_runtime_dll_matches_staged_and_portable_launchers(self):
+        payload = b"MZbuilder-runtime-dll"
+        self.fixture(runtime_dll=payload)
+        observed = {"sha256": c.digest(payload), "size_bytes": len(payload)}
+        record, _ = self.collect(windows_cpython_dll=observed)
+        builder_dll = record["runtime_observations"]["windows_cpython_dll"]
+        self.assertEqual(builder_dll, {**observed, "python_code": 314, "name": "python314.dll"})
+        bootloader = next(row for row in record["components"] if row["origin"] == "pyinstaller-bootloader")
+        self.assertEqual(
+            bootloader["carchive_runtime_hints"][0]["embedded_builder_cpython_dll_sha256"],
+            observed["sha256"],
+        )
+        self.assertEqual(
+            record["assets"]["native.zip"]["embedded_builder_cpython_dll_matches"],
+            [{"executable": "bin/row.exe", "sha256": observed["sha256"]}],
+        )
+        cpython = next(row for row in record["components"] if row["name"] == "CPython")
+        self.assertFalse(cpython["packaged_version_verified"])
+        self.assertFalse(record["signed"])
+        self.assertFalse(record["closed_world_complete"])
+        with self.assertRaisesRegex(c.Refusal, "builder-cpython-dll-observation-invalid"):
+            self.collect(windows_cpython_dll={**observed, "unexpected": "C:/private"})
+
+    def test_windows_runtime_dll_observation_requires_exact_archive_binding(self):
+        payload = b"MZbuilder-runtime-dll"
+        observed = {
+            "sha256": c.digest(payload), "size_bytes": len(payload), "name": "python314.dll", "python_code": 314,
+        }
+        cases = [
+            (carchive([("python314.dll", payload)], binary_members=("python314.dll",)), True),
+            (carchive([("python314.dll", payload)]), False),
+            (carchive([("python314.dll", payload)], binary_members=("python314.dll",), abi=313), False),
+            (carchive([("python314.dll", payload)], binary_members=("python314.dll",), library=b"other.dll"), False),
+            (carchive([("nested/python314.dll", payload)], binary_members=("nested/python314.dll",)), False),
+            (carchive([("python314.dll", b"MZother-runtime-dll")], binary_members=("python314.dll",)), False),
+        ]
+        for archive, matched in cases:
+            with self.subTest(archive=archive):
+                observations = c.Observations(self.limits, target="windows-x64", builder_dll=observed)
+                hints = c.scan_carchive(archive, "stage/row.exe", observations)
+                self.assertEqual("embedded_builder_cpython_dll_sha256" in hints, matched)
 
     def test_installed_script_records_are_checked_against_the_venv_scheme(self):
         self.fixture()

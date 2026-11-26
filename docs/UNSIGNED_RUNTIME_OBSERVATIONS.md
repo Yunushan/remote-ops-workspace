@@ -90,11 +90,13 @@ marker without exposing their text. [PyInstaller bootloader](https://github.com/
   links, PAX metadata and unsupported codecs remain explicit gaps. Observing a
   companion ZIP/TAR cannot establish the opaque package's contents.
 - CPython facts describe the builder. On Windows, the collector can hash
-  the DLL loaded by the builder and report a byte match for the declared
-  CPython DLL member of an inspected CArchive. The cookie ABI, member name,
-  size and SHA-256 must agree. Portable ZIP matches identify each launcher.
-  Installer coverage, executed runtime, licensing and other platform
-  interpreter identities remain unverified. CArchive facts do not prove
+  the DLL loaded by the builder. On Linux it can identify the loaded
+  libpython by locating `Py_GetVersion` in the process mappings. For an inspected
+  CArchive, the cookie ABI,
+  member name, size and SHA-256 must agree. Parsed package records name
+  each matching launcher. Repackaging that changes libpython bytes leaves it
+  unresolved. Opaque installer coverage, installed runtime execution,
+  licensing and macOS interpreter identities remain unverified. CArchive facts do not prove
   bootloader version, PYZ ownership or complete external host dependencies.
 - Native PE/ELF/Mach-O files retain content hashes with unknown identities,
   versions, license expressions and bundled/build-only classifications.

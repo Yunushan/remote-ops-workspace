@@ -210,7 +210,7 @@ class RuntimeObservationCollectorTests(unittest.TestCase):
         with mock.patch.object(c, "plain", side_effect=[before, changed]):
             self.refuses("input-changed", c.read, path, c.DEFAULT_LIMITS.input_bytes)
 
-    def fixture(self, *, runtime_dll=None):
+    def fixture(self, *, target="windows-x64", runtime_dll=None):
         for name in ("proof", "stage", "site/example-1.2.dist-info", "assets"):
             (self.root / name).mkdir(parents=True)
         metadata = self.root / "site/example-1.2.dist-info"
@@ -231,14 +231,16 @@ class RuntimeObservationCollectorTests(unittest.TestCase):
         source_record["checkout_bytes_sha256"] = c.digest(
             f"source.txt\0{source_record['files'][0]['sha256']}\n".encode()
         )
+        library = "libpython3.14.so.1.0" if target.startswith("linux-") else "python314.dll"
         executable = carchive(
             [
                 ("LICENSE", b"Actual packaged synthetic terms\n"),
                 ("libnative.dll", b"MZharmless-native-data"),
-                *([("python314.dll", runtime_dll)] if runtime_dll is not None else []),
+                *([(library, runtime_dll)] if runtime_dll is not None else []),
             ],
             options=("pyi-contents-directory _internal",),
-            binary_members=("python314.dll",),
+            binary_members=(library,),
+            library=library.encode(),
         )
         (self.root / "stage/row.exe").write_bytes(executable)
         archive_receipt = [
@@ -265,7 +267,7 @@ class RuntimeObservationCollectorTests(unittest.TestCase):
         )
         (self.root / "assets/native.zip").write_bytes(asset)
         finish = {
-            "target": "windows-x64",
+            "target": target,
             "source": source_record,
             "source_unchanged": True,
             "pip_inspect_returncode": 0,
@@ -283,7 +285,7 @@ class RuntimeObservationCollectorTests(unittest.TestCase):
         (self.root / "proof/bind.json").write_bytes(
             c.canonical(
                 {
-                    "target": "windows-x64",
+                    "target": target,
                     "source": source_record,
                     "python": {"version": "3.14.7 (synthetic fixture)"},
                 }
@@ -291,10 +293,10 @@ class RuntimeObservationCollectorTests(unittest.TestCase):
         )
         return finish
 
-    def collect(self, **runtime_observations):
+    def collect(self, *, target="windows-x64", **runtime_observations):
         return c.collect(
             self.root,
-            "windows-x64",
+            target,
             "a" * 40,
             "proof",
             "stage",
@@ -366,9 +368,31 @@ class RuntimeObservationCollectorTests(unittest.TestCase):
         ]
         for archive, matched in cases:
             with self.subTest(archive=archive):
-                observations = c.Observations(self.limits, target="windows-x64", builder_dll=observed)
+                observations = c.Observations(self.limits, target="windows-x64", builder_library=observed)
                 hints = c.scan_carchive(archive, "stage/row.exe", observations)
                 self.assertEqual("embedded_builder_cpython_dll_sha256" in hints, matched)
+
+    def test_linux_runtime_library_matches_only_exact_case_and_bytes(self):
+        payload = b"\x7fELFbuilder-runtime-library"
+        target = "linux-x86_64"
+        name = "libpython3.14.so.1.0"
+        observed = {"sha256": c.digest(payload), "size_bytes": len(payload)}
+        self.fixture(target=target, runtime_dll=payload)
+        record, _ = self.collect(target=target, linux_cpython_library=observed)
+        library = record["runtime_observations"]["linux_cpython_library"]
+        self.assertEqual(library, {**observed, "python_code": 314, "name": name})
+        self.assertEqual(
+            record["assets"]["native.zip"]["embedded_builder_cpython_library_matches"],
+            [{"executable": "bin/row.exe", "sha256": observed["sha256"]}],
+        )
+        self.assertNotIn("embedded_builder_cpython_dll_matches", record["assets"]["native.zip"])
+        upper = name.upper()
+        archive = carchive([(upper, payload)], binary_members=(upper,), library=upper.encode())
+        observations = c.Observations(self.limits, target=target, builder_library=library)
+        hints = c.scan_carchive(archive, "stage/row", observations)
+        self.assertNotIn("embedded_builder_cpython_library_sha256", hints)
+        with self.assertRaisesRegex(c.Refusal, "builder-cpython-dll-observation-invalid"):
+            self.collect(target=target, windows_cpython_dll=observed)
 
     def test_installed_script_records_are_checked_against_the_venv_scheme(self):
         self.fixture()

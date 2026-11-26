@@ -37,6 +37,7 @@ from scripts.debian_server_notices import (  # noqa: E402
     MOBAPT_REVIEW,
     observe_mobapt_notices,
 )
+from scripts.release_evidence_file import stream_sha256  # noqa: E402
 
 EVIDENCE = MOBAPT_ASSEMBLY
 REVIEW = MOBAPT_REVIEW
@@ -185,7 +186,7 @@ def verify_reviewed_cache(
 
     def verify_member(relative: str, expected: str, label: str) -> None:
         with archive.extractfile(member(cache_path(relative))) as stream:
-            actual = hashlib.file_digest(stream, "sha256").hexdigest()
+            actual = stream_sha256(stream)
         if actual != expected:
             raise ValueError(f"reviewed MobApt {label} differs from the Debian package payload: {relative}")
 

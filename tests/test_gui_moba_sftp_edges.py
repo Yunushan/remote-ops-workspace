@@ -352,6 +352,9 @@ def test_ssh_directory_reports_follow_only_their_own_tab(connected_workspace, mo
     dock = window.moba_connected_dock
     process = _FakeProcess()
     dock.sftp_refresh_process = process
+    dock.background_state_activation_timer.stop()
+    monkeypatch.setattr(dock, "background_ssh_auth_capability", lambda _profile: (True, "test auth"))
+    monkeypatch.setattr(dock, "activate_initial_monitoring_state", lambda: None)
     with monkeypatch.context() as running:
         running.setattr(pane.process, "state", lambda: QProcess.ProcessState.Running)
         pane.append_decoded_process_output(b"\x1b]7;file://127.0.0.1/first\x1b")
@@ -363,6 +366,7 @@ def test_ssh_directory_reports_follow_only_their_own_tab(connected_workspace, mo
         pane.append_decoded_process_output(b"\x1b]7;file://127.0.0.1/first\a\x1b]7;file://localhost/other\a")
         assert process.start_calls == 1 and dock.sftp_refresh_pending is None
         pane.append_decoded_process_output(b"\x1b]7;file://127.0.0.1/intermediate\a\x1b]7;file://127.0.0.1/latest\a")
+        dock.activate_initial_background_state()
         assert dock.sftp_refresh_pending == ("/latest", "terminal-folder")
         assert not dock.sftp_refresh_request_is_current()
         toggle = dock.monitoring_control_widgets["follow-terminal-folder"]
@@ -376,10 +380,13 @@ def test_ssh_directory_reports_follow_only_their_own_tab(connected_workspace, mo
         dock.handle_sftp_refresh_finished(0, QProcess.ExitStatus.NormalExit)
         app.processEvents()
         assert dock.sftp_refresh_plan.batch_input() == "ls -la /latest\n"
+        # Deferred auth setup can run after the queued folder listing has started.
+        dock.activate_initial_background_state()
         process.output = b"-rw-r--r-- 1 row row 4 Nov 23 08:00 retained.txt\n"
         process.process_state = QProcess.ProcessState.NotRunning
         dock.handle_sftp_refresh_finished(0, QProcess.ExitStatus.NormalExit)
         assert [entry.name for entry in one.state.file_entries] == ["retained.txt"]
+        assert process.start_calls == 2 and dock.sftp_refresh_pending is None
         toggle.setChecked(True)
         assert dock.path.text() == "/disabled"
         toggle.setChecked(False)

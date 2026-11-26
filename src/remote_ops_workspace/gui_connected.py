@@ -1196,10 +1196,16 @@ def create_moba_connected_classes(
                     widget.setProperty("mobaBackgroundSshAuthDetail", detail)
             if available:
                 self.setProperty("mobaBackgroundSshWaitingForTerminalAuth", False)
-                self.set_sftp_runtime_status(
-                    f"Initial SFTP refresh pending ({detail})",
-                    state="pending",
+                # Deferred auth setup can overlap a folder change or manual listing.
+                listing_requested = self.sftp_refresh_request_is_current() or (
+                    self.sftp_refresh_pending is not None
+                    and self.sftp_refresh_pending[0] == self.active_remote_path
                 )
+                if not listing_requested:
+                    self.set_sftp_runtime_status(
+                        f"Initial SFTP refresh pending ({detail})",
+                        state="pending",
+                    )
                 if not start_runtime:
                     control = self.monitoring_control_widgets.get("remote-monitoring")
                     self.set_remote_monitoring_runtime(
@@ -1219,7 +1225,8 @@ def create_moba_connected_classes(
                     restored_monitoring = True
                     self.setProperty("mobaBackgroundSshAuthGateForcedMonitoringOff", False)
                     control.setChecked(True)
-                self.request_sftp_refresh(reason="initial-key-agent-auth")
+                if not listing_requested:
+                    self.request_sftp_refresh(reason="initial-key-agent-auth")
                 if not restored_monitoring:
                     self.activate_initial_monitoring_state()
                 return

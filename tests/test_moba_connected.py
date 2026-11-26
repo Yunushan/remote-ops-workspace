@@ -534,6 +534,19 @@ def test_sftp_listing_parser_extracts_file_table_rows() -> None:
     assert [row.name for row in live_rows] == ["document copy.txt"]
 
 
+def test_sftp_listing_keeps_spaces_that_are_part_of_filenames() -> None:
+    names = ["report.txt", "report.txt ", " report.txt", "   ", ".. "]
+    metadata = "-rw-r--r--    ? operator operator 16 Nov 18 03:20"
+    for directory, prefix in [(None, ""), ("/home/operator", "/home/operator/")]:
+        listing = "\r\n".join([
+            "total invalid listing footer with eight fields here",
+            metadata,
+            *(f"{metadata} {prefix}{name}" for name in [".", "..", *names]),
+        ])
+        rows = parse_sftp_ls_output(listing, directory=directory)
+        assert [row.name for row in rows] == names
+
+
 def test_remote_monitoring_parser_uses_users_as_connection_count() -> None:
     snapshot = parse_remote_monitoring_output("cpu=7 mem_mb=256/1024 disk_mb=512/4096 users=3 processes=91")
 

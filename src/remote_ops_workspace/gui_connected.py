@@ -723,7 +723,7 @@ def create_moba_connected_classes(
         def filtered_sftp_entries(entries):
             """Keep the single synthetic parent row authoritative."""
 
-            return tuple(entry for entry in entries if entry.name.strip() not in {".", ".."})
+            return tuple(entry for entry in entries if entry.name not in {".", ".."})
 
         def _shared_ssh_panes(self) -> list[TerminalPane]:
             main_window = self.main_window()
@@ -2451,7 +2451,7 @@ def create_moba_connected_classes(
 
         def update_sftp_action_states(self, *_args) -> None:
             selected = self.file_table.currentItem() if hasattr(self, "file_table") else None
-            selected_name = selected.text(0).strip() if selected is not None else ""
+            selected_name = selected.text(0) if selected is not None else ""
             selected_kind = (
                 str(selected.data(0, SFTP_ROW_KIND_ROLE) or "") if selected is not None else ""
             )
@@ -2541,7 +2541,7 @@ def create_moba_connected_classes(
             item = self.file_table.currentItem() if hasattr(self, "file_table") else None
             if item is None:
                 return None
-            name = item.text(0).strip()
+            name = item.text(0)
             kind = str(item.data(0, SFTP_ROW_KIND_ROLE) or "")
             if not name or name == ".." or kind not in {"file", "dir"}:
                 return None
@@ -2550,7 +2550,7 @@ def create_moba_connected_classes(
         def sftp_remote_path_for_item(self, item: QTreeWidgetItem | None) -> str:
             if item is None:
                 return self.active_remote_path
-            name = item.text(0).strip()
+            name = item.text(0)
             kind = str(item.data(0, SFTP_ROW_KIND_ROLE) or "")
             if name == ".." or kind == "parent-dir":
                 return str(PurePosixPath(self.active_remote_path).parent)
@@ -2559,7 +2559,7 @@ def create_moba_connected_classes(
         def open_sftp_context_item(self, item: QTreeWidgetItem | None) -> None:
             if item is None:
                 return
-            name = item.text(0).strip()
+            name = item.text(0)
             kind = str(item.data(0, SFTP_ROW_KIND_ROLE) or "")
             if name == ".." or kind in {"dir", "parent-dir"}:
                 self.navigate_moba_sftp_path(self.sftp_remote_path_for_item(item))
@@ -2590,7 +2590,7 @@ def create_moba_connected_classes(
                 if selected is not None
                 else ""
             )
-            name = selected.text(0).strip() if selected is not None else ""
+            name = selected.text(0) if selected is not None else ""
             open_ready = bool(selected is not None and name)
             transfer_ready = kind in {"file", "dir"} and name not in {"", ".."}
             menu = QMenu(self.file_table)
@@ -2708,6 +2708,11 @@ def create_moba_connected_classes(
                     self.show_sftp_status("Select a remote file or directory to download")
                     return False
                 name, kind = selected
+                if os.name == "nt" and name.endswith(" "):
+                    self.show_sftp_status(
+                        "Choose a local download name without a trailing space in the Transfer Queue"
+                    )
+                    return False
                 remote_path = str(PurePosixPath(self.active_remote_path) / name)
                 arguments = ["get", *(["-r"] if kind == "dir" else []), remote_path, f"./{name}"]
             else:

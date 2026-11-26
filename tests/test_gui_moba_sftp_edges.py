@@ -1763,6 +1763,11 @@ def test_sftp_refresh_and_transfer_workflow_edges(
         ]
     )
     window.create_transfer_queue_dialog = lambda _profile, **_kwargs: next(dialogs)
+    with monkeypatch.context() as windows:
+        windows.setattr(gui_connected, "os", SimpleNamespace(name="nt"))
+        dock.selected_sftp_item = lambda: ("report.txt ", "file")
+        assert dock.open_moba_sftp_transfer_workflow("download") is False
+        assert "without a trailing space" in window.statusBar().currentMessage()
     dock.selected_sftp_item = lambda: ("report.txt", "file")
     assert dock.open_moba_sftp_transfer_workflow("download") is True
     dock.selected_sftp_item = lambda: ("archive", "dir")
@@ -2364,6 +2369,19 @@ def test_sftp_navigation_context_dispatch_and_timeout_edges(
     assert dock.sftp_remote_path_for_item(None) == "/"
     assert dock.sftp_remote_path_for_item(parent) == "/"
     assert dock.sftp_remote_path_for_item(remote_file) == "/report.txt"
+
+    spaced_file = QTreeWidgetItem([" report.txt "])
+    spaced_file.setData(0, role_kind, "file")
+    dock.file_table.addTopLevelItem(spaced_file)
+    dock.file_table.setCurrentItem(spaced_file)
+    assert dock.selected_sftp_item() == (" report.txt ", "file")
+    assert dock.sftp_remote_path_for_item(spaced_file) == "/ report.txt "
+    assert dock.text_editor_remote_path_for_item(spaced_file) == "/ report.txt "
+    with monkeypatch.context() as connected:
+        connected.setattr(dock, "profile_for_sftp_action", lambda: _profile)
+        dock.update_sftp_action_states()
+        assert dock.sftp_action_buttons["download"].isEnabled()
+    dock.file_table.setCurrentItem(remote_file)
 
     navigated: list[str] = []
     edited: list[str] = []

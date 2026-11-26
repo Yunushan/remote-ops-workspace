@@ -101,8 +101,8 @@ GENERATED_PROFILE_TREE_ICON_PRESETS = {"mobaxterm", "securecrt", "termius", "rem
 @dataclass
 class _RemminaSearchTree:
     roots: list[QTreeWidgetItem]
-    groups: list[tuple[QTreeWidgetItem, bool]]
-    rows: list[tuple[QTreeWidgetItem, QTreeWidgetItem, int]]
+    groups: list[tuple[QTreeWidgetItem, bool, list[QTreeWidgetItem]]]
+    rows: list[QTreeWidgetItem]
     selection: QTreeWidgetItem | None
 
     @staticmethod
@@ -163,7 +163,7 @@ class ProfileTree:
             return
         previous_search = self._remmina_search
         collapsed = (
-            {group.toolTip(0) for group, expanded in previous_search.groups if not expanded}
+            {group.toolTip(0) for group, expanded, _ in previous_search.groups if not expanded}
             if previous_search else set()
         )
         if self._profile_tree_search_active:
@@ -374,8 +374,9 @@ class ProfileTree:
             self.filter_profile_tree(self.remmina_profile_filter.text())
             if self._remmina_search and selection_key is not None:
                 search = self._remmina_search
+                items = search.rows if selection_key[0] else (group for group, _, _ in search.groups)
                 search.selection = next(
-                    (item for item in self.iter_profile_tree_items() if search.selection_key(item) == selection_key), None,
+                    (item for item in items if search.selection_key(item) == selection_key), None,
                 )
         if design_id == "securecrt":
             session_filter = window.findChild(QLineEdit, "secureCrtSessionFilter")
@@ -1026,38 +1027,33 @@ class ProfileTree:
         with QSignalBlocker(tree):
             root = cast(QTreeWidgetItem, tree.invisibleRootItem())
             if state is None:
-                groups = []
+                folders = []
                 rows = []
                 for item in self.iter_profile_tree_items():
                     if item.data(0, Qt.ItemDataRole.UserRole):
-                        parent = cast(QTreeWidgetItem, item.parent())  # Every saved profile has a folder.
-                        rows.append((item, parent, parent.indexOfChild(item)))
+                        rows.append(item)
                     else:
-                        groups.append((item, item.isExpanded()))
-                # Move rows off-model so opening search removes the tree in one batch.
+                        folders.append((item, item.isExpanded()))
+                # Keep the original folder structure off-model while only results are displayed.
                 roots = root.takeChildren()
+                groups = [(folder, expanded, folder.takeChildren()) for folder, expanded in folders]
                 self._remmina_search = state = _RemminaSearchTree(roots, groups, rows, current)
-                for item, parent, _ in rows:
-                    parent.removeChild(item)
-                tree.addTopLevelItems(roots)
-                for group, _ in groups:
-                    group.setHidden(True)
-                tree.addTopLevelItems(sorted((item for item, _, _ in rows), key=lambda item: item.text(0).casefold()))
+                tree.addTopLevelItems(sorted(rows, key=lambda item: item.text(0).casefold()))
                 tree.setRootIsDecorated(False)
             if needle:
-                for item, _, _ in state.rows:
+                for item in state.rows:
                     if not narrow or not item.isHidden():
                         item.setHidden(needle not in item.data(0, TREE_SEARCH_TEXT_ROLE))
-                if current is not None and current.isHidden():
+                if current is not None and (current.treeWidget() is not tree or current.isHidden()):
                     current = None
             else:
                 root.takeChildren()
-                for item, parent, index in state.rows:
-                    parent.insertChild(index, item)
+                for group, _, children in state.groups:
+                    group.addChildren(children)
                 tree.addTopLevelItems(state.roots)
-                for item, _, _ in state.rows:
+                for item in state.rows:
                     item.setHidden(False)
-                for group, expanded in state.groups:
+                for group, expanded, _ in state.groups:
                     group.setHidden(False)
                     group.setExpanded(expanded)
                 tree.setRootIsDecorated(True)

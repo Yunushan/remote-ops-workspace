@@ -220,6 +220,7 @@ def test_remmina_search_switches_between_folder_tree_and_flat_results(clean_gui_
     ]:
         search.setText(query)
         assert top_rows() == expected
+        assert tree.topLevelItemCount() == 4  # The flat model contains profile rows only.
         assert rows_removed.call_count == 1
     load_profiles.assert_not_called()
     assert window.selected_profile_name() is None
@@ -254,6 +255,17 @@ def test_remmina_search_switches_between_folder_tree_and_flat_results(clean_gui_
     assert [item.text(0) for item in window.iter_profile_tree_items()] == [
         "Field", "Z Field overview", "Primary", "North database", "Standby", "Night desk", "Home", "Home desk",
     ]
+    folder = tree.topLevelItem(0)
+    tree.setCurrentItem(folder)
+    search.setText("north")
+    assert tree.currentItem() is None and folder.treeWidget() is None
+    search.clear()
+    assert tree.currentItem() is folder and tree.topLevelItem(0) is folder
+    search.setText("north")
+    window.refresh_profiles()
+    search.clear()
+    assert tree.currentItem() is tree.topLevelItem(0)
+    assert tree.currentItem().text(0) == "Field"
     window.set_design_preset("native")
     window.select_profile("Night desk")
     key = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier)

@@ -83,8 +83,8 @@
     },
     {
       "path": "src/remote_ops_workspace/embedded_cron.py",
-      "sha256": "cb29ab21a5f3007c889c2cae5e39f08385849ef3fbf81bf0b4b143040963431b",
-      "size": 10680
+      "sha256": "ef113c49ad70d1e61e8ae8a05e6c95b13074bb6bdb485799105c24f05da0a44f",
+      "size": 10901
     },
     {
       "path": "src/remote_ops_workspace/embedded_ftp.py",

@@ -14,6 +14,32 @@ def test_release_toolchain_checker_passes_current_tree() -> None:
     assert checker.main() == 0
 
 
+@pytest.mark.parametrize("change", ["image", "professional-wheel-downloader"])
+def test_qt_fixture_rejects_a_mismatched_python_version(tmp_path: Path, monkeypatch, change: str) -> None:
+    checker = _load_release_toolchain_checker()
+    toolchain = json.loads(Path("configs/release_toolchain.json").read_text(encoding="utf-8"))
+    dockerfile = Path("docker/Dockerfile.editor-release-evidence")
+    workflows = Path(".github/workflows")
+    professional = workflows / "professional-deployment-evidence.yml"
+    for path in (dockerfile, professional, workflows / "connected-editor-evidence.yml", workflows / "macro-replay-evidence.yml"):
+        destination = tmp_path / path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, destination)
+    monkeypatch.setattr(checker, "ROOT", tmp_path)
+    if change == "image":
+        path = tmp_path / dockerfile
+        source = path.read_text(encoding="utf-8")
+        path.write_text(source.replace("python:3.14.10-", "python:3.15.1-", 1), encoding="utf-8")
+        expected = f"{dockerfile.as_posix()} must use the pinned release Python 3.14.10 for the Qt fixture"
+    else:
+        path = tmp_path / professional
+        before, separator, job = path.read_text(encoding="utf-8").partition("  capture-policy:\n")
+        job = job.replace('python-version: "3.14.10"', 'python-version: "3.15.1"', 1)
+        path.write_text(before + separator + job, encoding="utf-8")
+        expected = f"{professional.name} job capture-policy must select Python 3.14.10 before downloading the Qt fixture wheels"
+    assert checker.check_qt_fixture_python(toolchain) == [expected]
+
+
 def test_release_signing_refuses_missing_timestamp_or_package_verification() -> None:
     checker = _load_release_toolchain_checker()
     windows = Path("scripts/make_windows_native.ps1").read_text(encoding="utf-8")

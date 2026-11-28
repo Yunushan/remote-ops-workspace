@@ -104,6 +104,28 @@ def test_generation_compare_and_worker_readiness(tmp_path, monkeypatch):
     cron.wait_for_cron_ready(control, token, SimpleNamespace(poll=lambda: None))
 
 
+def test_cron_phase_read_holds_the_transition_lock(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    control = tmp_path / "cron.control"
+    assert cron.change_cron_phase(control, "generation", (), "active")
+    read_text = cron._read_text
+
+    def try_transition_lock():
+        with cron.exclusive_file_lock(control, timeout_seconds=0.05):
+            pytest.fail("transition lock was available while reading the control file")
+
+    def guarded_read(path):
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            waiter = executor.submit(try_transition_lock)
+            with pytest.raises(cron.FileLockTimeoutError):
+                waiter.result(timeout=3)
+        return read_text(path)
+
+    monkeypatch.setattr(cron, "_read_text", guarded_read)
+    assert cron.cron_phase(control) == "active generation"
+
+
 def test_worker_activation_survives_same_generation_atomic_replacement(tmp_path, monkeypatch):
     control = tmp_path / "cron.control"
     generation = "test-generation"

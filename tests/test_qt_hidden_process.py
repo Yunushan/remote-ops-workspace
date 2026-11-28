@@ -342,7 +342,18 @@ def test_hidden_process_finish_does_not_wait_for_inherited_pipe_handle(
 ) -> None:
     """A helper child must not freeze tab teardown while a grandchild owns a pipe."""
 
-    marker = tmp_path / "inherited-pipe-child.pid"
+    pipe_open = tmp_path / "inherited-pipe-open"
+    release = tmp_path / "release-inherited-pipe"
+    pipe_closed = tmp_path / "inherited-pipe-closed"
+    grandchild = (
+        "import pathlib, time\n"
+        f"release = pathlib.Path({str(release)!r})\n"
+        "deadline = time.monotonic() + 30\n"
+        f"pathlib.Path({str(pipe_open)!r}).touch()\n"
+        "while not release.exists() and time.monotonic() < deadline:\n"
+        "    time.sleep(0.02)\n"
+        f"pathlib.Path({str(pipe_closed)!r}).touch()\n"
+    )
     process = QtHiddenProcess()
     finished: list[tuple[int, object]] = []
     process.finished.connect(
@@ -355,41 +366,25 @@ def test_hidden_process_finish_does_not_wait_for_inherited_pipe_handle(
             "-u",
             "-c",
             (
-                "import pathlib, subprocess, sys; "
-                "child = subprocess.Popen([sys.executable, '-c', "
-                "'import time; time.sleep(5)'], "
+                "import os, subprocess, sys; "
+                f"subprocess.Popen([sys.executable, '-c', {grandchild!r}], "
                 "stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr); "
-                f"pathlib.Path({str(marker)!r}).write_text(str(child.pid))"
+                "os._exit(0)"
             ),
         ]
     )
 
-    orphan_pid: int | None = None
     try:
         process.start()
-        deadline = time.monotonic() + 2.0
-        marker_value = ""
-        while time.monotonic() < deadline and not marker_value:
-            qt_app.processEvents()
-            try:
-                marker_value = marker.read_text(encoding="utf-8").strip()
-            except FileNotFoundError:
-                marker_value = ""
-            time.sleep(0.01)
-        assert marker_value
-        orphan_pid = int(marker_value)
-
-        started = time.monotonic()
-        _process_events_until(qt_app, lambda: bool(finished), timeout=2.0)
-        assert time.monotonic() - started < 1.0
+        _process_events_until(qt_app, pipe_open.is_file, timeout=10.0)
+        # Completion must arrive while the grandchild still owns the pipe.
+        _process_events_until(qt_app, lambda: bool(finished))
+        assert not pipe_closed.exists()
         assert finished == [(0, qt_core.QProcess.ExitStatus.NormalExit)]
     finally:
+        release.touch()
         process.close()
-        if orphan_pid:
-            try:
-                os.kill(orphan_pid, 15)
-            except (OSError, ProcessLookupError):
-                pass
+    _process_events_until(qt_app, pipe_closed.is_file)
 
 
 def test_hidden_process_old_generation_cannot_finish_a_restarted_run(

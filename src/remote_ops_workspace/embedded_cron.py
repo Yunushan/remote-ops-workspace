@@ -165,7 +165,10 @@ def _job_argv(command: str) -> list[str] | str:
 
 def cron_phase(control: Path) -> str:
     try:
-        return _read_text(control)
+        # Windows readers can prevent atomic replacement while their handles
+        # are open. Use the same lock for reads and generation transitions.
+        with exclusive_file_lock(control, timeout_seconds=1.0):
+            return _read_text(control)
     except (OSError, ValueError):
         return ""
 

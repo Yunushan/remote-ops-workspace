@@ -34,6 +34,7 @@ def main() -> int:
         errors.extend(check_pyqt6_support(toolchain))
         errors.extend(check_python_build_backend(toolchain))
         errors.extend(check_workflow(toolchain))
+        errors.extend(check_qt_fixture_python(toolchain))
         errors.extend(check_release_helper(toolchain))
         errors.extend(check_linux_appimagetool_script(toolchain))
         errors.extend(check_windows_native_smoke())
@@ -312,6 +313,36 @@ def check_windows_inno_compiler(workflow: str, expected_version: str) -> list[st
         errors.append(
             f"release workflow must re-probe and reject an actual Inno engine other than {expected_version}"
         )
+    return errors
+
+
+def check_qt_fixture_python(toolchain: dict[str, object]) -> list[str]:
+    errors: list[str] = []
+    python = required_mapping(toolchain, "python", errors)
+    if not python:
+        return errors
+    version = str(python.get("version", ""))
+    dockerfile = ROOT / "docker/Dockerfile.editor-release-evidence"
+    bases = re.findall(r"(?im)^[ \t]*FROM[ \t]+(\S+)", dockerfile.read_text(encoding="utf-8"))
+    python_base = rf"(?:docker\.io/library/)?python:{re.escape(version)}(?:-[\w.-]+)?@sha256:[0-9a-f]{{64}}"
+    if not bases or not re.fullmatch(python_base, bases[-1]):
+        errors.append(f"{repo_path(dockerfile)} must use the pinned release Python {version} for the Qt fixture")
+
+    # The host interpreter selects the ABI-specific wheels installed in the image.
+    fixture_jobs = {
+        "connected-editor-evidence.yml": "qualify-editor",
+        "macro-replay-evidence.yml": "qualify-macro",
+        "professional-deployment-evidence.yml": "capture-policy",
+    }
+    for filename, job in fixture_jobs.items():
+        workflow = ROOT / ".github/workflows" / filename
+        job_block = re.search(
+            rf"(?ms)^  {job}:[ \t]*\n(.*?)(?=^  \S|\Z)", workflow.read_text(encoding="utf-8"),
+        )
+        setup, build, _ = (job_block[1] if job_block else "").partition("bash scripts/build_qt_release_fixture.sh")
+        pins = re.findall(r"(?m)^[ \t]+python-version:[ \t]*([^\n#]+)", setup)
+        if not build or [pin.strip().strip("\"'") for pin in pins] != [version]:
+            errors.append(f"{filename} job {job} must select Python {version} before downloading the Qt fixture wheels")
     return errors
 
 
